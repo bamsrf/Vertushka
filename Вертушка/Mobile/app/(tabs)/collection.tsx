@@ -24,6 +24,7 @@ export default function CollectionScreen() {
   const insets = useSafeAreaInsets();
   const [isSelectionMode, setIsSelectionMode] = useState(false);
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   const {
     activeTab,
@@ -54,10 +55,15 @@ export default function CollectionScreen() {
   }, [activeTab]);
 
   const handleRefresh = useCallback(async () => {
-    if (activeTab === 'collection') {
-      await fetchCollectionItems();
-    } else {
-      await fetchWishlistItems();
+    setIsRefreshing(true);
+    try {
+      if (activeTab === 'collection') {
+        await fetchCollectionItems();
+      } else {
+        await fetchWishlistItems();
+      }
+    } finally {
+      setIsRefreshing(false);
     }
   }, [activeTab, fetchCollectionItems, fetchWishlistItems]);
 
@@ -278,7 +284,7 @@ export default function CollectionScreen() {
         }
         showActions={false}
         isLoading={isLoading}
-        isRefreshing={isLoading}
+        isRefreshing={isRefreshing}
         onRefresh={handleRefresh}
         emptyMessage={
           activeTab === 'collection'

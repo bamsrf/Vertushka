@@ -18,9 +18,9 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Header } from '../../components/Header';
 import { RecordGrid } from '../../components/RecordGrid';
-import { useSearchStore, useCollectionStore } from '../../lib/store';
+import { useSearchStore, useCollectionStore, useUserSearchStore } from '../../lib/store';
 import { api } from '../../lib/api';
-import { MasterSearchResult, ReleaseSearchResult, ArtistSearchResult } from '../../lib/types';
+import { MasterSearchResult, ReleaseSearchResult, ArtistSearchResult, UserWithStats } from '../../lib/types';
 import { Colors, Typography, Spacing, BorderRadius } from '../../constants/theme';
 
 // Маппинг форматов для отображения на русском
@@ -115,6 +115,16 @@ export default function SearchScreen() {
 
   const { addToCollection, addToWishlist } = useCollectionStore();
 
+  const {
+    results: userResults,
+    isLoading: isUserSearchLoading,
+    search: searchUsers,
+    clearResults: clearUserResults,
+  } = useUserSearchStore();
+
+  // Режим поиска пользователей: запрос начинается с @
+  const isUserSearch = searchInput.startsWith('@');
+
   // Открытие модалки фильтров
   const openFilters = useCallback(() => {
     // Загружаем текущие фильтры во временный стейт
@@ -177,21 +187,35 @@ export default function SearchScreen() {
   }, [loadHistory]);
 
   const handleSearch = useCallback(async () => {
-    if (searchInput.trim()) {
-      try {
-        await search(searchInput.trim());
-      } catch (error: any) {
-        const message = error?.response?.status === 503
-          ? 'Сервис временно недоступен. Попробуйте позже.'
-          : error?.message || 'Ошибка при поиске';
-        Alert.alert('Ошибка', message);
+    const trimmed = searchInput.trim();
+    if (!trimmed) return;
+
+    try {
+      if (trimmed.startsWith('@')) {
+        // Режим поиска пользователей — ищем без @
+        const userQuery = trimmed.slice(1).trim();
+        if (userQuery.length > 0) {
+          clearResults();
+          await searchUsers(userQuery);
+        }
+      } else {
+        await Promise.all([
+          search(trimmed),
+          searchUsers(trimmed),
+        ]);
       }
+    } catch (error: any) {
+      const message = error?.response?.status === 503
+        ? 'Сервис временно недоступен. Попробуйте позже.'
+        : error?.message || 'Ошибка при поиске';
+      Alert.alert('Ошибка', message);
     }
-  }, [searchInput, search]);
+  }, [searchInput, search, searchUsers, clearResults]);
 
   const handleClear = useCallback(() => {
     setSearchInput('');
     clearResults();
+    clearUserResults();
     clearFilters();
     setTempFilters({});
     setSelectedDecade(undefined);
@@ -205,24 +229,46 @@ export default function SearchScreen() {
 
   // Автосброс фильтров при изменении поискового запроса
   const handleSearchInputChange = useCallback((text: string) => {
+    // Переключение между режимами: очищаем неактуальные результаты
+    const wasUserSearch = searchInput.startsWith('@');
+    const willBeUserSearch = text.startsWith('@');
+
+    if (wasUserSearch && !willBeUserSearch) {
+      clearUserResults();
+    } else if (!wasUserSearch && willBeUserSearch) {
+      clearResults();
+      clearFilters();
+    }
+
     // Если пользователь начинает вводить новый запрос и были активные фильтры - сбрасываем их
-    if (text !== searchInput && (filters.format || filters.country || filters.year)) {
+    if (!willBeUserSearch && text !== searchInput && (filters.format || filters.country || filters.year)) {
       clearFilters();
     }
     setSearchInput(text);
-  }, [searchInput, filters.format, filters.country, filters.year, clearFilters]);
+  }, [searchInput, filters.format, filters.country, filters.year, clearFilters, clearResults, clearUserResults]);
 
   const handleHistoryItemPress = useCallback(async (historyQuery: string) => {
     setSearchInput(historyQuery);
     try {
-      await search(historyQuery);
+      if (historyQuery.startsWith('@')) {
+        const userQuery = historyQuery.slice(1).trim();
+        if (userQuery.length > 0) {
+          clearResults();
+          await searchUsers(userQuery);
+        }
+      } else {
+        await Promise.all([
+          search(historyQuery),
+          searchUsers(historyQuery),
+        ]);
+      }
     } catch (error: any) {
       const message = error?.response?.status === 503
         ? 'Сервис временно недоступен. Попробуйте позже.'
         : error?.message || 'Ошибка при поиске';
       Alert.alert('Ошибка', message);
     }
-  }, [search]);
+  }, [search, searchUsers, clearResults]);
 
   const handleRemoveHistoryItem = useCallback((historyQuery: string) => {
     removeFromHistory(historyQuery);
@@ -277,6 +323,10 @@ export default function SearchScreen() {
 
   const handleArtistPress = (artist: ArtistSearchResult) => {
     router.push(`/artist/${artist.artist_id}`);
+  };
+
+  const handleUserPress = (user: UserWithStats) => {
+    router.push(`/user/${user.username}`);
   };
 
   // Поиск артиста по имени и переход на его страницу
@@ -464,7 +514,7 @@ export default function SearchScreen() {
             style={styles.searchInput}
             value={searchInput}
             onChangeText={handleSearchInputChange}
-            placeholder="Артист, альбом, лейбл..."
+            placeholder={isUserSearch ? "Имя пользователя..." : "Артист, альбом или @username"}
             placeholderTextColor={Colors.textMuted}
             returnKeyType="search"
             onSubmitEditing={handleSearch}
@@ -479,19 +529,91 @@ export default function SearchScreen() {
             </TouchableOpacity>
           )}
         </View>
-        <TouchableOpacity
-          style={[styles.filterButton, hasActiveFilters && styles.filterButtonActive]}
-          onPress={openFilters}
-        >
-          <Ionicons name="options-outline" size={20} color={hasActiveFilters ? Colors.background : Colors.text} />
-        </TouchableOpacity>
+        {!isUserSearch && (
+          <TouchableOpacity
+            style={[styles.filterButton, hasActiveFilters && styles.filterButtonActive]}
+            onPress={openFilters}
+          >
+            <Ionicons name="options-outline" size={20} color={hasActiveFilters ? Colors.background : Colors.text} />
+          </TouchableOpacity>
+        )}
       </View>
 
       {SearchHistory}
     </View>
   );
 
-  const HeaderContent = (
+  // Рендер списка пользователей (общий для обоих режимов)
+  const renderUserList = (users: UserWithStats[], limit?: number) => {
+    const displayUsers = limit ? users.slice(0, limit) : users;
+    return displayUsers.map((user) => (
+      <TouchableOpacity
+        key={user.id}
+        style={styles.topArtistCard}
+        onPress={() => handleUserPress(user)}
+        activeOpacity={0.8}
+      >
+        <View style={styles.topArtistImageContainer}>
+          {user.avatar_url ? (
+            <Image
+              source={{ uri: user.avatar_url }}
+              style={styles.topArtistImage}
+              resizeMode="cover"
+            />
+          ) : (
+            <View style={styles.topArtistPlaceholder}>
+              <Ionicons name="person" size={24} color={Colors.textMuted} />
+            </View>
+          )}
+        </View>
+        <View style={styles.topArtistInfo}>
+          <Text style={styles.topArtistLabel}>@{user.username}</Text>
+          <Text style={styles.topArtistName} numberOfLines={1}>
+            {user.display_name || user.username}
+          </Text>
+        </View>
+        <Text style={styles.userStatText}>{user.collection_count} пластинок</Text>
+        <Ionicons name="chevron-forward" size={24} color={Colors.textMuted} />
+      </TouchableOpacity>
+    ));
+  };
+
+  const HeaderContent = isUserSearch ? (
+    // Режим поиска пользователей (@)
+    <View>
+      {SearchHeader}
+
+      {userResults.length > 0 && (
+        <View>
+          <Text style={styles.sectionTitle}>Пользователи</Text>
+          {renderUserList(userResults)}
+        </View>
+      )}
+
+      {isUserSearchLoading && userResults.length === 0 && (
+        <View style={styles.loadingContainer}>
+          <Text style={styles.loadingText}>Поиск пользователей...</Text>
+        </View>
+      )}
+
+      {!isUserSearchLoading && userResults.length === 0 && searchInput.length > 1 && (
+        <View style={styles.emptyContainer}>
+          <Text style={styles.emptyText}>
+            Пользователь не найден
+          </Text>
+        </View>
+      )}
+
+      {searchInput === '@' && (
+        <View style={styles.emptyContainer}>
+          <Text style={styles.emptyText}>
+            Введите имя пользователя после @
+          </Text>
+        </View>
+      )}
+    </View>
+  ) : (
+    // Обычный режим поиска
     <View>
       {SearchHeader}
 
@@ -522,6 +644,14 @@ export default function SearchScreen() {
         </TouchableOpacity>
       )}
 
+      {/* Пользователи */}
+      {userResults.length > 0 && (
+        <View>
+          <Text style={styles.sectionTitle}>Пользователи</Text>
+          {renderUserList(userResults, 3)}
+        </View>
+      )}
+
       {results.length > 0 && (
         <Text style={styles.sectionTitle}>Релизы</Text>
       )}
@@ -543,7 +673,7 @@ export default function SearchScreen() {
       {!isLoading && results.length === 0 && artistResults.length === 0 && !query && (
         <View style={styles.emptyContainer}>
           <Text style={styles.emptyText}>
-            Введите название альбома, артиста или лейбла
+            Введите название альбома, артиста или @username
           </Text>
         </View>
       )}
@@ -555,14 +685,14 @@ export default function SearchScreen() {
       <Header title="Поиск" />
 
       <RecordGrid
-        data={results}
+        data={isUserSearch ? [] : results}
         onRecordPress={handleRecordPress}
         onArtistPress={handleArtistNamePress}
         onAddToCollection={handleAddToCollection}
         onAddToWishlist={handleAddToWishlist}
         showActions
-        isLoading={isLoading}
-        onEndReached={hasMore ? loadMore : undefined}
+        isLoading={isUserSearch ? false : isLoading}
+        onEndReached={!isUserSearch && hasMore ? loadMore : undefined}
         emptyMessage=""
         ListHeaderComponent={HeaderContent}
       />
@@ -786,6 +916,11 @@ const styles = StyleSheet.create({
     ...Typography.bodyBold,
     color: Colors.text,
     marginTop: 2,
+  },
+  userStatText: {
+    ...Typography.caption,
+    color: Colors.textMuted,
+    marginRight: Spacing.xs,
   },
   loadingContainer: {
     padding: Spacing.xl,

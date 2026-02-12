@@ -27,7 +27,7 @@ export default function RootLayout() {
 
   useEffect(() => {
     if (fontsLoaded && !isLoading) {
-      SplashScreen.hideAsync();
+      SplashScreen.hideAsync().catch(() => {});
     }
   }, [fontsLoaded, isLoading]);
 
@@ -56,6 +56,8 @@ export default function RootLayout() {
             }}
           />
           <Stack.Screen name="record/[id]" />
+          <Stack.Screen name="settings/share-profile" />
+          <Stack.Screen name="user/[username]/index" />
         </Stack>
       </SafeAreaProvider>
     </GestureHandlerRootView>

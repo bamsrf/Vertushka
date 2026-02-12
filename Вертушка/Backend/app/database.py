@@ -1,6 +1,7 @@
 """
 Настройка подключения к базе данных
 """
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy.orm import declarative_base
 
@@ -48,9 +49,18 @@ async def get_db() -> AsyncSession:
 
 
 async def init_db():
-    """Инициализация базы данных (создание таблиц)"""
+    """Инициализация базы данных (создание таблиц и миграция колонок)"""
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+
+        # Миграция: добавляем новые колонки в существующие таблицы
+        # (create_all не добавляет колонки к уже существующим таблицам)
+        migrations = [
+            "ALTER TABLE gift_bookings ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP",
+            "ALTER TABLE gift_bookings ADD COLUMN IF NOT EXISTS reminder_sent_at TIMESTAMP",
+        ]
+        for sql in migrations:
+            await conn.execute(text(sql))
 
 
 async def close_db():

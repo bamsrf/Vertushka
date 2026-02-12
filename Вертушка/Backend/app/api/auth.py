@@ -1,7 +1,7 @@
 """
 API для аутентификации
 """
-from datetime import datetime
+from datetime import datetime, timezone
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -161,7 +161,7 @@ async def login(
         )
     
     # Обновление времени последнего входа
-    user.last_login_at = datetime.utcnow()
+    user.last_login_at = datetime.now(timezone.utc)
     await db.commit()
     
     access_token = create_access_token(user.id)
@@ -269,7 +269,7 @@ async def apple_sign_in(
         
         await db.commit()
     
-    user.last_login_at = datetime.utcnow()
+    user.last_login_at = datetime.now(timezone.utc)
     await db.commit()
     
     access_token = create_access_token(user.id)

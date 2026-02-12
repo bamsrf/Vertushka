@@ -22,6 +22,17 @@ import { useCollectionStore } from '../../lib/store';
 import { VinylRecord } from '../../lib/types';
 import { Colors, Typography, Spacing, BorderRadius } from '../../constants/theme';
 
+const handleArtistNavigation = async (artistName: string, router: ReturnType<typeof useRouter>) => {
+  try {
+    const response = await api.searchArtists(artistName, 1, 1);
+    if (response.results.length > 0) {
+      router.push(`/artist/${response.results[0].artist_id}`);
+    }
+  } catch {
+    // Silently fail — artist search is best-effort
+  }
+};
+
 export default function RecordDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
@@ -47,22 +58,18 @@ export default function RecordDetailScreen() {
 
   useEffect(() => {
     loadRecord();
-    // Загружаем данные коллекции и вишлиста для проверки статуса
-    fetchCollections().then(() => {
-      fetchCollectionItems();
-      fetchWishlistItems();
-    });
   }, [id]);
 
-  // Обновляем данные при возврате на экран
+  // Загружаем и обновляем коллекцию/вишлист при фокусе (включая первый mount)
   useFocusEffect(
     useCallback(() => {
-      fetchCollectionItems();
-      fetchWishlistItems();
-    }, [fetchCollectionItems, fetchWishlistItems])
+      fetchCollections()
+        .then(() => fetchCollectionItems())
+        .catch(() => {});
+      fetchWishlistItems().catch(() => {});
+    }, [fetchCollections, fetchCollectionItems, fetchWishlistItems])
   );
 
-  // Проверяем статус пластинки (новая логика из плана)
   const getRecordStatus = (): {
     status: import('@/lib/types').RecordStatus;
     copiesCount: number;
@@ -70,66 +77,39 @@ export default function RecordDetailScreen() {
     wishlistItemId: string | null;
   } => {
     if (!record) {
-      console.log('🔍 getRecordStatus: no record');
-      return {
-        status: 'not_added',
-        copiesCount: 0,
-        collectionItemId: null,
-        wishlistItemId: null
-      };
+      return { status: 'not_added', copiesCount: 0, collectionItemId: null, wishlistItemId: null };
     }
 
     const discogsId = record.discogs_id;
     const recordId = record.id;
 
-    console.log('🔍 getRecordStatus: searching...', {
-      discogsId,
-      recordId,
-      collectionItemsCount: collectionItems.length,
-      wishlistItemsCount: wishlistItems.length,
-    });
-
-    // Ищем все копии в коллекции
     const collectionCopies = collectionItems.filter(
       (item) => item.record.discogs_id === discogsId || item.record.id === recordId
     );
 
-    // Ищем в вишлисте
     const wishlistItem = wishlistItems.find(
       (item) => item.record.discogs_id === discogsId || item.record.id === recordId
     );
 
-    // ГАРАНТИЯ: сервер обеспечивает, что пластинка НЕ может быть в обоих местах
     if (collectionCopies.length > 0) {
-      const status = {
+      return {
         status: 'in_collection' as const,
         copiesCount: collectionCopies.length,
         collectionItemId: collectionCopies[0].id,
         wishlistItemId: null,
       };
-      console.log('🔍 getRecordStatus: result =', status);
-      return status;
     }
 
     if (wishlistItem) {
-      const status = {
+      return {
         status: 'in_wishlist' as const,
         copiesCount: 0,
         collectionItemId: null,
         wishlistItemId: wishlistItem.id,
       };
-      console.log('🔍 getRecordStatus: result =', status);
-      return status;
     }
 
-    const status = {
-      status: 'not_added' as const,
-      copiesCount: 0,
-      collectionItemId: null,
-      wishlistItemId: null,
-    };
-    console.log('🔍 getRecordStatus: result =', status);
-    return status;
+    return { status: 'not_added' as const, copiesCount: 0, collectionItemId: null, wishlistItemId: null };
   };
 
   const loadRecord = async () => {
@@ -139,13 +119,11 @@ export default function RecordDetailScreen() {
     setError(null);
 
     try {
-      // Пробуем получить по UUID, если не работает - по Discogs ID
-      let data: VinylRecord;
-      try {
-        data = await api.getRecord(id);
-      } catch {
-        data = await api.getRecordByDiscogsId(id);
-      }
+      // Определяем формат id: UUID или Discogs ID (число)
+      const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+      const data = isUUID
+        ? await api.getRecord(id)
+        : await api.getRecordByDiscogsId(id);
       setRecord(data);
     } catch (err) {
       setError('Не удалось загрузить информацию о пластинке');
@@ -177,7 +155,7 @@ export default function RecordDetailScreen() {
     }
 
     // Иначе просто добавляем в коллекцию
-    const discogsId = record.discogs_id || id;
+    const discogsId = String(record.discogs_id || id);
     if (!discogsId) {
       Alert.alert('Ошибка', 'Не найден идентификатор пластинки');
       return;
@@ -194,36 +172,19 @@ export default function RecordDetailScreen() {
   };
 
   const handleAddToWishlist = async () => {
-    console.log('💜 handleAddToWishlist: START', { hasRecord: !!record, id });
+    if (!record) return;
 
-    if (!record) {
-      console.log('❌ handleAddToWishlist: no record');
-      return;
-    }
-
-    // Используем discogs_id если есть, иначе пробуем исходный id параметр
-    const discogsId = record.discogs_id || id;
-    console.log('💜 handleAddToWishlist: discogsId =', discogsId);
+    const discogsId = String(record.discogs_id || id);
 
     if (!discogsId) {
-      console.log('❌ handleAddToWishlist: no discogsId');
       Alert.alert('Ошибка', 'Не найден идентификатор пластинки');
       return;
     }
 
     try {
-      console.log('💜 handleAddToWishlist: calling addToWishlist...');
       await addToWishlist(discogsId);
-      console.log('💜 handleAddToWishlist: fetching wishlist items...');
-      await fetchWishlistItems();
-      console.log('✅ handleAddToWishlist: SUCCESS');
       Alert.alert('Готово!', 'Пластинка добавлена в список желаний');
     } catch (error: any) {
-      console.error('❌ handleAddToWishlist: ERROR', {
-        message: error?.message,
-        response: error?.response?.data,
-        status: error?.response?.status,
-      });
       const message = error?.response?.data?.detail || error?.message || 'Не удалось добавить в список желаний';
       Alert.alert('Ошибка', message);
     }
@@ -231,12 +192,7 @@ export default function RecordDetailScreen() {
 
   const handleRemoveFromCollection = async () => {
     const status = getRecordStatus();
-    console.log('🗑️ handleRemoveFromCollection: status =', status);
-
-    if (!status.collectionItemId) {
-      console.log('❌ handleRemoveFromCollection: no collectionItemId');
-      return;
-    }
+    if (!status.collectionItemId) return;
 
     Alert.alert(
       'Удалить из коллекции?',
@@ -248,15 +204,9 @@ export default function RecordDetailScreen() {
           style: 'destructive',
           onPress: async () => {
             try {
-              console.log('🗑️ handleRemoveFromCollection: removing itemId =', status.collectionItemId);
-              // Передаем collectionItemId (ID конкретного элемента CollectionItem)
               await removeFromCollection(status.collectionItemId!);
-              console.log('🗑️ handleRemoveFromCollection: fetching items...');
-              await fetchCollectionItems();
-              console.log('✅ handleRemoveFromCollection: SUCCESS');
               Alert.alert('Готово!', 'Пластинка удалена из коллекции');
             } catch (error: any) {
-              console.error('❌ handleRemoveFromCollection: ERROR', error);
               Alert.alert('Ошибка', 'Не удалось удалить из коллекции');
             }
           },
@@ -280,7 +230,6 @@ export default function RecordDetailScreen() {
           onPress: async () => {
             try {
               await removeFromWishlist(status.wishlistItemId!);
-              await fetchWishlistItems();
               Alert.alert('Готово!', 'Пластинка удалена из списка желаний');
             } catch (error: any) {
               Alert.alert('Ошибка', 'Не удалось удалить из списка');
@@ -293,7 +242,7 @@ export default function RecordDetailScreen() {
 
   const handleAddCopyToCollection = async () => {
     if (!record) return;
-    const discogsId = record.discogs_id || id;
+    const discogsId = String(record.discogs_id || id);
     if (!discogsId) {
       Alert.alert('Ошибка', 'Не найден идентификатор пластинки');
       return;
@@ -301,7 +250,6 @@ export default function RecordDetailScreen() {
 
     try {
       await addToCollection(discogsId);
-      await fetchCollectionItems();
       Alert.alert('Готово!', 'Копия добавлена в коллекцию');
     } catch (error: any) {
       const message = error?.response?.data?.detail || error?.message || 'Не удалось добавить в коллекцию';
@@ -381,7 +329,12 @@ export default function RecordDetailScreen() {
 
         {/* Основная информация */}
         <View style={styles.infoSection}>
-          <Text style={styles.artist}>{record.artist}</Text>
+          <TouchableOpacity
+            onPress={() => handleArtistNavigation(record.artist, router)}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.artist}>{record.artist}</Text>
+          </TouchableOpacity>
           <Text style={styles.title}>{record.title}</Text>
 
           <View style={styles.metaRow}>
@@ -601,9 +554,9 @@ const styles = StyleSheet.create({
   },
   artist: {
     ...Typography.bodySmall,
-    color: Colors.textSecondary,
-    textTransform: 'uppercase',
+    color: Colors.primary,
     letterSpacing: 1,
+    textDecorationLine: 'underline',
     marginBottom: Spacing.xs,
   },
   title: {

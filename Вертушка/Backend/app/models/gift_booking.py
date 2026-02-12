@@ -30,12 +30,12 @@ class GiftBooking(Base):
         default=uuid.uuid4
     )
     
-    # Связь с элементом вишлиста
-    wishlist_item_id: Mapped[uuid.UUID] = mapped_column(
+    # Связь с элементом вишлиста (nullable — при переносе в коллекцию отвязываем)
+    wishlist_item_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("wishlist_items.id", ondelete="CASCADE"),
-        nullable=False,
-        unique=True,  # Один подарок - одно бронирование
+        ForeignKey("wishlist_items.id", ondelete="SET NULL"),
+        nullable=True,
+        unique=True,
         index=True
     )
     
@@ -96,7 +96,17 @@ class GiftBooking(Base):
         DateTime,
         nullable=True
     )
-    
+
+    # Срок бронирования
+    expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime,
+        nullable=True
+    )
+    reminder_sent_at: Mapped[datetime | None] = mapped_column(
+        DateTime,
+        nullable=True
+    )
+
     # Отношения
     wishlist_item = relationship("WishlistItem", back_populates="gift_booking")
     booked_by_user = relationship("User", foreign_keys=[booked_by_user_id])

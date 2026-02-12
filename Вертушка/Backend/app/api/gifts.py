@@ -1,7 +1,7 @@
 """
 API для работы с подарками (бронирование из вишлиста)
 """
-from datetime import datetime
+from datetime import datetime, timedelta
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -85,13 +85,28 @@ async def book_gift(
         gifter_phone=data.gifter_phone,
         gifter_message=data.gifter_message,
         status=GiftStatus.BOOKED,
-        cancel_token=cancel_token
+        cancel_token=cancel_token,
+        expires_at=datetime.utcnow() + timedelta(days=60)
     )
     db.add(booking)
     await db.commit()
     await db.refresh(booking)
-    
-    # TODO: Отправить уведомление владельцу вишлиста
+
+    # Отправляем уведомление владельцу вишлиста (анонимно)
+    try:
+        from app.services.notifications import send_booking_notification_to_owner
+        owner_result = await db.execute(
+            select(User).where(User.id == item.wishlist.user_id)
+        )
+        owner = owner_result.scalar_one_or_none()
+        if owner:
+            await send_booking_notification_to_owner(
+                booking=booking,
+                owner_email=owner.email,
+                record_title=item.record.title,
+            )
+    except Exception:
+        pass  # Не блокируем основной flow
     
     return GiftBookingResponse(
         id=booking.id,

@@ -16,6 +16,10 @@ import {
   MasterSearchResult,
   ReleaseSearchResult,
   ArtistSearchResult,
+  ProfileShareSettings,
+  UserWithStats,
+  UserPublic,
+  FeedItem,
 } from './types';
 
 const SEARCH_HISTORY_KEY = '@vertushka:search_history';
@@ -112,7 +116,6 @@ interface SearchState {
   clearFilters: () => void;
   search: (query?: string) => Promise<void>;
   loadMore: () => Promise<void>;
-  loadMoreArtists: () => Promise<void>;
   clearResults: () => void;
   loadHistory: () => Promise<void>;
   addToHistory: (query: string) => Promise<void>;
@@ -206,28 +209,6 @@ export const useSearchStore = create<SearchState>((set, get) => ({
     }
   },
 
-
-  loadMoreArtists: async () => {
-    const { query, artistPage, hasMoreArtists, isLoading, artistResults } = get();
-    if (!hasMoreArtists || isLoading) return;
-
-    set({ isLoading: true });
-    try {
-      const nextPage = artistPage + 1;
-      const response = await api.searchArtists(query, nextPage);
-
-      set({
-        artistResults: [...artistResults, ...response.results],
-        artistPage: nextPage,
-        hasMoreArtists: artistResults.length + response.results.length < response.total,
-        isLoading: false,
-      });
-    } catch (error) {
-      set({ isLoading: false });
-      throw error;
-    }
-  },
-
   clearResults: () => set({
     results: [],
     artistResults: [],
@@ -311,8 +292,8 @@ interface CollectionState {
   fetchWishlistItems: () => Promise<void>;
   addToCollection: (discogsId: string) => Promise<void>;
   addToWishlist: (discogsId: string) => Promise<void>;
-  removeFromCollection: (itemId: string) => Promise<void>;
-  removeFromWishlist: (itemId: string) => Promise<void>;
+  removeFromCollection: (itemId: string, skipRefetch?: boolean) => Promise<void>;
+  removeFromWishlist: (itemId: string, skipRefetch?: boolean) => Promise<void>;
   moveToCollection: (wishlistItemId: string) => Promise<void>;
 }
 
@@ -327,25 +308,13 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
   setActiveTab: (tab) => set({ activeTab: tab }),
 
   fetchCollections: async () => {
-    console.log('🔵 fetchCollections: start');
     set({ isLoading: true });
     try {
-      const token = await api.getToken();
-      console.log('🔵 fetchCollections: token exists:', !!token);
-      
       const collections = await api.getCollections();
-      console.log('🔵 fetchCollections: success, count:', collections.length);
-      
-      // Используем первую коллекцию по sort_order как дефолтную
       const sortedCollections = [...collections].sort((a, b) => a.sort_order - b.sort_order);
       const defaultCollection = sortedCollections[0] || null;
       set({ collections, defaultCollection, isLoading: false });
-    } catch (error: any) {
-      console.log('❌ fetchCollections error:', {
-        message: error?.message,
-        status: error?.response?.status,
-        data: error?.response?.data,
-      });
+    } catch (error) {
       set({ isLoading: false });
       throw error;
     }
@@ -353,21 +322,11 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
 
   fetchCollectionItems: async () => {
     const { defaultCollection } = get();
-    console.log('🔵 fetchCollectionItems:', { hasDefaultCollection: !!defaultCollection, collectionId: defaultCollection?.id });
     if (!defaultCollection) return;
 
     set({ isLoading: true });
     try {
       const items = await api.getCollectionItems(defaultCollection.id);
-      console.log('🔵 fetchCollectionItems: loaded', items.length, 'items');
-      items.slice(0, 3).forEach((item, index) => {
-        console.log(`🔵 Item ${index}:`, {
-          id: item.id,
-          collection_id: item.collection_id,
-          record_id: item.record_id,
-          recordId: (item as any).recordId,
-        });
-      });
       set({ collectionItems: items, isLoading: false });
     } catch (error) {
       set({ isLoading: false });
@@ -389,17 +348,8 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
   addToCollection: async (discogsId) => {
     let { defaultCollection, collections, fetchCollectionItems, fetchWishlistItems } = get();
 
-    console.log('🔵 addToCollection: start', {
-      discogsId,
-      hasDefaultCollection: !!defaultCollection,
-      collectionsCount: collections.length,
-    });
-
-    // Если нет коллекций - создаём первую
     if (!defaultCollection) {
       if (collections.length === 0) {
-        console.log('🔵 addToCollection: creating default collection...');
-        // Создаём коллекцию по умолчанию
         await api.createCollection({ name: 'Моя коллекция' });
         await get().fetchCollections();
         defaultCollection = get().defaultCollection;
@@ -410,16 +360,12 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
       }
     }
 
-    console.log('🔵 addToCollection: adding to collection', defaultCollection.id);
     await api.addToCollection(defaultCollection.id, discogsId);
 
-    // Обновляем ОБА списка, т.к. сервер мог автоматически удалить из вишлиста
     await Promise.all([
       fetchCollectionItems(),
       fetchWishlistItems()
     ]);
-
-    console.log('✅ addToCollection: success');
   },
 
   addToWishlist: async (discogsId) => {
@@ -430,24 +376,20 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
     await get().fetchWishlistItems();
   },
 
-  removeFromCollection: async (itemId) => {
-    const { defaultCollection, fetchCollectionItems } = get();
-
-    console.log('🗑️ removeFromCollection:', { collectionId: defaultCollection?.id, itemId });
+  removeFromCollection: async (itemId, skipRefetch = false) => {
+    const { defaultCollection } = get();
 
     if (!defaultCollection || !itemId) {
-      console.error('❌ removeFromCollection: missing collectionId or itemId');
       throw new Error('Не указана коллекция или элемент');
     }
 
-    // API ожидает item_id (ID конкретного элемента CollectionItem)
     await api.removeFromCollection(defaultCollection.id, itemId);
-    await fetchCollectionItems();
+    if (!skipRefetch) await get().fetchCollectionItems();
   },
 
-  removeFromWishlist: async (itemId) => {
+  removeFromWishlist: async (itemId, skipRefetch = false) => {
     await api.removeFromWishlist(itemId);
-    await get().fetchWishlistItems();
+    if (!skipRefetch) await get().fetchWishlistItems();
   },
 
   moveToCollection: async (wishlistItemId) => {
@@ -502,4 +444,228 @@ export const useScannerStore = create<ScannerState>((set) => ({
   },
 
   clearScan: () => set({ scannedBarcode: null, scanResults: [] }),
+}));
+
+// ==================== Profile Store ====================
+
+interface ProfileState {
+  settings: ProfileShareSettings | null;
+  isLoading: boolean;
+  isSaving: boolean;
+
+  // Actions
+  fetchSettings: () => Promise<void>;
+  updateSettings: (data: Partial<ProfileShareSettings>) => Promise<void>;
+  updateHighlights: (recordIds: string[]) => Promise<void>;
+}
+
+export const useProfileStore = create<ProfileState>((set, get) => ({
+  settings: null,
+  isLoading: false,
+  isSaving: false,
+
+  fetchSettings: async () => {
+    set({ isLoading: true });
+    try {
+      const settings = await api.getProfileSettings();
+      set({ settings, isLoading: false });
+    } catch (error) {
+      set({ isLoading: false });
+      throw error;
+    }
+  },
+
+  updateSettings: async (data) => {
+    const prev = get().settings;
+    // Optimistic update — Switch не будет дёргаться
+    set({ settings: prev ? { ...prev, ...data } : null, isSaving: true });
+    try {
+      const settings = await api.updateProfileSettings(data);
+      set({ settings, isSaving: false });
+    } catch (error) {
+      // Откат при ошибке
+      set({ settings: prev, isSaving: false });
+      throw error;
+    }
+  },
+
+  updateHighlights: async (recordIds) => {
+    set({ isSaving: true });
+    try {
+      const settings = await api.updateProfileHighlights(recordIds);
+      set({ settings, isSaving: false });
+    } catch (error) {
+      set({ isSaving: false });
+      throw error;
+    }
+  },
+}));
+
+// ==================== User Search Store ====================
+
+interface UserSearchState {
+  query: string;
+  results: UserWithStats[];
+  isLoading: boolean;
+  page: number;
+  hasMore: boolean;
+
+  // Actions
+  setQuery: (query: string) => void;
+  search: (query?: string) => Promise<void>;
+  loadMore: () => Promise<void>;
+  clearResults: () => void;
+}
+
+export const useUserSearchStore = create<UserSearchState>((set, get) => ({
+  query: '',
+  results: [],
+  isLoading: false,
+  page: 1,
+  hasMore: false,
+
+  setQuery: (query) => set({ query }),
+
+  search: async (newQuery) => {
+    const query = newQuery ?? get().query;
+    if (!query.trim() || query.trim().length < 2) {
+      set({ results: [], hasMore: false });
+      return;
+    }
+
+    set({ isLoading: true, query, page: 1 });
+    try {
+      const results = await api.searchUsers(query, 1);
+      set({
+        results,
+        hasMore: results.length >= 20,
+        isLoading: false,
+      });
+    } catch (error) {
+      set({ isLoading: false });
+      throw error;
+    }
+  },
+
+  loadMore: async () => {
+    const { query, page, hasMore, isLoading, results } = get();
+    if (!hasMore || isLoading) return;
+
+    set({ isLoading: true });
+    try {
+      const nextPage = page + 1;
+      const newResults = await api.searchUsers(query, nextPage);
+      set({
+        results: [...results, ...newResults],
+        page: nextPage,
+        hasMore: newResults.length >= 20,
+        isLoading: false,
+      });
+    } catch (error) {
+      set({ isLoading: false });
+      throw error;
+    }
+  },
+
+  clearResults: () => set({ results: [], query: '', page: 1, hasMore: false }),
+}));
+
+// ==================== Follow Store ====================
+
+interface FollowState {
+  following: UserPublic[];
+  followers: UserPublic[];
+  feed: FeedItem[];
+  isLoadingFollowing: boolean;
+  isLoadingFollowers: boolean;
+  isLoadingFeed: boolean;
+  feedPage: number;
+  hasMoreFeed: boolean;
+
+  // Actions
+  fetchFollowing: () => Promise<void>;
+  fetchFollowers: () => Promise<void>;
+  followUser: (userId: string) => Promise<void>;
+  unfollowUser: (userId: string) => Promise<void>;
+  fetchFeed: () => Promise<void>;
+  loadMoreFeed: () => Promise<void>;
+}
+
+export const useFollowStore = create<FollowState>((set, get) => ({
+  following: [],
+  followers: [],
+  feed: [],
+  isLoadingFollowing: false,
+  isLoadingFollowers: false,
+  isLoadingFeed: false,
+  feedPage: 1,
+  hasMoreFeed: false,
+
+  fetchFollowing: async () => {
+    set({ isLoadingFollowing: true });
+    try {
+      const following = await api.getFollowing();
+      set({ following, isLoadingFollowing: false });
+    } catch (error) {
+      set({ isLoadingFollowing: false });
+      throw error;
+    }
+  },
+
+  fetchFollowers: async () => {
+    set({ isLoadingFollowers: true });
+    try {
+      const followers = await api.getFollowers();
+      set({ followers, isLoadingFollowers: false });
+    } catch (error) {
+      set({ isLoadingFollowers: false });
+      throw error;
+    }
+  },
+
+  followUser: async (userId) => {
+    await api.followUser(userId);
+    await get().fetchFollowing();
+  },
+
+  unfollowUser: async (userId) => {
+    await api.unfollowUser(userId);
+    await get().fetchFollowing();
+  },
+
+  fetchFeed: async () => {
+    set({ isLoadingFeed: true, feedPage: 1 });
+    try {
+      const feed = await api.getFeed(1);
+      set({
+        feed,
+        feedPage: 1,
+        hasMoreFeed: feed.length >= 20,
+        isLoadingFeed: false,
+      });
+    } catch (error) {
+      set({ isLoadingFeed: false });
+      throw error;
+    }
+  },
+
+  loadMoreFeed: async () => {
+    const { feedPage, hasMoreFeed, isLoadingFeed, feed } = get();
+    if (!hasMoreFeed || isLoadingFeed) return;
+
+    set({ isLoadingFeed: true });
+    try {
+      const nextPage = feedPage + 1;
+      const newItems = await api.getFeed(nextPage);
+      set({
+        feed: [...feed, ...newItems],
+        feedPage: nextPage,
+        hasMoreFeed: newItems.length >= 20,
+        isLoadingFeed: false,
+      });
+    } catch (error) {
+      set({ isLoadingFeed: false });
+      throw error;
+    }
+  },
 }));

@@ -109,6 +109,14 @@ class User(Base):
         cascade="all, delete-orphan"
     )
     
+    # Настройки публичного профиля
+    profile_share = relationship(
+        "ProfileShare",
+        back_populates="user",
+        uselist=False,
+        cascade="all, delete-orphan"
+    )
+
     # Подписки (кого пользователь фоловит)
     following = relationship(
         "Follow",

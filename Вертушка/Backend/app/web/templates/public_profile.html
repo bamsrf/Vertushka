@@ -1,0 +1,781 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% if profile.custom_title %}{{ profile.custom_title }}{% else %}Коллекция @{{ user.username }}{% endif %} — Вертушка</title>
+
+    <!-- Open Graph -->
+    <meta property="og:type" content="profile">
+    <meta property="og:title" content="Коллекция винила @{{ user.username }}">
+    <meta property="og:description" content="{{ og_description }}">
+    <meta property="og:image" content="{{ base_url }}/@{{ user.username }}/og-image.png">
+    <meta property="og:url" content="{{ base_url }}/@{{ user.username }}">
+    <meta property="og:site_name" content="Вертушка">
+
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Коллекция винила @{{ user.username }}">
+    <meta name="twitter:description" content="{{ og_description }}">
+    <meta name="twitter:image" content="{{ base_url }}/@{{ user.username }}/og-image.png">
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-primary: #0f0f0f;
+            --bg-secondary: #1a1a1a;
+            --bg-card: #252525;
+            --text-primary: #ffffff;
+            --text-secondary: #a0a0a0;
+            --accent: #e85d04;
+            --accent-hover: #f77f00;
+            --success: #06d6a0;
+            --warning: #ffd166;
+            --border: #333333;
+            --radius: 12px;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Montserrat', sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 2rem 1rem;
+        }
+
+        /* ====== Profile Header ====== */
+        .profile-header {
+            text-align: center;
+            margin-bottom: 2.5rem;
+            padding: 2.5rem 2rem;
+            background: linear-gradient(135deg, var(--bg-secondary) 0%, var(--bg-card) 100%);
+            border-radius: var(--radius);
+            border: 1px solid var(--border);
+        }
+
+        .profile-avatar {
+            width: 96px;
+            height: 96px;
+            border-radius: 50%;
+            border: 3px solid var(--accent);
+            object-fit: cover;
+            margin-bottom: 1rem;
+        }
+
+        .profile-avatar-placeholder {
+            width: 96px;
+            height: 96px;
+            border-radius: 50%;
+            border: 3px solid var(--accent);
+            background: var(--bg-secondary);
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 2.5rem;
+            margin-bottom: 1rem;
+        }
+
+        .profile-username {
+            font-size: 1.75rem;
+            font-weight: 700;
+            margin-bottom: 0.25rem;
+        }
+
+        .profile-bio {
+            color: var(--text-secondary);
+            font-size: 0.95rem;
+            max-width: 500px;
+            margin: 0.5rem auto 0;
+        }
+
+        .profile-custom-title {
+            color: var(--text-secondary);
+            font-style: italic;
+            margin-bottom: 0.5rem;
+        }
+
+        /* Stats */
+        .stats-row {
+            display: flex;
+            justify-content: center;
+            gap: 2rem;
+            margin-top: 1.5rem;
+            flex-wrap: wrap;
+        }
+
+        .stat-item {
+            text-align: center;
+            min-width: 80px;
+        }
+
+        .stat-value {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: var(--accent);
+        }
+
+        .stat-label {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        /* ====== Highlights ====== */
+        .highlights-section {
+            margin-bottom: 2.5rem;
+        }
+
+        .section-title {
+            font-size: 1.1rem;
+            font-weight: 600;
+            margin-bottom: 1rem;
+            color: var(--text-secondary);
+        }
+
+        .highlights-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 1rem;
+        }
+
+        .highlight-card {
+            border-radius: var(--radius);
+            overflow: hidden;
+            border: 1px solid var(--border);
+            background: var(--bg-card);
+            transition: transform 0.2s;
+        }
+
+        .highlight-card:hover {
+            transform: translateY(-4px);
+        }
+
+        .highlight-cover {
+            aspect-ratio: 1;
+            width: 100%;
+            object-fit: cover;
+            display: block;
+        }
+
+        .highlight-info {
+            padding: 0.75rem;
+        }
+
+        .highlight-title {
+            font-size: 0.85rem;
+            font-weight: 600;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .highlight-artist {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        /* ====== Tabs ====== */
+        .tabs {
+            display: flex;
+            gap: 0;
+            margin-bottom: 2rem;
+            border-bottom: 2px solid var(--border);
+        }
+
+        .tab {
+            padding: 0.875rem 1.5rem;
+            font-size: 0.95rem;
+            font-weight: 600;
+            color: var(--text-secondary);
+            cursor: pointer;
+            border: none;
+            background: none;
+            font-family: inherit;
+            border-bottom: 2px solid transparent;
+            margin-bottom: -2px;
+            transition: color 0.2s, border-color 0.2s;
+        }
+
+        .tab:hover {
+            color: var(--text-primary);
+        }
+
+        .tab.active {
+            color: var(--accent);
+            border-bottom-color: var(--accent);
+        }
+
+        .tab-count {
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            margin-left: 0.25rem;
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        /* ====== Records Grid ====== */
+        .records-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+            gap: 1.25rem;
+        }
+
+        .record-card {
+            background: var(--bg-card);
+            border-radius: var(--radius);
+            overflow: hidden;
+            border: 1px solid var(--border);
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .record-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 12px 24px rgba(0, 0, 0, 0.4);
+        }
+
+        .record-card.booked {
+            opacity: 0.7;
+        }
+
+        .record-cover-wrap {
+            position: relative;
+            aspect-ratio: 1;
+        }
+
+        .record-cover {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            background: var(--bg-secondary);
+            display: block;
+        }
+
+        .booked-overlay {
+            position: absolute;
+            bottom: 0.5rem;
+            left: 0.5rem;
+            padding: 0.25rem 0.6rem;
+            background: var(--warning);
+            color: var(--bg-primary);
+            font-size: 0.7rem;
+            font-weight: 700;
+            border-radius: 100px;
+        }
+
+        .record-info {
+            padding: 1rem;
+        }
+
+        .record-title {
+            font-size: 0.9rem;
+            font-weight: 600;
+            margin-bottom: 0.2rem;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .record-artist {
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            margin-bottom: 0.5rem;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .record-meta {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.4rem;
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+        }
+
+        .record-meta span::after {
+            content: "\00b7";
+            margin-left: 0.4rem;
+        }
+
+        .record-meta span:last-child::after {
+            content: "";
+        }
+
+        .record-price {
+            color: var(--accent);
+            font-weight: 600;
+        }
+
+        /* Wishlist booking button */
+        .book-btn {
+            width: 100%;
+            padding: 0.75rem;
+            margin-top: 0.75rem;
+            background: var(--accent);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s;
+            font-family: inherit;
+        }
+
+        .book-btn:hover { background: var(--accent-hover); }
+        .book-btn:disabled { background: var(--border); cursor: not-allowed; }
+
+        /* ====== Modal ====== */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.8);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+            padding: 1rem;
+        }
+
+        .modal-overlay.active { display: flex; }
+
+        .modal {
+            background: var(--bg-card);
+            border-radius: var(--radius);
+            width: 100%;
+            max-width: 480px;
+            padding: 2rem;
+        }
+
+        .modal-title {
+            font-size: 1.25rem;
+            font-weight: 700;
+            margin-bottom: 1.5rem;
+        }
+
+        .form-group { margin-bottom: 1rem; }
+
+        .form-label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-size: 0.875rem;
+            color: var(--text-secondary);
+        }
+
+        .form-input {
+            width: 100%;
+            padding: 0.75rem 1rem;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+            font-size: 1rem;
+            font-family: inherit;
+        }
+
+        .form-input:focus {
+            outline: none;
+            border-color: var(--accent);
+        }
+
+        .form-textarea {
+            min-height: 80px;
+            resize: vertical;
+        }
+
+        .modal-actions {
+            display: flex;
+            gap: 1rem;
+            margin-top: 1.5rem;
+        }
+
+        .btn-secondary {
+            flex: 1;
+            padding: 0.75rem;
+            background: transparent;
+            border: 1px solid var(--border);
+            color: var(--text-primary);
+            border-radius: 8px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            cursor: pointer;
+            font-family: inherit;
+        }
+
+        .btn-primary {
+            flex: 1;
+            padding: 0.75rem;
+            background: var(--accent);
+            border: none;
+            color: white;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            cursor: pointer;
+            font-family: inherit;
+        }
+
+        .btn-primary:hover { background: var(--accent-hover); }
+
+        /* ====== Empty ====== */
+        .empty-state {
+            text-align: center;
+            padding: 4rem 2rem;
+            color: var(--text-secondary);
+        }
+
+        .empty-state-icon { font-size: 3rem; margin-bottom: 0.75rem; }
+
+        /* ====== Footer ====== */
+        .footer {
+            text-align: center;
+            padding: 3rem 1rem 2rem;
+            color: var(--text-secondary);
+            font-size: 0.875rem;
+        }
+
+        .footer a { color: var(--accent); text-decoration: none; }
+        .footer a:hover { text-decoration: underline; }
+
+        .cta-btn {
+            display: inline-block;
+            margin-top: 1rem;
+            padding: 0.75rem 2rem;
+            background: var(--accent);
+            color: white;
+            border-radius: 8px;
+            font-weight: 600;
+            text-decoration: none;
+            font-size: 0.95rem;
+            transition: background 0.2s;
+        }
+
+        .cta-btn:hover { background: var(--accent-hover); text-decoration: none; }
+
+        /* ====== Responsive ====== */
+        @media (max-width: 768px) {
+            .highlights-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+            .records-grid {
+                grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+                gap: 0.75rem;
+            }
+            .stats-row { gap: 1.25rem; }
+            .record-info { padding: 0.75rem; }
+            .container { padding: 1rem; }
+        }
+
+        @media (max-width: 480px) {
+            .profile-header { padding: 1.5rem 1rem; }
+            .profile-username { font-size: 1.35rem; }
+            .tab { padding: 0.75rem 1rem; font-size: 0.85rem; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- ====== Profile Header ====== -->
+        <header class="profile-header">
+            {% if user.avatar_url %}
+            <img src="{{ user.avatar_url }}" alt="@{{ user.username }}" class="profile-avatar">
+            {% else %}
+            <div class="profile-avatar-placeholder">🎵</div>
+            {% endif %}
+
+            <h1 class="profile-username">@{{ user.username }}</h1>
+
+            {% if profile.custom_title %}
+            <p class="profile-custom-title">{{ profile.custom_title }}</p>
+            {% endif %}
+
+            {% if user.bio %}
+            <p class="profile-bio">{{ user.bio }}</p>
+            {% endif %}
+
+            <div class="stats-row">
+                <div class="stat-item">
+                    <div class="stat-value">{{ collection_count }}</div>
+                    <div class="stat-label">Пластинок</div>
+                </div>
+                {% if collection_value is not none and profile.show_collection_value %}
+                <div class="stat-item">
+                    <div class="stat-value">~${{ "{:,.0f}".format(collection_value) }}</div>
+                    <div class="stat-label">Стоимость</div>
+                </div>
+                {% endif %}
+                {% if profile.show_wishlist %}
+                <div class="stat-item">
+                    <div class="stat-value">{{ wishlist_count }}</div>
+                    <div class="stat-label">В вишлисте</div>
+                </div>
+                {% endif %}
+                <div class="stat-item">
+                    <div class="stat-value">{{ followers_count }}</div>
+                    <div class="stat-label">Подписчиков</div>
+                </div>
+            </div>
+        </header>
+
+        <!-- ====== Highlights ====== -->
+        {% if highlights %}
+        <section class="highlights-section">
+            <h2 class="section-title">&#11088; Избранное</h2>
+            <div class="highlights-grid">
+                {% for record in highlights %}
+                <div class="highlight-card">
+                    <img
+                        src="{{ record.cover_image_url or '/static/placeholder.jpg' }}"
+                        alt="{{ record.title }}"
+                        class="highlight-cover"
+                        loading="lazy"
+                    >
+                    <div class="highlight-info">
+                        <div class="highlight-title">{{ record.title }}</div>
+                        <div class="highlight-artist">{{ record.artist }}</div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </section>
+        {% endif %}
+
+        <!-- ====== Tabs ====== -->
+        {% if profile.show_collection or profile.show_wishlist %}
+        <div class="tabs">
+            {% if profile.show_collection %}
+            <button class="tab {% if active_tab == 'collection' %}active{% endif %}" data-tab="collection">
+                Коллекция<span class="tab-count">({{ collection_count }})</span>
+            </button>
+            {% endif %}
+            {% if profile.show_wishlist %}
+            <button class="tab {% if active_tab == 'wishlist' %}active{% endif %}" data-tab="wishlist">
+                Вишлист<span class="tab-count">({{ wishlist_count }})</span>
+            </button>
+            {% endif %}
+        </div>
+
+        <!-- Collection Tab -->
+        {% if profile.show_collection %}
+        <div class="tab-content {% if active_tab == 'collection' %}active{% endif %}" id="tab-collection">
+            {% if collection_items %}
+            <div class="records-grid">
+                {% for item in collection_items %}
+                <div class="record-card">
+                    <div class="record-cover-wrap">
+                        <img
+                            src="{{ item.record.cover_image_url or '/static/placeholder.jpg' }}"
+                            alt="{{ item.record.title }}"
+                            class="record-cover"
+                            loading="lazy"
+                        >
+                    </div>
+                    <div class="record-info">
+                        <div class="record-title">{{ item.record.title }}</div>
+                        <div class="record-artist">{{ item.record.artist }}</div>
+                        <div class="record-meta">
+                            {% if profile.show_record_year and item.record.year %}
+                            <span>{{ item.record.year }}</span>
+                            {% endif %}
+                            {% if profile.show_record_label and item.record.label %}
+                            <span>{{ item.record.label }}</span>
+                            {% endif %}
+                            {% if profile.show_record_format and item.record.format_type %}
+                            <span>{{ item.record.format_type }}</span>
+                            {% endif %}
+                            {% if profile.show_record_prices and item.record.estimated_price_median %}
+                            <span class="record-price">~${{ item.record.estimated_price_median }}</span>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <div class="empty-state">
+                <div class="empty-state-icon">📀</div>
+                <p>Коллекция пока пуста</p>
+            </div>
+            {% endif %}
+        </div>
+        {% endif %}
+
+        <!-- Wishlist Tab -->
+        {% if profile.show_wishlist %}
+        <div class="tab-content {% if active_tab == 'wishlist' %}active{% endif %}" id="tab-wishlist">
+            {% if wishlist_items %}
+            <div class="records-grid">
+                {% for item in wishlist_items %}
+                {% set is_booked = item.gift_booking is not none %}
+                <div class="record-card {% if is_booked %}booked{% endif %}">
+                    <div class="record-cover-wrap">
+                        <img
+                            src="{{ item.record.cover_image_url or '/static/placeholder.jpg' }}"
+                            alt="{{ item.record.title }}"
+                            class="record-cover"
+                            loading="lazy"
+                        >
+                        {% if is_booked %}
+                        <div class="booked-overlay">🎁 Забронировано</div>
+                        {% endif %}
+                    </div>
+                    <div class="record-info">
+                        <div class="record-title">{{ item.record.title }}</div>
+                        <div class="record-artist">{{ item.record.artist }}</div>
+                        <div class="record-meta">
+                            {% if profile.show_record_year and item.record.year %}
+                            <span>{{ item.record.year }}</span>
+                            {% endif %}
+                            {% if profile.show_record_prices and item.record.estimated_price_median %}
+                            <span class="record-price">~${{ item.record.estimated_price_median }}</span>
+                            {% endif %}
+                        </div>
+                        <button
+                            class="book-btn"
+                            {% if is_booked %}disabled{% endif %}
+                            onclick="openBookingModal('{{ item.id }}', '{{ item.record.title|e }}', '{{ item.record.artist|e }}')"
+                        >
+                            {% if is_booked %}Уже забронировано{% else %}🎁 Подарить{% endif %}
+                        </button>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <div class="empty-state">
+                <div class="empty-state-icon">🎵</div>
+                <p>Вишлист пока пуст</p>
+            </div>
+            {% endif %}
+        </div>
+        {% endif %}
+        {% endif %}
+
+        <!-- ====== Footer ====== -->
+        <footer class="footer">
+            <p>Создано в <a href="{{ base_url }}">Вертушка</a> 🎶</p>
+            <a href="{{ base_url }}" class="cta-btn">Создать свой профиль</a>
+        </footer>
+    </div>
+
+    <!-- ====== Booking Modal ====== -->
+    <div class="modal-overlay" id="bookingModal">
+        <div class="modal">
+            <h2 class="modal-title">🎁 Забронировать подарок</h2>
+            <p id="bookingRecordInfo" style="margin-bottom: 1.5rem; color: var(--text-secondary);"></p>
+
+            <form id="bookingForm">
+                <input type="hidden" id="itemId" name="wishlist_item_id">
+
+                <div class="form-group">
+                    <label class="form-label">Ваше имя *</label>
+                    <input type="text" class="form-input" name="gifter_name" required>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Email * (для уведомлений и отмены)</label>
+                    <input type="email" class="form-input" name="gifter_email" required>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Сообщение (необязательно)</label>
+                    <textarea class="form-input form-textarea" name="gifter_message" placeholder="Добавьте поздравление..."></textarea>
+                </div>
+
+                <div class="modal-actions">
+                    <button type="button" class="btn-secondary" onclick="closeBookingModal()">Отмена</button>
+                    <button type="submit" class="btn-primary">Забронировать</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        // ====== Tabs ======
+        document.querySelectorAll('.tab').forEach(function(tab) {
+            tab.addEventListener('click', function() {
+                var target = this.dataset.tab;
+
+                document.querySelectorAll('.tab').forEach(function(t) { t.classList.remove('active'); });
+                document.querySelectorAll('.tab-content').forEach(function(c) { c.classList.remove('active'); });
+
+                this.classList.add('active');
+                var content = document.getElementById('tab-' + target);
+                if (content) content.classList.add('active');
+
+                // Update URL without reload
+                var url = new URL(window.location);
+                url.searchParams.set('tab', target);
+                history.replaceState(null, '', url);
+            });
+        });
+
+        // ====== Booking Modal ======
+        var bookingModal = document.getElementById('bookingModal');
+        var bookingForm = document.getElementById('bookingForm');
+        var bookingRecordInfo = document.getElementById('bookingRecordInfo');
+        var itemIdInput = document.getElementById('itemId');
+
+        function openBookingModal(itemId, title, artist) {
+            itemIdInput.value = itemId;
+            bookingRecordInfo.textContent = artist + ' — ' + title;
+            bookingModal.classList.add('active');
+        }
+
+        function closeBookingModal() {
+            bookingModal.classList.remove('active');
+            bookingForm.reset();
+        }
+
+        bookingModal.addEventListener('click', function(e) {
+            if (e.target === bookingModal) closeBookingModal();
+        });
+
+        bookingForm.addEventListener('submit', async function(e) {
+            e.preventDefault();
+
+            var formData = new FormData(bookingForm);
+            var data = Object.fromEntries(formData.entries());
+
+            try {
+                var response = await fetch('/api/gifts/book', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data),
+                });
+
+                if (response.ok) {
+                    alert('Подарок успешно забронирован! Спасибо! 🎁');
+                    closeBookingModal();
+                    location.reload();
+                } else {
+                    var error = await response.json();
+                    alert('Ошибка: ' + (error.detail || 'Не удалось забронировать'));
+                }
+            } catch (err) {
+                alert('Ошибка подключения. Попробуйте позже.');
+            }
+        });
+    </script>
+</body>
+</html>

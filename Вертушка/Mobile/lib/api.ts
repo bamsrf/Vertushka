@@ -22,12 +22,20 @@ import {
   ReleaseSearchResponse,
   ArtistSearchResponse,
   Artist,
+  ProfileShareSettings,
+  PublicProfile,
+  UserWithStats,
+  UserPublic,
+  WishlistPublicResponse,
+  FeedItem,
+  GiftBookingCreate,
+  GiftBookingResponse,
 } from './types';
 
 // API сервер
 // Для локальной разработки с бэкендом на localhost:
 const API_BASE_URL = __DEV__
-  ? 'http://192.168.1.66:8000/api'  // Локальный IP для разработки (работает на симуляторе и физическом устройстве)
+  ? 'http://192.168.1.73:8000/api'  // Локальный IP для разработки (работает на симуляторе и физическом устройстве)
   : 'https://api.vinyl-vertushka.ru/api'; // Продакшен сервер
 
 const TOKEN_KEY = 'auth_token';
@@ -53,21 +61,11 @@ class ApiClient {
       },
     });
 
-    // Интерцептор для добавления токена и логирования
     this.client.interceptors.request.use(async (config) => {
       const token = await this.getToken();
       if (token) {
         config.headers.Authorization = `Bearer ${token}`;
       }
-      // Debug logging
-      console.log('🔑 Request:', {
-        method: config.method,
-        url: config.url,
-        hasAuthHeader: !!config.headers.Authorization,
-        authHeaderPreview: config.headers.Authorization 
-          ? `${String(config.headers.Authorization).substring(0, 40)}...` 
-          : null,
-      });
       return config;
     });
 
@@ -83,13 +81,9 @@ class ApiClient {
 
           if (retryCount < MAX_RETRIES) {
             originalRequest._retryCount = retryCount + 1;
-            console.log(`🔄 Retry ${retryCount + 1}/${MAX_RETRIES} после 503...`);
-
-            await sleep(RETRY_DELAY * (retryCount + 1)); // Увеличиваем задержку с каждой попыткой
+            await sleep(RETRY_DELAY * (retryCount + 1));
             return this.client(originalRequest);
           }
-
-          console.log('❌ Все попытки retry исчерпаны');
         }
 
         // Если 401 и это не запрос на refresh — пробуем обновить токен
@@ -406,20 +400,7 @@ class ApiClient {
   }
 
   async removeFromCollection(collectionId: string, itemId: string): Promise<void> {
-    console.log('🔴 API.removeFromCollection:', { collectionId, itemId });
-    try {
-      // Используем новый endpoint для удаления конкретного элемента по item_id
-      const response = await this.client.delete(`/collections/${collectionId}/items/${itemId}`);
-      console.log('✅ API.removeFromCollection: success', response.status);
-    } catch (error: any) {
-      console.error('❌ API.removeFromCollection: error', {
-        status: error?.response?.status,
-        statusText: error?.response?.statusText,
-        data: error?.response?.data,
-        message: error?.message,
-      });
-      throw error;
-    }
+    await this.client.delete(`/collections/${collectionId}/items/${itemId}`);
   }
 
   // ==================== Wishlists ====================
@@ -439,45 +420,22 @@ class ApiClient {
     discogsId: string,
     data?: { priority?: number; notes?: string }
   ): Promise<WishlistItem> {
-    console.log('💜 API.addToWishlist: START', { discogsId, data });
-    try {
-      const response = await this.client.post<WishlistItem>('/wishlists/items', {
-        discogs_id: discogsId,
-        ...data,
-      });
-      console.log('✅ API.addToWishlist: SUCCESS', { status: response.status, data: response.data });
-      return response.data;
-    } catch (error: any) {
-      console.error('❌ API.addToWishlist: ERROR', {
-        status: error?.response?.status,
-        statusText: error?.response?.statusText,
-        data: error?.response?.data,
-        message: error?.message,
-      });
-      throw error;
-    }
+    const response = await this.client.post<WishlistItem>('/wishlists/items', {
+      discogs_id: discogsId,
+      ...data,
+    });
+    return response.data;
   }
 
   async addToWishlistByRecordId(
     recordId: string,
     data?: { priority?: number; notes?: string }
   ): Promise<WishlistItem> {
-    console.log('💜 API.addToWishlistByRecordId: START', { recordId, data });
-    try {
-      const response = await this.client.post<WishlistItem>('/wishlists/items', {
-        record_id: recordId,
-        ...data,
-      });
-      console.log('✅ API.addToWishlistByRecordId: SUCCESS', response.data);
-      return response.data;
-    } catch (error: any) {
-      console.error('❌ API.addToWishlistByRecordId: ERROR', {
-        status: error?.response?.status,
-        data: error?.response?.data,
-        message: error?.message,
-      });
-      throw error;
-    }
+    const response = await this.client.post<WishlistItem>('/wishlists/items', {
+      record_id: recordId,
+      ...data,
+    });
+    return response.data;
   }
 
   async removeFromWishlist(itemId: string): Promise<void> {
@@ -493,9 +451,98 @@ class ApiClient {
     return response.data;
   }
 
-  async getPublicWishlistUrl(): Promise<string> {
-    const response = await this.client.get<{ url: string }>('/wishlists/public-url');
-    return response.data.url;
+  async getPublicWishlistUrl(): Promise<{ share_token: string; share_url: string }> {
+    const response = await this.client.post<{ share_token: string; share_url: string }>('/wishlists/generate-link');
+    return response.data;
+  }
+
+  // ==================== Public Profile ====================
+
+  async getProfileSettings(): Promise<ProfileShareSettings> {
+    const response = await this.client.get<ProfileShareSettings>('/profile/settings');
+    return response.data;
+  }
+
+  async updateProfileSettings(data: Partial<ProfileShareSettings>): Promise<ProfileShareSettings> {
+    const response = await this.client.put<ProfileShareSettings>('/profile/settings', data);
+    return response.data;
+  }
+
+  async updateProfileHighlights(recordIds: string[]): Promise<ProfileShareSettings> {
+    const response = await this.client.put<ProfileShareSettings>('/profile/highlights', {
+      record_ids: recordIds,
+    });
+    return response.data;
+  }
+
+  async getPublicProfile(username: string): Promise<PublicProfile> {
+    const response = await this.client.get<PublicProfile>(`/profile/public/${username}`);
+    return response.data;
+  }
+
+  // ==================== Users (by username) ====================
+
+  async getUserByUsername(username: string): Promise<UserWithStats> {
+    const response = await this.client.get<UserWithStats>(`/users/by-username/${username}`);
+    return response.data;
+  }
+
+  async getUserWishlistByUsername(username: string): Promise<WishlistPublicResponse> {
+    const response = await this.client.get<WishlistPublicResponse>(`/users/by-username/${username}/wishlist/`);
+    return response.data;
+  }
+
+  async followUser(userId: string): Promise<void> {
+    await this.client.post(`/users/${userId}/follow`);
+  }
+
+  async unfollowUser(userId: string): Promise<void> {
+    await this.client.delete(`/users/${userId}/follow`);
+  }
+
+  async searchUsers(
+    query: string,
+    page = 1,
+    perPage = 20
+  ): Promise<UserWithStats[]> {
+    const params = { q: query, page, per_page: perPage };
+    const response = await this.client.get<UserWithStats[]>('/users/search', { params });
+    return response.data;
+  }
+
+  async getUserCollection(
+    userId: string,
+    page = 1,
+    perPage = 50
+  ): Promise<Collection[]> {
+    const params = { page, per_page: perPage };
+    const response = await this.client.get<Collection[]>(`/users/${userId}/collection`, { params });
+    return response.data;
+  }
+
+  async getFollowing(page = 1, perPage = 20): Promise<UserPublic[]> {
+    const params = { page, per_page: perPage };
+    const response = await this.client.get<UserPublic[]>('/users/me/following', { params });
+    return response.data;
+  }
+
+  async getFollowers(page = 1, perPage = 20): Promise<UserPublic[]> {
+    const params = { page, per_page: perPage };
+    const response = await this.client.get<UserPublic[]>('/users/me/followers', { params });
+    return response.data;
+  }
+
+  async getFeed(page = 1, perPage = 20): Promise<FeedItem[]> {
+    const params = { page, per_page: perPage };
+    const response = await this.client.get<FeedItem[]>('/users/feed', { params });
+    return response.data;
+  }
+
+  // ==================== Gift Booking ====================
+
+  async bookGift(data: GiftBookingCreate): Promise<GiftBookingResponse> {
+    const response = await this.client.post<GiftBookingResponse>('/gifts/book', data);
+    return response.data;
   }
 }
 

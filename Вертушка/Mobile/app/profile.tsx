@@ -14,6 +14,7 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuthStore, useCollectionStore } from '../lib/store';
+import { CollectionTab } from '../lib/types';
 import { Button } from '../components/ui';
 import { Colors, Typography, Spacing, BorderRadius, Shadows } from '../constants/theme';
 
@@ -21,7 +22,7 @@ export default function ProfileScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { user, logout } = useAuthStore();
-  const { collectionItems, wishlistItems } = useCollectionStore();
+  const { collectionItems, wishlistItems, setActiveTab } = useCollectionStore();
 
   const handleClose = () => {
     router.back();
@@ -45,16 +46,24 @@ export default function ProfileScreen() {
     );
   };
 
+  const handleStatPress = (tab: CollectionTab) => {
+    setActiveTab(tab);
+    router.dismiss();
+    router.navigate('/(tabs)/collection');
+  };
+
   const stats = [
     {
       label: 'В коллекции',
       value: collectionItems.length,
       icon: 'disc-outline' as const,
+      tab: 'collection' as CollectionTab,
     },
     {
       label: 'В списке желаний',
       value: wishlistItems.length,
       icon: 'heart-outline' as const,
+      tab: 'wishlist' as CollectionTab,
     },
   ];
 
@@ -93,11 +102,16 @@ export default function ProfileScreen() {
         {/* Статистика */}
         <View style={styles.statsContainer}>
           {stats.map((stat, index) => (
-            <View key={index} style={[styles.statCard, Shadows.sm]}>
+            <TouchableOpacity
+              key={index}
+              style={[styles.statCard, Shadows.sm]}
+              onPress={() => handleStatPress(stat.tab)}
+              activeOpacity={0.7}
+            >
               <Ionicons name={stat.icon} size={24} color={Colors.accent} />
               <Text style={styles.statValue}>{stat.value}</Text>
               <Text style={styles.statLabel}>{stat.label}</Text>
-            </View>
+            </TouchableOpacity>
           ))}
         </View>
 
@@ -111,9 +125,12 @@ export default function ProfileScreen() {
             <Ionicons name="chevron-forward" size={20} color={Colors.textMuted} />
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.settingsItem}>
-            <Ionicons name="share-outline" size={24} color={Colors.primary} />
-            <Text style={styles.settingsItemText}>Поделиться списком желаний</Text>
+          <TouchableOpacity
+            style={styles.settingsItem}
+            onPress={() => router.push('/settings/share-profile')}
+          >
+            <Ionicons name="globe-outline" size={24} color={Colors.primary} />
+            <Text style={styles.settingsItemText}>Публичный профиль</Text>
             <Ionicons name="chevron-forward" size={20} color={Colors.textMuted} />
           </TouchableOpacity>
 

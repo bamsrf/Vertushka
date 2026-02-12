@@ -65,7 +65,8 @@ export function RecordGrid<T extends RecordItem = RecordItem>({
     const record = getRecord(item);
     const itemId = 'id' in item ? item.id : '';
     const isSelected = isSelectionMode && selectedItems.has(itemId);
-    
+    const isBooked = 'is_booked' in item && item.is_booked === true;
+
     return (
       <RecordCard
         record={record}
@@ -86,6 +87,7 @@ export function RecordGrid<T extends RecordItem = RecordItem>({
             ? () => onToggleItemSelection(itemId)
             : undefined
         }
+        isBooked={isBooked}
       />
     );
   };

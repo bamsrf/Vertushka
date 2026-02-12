@@ -74,17 +74,23 @@ export default function MasterScreen() {
 
   if (isLoading) {
     return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={Colors.primary} />
+      <View style={styles.container}>
+        <Header title="Мастер-релиз" showBack />
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={Colors.primary} />
+        </View>
       </View>
     );
   }
 
   if (error || !master) {
     return (
-      <View style={styles.errorContainer}>
-        <Ionicons name="alert-circle-outline" size={64} color={Colors.error} />
-        <Text style={styles.errorText}>{error || 'Мастер-релиз не найден'}</Text>
+      <View style={styles.container}>
+        <Header title="Мастер-релиз" showBack />
+        <View style={styles.errorContainer}>
+          <Ionicons name="alert-circle-outline" size={64} color={Colors.error} />
+          <Text style={styles.errorText}>{error || 'Мастер-релиз не найден'}</Text>
+        </View>
       </View>
     );
   }

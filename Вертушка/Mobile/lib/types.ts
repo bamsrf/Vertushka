@@ -177,6 +177,12 @@ export interface Wishlist {
   updated_at: string;
 }
 
+export interface GiftBookingInfo {
+  id: string;
+  status: 'pending' | 'booked' | 'completed' | 'cancelled';
+  booked_at: string;
+}
+
 export interface WishlistItem {
   id: string;
   wishlist_id: string;
@@ -184,6 +190,8 @@ export interface WishlistItem {
   record: VinylRecord;
   priority?: number;
   notes?: string;
+  is_booked?: boolean;
+  gift_booking?: GiftBookingInfo | null;
   added_at: string;
 }
 
@@ -264,4 +272,137 @@ export interface ArtistSearchResponse {
   total: number;
   page: number;
   per_page: number;
+}
+
+// ==================== Public Profile ====================
+
+export interface ProfileShareSettings {
+  is_active: boolean;
+  is_private_profile: boolean;
+  show_collection: boolean;
+  show_wishlist: boolean;
+  custom_title?: string;
+  highlight_record_ids?: string[];
+  show_record_year: boolean;
+  show_record_label: boolean;
+  show_record_format: boolean;
+  show_record_prices: boolean;
+  show_collection_value: boolean;
+}
+
+export interface PublicProfileRecord {
+  id: string;
+  title: string;
+  artist: string;
+  year?: number;
+  label?: string;
+  format_type?: string;
+  cover_image_url?: string;
+  thumb_image_url?: string;
+  estimated_price_median?: number;
+  price_currency: string;
+}
+
+export interface PublicProfile {
+  username: string;
+  display_name?: string;
+  avatar_url?: string;
+  bio?: string;
+  custom_title?: string;
+  collection_count: number;
+  wishlist_count: number;
+  collection_value?: number;
+  followers_count: number;
+  show_collection: boolean;
+  show_wishlist: boolean;
+  show_record_year: boolean;
+  show_record_label: boolean;
+  show_record_format: boolean;
+  show_record_prices: boolean;
+  highlights: PublicProfileRecord[];
+}
+
+export interface UserWithStats {
+  id: string;
+  username: string;
+  display_name?: string;
+  avatar_url?: string;
+  bio?: string;
+  created_at: string;
+  followers_count: number;
+  following_count: number;
+  collection_count: number;
+  is_following: boolean;
+}
+
+export interface WishlistPublicItem {
+  id: string;
+  record: PublicProfileRecord;
+  priority: number;
+  notes?: string;
+  is_booked: boolean;
+}
+
+export interface WishlistPublicResponse {
+  owner_name: string;
+  owner_avatar?: string;
+  custom_message?: string;
+  items: WishlistPublicItem[];
+  total_items: number;
+}
+
+// ==================== Gift Booking ====================
+
+export interface GiftBookingCreate {
+  wishlist_item_id: string;
+  gifter_name: string;
+  gifter_email: string;
+  gifter_phone?: string;
+  gifter_message?: string;
+}
+
+export interface GiftBookingResponse {
+  id: string;
+  wishlist_item_id: string;
+  gifter_name: string;
+  gifter_email: string;
+  gifter_phone?: string;
+  gifter_message?: string;
+  status: 'pending' | 'booked' | 'completed' | 'cancelled';
+  cancel_token: string;
+  booked_at: string;
+  record: PublicProfileRecord;
+}
+
+// ==================== Social ====================
+
+export interface UserPublic {
+  id: string;
+  username: string;
+  display_name?: string;
+  avatar_url?: string;
+  bio?: string;
+  created_at: string;
+}
+
+export interface FeedItem {
+  type: 'collection_add';
+  user: {
+    id: string;
+    username: string;
+    display_name?: string;
+    avatar_url?: string;
+  };
+  collection: {
+    id: string;
+    name: string;
+  };
+  record: {
+    id: string;
+    title: string;
+    artist: string;
+    year?: number;
+    cover_image_url?: string;
+  };
+  added_at: string;
 }

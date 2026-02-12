@@ -31,6 +31,7 @@ export default function ArtistDetailScreen() {
   const [isLoadingMasters, setIsLoadingMasters] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [page, setPage] = useState(1);
+  const [totalMasters, setTotalMasters] = useState(0);
   const [hasMore, setHasMore] = useState(true);
 
   useEffect(() => {
@@ -66,13 +67,13 @@ export default function ArtistDetailScreen() {
     try {
       const data = await api.getArtistMasters(id, pageNum, 20);
 
-      if (pageNum === 1) {
-        setMasters(data.results);
-      } else {
-        setMasters((prev) => [...prev, ...data.results]);
-      }
+      const newMasters = pageNum === 1
+        ? data.results
+        : [...masters, ...data.results];
 
-      setHasMore(data.results.length === 20);
+      setMasters(newMasters);
+      setTotalMasters(data.total);
+      setHasMore(newMasters.length < data.total);
       setPage(pageNum);
     } catch (err) {
       console.error('Ошибка загрузки релизов:', err);

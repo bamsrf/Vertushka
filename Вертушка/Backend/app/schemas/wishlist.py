@@ -36,7 +36,7 @@ class GiftBookingInfo(BaseModel):
 class WishlistItemResponse(BaseModel):
     """Схема элемента вишлиста"""
     model_config = ConfigDict(from_attributes=True)
-    
+
     id: UUID
     wishlist_id: UUID
     record_id: UUID
@@ -46,6 +46,7 @@ class WishlistItemResponse(BaseModel):
     added_at: datetime
     purchased_at: datetime | None
     record: RecordBrief
+    is_booked: bool = False
     gift_booking: GiftBookingInfo | None = None
 
 

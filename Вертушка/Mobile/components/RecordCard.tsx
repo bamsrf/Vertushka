@@ -29,6 +29,7 @@ interface RecordCardProps {
   isSelectionMode?: boolean;
   isSelected?: boolean;
   onToggleSelection?: () => void;
+  isBooked?: boolean;
 }
 
 // Извлекает краткий формат из полной строки (первый значимый элемент)
@@ -75,6 +76,7 @@ export function RecordCard({
   isSelectionMode = false,
   isSelected = false,
   onToggleSelection,
+  isBooked = false,
 }: RecordCardProps) {
   // Приоритет: cover_image_url для высокого качества, fallback на thumb
   const imageUrl = record.cover_image_url || record.thumb_image_url;
@@ -133,6 +135,12 @@ export function RecordCard({
         {isSelectionMode && isSelected && (
           <View style={styles.selectedOverlay} />
         )}
+        {isBooked && !isSelectionMode && (
+          <View style={styles.bookedBadge}>
+            <Ionicons name="gift-outline" size={12} color={Colors.background} />
+            <Text style={styles.bookedBadgeText}>Забронировано</Text>
+          </View>
+        )}
       </View>
 
       {/* Информация */}
@@ -155,24 +163,24 @@ export function RecordCard({
           {record.title}
         </Text>
         <View style={styles.meta}>
-          {record.year && (
+          {record.year != null && record.year !== 0 && (
             <Text style={styles.metaText}>{record.year}</Text>
           )}
           {'country' in record && record.country && (
             <>
-              {record.year && <Text style={styles.metaDot}>•</Text>}
+              {record.year != null && record.year !== 0 && <Text style={styles.metaDot}>•</Text>}
               <Text style={styles.metaText}>{record.country}</Text>
             </>
           )}
           {'format_type' in record && record.format_type && (
             <>
-              {(record.year || ('country' in record && record.country)) && <Text style={styles.metaDot}>•</Text>}
+              {(record.year != null && record.year !== 0) || ('country' in record && record.country) ? <Text style={styles.metaDot}>•</Text> : null}
               <Text style={styles.metaText} numberOfLines={1}>{getShortFormat(record.format_type)}</Text>
             </>
           )}
           {'format' in record && record.format && !('format_type' in record) && (
             <>
-              {(record.year || ('country' in record && record.country)) && <Text style={styles.metaDot}>•</Text>}
+              {(record.year != null && record.year !== 0) || ('country' in record && record.country) ? <Text style={styles.metaDot}>•</Text> : null}
               <Text style={styles.metaText} numberOfLines={1}>{getShortFormat(record.format)}</Text>
             </>
           )}
@@ -274,7 +282,6 @@ const styles = StyleSheet.create({
   artist: {
     ...Typography.caption,
     color: Colors.textSecondary,
-    textTransform: 'uppercase',
     letterSpacing: 0.5,
     marginBottom: 2,
   },
@@ -314,6 +321,25 @@ const styles = StyleSheet.create({
   },
   actionButton: {
     padding: Spacing.xs,
+  },
+  bookedBadge: {
+    position: 'absolute',
+    bottom: Spacing.sm,
+    left: Spacing.sm,
+    right: Spacing.sm,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    backgroundColor: Colors.accent,
+    paddingVertical: 4,
+    paddingHorizontal: Spacing.sm,
+    borderRadius: BorderRadius.sm,
+  },
+  bookedBadgeText: {
+    ...Typography.caption,
+    color: Colors.background,
+    fontWeight: '600',
   },
 });
 

@@ -51,13 +51,13 @@ export function VersionCard({ version, onPress }: VersionCardProps) {
 
         {!!(version.country || version.year) && (
           <View style={styles.meta}>
-            {version.country && (
+            {!!version.country && (
               <View style={styles.metaRow}>
                 <Ionicons name="location-outline" size={14} color={Colors.textMuted} />
                 <Text style={styles.metaText}>{version.country}</Text>
               </View>
             )}
-            {version.year && (
+            {!!version.year && (
               <View style={styles.metaRow}>
                 <Ionicons name="calendar-outline" size={14} color={Colors.textMuted} />
                 <Text style={styles.metaText}>{version.year}</Text>

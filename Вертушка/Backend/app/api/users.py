@@ -16,6 +16,8 @@ from app.models.wishlist import Wishlist, WishlistItem
 from app.api.auth import get_current_user, get_current_user_optional
 from app.schemas.user import UserResponse, UserUpdate, UserPublicResponse, UserWithStats
 from app.schemas.collection import CollectionWithItems, CollectionItemResponse
+from app.schemas.wishlist import WishlistPublicResponse, WishlistPublicItemResponse
+from app.schemas.record import RecordBrief
 
 router = APIRouter()
 
@@ -84,6 +86,159 @@ async def search_users(
         ))
     
     return response
+
+
+@router.get("/by-username/{username}", response_model=UserWithStats)
+async def get_user_by_username(
+    username: str,
+    current_user: User | None = Depends(get_current_user_optional),
+    db: AsyncSession = Depends(get_db)
+):
+    """Получение профиля пользователя по username"""
+    result = await db.execute(
+        select(User).where(User.username == username, User.is_active == True)
+    )
+    user = result.scalar_one_or_none()
+
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Пользователь не найден"
+        )
+
+    followers_count = await db.scalar(
+        select(func.count(Follow.id)).where(Follow.following_id == user.id)
+    )
+    following_count = await db.scalar(
+        select(func.count(Follow.id)).where(Follow.follower_id == user.id)
+    )
+    collection_count = await db.scalar(
+        select(func.count(CollectionItem.id))
+        .join(Collection)
+        .where(Collection.user_id == user.id)
+    )
+
+    is_following = False
+    if current_user:
+        follow_check = await db.execute(
+            select(Follow).where(
+                Follow.follower_id == current_user.id,
+                Follow.following_id == user.id
+            )
+        )
+        is_following = follow_check.scalar_one_or_none() is not None
+
+    return UserWithStats(
+        id=user.id,
+        username=user.username,
+        display_name=user.display_name,
+        avatar_url=user.avatar_url,
+        bio=user.bio,
+        created_at=user.created_at,
+        followers_count=followers_count or 0,
+        following_count=following_count or 0,
+        collection_count=collection_count or 0,
+        is_following=is_following
+    )
+
+
+@router.get("/by-username/{username}/wishlist/", response_model=WishlistPublicResponse)
+async def get_user_wishlist_by_username(
+    username: str,
+    current_user: User | None = Depends(get_current_user_optional),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Вишлист пользователя по username.
+    Доступ: профиль открытый ИЛИ текущий пользователь — фолловер.
+    """
+    from app.models.gift_booking import GiftBooking
+
+    result = await db.execute(
+        select(User).where(User.username == username, User.is_active == True)
+    )
+    user = result.scalar_one_or_none()
+
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Пользователь не найден"
+        )
+
+    # Проверяем доступ: подписан ли текущий пользователь
+    is_follower = False
+    if current_user and current_user.id != user.id:
+        follow_check = await db.execute(
+            select(Follow).where(
+                Follow.follower_id == current_user.id,
+                Follow.following_id == user.id
+            )
+        )
+        is_follower = follow_check.scalar_one_or_none() is not None
+
+    is_owner = current_user and current_user.id == user.id
+
+    # Получаем вишлист
+    result = await db.execute(
+        select(Wishlist)
+        .where(Wishlist.user_id == user.id)
+        .options(
+            selectinload(Wishlist.items)
+            .selectinload(WishlistItem.record),
+            selectinload(Wishlist.items)
+            .selectinload(WishlistItem.gift_booking)
+        )
+    )
+    wishlist = result.scalar_one_or_none()
+
+    if not wishlist:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Вишлист не найден"
+        )
+
+    # Доступ: вишлист публичный ИЛИ фолловер ИЛИ владелец
+    if not wishlist.is_public and not is_follower and not is_owner:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Вишлист недоступен. Подпишитесь на пользователя."
+        )
+
+    public_items = []
+    for item in wishlist.items:
+        if not item.is_purchased:
+            is_booked = item.gift_booking is not None
+            gifter_name = None
+            if is_booked and wishlist.show_gifter_names:
+                gifter_name = item.gift_booking.gifter_name
+
+            public_items.append(WishlistPublicItemResponse(
+                id=item.id,
+                record=RecordBrief(
+                    id=item.record.id,
+                    title=item.record.title,
+                    artist=item.record.artist,
+                    year=item.record.year,
+                    cover_image_url=item.record.cover_image_url,
+                    thumb_image_url=item.record.thumb_image_url,
+                    estimated_price_median=item.record.estimated_price_median,
+                    price_currency=item.record.price_currency
+                ),
+                priority=item.priority,
+                notes=item.notes,
+                is_booked=is_booked,
+                gifter_name=gifter_name
+            ))
+
+    public_items.sort(key=lambda x: -x.priority)
+
+    return WishlistPublicResponse(
+        owner_name=user.display_name or user.username,
+        owner_avatar=user.avatar_url,
+        custom_message=wishlist.custom_message,
+        items=public_items,
+        total_items=len(public_items)
+    )
 
 
 @router.get("/me", response_model=UserResponse)

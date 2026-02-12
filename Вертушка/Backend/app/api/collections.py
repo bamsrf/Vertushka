@@ -299,7 +299,6 @@ async def add_record_to_collection(
 
     # Если в вишлисте - автоматически удаляем (атомарный перенос)
     if wishlist_item:
-        print(f"🔄 add_record_to_collection: removing from wishlist, item_id={wishlist_item.id}")
         await db.delete(wishlist_item)
 
     # Добавляем в коллекцию (дубликаты разрешены - можно иметь несколько копий одной пластинки)

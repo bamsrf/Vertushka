@@ -255,6 +255,7 @@ class DiscogsService:
             stats_response = await self._get_price_stats(release_id)
             if stats_response:
                 price_min = stats_response.get("lowest_price", {}).get("value")
+                price_max = stats_response.get("highest_price", {}).get("value")
                 price_median = stats_response.get("median_price", {}).get("value")
         except Exception:
             pass  # Игнорируем ошибки получения цен
@@ -729,7 +730,7 @@ class DiscogsService:
 
         return MasterSearchResponse(
             results=results,
-            total=len(results),  # Общее количество после фильтрации
+            total=pagination.get("items", len(results)),
             page=pagination.get("page", page),
             per_page=pagination.get("per_page", per_page)
         )
