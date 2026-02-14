@@ -287,7 +287,6 @@ const styles = StyleSheet.create({
   },
   artistClickable: {
     color: Colors.primary,
-    textDecorationLine: 'underline',
   },
   title: {
     ...Typography.bodySmall,

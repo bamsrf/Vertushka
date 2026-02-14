@@ -1,8 +1,8 @@
 /**
  * Экран коллекции с переключателем Моё / Хочу
  */
-import { useEffect, useCallback, useState } from 'react';
-import { View, StyleSheet, Alert, TouchableOpacity, Text } from 'react-native';
+import { useEffect, useCallback, useState, useRef } from 'react';
+import { View, StyleSheet, Alert, TouchableOpacity, Text, Animated } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -25,6 +25,7 @@ export default function CollectionScreen() {
   const [isSelectionMode, setIsSelectionMode] = useState(false);
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const modeAnim = useRef(new Animated.Value(0)).current;
 
   const {
     activeTab,
@@ -53,6 +54,16 @@ export default function CollectionScreen() {
     setIsSelectionMode(false);
     setSelectedItems(new Set());
   }, [activeTab]);
+
+  // Анимация смены кнопки Выбрать ↔ Отмена
+  useEffect(() => {
+    Animated.spring(modeAnim, {
+      toValue: isSelectionMode ? 1 : 0,
+      tension: 220,
+      friction: 14,
+      useNativeDriver: true,
+    }).start();
+  }, [isSelectionMode]);
 
   const handleRefresh = useCallback(async () => {
     setIsRefreshing(true);
@@ -261,14 +272,31 @@ export default function CollectionScreen() {
     </View>
   );
 
-  const rightAction = isSelectionMode ? (
-    <TouchableOpacity style={styles.headerButton} onPress={handleToggleSelectionMode}>
-      <Text style={styles.cancelButtonText}>Отмена</Text>
-    </TouchableOpacity>
-  ) : (
-    <TouchableOpacity style={styles.headerButtonPrimary} onPress={handleToggleSelectionMode}>
-      <Text style={styles.selectButtonText}>Выбрать</Text>
-    </TouchableOpacity>
+  const selectOpacity = modeAnim.interpolate({ inputRange: [0, 1], outputRange: [1, 0] });
+  const selectScale = modeAnim.interpolate({ inputRange: [0, 1], outputRange: [1, 0.85] });
+  const cancelOpacity = modeAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 1] });
+  const cancelScale = modeAnim.interpolate({ inputRange: [0, 1], outputRange: [0.85, 1] });
+
+  const rightAction = (
+    <View style={styles.headerButtonWrapper}>
+      <Animated.View
+        style={[styles.headerButtonAbsolute, { opacity: cancelOpacity, transform: [{ scale: cancelScale }] }]}
+        pointerEvents={isSelectionMode ? 'auto' : 'none'}
+      >
+        <TouchableOpacity style={styles.headerButton} onPress={handleToggleSelectionMode}>
+          <Text style={styles.cancelButtonText}>Отмена</Text>
+        </TouchableOpacity>
+      </Animated.View>
+
+      <Animated.View
+        style={{ opacity: selectOpacity, transform: [{ scale: selectScale }] }}
+        pointerEvents={isSelectionMode ? 'none' : 'auto'}
+      >
+        <TouchableOpacity style={styles.headerButtonSelect} onPress={handleToggleSelectionMode}>
+          <Text style={styles.selectButtonText}>Выбрать</Text>
+        </TouchableOpacity>
+      </Animated.View>
+    </View>
   );
 
   return (
@@ -366,15 +394,26 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.md,
     backgroundColor: Colors.surface,
   },
-  headerButtonPrimary: {
+  headerButtonWrapper: {
+    position: 'relative',
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+  },
+  headerButtonAbsolute: {
+    position: 'absolute',
+    right: 0,
+  },
+  headerButtonSelect: {
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.xs,
     borderRadius: BorderRadius.md,
-    backgroundColor: Colors.primary,
+    borderWidth: 1,
+    borderColor: Colors.text,
+    backgroundColor: Colors.background,
   },
   selectButtonText: {
     ...Typography.buttonSmall,
-    color: Colors.background,
+    color: Colors.text,
   },
   cancelButtonText: {
     ...Typography.buttonSmall,
