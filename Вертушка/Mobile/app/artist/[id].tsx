@@ -56,12 +56,12 @@ function FilterChip({ label, isActive, onPress }: FilterChipProps) {
 
   const backgroundColor = colorAnim.interpolate({
     inputRange: [0, 1],
-    outputRange: [Colors.background, Colors.primary],
+    outputRange: [Colors.background, Colors.royalBlue],
   });
 
   const textColor = colorAnim.interpolate({
     inputRange: [0, 1],
-    outputRange: [Colors.primary, Colors.background],
+    outputRange: [Colors.royalBlue, Colors.background],
   });
 
   const handlePressIn = () => {
@@ -188,7 +188,7 @@ export default function ArtistDetailScreen() {
       <View style={styles.container}>
         <Header title="Артист" showBack />
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={Colors.primary} />
+          <ActivityIndicator size="large" color={Colors.royalBlue} />
           <Text style={styles.loadingText}>Загрузка...</Text>
         </View>
       </View>
@@ -278,7 +278,7 @@ export default function ArtistDetailScreen() {
 
           {isLoadingMasters && (
             <View style={styles.loadMoreContainer}>
-              <ActivityIndicator size="small" color={Colors.primary} />
+              <ActivityIndicator size="small" color={Colors.royalBlue} />
               <Text style={styles.loadMoreText}>Загрузка релизов...</Text>
             </View>
           )}
@@ -387,7 +387,7 @@ const styles = StyleSheet.create({
     paddingVertical: 7,
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: Colors.primary,
+    borderColor: Colors.royalBlue,
     gap: 4,
   },
   filterChipText: {

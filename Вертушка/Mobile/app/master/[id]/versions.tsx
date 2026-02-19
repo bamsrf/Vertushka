@@ -99,7 +99,7 @@ export default function VersionsScreen() {
         ListFooterComponent={
           isLoading ? (
             <View style={styles.loadingMore}>
-              <ActivityIndicator size="small" color={Colors.primary} />
+              <ActivityIndicator size="small" color={Colors.royalBlue} />
             </View>
           ) : null
         }

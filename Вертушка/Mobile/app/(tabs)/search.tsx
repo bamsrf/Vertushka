@@ -16,14 +16,16 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { Header } from '../../components/Header';
+import { AnimatedGradientText } from '../../components/AnimatedGradientText';
 import { RecordGrid } from '../../components/RecordGrid';
-import { useSearchStore, useCollectionStore, useUserSearchStore } from '../../lib/store';
+import { useSearchStore, useCollectionStore, useUserSearchStore, useAuthStore } from '../../lib/store';
 import { api } from '../../lib/api';
 import { MasterSearchResult, ReleaseSearchResult, ArtistSearchResult, UserWithStats } from '../../lib/types';
-import { Colors, Typography, Spacing, BorderRadius } from '../../constants/theme';
+import { Colors, Typography, Spacing, BorderRadius, Gradients } from '../../constants/theme';
 
 // Маппинг форматов для отображения на русском
 const FORMAT_OPTIONS = [
@@ -84,8 +86,11 @@ const YEAR_OPTIONS = [
 
 export default function SearchScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
+  const { user } = useAuthStore();
   const [searchInput, setSearchInput] = useState('');
   const [isFocused, setIsFocused] = useState(false);
+  const [inputFocused, setInputFocused] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
   const [showAllCountries, setShowAllCountries] = useState(false);
   const [selectedDecade, setSelectedDecade] = useState<string | undefined>(undefined);
@@ -115,7 +120,7 @@ export default function SearchScreen() {
     clearHistory,
   } = useSearchStore();
 
-  const { addToCollection, addToWishlist } = useCollectionStore();
+  const { addToCollection, addToWishlist, collectionItems } = useCollectionStore();
 
   const {
     results: userResults,
@@ -302,13 +307,33 @@ export default function SearchScreen() {
   };
 
   const handleAddToCollection = async (record: MasterSearchResult | ReleaseSearchResult) => {
-    try {
-      const discogsId = 'main_release_id' in record ? record.main_release_id : record.release_id;
-      await addToCollection(discogsId);
-      Alert.alert('Готово!', `"${record.title}" добавлена в коллекцию`);
-    } catch (error: any) {
-      const message = error?.response?.data?.detail || error?.message || 'Не удалось добавить в коллекцию';
-      Alert.alert('Ошибка', message);
+    const discogsId = 'main_release_id' in record ? record.main_release_id : record.release_id;
+
+    const alreadyInCollection = collectionItems.some(
+      (item) => item.record.discogs_id === discogsId
+    );
+
+    const doAdd = async () => {
+      try {
+        await addToCollection(discogsId);
+        Alert.alert('Готово!', `"${record.title}" добавлена в коллекцию`);
+      } catch (error: any) {
+        const message = error?.response?.data?.detail || error?.message || 'Не удалось добавить в коллекцию';
+        Alert.alert('Ошибка', message);
+      }
+    };
+
+    if (alreadyInCollection) {
+      Alert.alert(
+        'Уже в коллекции',
+        `"${record.title}" уже есть в вашей коллекции. Добавить ещё одну копию?`,
+        [
+          { text: 'Отмена', style: 'cancel' },
+          { text: 'Добавить', onPress: doAdd },
+        ]
+      );
+    } else {
+      await doAdd();
     }
   };
 
@@ -381,7 +406,7 @@ export default function SearchScreen() {
             onPress={() => handleHistoryItemPress(item)}
             activeOpacity={0.7}
           >
-            <Ionicons name="time-outline" size={18} color={Colors.textMuted} />
+            <Ionicons name="time-outline" size={18} color={Colors.periwinkle} />
             <Text style={styles.historyItemText}>{item}</Text>
           </TouchableOpacity>
           <TouchableOpacity
@@ -507,11 +532,33 @@ export default function SearchScreen() {
     </Modal>
   ) : null;
 
+  const handleProfilePress = () => {
+    router.push('/profile');
+  };
+
   const SearchHeader = (
     <View style={styles.searchContainer}>
+      {/* Title row + avatar */}
+      <View style={styles.topRow}>
+        <AnimatedGradientText style={Typography.heroTitle}>Поиск</AnimatedGradientText>
+        <TouchableOpacity style={styles.profileButton} onPress={handleProfilePress}>
+          {user?.avatar_url ? (
+            <Image source={{ uri: user.avatar_url }} style={styles.avatar} />
+          ) : (
+            <LinearGradient
+              colors={[Colors.royalBlue, Colors.periwinkle]}
+              style={styles.avatarPlaceholder}
+            >
+              <Ionicons name="disc" size={20} color={Colors.background} />
+            </LinearGradient>
+          )}
+        </TouchableOpacity>
+      </View>
+
+      {/* Search input — pill style */}
       <View style={styles.searchRow}>
-        <View style={styles.searchInputContainer}>
-          <Ionicons name="search" size={20} color={Colors.textMuted} />
+        <View style={[styles.searchInputContainer, inputFocused && styles.searchInputFocused]}>
+          <Ionicons name="search" size={20} color={Colors.royalBlue} />
           <TextInput
             style={styles.searchInput}
             value={searchInput}
@@ -520,8 +567,8 @@ export default function SearchScreen() {
             placeholderTextColor={Colors.textMuted}
             returnKeyType="search"
             onSubmitEditing={handleSearch}
-            onFocus={() => setIsFocused(true)}
-            onBlur={handleBlur}
+            onFocus={() => { setIsFocused(true); setInputFocused(true); }}
+            onBlur={() => { handleBlur(); setInputFocused(false); }}
             autoCapitalize="none"
             autoCorrect={false}
           />
@@ -548,33 +595,33 @@ export default function SearchScreen() {
   // Рендер списка пользователей (общий для обоих режимов)
   const renderUserList = (users: UserWithStats[], limit?: number) => {
     const displayUsers = limit ? users.slice(0, limit) : users;
-    return displayUsers.map((user) => (
+    return displayUsers.map((u) => (
       <TouchableOpacity
-        key={user.id}
-        style={styles.topArtistCard}
-        onPress={() => handleUserPress(user)}
+        key={u.id}
+        style={styles.userCard}
+        onPress={() => handleUserPress(u)}
         activeOpacity={0.8}
       >
-        <View style={styles.topArtistImageContainer}>
-          {user.avatar_url ? (
+        <View style={styles.userImageContainer}>
+          {u.avatar_url ? (
             <Image
-              source={{ uri: user.avatar_url }}
+              source={{ uri: u.avatar_url }}
               style={styles.topArtistImage}
               resizeMode="cover"
             />
           ) : (
-            <View style={styles.topArtistPlaceholder}>
+            <View style={styles.userPlaceholder}>
               <Ionicons name="person" size={24} color={Colors.textMuted} />
             </View>
           )}
         </View>
-        <View style={styles.topArtistInfo}>
-          <Text style={styles.topArtistLabel}>@{user.username}</Text>
-          <Text style={styles.topArtistName} numberOfLines={1}>
-            {user.display_name || user.username}
+        <View style={styles.userInfo}>
+          <Text style={styles.userLabel}>@{u.username}</Text>
+          <Text style={styles.userName} numberOfLines={1}>
+            {u.display_name || u.username}
           </Text>
         </View>
-        <Text style={styles.userStatText}>{user.collection_count} пластинок</Text>
+        <Text style={styles.userStatText}>{u.collection_count} пластинок</Text>
         <Ionicons name="chevron-forward" size={24} color={Colors.textMuted} />
       </TouchableOpacity>
     ));
@@ -621,28 +668,36 @@ export default function SearchScreen() {
 
       {topArtist && (
         <TouchableOpacity
-          style={styles.topArtistCard}
           onPress={() => handleArtistPress(topArtist)}
           activeOpacity={0.8}
         >
-          <View style={styles.topArtistImageContainer}>
-            {(topArtist.cover_image_url || topArtist.thumb_image_url) ? (
-              <Image
-                source={{ uri: topArtist.cover_image_url || topArtist.thumb_image_url }}
-                style={styles.topArtistImage}
-                resizeMode="cover"
-              />
-            ) : (
-              <View style={styles.topArtistPlaceholder}>
-                <Ionicons name="person-outline" size={32} color={Colors.textMuted} />
-              </View>
-            )}
-          </View>
-          <View style={styles.topArtistInfo}>
-            <Text style={styles.topArtistLabel}>Артист</Text>
-            <Text style={styles.topArtistName} numberOfLines={1}>{topArtist.name}</Text>
-          </View>
-          <Ionicons name="chevron-forward" size={24} color={Colors.textMuted} />
+          <LinearGradient
+            colors={Gradients.blue as [string, string]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.topArtistCard}
+          >
+            <View style={styles.topArtistImageContainer}>
+              {(topArtist.cover_image_url || topArtist.thumb_image_url) ? (
+                <Image
+                  source={{ uri: topArtist.cover_image_url || topArtist.thumb_image_url }}
+                  style={styles.topArtistImage}
+                  resizeMode="cover"
+                />
+              ) : (
+                <View style={styles.topArtistPlaceholder}>
+                  <Ionicons name="person-outline" size={32} color="rgba(255,255,255,0.7)" />
+                </View>
+              )}
+            </View>
+            <View style={styles.topArtistInfo}>
+              <Text style={styles.topArtistLabel}>Артист</Text>
+              <Text style={styles.topArtistName} numberOfLines={1}>{topArtist.name}</Text>
+            </View>
+            <View style={styles.artistArrowBg}>
+              <Ionicons name="chevron-forward" size={20} color="#FFFFFF" />
+            </View>
+          </LinearGradient>
         </TouchableOpacity>
       )}
 
@@ -684,11 +739,9 @@ export default function SearchScreen() {
 
   return (
     <KeyboardAvoidingView
-      style={styles.container}
+      style={[styles.container, { paddingTop: insets.top }]}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-      <Header title="Поиск" />
-
       <RecordGrid
         data={isUserSearch ? [] : results}
         onRecordPress={handleRecordPress}
@@ -700,6 +753,7 @@ export default function SearchScreen() {
         onEndReached={!isUserSearch && hasMore ? loadMore : undefined}
         emptyMessage=""
         ListHeaderComponent={HeaderContent}
+        cardVariant="compact"
       />
 
       {FilterModal}
@@ -715,21 +769,50 @@ const styles = StyleSheet.create({
   searchContainer: {
     paddingBottom: Spacing.md,
   },
+  topRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 4,
+  },
+  profileButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    overflow: 'hidden',
+    borderWidth: 2,
+    borderColor: Colors.lavender,
+  },
+  avatar: {
+    width: '100%',
+    height: '100%',
+  },
+  avatarPlaceholder: {
+    width: '100%',
+    height: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   searchRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.sm,
+    marginTop: Spacing.md,
   },
   searchInputContainer: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: Colors.surface,
-    borderRadius: BorderRadius.md,
-    paddingHorizontal: Spacing.sm,
-    paddingLeft: Spacing.md,
-    height: 48,
+    backgroundColor: '#F5F5F7',
+    borderRadius: 26,
+    paddingHorizontal: Spacing.md,
+    height: 52,
     gap: Spacing.sm,
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
+  searchInputFocused: {
+    borderColor: Colors.royalBlue,
   },
   searchInput: {
     flex: 1,
@@ -741,15 +824,15 @@ const styles = StyleSheet.create({
     textAlignVertical: 'center',
   },
   filterButton: {
-    width: 48,
-    height: 48,
-    borderRadius: BorderRadius.md,
-    backgroundColor: Colors.surface,
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: '#F5F5F7',
     alignItems: 'center',
     justifyContent: 'center',
   },
   filterButtonActive: {
-    backgroundColor: Colors.primary,
+    backgroundColor: Colors.royalBlue,
   },
   historyContainer: {
     marginTop: Spacing.md,
@@ -769,7 +852,7 @@ const styles = StyleSheet.create({
   },
   clearHistoryButton: {
     ...Typography.caption,
-    color: Colors.primary,
+    color: Colors.royalBlue,
   },
   historyItem: {
     flexDirection: 'row',
@@ -837,7 +920,7 @@ const styles = StyleSheet.create({
   },
   showAllButton: {
     ...Typography.caption,
-    color: Colors.primary,
+    color: Colors.royalBlue,
   },
   filterOptions: {
     flexDirection: 'row',
@@ -853,8 +936,8 @@ const styles = StyleSheet.create({
     borderColor: Colors.border,
   },
   filterOptionSelected: {
-    backgroundColor: Colors.primary,
-    borderColor: Colors.primary,
+    backgroundColor: Colors.royalBlue,
+    borderColor: Colors.royalBlue,
   },
   filterOptionText: {
     ...Typography.body,
@@ -877,23 +960,23 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   sectionTitle: {
-    ...Typography.h3,
+    ...Typography.h2,
     color: Colors.text,
     marginBottom: Spacing.md,
   },
   topArtistCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: Colors.surface,
     borderRadius: BorderRadius.lg,
     padding: Spacing.md,
     marginBottom: Spacing.lg,
   },
   topArtistImageContainer: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: Colors.background,
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    borderWidth: 3,
+    borderColor: '#FFFFFF',
     overflow: 'hidden',
   },
   topArtistImage: {
@@ -905,7 +988,7 @@ const styles = StyleSheet.create({
     height: '100%',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: Colors.background,
+    backgroundColor: 'rgba(255,255,255,0.15)',
   },
   topArtistInfo: {
     flex: 1,
@@ -913,11 +996,56 @@ const styles = StyleSheet.create({
   },
   topArtistLabel: {
     ...Typography.caption,
-    color: Colors.textMuted,
+    color: 'rgba(255,255,255,0.7)',
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
   topArtistName: {
+    fontSize: 22,
+    fontFamily: 'Inter_700Bold',
+    color: '#FFFFFF',
+    marginTop: 2,
+  },
+  artistArrowBg: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  userCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.surface,
+    borderRadius: BorderRadius.lg,
+    padding: Spacing.md,
+    marginBottom: Spacing.sm,
+  },
+  userImageContainer: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    overflow: 'hidden',
+    backgroundColor: Colors.background,
+  },
+  userPlaceholder: {
+    width: '100%',
+    height: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.background,
+  },
+  userInfo: {
+    flex: 1,
+    marginLeft: Spacing.md,
+  },
+  userLabel: {
+    ...Typography.caption,
+    color: Colors.textMuted,
+    letterSpacing: 0.3,
+  },
+  userName: {
     ...Typography.bodyBold,
     color: Colors.text,
     marginTop: 2,

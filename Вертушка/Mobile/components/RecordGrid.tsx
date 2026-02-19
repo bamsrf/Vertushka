@@ -10,6 +10,7 @@ import {
   ActivityIndicator,
   RefreshControl,
 } from 'react-native';
+import Animated, { FadeInUp } from 'react-native-reanimated';
 import { RecordCard } from './RecordCard';
 import { RecordSearchResult, VinylRecord, CollectionItem, WishlistItem, MasterSearchResult, ReleaseSearchResult } from '../lib/types';
 import { Colors, Typography, Spacing } from '../constants/theme';
@@ -33,6 +34,7 @@ interface RecordGridProps<T extends RecordItem = RecordItem> {
   isSelectionMode?: boolean;
   selectedItems?: Set<string>;
   onToggleItemSelection?: (itemId: string) => void;
+  cardVariant?: 'compact' | 'expanded';
 }
 
 export function RecordGrid<T extends RecordItem = RecordItem>({
@@ -52,6 +54,7 @@ export function RecordGrid<T extends RecordItem = RecordItem>({
   isSelectionMode = false,
   selectedItems = new Set(),
   onToggleItemSelection,
+  cardVariant = 'expanded',
 }: RecordGridProps<T>) {
   // Извлекаем запись из разных типов
   const getRecord = (item: RecordItem): RecordSearchResult | VinylRecord | MasterSearchResult | ReleaseSearchResult => {
@@ -61,34 +64,37 @@ export function RecordGrid<T extends RecordItem = RecordItem>({
     return item;
   };
 
-  const renderItem = ({ item }: { item: T }) => {
+  const renderItem = ({ item, index }: { item: T; index: number }) => {
     const record = getRecord(item);
     const itemId = 'id' in item ? item.id : '';
     const isSelected = isSelectionMode && selectedItems.has(itemId);
     const isBooked = 'is_booked' in item && item.is_booked === true;
 
     return (
-      <RecordCard
-        record={record}
-        onPress={onRecordPress ? () => onRecordPress(item) : undefined}
-        onArtistPress={onArtistPress}
-        onAddToCollection={
-          onAddToCollection ? () => onAddToCollection(item) : undefined
-        }
-        onAddToWishlist={
-          onAddToWishlist ? () => onAddToWishlist(item) : undefined
-        }
-        onRemove={onRemove ? () => onRemove(item) : undefined}
-        showActions={showActions && !isSelectionMode}
-        isSelectionMode={isSelectionMode}
-        isSelected={isSelected}
-        onToggleSelection={
-          onToggleItemSelection && itemId
-            ? () => onToggleItemSelection(itemId)
-            : undefined
-        }
-        isBooked={isBooked}
-      />
+      <Animated.View entering={FadeInUp.delay(index * 50).duration(300)}>
+        <RecordCard
+          record={record}
+          variant={cardVariant}
+          onPress={onRecordPress ? () => onRecordPress(item) : undefined}
+          onArtistPress={onArtistPress}
+          onAddToCollection={
+            onAddToCollection ? () => onAddToCollection(item) : undefined
+          }
+          onAddToWishlist={
+            onAddToWishlist ? () => onAddToWishlist(item) : undefined
+          }
+          onRemove={onRemove ? () => onRemove(item) : undefined}
+          showActions={showActions && !isSelectionMode}
+          isSelectionMode={isSelectionMode}
+          isSelected={isSelected}
+          onToggleSelection={
+            onToggleItemSelection && itemId
+              ? () => onToggleItemSelection(itemId)
+              : undefined
+          }
+          isBooked={isBooked}
+        />
+      </Animated.View>
     );
   };
 
@@ -107,7 +113,7 @@ export function RecordGrid<T extends RecordItem = RecordItem>({
     
     return (
       <View style={styles.footer}>
-        <ActivityIndicator color={Colors.primary} />
+        <ActivityIndicator color={Colors.royalBlue} />
       </View>
     );
   };
@@ -142,7 +148,7 @@ export function RecordGrid<T extends RecordItem = RecordItem>({
           <RefreshControl
             refreshing={isRefreshing}
             onRefresh={onRefresh}
-            tintColor={Colors.primary}
+            tintColor={Colors.royalBlue}
           />
         ) : undefined
       }

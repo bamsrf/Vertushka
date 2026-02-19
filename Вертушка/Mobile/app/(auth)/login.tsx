@@ -1,5 +1,5 @@
 /**
- * Экран входа
+ * Экран входа — Blue Gradient Edition
  */
 import { useState } from 'react';
 import {
@@ -12,11 +12,12 @@ import {
   Alert,
 } from 'react-native';
 import { Link } from 'expo-router';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Button, Input } from '../../components/ui';
 import { useAuthStore } from '../../lib/store';
-import { Colors, Typography, Spacing } from '../../constants/theme';
+import { Colors, Typography, Spacing, BorderRadius } from '../../constants/theme';
 
 export default function LoginScreen() {
   const insets = useSafeAreaInsets();
@@ -73,9 +74,12 @@ export default function LoginScreen() {
       >
         {/* Логотип */}
         <View style={styles.logoContainer}>
-          <View style={styles.logo}>
-            <Ionicons name="disc" size={64} color={Colors.primary} />
-          </View>
+          <LinearGradient
+            colors={[Colors.royalBlue, Colors.periwinkle]}
+            style={styles.logo}
+          >
+            <Ionicons name="disc" size={64} color={Colors.background} />
+          </LinearGradient>
           <Text style={styles.appName}>Вертушка</Text>
           <Text style={styles.tagline}>Твоя коллекция винила</Text>
         </View>
@@ -145,14 +149,13 @@ const styles = StyleSheet.create({
     width: 100,
     height: 100,
     borderRadius: 50,
-    backgroundColor: Colors.surface,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: Spacing.md,
   },
   appName: {
     ...Typography.h1,
-    color: Colors.primary,
+    color: Colors.deepNavy,
   },
   tagline: {
     ...Typography.body,
@@ -164,7 +167,7 @@ const styles = StyleSheet.create({
   },
   title: {
     ...Typography.h2,
-    color: Colors.primary,
+    color: Colors.deepNavy,
     marginBottom: Spacing.lg,
   },
   button: {
@@ -185,7 +188,7 @@ const styles = StyleSheet.create({
   },
   linkText: {
     ...Typography.body,
-    color: Colors.primary,
+    color: Colors.royalBlue,
     fontWeight: '600',
   },
 });

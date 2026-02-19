@@ -281,6 +281,7 @@ interface CollectionState {
   activeTab: CollectionTab;
   collections: Collection[];
   defaultCollection: Collection | null;
+  folders: Collection[];
   collectionItems: CollectionItem[];
   wishlistItems: WishlistItem[];
   isLoading: boolean;
@@ -295,12 +296,19 @@ interface CollectionState {
   removeFromCollection: (itemId: string, skipRefetch?: boolean) => Promise<void>;
   removeFromWishlist: (itemId: string, skipRefetch?: boolean) => Promise<void>;
   moveToCollection: (wishlistItemId: string) => Promise<void>;
+
+  // Folder actions
+  createFolder: (name: string) => Promise<Collection>;
+  renameFolder: (id: string, name: string) => Promise<void>;
+  deleteFolder: (id: string) => Promise<void>;
+  addItemsToFolder: (folderId: string, collectionItemIds: string[]) => Promise<void>;
 }
 
 export const useCollectionStore = create<CollectionState>((set, get) => ({
   activeTab: 'collection',
   collections: [],
   defaultCollection: null,
+  folders: [],
   collectionItems: [],
   wishlistItems: [],
   isLoading: false,
@@ -313,7 +321,8 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
       const collections = await api.getCollections();
       const sortedCollections = [...collections].sort((a, b) => a.sort_order - b.sort_order);
       const defaultCollection = sortedCollections[0] || null;
-      set({ collections, defaultCollection, isLoading: false });
+      const folders = sortedCollections.filter(c => c.id !== defaultCollection?.id);
+      set({ collections, defaultCollection, folders, isLoading: false });
     } catch (error) {
       set({ isLoading: false });
       throw error;
@@ -406,6 +415,31 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
       fetchCollectionItems(),
       fetchWishlistItems(),
     ]);
+  },
+
+  createFolder: async (name) => {
+    const collection = await api.createCollection({ name });
+    await get().fetchCollections();
+    return collection;
+  },
+
+  renameFolder: async (id, name) => {
+    await api.renameCollection(id, name);
+    await get().fetchCollections();
+  },
+
+  deleteFolder: async (id) => {
+    await api.deleteCollection(id);
+    await get().fetchCollections();
+  },
+
+  addItemsToFolder: async (folderId, collectionItemIds) => {
+    const { collectionItems } = get();
+    const items = collectionItems.filter(item => collectionItemIds.includes(item.id));
+    await Promise.all(
+      items.map(item => api.addRecordToFolder(folderId, item.record_id))
+    );
+    await get().fetchCollections();
   },
 
 }));

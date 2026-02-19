@@ -199,7 +199,7 @@ export default function UserProfileScreen() {
   if (isLoading) {
     return (
       <View style={[styles.container, styles.center, { paddingTop: insets.top }]}>
-        <ActivityIndicator size="large" color={Colors.primary} />
+        <ActivityIndicator size="large" color={Colors.royalBlue} />
       </View>
     );
   }
@@ -256,13 +256,13 @@ export default function UserProfileScreen() {
           disabled={isFollowLoading}
         >
           {isFollowLoading ? (
-            <ActivityIndicator size="small" color={profile.is_following ? Colors.primary : Colors.background} />
+            <ActivityIndicator size="small" color={profile.is_following ? Colors.royalBlue : Colors.background} />
           ) : (
             <>
               <Ionicons
                 name={profile.is_following ? 'checkmark' : 'person-add-outline'}
                 size={18}
-                color={profile.is_following ? Colors.primary : Colors.background}
+                color={profile.is_following ? Colors.royalBlue : Colors.background}
               />
               <Text style={[
                 styles.followButtonText,
@@ -331,7 +331,7 @@ export default function UserProfileScreen() {
     if (loading) {
       return (
         <View style={styles.emptyContainer}>
-          <ActivityIndicator color={Colors.primary} />
+          <ActivityIndicator color={Colors.royalBlue} />
         </View>
       );
     }
@@ -345,7 +345,7 @@ export default function UserProfileScreen() {
     );
   };
 
-  const data = activeTab === 'collection' ? collectionItems : (wishlist?.items || []);
+  const data: (CollectionItem | WishlistPublicItem)[] = activeTab === 'collection' ? collectionItems : (wishlist?.items || []);
   const isDataLoading = activeTab === 'collection' ? isLoadingCollection : isLoadingWishlist;
   const showEmpty = (!isDataLoading && data.length === 0) || (activeTab === 'wishlist' && wishlistError);
 
@@ -354,7 +354,7 @@ export default function UserProfileScreen() {
       {/* Back button */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-          <Ionicons name="arrow-back" size={24} color={Colors.primary} />
+          <Ionicons name="arrow-back" size={24} color={Colors.royalBlue} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>@{username}</Text>
         <View style={styles.headerPlaceholder} />
@@ -374,7 +374,7 @@ export default function UserProfileScreen() {
           <RefreshControl
             refreshing={isRefreshing}
             onRefresh={handleRefresh}
-            tintColor={Colors.primary}
+            tintColor={Colors.royalBlue}
           />
         }
       />
@@ -472,7 +472,7 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     ...Typography.h4,
-    color: Colors.primary,
+    color: Colors.royalBlue,
   },
   backButton: {
     width: 36,
@@ -505,13 +505,13 @@ const styles = StyleSheet.create({
     width: 96,
     height: 96,
     borderRadius: 48,
-    backgroundColor: Colors.accent,
+    backgroundColor: Colors.royalBlue,
     alignItems: 'center',
     justifyContent: 'center',
   },
   displayName: {
     ...Typography.h3,
-    color: Colors.primary,
+    color: Colors.royalBlue,
     marginBottom: 2,
   },
   username: {
@@ -542,7 +542,7 @@ const styles = StyleSheet.create({
   },
   statValue: {
     ...Typography.h4,
-    color: Colors.primary,
+    color: Colors.royalBlue,
   },
   statLabel: {
     ...Typography.caption,
@@ -559,7 +559,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: Spacing.sm,
-    backgroundColor: Colors.primary,
+    backgroundColor: Colors.royalBlue,
     borderRadius: BorderRadius.md,
     paddingVertical: Spacing.sm,
     marginBottom: Spacing.lg,
@@ -574,7 +574,7 @@ const styles = StyleSheet.create({
     color: Colors.background,
   },
   followButtonTextActive: {
-    color: Colors.primary,
+    color: Colors.royalBlue,
   },
   tabContainer: {
     marginBottom: Spacing.md,
@@ -588,7 +588,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 4,
-    backgroundColor: Colors.accent,
+    backgroundColor: Colors.royalBlue,
     borderRadius: BorderRadius.sm,
     paddingVertical: Spacing.xs,
     marginHorizontal: 2,
@@ -611,7 +611,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   followPromptButton: {
-    backgroundColor: Colors.primary,
+    backgroundColor: Colors.royalBlue,
     borderRadius: BorderRadius.md,
     paddingVertical: Spacing.sm,
     paddingHorizontal: Spacing.xl,
@@ -667,7 +667,7 @@ const styles = StyleSheet.create({
     textAlignVertical: 'top',
   },
   bookButton: {
-    backgroundColor: Colors.accent,
+    backgroundColor: Colors.royalBlue,
     borderRadius: BorderRadius.lg,
     paddingVertical: Spacing.md,
     alignItems: 'center',

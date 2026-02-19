@@ -1,5 +1,5 @@
 /**
- * Экран профиля (модальный)
+ * Экран профиля (модальный) — Blue Gradient Edition
  */
 import { useCallback, useState } from 'react';
 import {
@@ -13,12 +13,14 @@ import {
   Share,
 } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuthStore, useCollectionStore } from '../lib/store';
 import { CollectionTab } from '../lib/types';
 import { Button } from '../components/ui';
+import { AnimatedGradientText } from '../components/AnimatedGradientText';
 import { Colors, Typography, Spacing, BorderRadius, Shadows } from '../constants/theme';
 
 export default function ProfileScreen() {
@@ -93,11 +95,11 @@ export default function ProfileScreen() {
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
-      {/* Хедер */}
+      {/* Editorial header */}
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Профиль</Text>
+        <AnimatedGradientText style={Typography.display}>Профиль</AnimatedGradientText>
         <TouchableOpacity onPress={handleClose} style={styles.closeButton}>
-          <Ionicons name="close" size={28} color={Colors.primary} />
+          <Ionicons name="close" size={28} color={Colors.deepNavy} />
         </TouchableOpacity>
       </View>
 
@@ -111,9 +113,12 @@ export default function ProfileScreen() {
             {user?.avatar_url ? (
               <Image source={{ uri: user.avatar_url }} style={styles.avatar} />
             ) : (
-              <View style={styles.avatarPlaceholder}>
+              <LinearGradient
+                colors={[Colors.royalBlue, Colors.periwinkle]}
+                style={styles.avatarPlaceholder}
+              >
                 <Ionicons name="disc" size={48} color={Colors.background} />
-              </View>
+              </LinearGradient>
             )}
           </View>
 
@@ -128,11 +133,11 @@ export default function ProfileScreen() {
           {stats.map((stat, index) => (
             <TouchableOpacity
               key={index}
-              style={[styles.statCard, Shadows.sm]}
+              style={[styles.statCard, Shadows.lg]}
               onPress={() => handleStatPress(stat.tab)}
               activeOpacity={0.7}
             >
-              <Ionicons name={stat.icon} size={24} color={Colors.accent} />
+              <Ionicons name={stat.icon} size={24} color={Colors.royalBlue} />
               <Text style={styles.statValue}>{stat.value}</Text>
               <Text style={styles.statLabel}>{stat.label}</Text>
             </TouchableOpacity>
@@ -145,11 +150,11 @@ export default function ProfileScreen() {
           <Text style={styles.linkUrl}>{profileUrl}</Text>
           <View style={styles.linkActions}>
             <TouchableOpacity style={styles.linkButton} onPress={handleCopyLink}>
-              <Ionicons name={copied ? "checkmark-outline" : "copy-outline"} size={18} color={Colors.primary} />
+              <Ionicons name={copied ? "checkmark-outline" : "copy-outline"} size={18} color={Colors.royalBlue} />
               <Text style={styles.linkButtonText}>{copied ? 'Скопировано' : 'Копировать'}</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.linkButton} onPress={handleShareProfile}>
-              <Ionicons name="share-outline" size={18} color={Colors.primary} />
+              <Ionicons name="share-outline" size={18} color={Colors.royalBlue} />
               <Text style={styles.linkButtonText}>Поделиться</Text>
             </TouchableOpacity>
           </View>
@@ -163,7 +168,7 @@ export default function ProfileScreen() {
             style={styles.settingsItem}
             onPress={() => router.push('/settings/edit-profile')}
           >
-            <Ionicons name="person-outline" size={24} color={Colors.primary} />
+            <Ionicons name="person-outline" size={24} color={Colors.royalBlue} />
             <Text style={styles.settingsItemText}>Редактировать профиль</Text>
             <Ionicons name="chevron-forward" size={20} color={Colors.textMuted} />
           </TouchableOpacity>
@@ -172,19 +177,19 @@ export default function ProfileScreen() {
             style={styles.settingsItem}
             onPress={() => router.push('/settings/share-profile')}
           >
-            <Ionicons name="globe-outline" size={24} color={Colors.primary} />
+            <Ionicons name="globe-outline" size={24} color={Colors.royalBlue} />
             <Text style={styles.settingsItemText}>Настройки профиля</Text>
             <Ionicons name="chevron-forward" size={20} color={Colors.textMuted} />
           </TouchableOpacity>
 
           <TouchableOpacity style={styles.settingsItem}>
-            <Ionicons name="notifications-outline" size={24} color={Colors.primary} />
+            <Ionicons name="notifications-outline" size={24} color={Colors.royalBlue} />
             <Text style={styles.settingsItemText}>Уведомления</Text>
             <Ionicons name="chevron-forward" size={20} color={Colors.textMuted} />
           </TouchableOpacity>
 
           <TouchableOpacity style={styles.settingsItem}>
-            <Ionicons name="help-circle-outline" size={24} color={Colors.primary} />
+            <Ionicons name="help-circle-outline" size={24} color={Colors.royalBlue} />
             <Text style={styles.settingsItemText}>Помощь</Text>
             <Ionicons name="chevron-forward" size={20} color={Colors.textMuted} />
           </TouchableOpacity>
@@ -215,14 +220,9 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: Spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.divider,
-  },
-  headerTitle: {
-    ...Typography.h3,
-    color: Colors.primary,
+    alignItems: 'flex-end',
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
   },
   closeButton: {
     padding: Spacing.xs,
@@ -246,13 +246,12 @@ const styles = StyleSheet.create({
     width: 100,
     height: 100,
     borderRadius: 50,
-    backgroundColor: Colors.accent,
     alignItems: 'center',
     justifyContent: 'center',
   },
   displayName: {
-    ...Typography.h3,
-    color: Colors.primary,
+    ...Typography.h2,
+    color: Colors.deepNavy,
     marginBottom: Spacing.xs,
   },
   email: {
@@ -272,8 +271,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   statValue: {
-    ...Typography.h2,
-    color: Colors.primary,
+    fontSize: 36,
+    fontFamily: 'Inter_800ExtraBold',
+    lineHeight: 42,
+    color: Colors.deepNavy,
     marginTop: Spacing.sm,
   },
   statLabel: {
@@ -298,7 +299,7 @@ const styles = StyleSheet.create({
   },
   linkUrl: {
     ...Typography.bodyBold,
-    color: Colors.primary,
+    color: Colors.royalBlue,
     marginBottom: Spacing.md,
   },
   linkActions: {
@@ -316,23 +317,25 @@ const styles = StyleSheet.create({
   },
   linkButtonText: {
     ...Typography.buttonSmall,
-    color: Colors.primary,
+    color: Colors.royalBlue,
   },
   settingsSection: {
     marginBottom: Spacing.xl,
+    gap: Spacing.sm,
   },
   sectionTitle: {
     ...Typography.h4,
-    color: Colors.primary,
-    marginBottom: Spacing.md,
+    color: Colors.deepNavy,
+    marginBottom: Spacing.sm,
   },
   settingsItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: Spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.divider,
+    padding: Spacing.md,
+    backgroundColor: Colors.background,
+    borderRadius: BorderRadius.lg,
     gap: Spacing.md,
+    ...Shadows.sm,
   },
   settingsItemText: {
     ...Typography.body,

@@ -1,5 +1,5 @@
 /**
- * Экран детальной информации о пластинке
+ * Экран детальной информации о пластинке — Blue Gradient Edition
  */
 import { useEffect, useState, useCallback } from 'react';
 import {
@@ -15,12 +15,15 @@ import {
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { LinearGradient } from 'expo-linear-gradient';
 import { Header } from '../../components/Header';
+import { GradientText } from '../../components/GradientText';
+import { FolderPickerModal } from '../../components/FolderPickerModal';
 import { Button, Card, ActionSheet, ActionSheetAction } from '../../components/ui';
 import { api } from '../../lib/api';
 import { useCollectionStore } from '../../lib/store';
 import { VinylRecord } from '../../lib/types';
-import { Colors, Typography, Spacing, BorderRadius } from '../../constants/theme';
+import { Colors, Typography, Spacing, BorderRadius, Gradients } from '../../constants/theme';
 
 const handleArtistNavigation = async (artistName: string, router: ReturnType<typeof useRouter>) => {
   try {
@@ -42,6 +45,7 @@ export default function RecordDetailScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showActionSheet, setShowActionSheet] = useState(false);
+  const [showFolderPicker, setShowFolderPicker] = useState(false);
 
   const {
     addToCollection,
@@ -54,6 +58,7 @@ export default function RecordDetailScreen() {
     fetchCollectionItems,
     fetchWishlistItems,
     fetchCollections,
+    addItemsToFolder,
   } = useCollectionStore();
 
   useEffect(() => {
@@ -240,40 +245,31 @@ export default function RecordDetailScreen() {
     );
   };
 
-  const handleAddCopyToCollection = async () => {
-    if (!record) return;
-    const discogsId = String(record.discogs_id || id);
-    if (!discogsId) {
-      Alert.alert('Ошибка', 'Не найден идентификатор пластинки');
-      return;
-    }
-
+  const handleAddRecordToFolder = async (folderId: string) => {
+    const status = getRecordStatus();
+    if (!status.collectionItemId) return;
     try {
-      await addToCollection(discogsId);
-      Alert.alert('Готово!', 'Копия добавлена в коллекцию');
-    } catch (error: any) {
-      const message = error?.response?.data?.detail || error?.message || 'Не удалось добавить в коллекцию';
-      Alert.alert('Ошибка', message);
+      await addItemsToFolder(folderId, [status.collectionItemId]);
+      setShowFolderPicker(false);
+      Alert.alert('Готово!', 'Пластинка добавлена в папку');
+    } catch {
+      Alert.alert('Ошибка', 'Не удалось добавить в папку');
     }
   };
-
 
   const getActionSheetActions = (): ActionSheetAction[] => {
     const recordStatus = getRecordStatus();
     const actions: ActionSheetAction[] = [];
 
     if (recordStatus.status === 'in_collection') {
-      // Добавить копию (всегда доступно)
+      // Добавить в папку
       actions.push({
-        label: 'Добавить копию в коллекцию',
-        icon: 'copy-outline',
-        onPress: handleAddCopyToCollection,
+        label: 'Добавить в папку',
+        icon: 'folder-outline',
+        onPress: () => setShowFolderPicker(true),
       });
 
-      // УБРАЛИ "Отправить в вишлист" - как в Discogs
-      // Пользователь должен удалить все копии и добавить в вишлист вручную
-
-      // Удалить эту копию
+      // Удалить
       actions.push({
         label: 'Удалить',
         icon: 'trash-outline',
@@ -288,7 +284,7 @@ export default function RecordDetailScreen() {
   if (isLoading) {
     return (
       <View style={styles.centered}>
-        <ActivityIndicator size="large" color={Colors.primary} />
+        <ActivityIndicator size="large" color={Colors.royalBlue} />
       </View>
     );
   }
@@ -339,16 +335,23 @@ export default function RecordDetailScreen() {
             }
             activeOpacity={0.7}
           >
-            {record.artist_thumb_image_url ? (
-              <Image
-                source={{ uri: record.artist_thumb_image_url }}
-                style={styles.artistAvatar}
-              />
-            ) : (
-              <View style={styles.artistAvatarPlaceholder}>
-                <Ionicons name="person" size={24} color={Colors.textMuted} />
-              </View>
-            )}
+            <LinearGradient
+              colors={Gradients.blue}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.artistAvatarBorder}
+            >
+              {record.artist_thumb_image_url ? (
+                <Image
+                  source={{ uri: record.artist_thumb_image_url }}
+                  style={styles.artistAvatar}
+                />
+              ) : (
+                <View style={styles.artistAvatarPlaceholder}>
+                  <Ionicons name="person" size={24} color={Colors.textMuted} />
+                </View>
+              )}
+            </LinearGradient>
             <Text style={styles.artistName}>{record.artist}</Text>
           </TouchableOpacity>
 
@@ -419,9 +422,9 @@ export default function RecordDetailScreen() {
               )}
               <View style={styles.priceItem}>
                 <Text style={styles.priceLabel}>Медиана</Text>
-                <Text style={[styles.priceValue, styles.priceMedian]}>
+                <GradientText style={styles.priceMedian}>
                   ${record.estimated_price_median.toFixed(2)}
-                </Text>
+                </GradientText>
               </View>
               {record.estimated_price_max && (
                 <View style={styles.priceItem}>
@@ -488,7 +491,7 @@ export default function RecordDetailScreen() {
           return (
             <View style={[styles.actionsContainer, { paddingBottom: insets.bottom + Spacing.md }]}>
               <Button
-                title="В коллекцию"
+                title="Добавить"
                 onPress={handleAddToCollection}
                 style={styles.actionButton}
               />
@@ -506,7 +509,7 @@ export default function RecordDetailScreen() {
         return (
           <View style={[styles.actionsContainer, { paddingBottom: insets.bottom + Spacing.md }]}>
             <Button
-              title="В коллекцию"
+              title="Добавить"
               onPress={handleAddToCollection}
               style={styles.actionButton}
             />
@@ -525,6 +528,12 @@ export default function RecordDetailScreen() {
         visible={showActionSheet}
         actions={getActionSheetActions()}
         onClose={() => setShowActionSheet(false)}
+      />
+
+      <FolderPickerModal
+        visible={showFolderPicker}
+        onClose={() => setShowFolderPicker(false)}
+        onSelectFolder={handleAddRecordToFolder}
       />
     </View>
   );
@@ -557,7 +566,7 @@ const styles = StyleSheet.create({
   cover: {
     width: '100%',
     aspectRatio: 1,
-    borderRadius: BorderRadius.lg,
+    borderRadius: 24,
   },
   coverPlaceholder: {
     backgroundColor: Colors.surface,
@@ -575,6 +584,12 @@ const styles = StyleSheet.create({
     padding: Spacing.sm,
     marginBottom: Spacing.md,
     gap: Spacing.sm,
+  },
+  artistAvatarBorder: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    padding: 2,
   },
   artistAvatar: {
     width: 48,
@@ -597,8 +612,11 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   title: {
-    ...Typography.h1,
-    color: Colors.primary,
+    fontSize: 36,
+    fontFamily: 'Inter_800ExtraBold',
+    lineHeight: 42,
+    letterSpacing: -1,
+    color: Colors.deepNavy,
     marginBottom: Spacing.md,
   },
   metaRow: {
@@ -620,7 +638,7 @@ const styles = StyleSheet.create({
   },
   cardTitle: {
     ...Typography.h4,
-    color: Colors.primary,
+    color: Colors.deepNavy,
     marginBottom: Spacing.sm,
   },
   detailRow: {
@@ -663,7 +681,8 @@ const styles = StyleSheet.create({
     color: Colors.text,
   },
   priceMedian: {
-    color: Colors.accent,
+    ...Typography.h4,
+    fontFamily: 'Inter_700Bold',
   },
   trackRow: {
     flexDirection: 'row',
@@ -694,10 +713,9 @@ const styles = StyleSheet.create({
     right: 0,
     flexDirection: 'row',
     padding: Spacing.md,
-    backgroundColor: Colors.background,
-    borderTopWidth: 1,
-    borderTopColor: Colors.divider,
+    backgroundColor: Colors.glassBg,
     gap: Spacing.sm,
+    overflow: 'hidden',
   },
   actionButton: {
     flex: 1,
@@ -727,7 +745,7 @@ const styles = StyleSheet.create({
     height: 56,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: Colors.primary,
+    backgroundColor: Colors.royalBlue,
     borderRadius: BorderRadius.md,
   },
   removeButton: {

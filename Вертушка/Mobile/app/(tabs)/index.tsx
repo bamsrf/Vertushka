@@ -19,7 +19,7 @@ import { Button } from '../../components/ui';
 import { RecordCard } from '../../components/RecordCard';
 import { useScannerStore, useCollectionStore } from '../../lib/store';
 import { RecordSearchResult } from '../../lib/types';
-import { Colors, Typography, Spacing, BorderRadius } from '../../constants/theme';
+import { Colors, Typography, Spacing, BorderRadius, Shadows } from '../../constants/theme';
 
 export default function ScannerScreen() {
   const router = useRouter();
@@ -29,7 +29,7 @@ export default function ScannerScreen() {
   const [showResults, setShowResults] = useState(false);
 
   const { scanResults, isLoading, searchByBarcode, clearScan } = useScannerStore();
-  const { addToCollection, addToWishlist } = useCollectionStore();
+  const { addToCollection, addToWishlist, collectionItems } = useCollectionStore();
 
   const handleBarCodeScanned = async ({ data }: { data: string }) => {
     if (!isScanning || isLoading) return;
@@ -60,12 +60,31 @@ export default function ScannerScreen() {
   };
 
   const handleAddToCollection = async (record: RecordSearchResult) => {
-    try {
-      await addToCollection(record.discogs_id);
-      Alert.alert('Готово!', `"${record.title}" добавлена в коллекцию`);
-      handleCloseResults();
-    } catch (error) {
-      Alert.alert('Ошибка', 'Не удалось добавить в коллекцию');
+    const alreadyInCollection = collectionItems.some(
+      (item) => item.record.discogs_id === record.discogs_id
+    );
+
+    const doAdd = async () => {
+      try {
+        await addToCollection(record.discogs_id);
+        Alert.alert('Готово!', `"${record.title}" добавлена в коллекцию`);
+        handleCloseResults();
+      } catch (error) {
+        Alert.alert('Ошибка', 'Не удалось добавить в коллекцию');
+      }
+    };
+
+    if (alreadyInCollection) {
+      Alert.alert(
+        'Уже в коллекции',
+        `"${record.title}" уже есть в вашей коллекции. Добавить ещё одну копию?`,
+        [
+          { text: 'Отмена', style: 'cancel' },
+          { text: 'Добавить', onPress: doAdd },
+        ]
+      );
+    } else {
+      await doAdd();
     }
   };
 
@@ -154,7 +173,7 @@ export default function ScannerScreen() {
           <View style={styles.resultsHeader}>
             <Text style={styles.resultsTitle}>Найдено</Text>
             <TouchableOpacity onPress={handleCloseResults}>
-              <Ionicons name="close" size={28} color={Colors.primary} />
+              <Ionicons name="close" size={28} color={Colors.royalBlue} />
             </TouchableOpacity>
           </View>
 
@@ -166,6 +185,7 @@ export default function ScannerScreen() {
               <RecordCard
                 record={item}
                 size="large"
+                variant="compact"
                 onPress={() => handleRecordPress(item)}
                 onAddToCollection={() => handleAddToCollection(item)}
                 onAddToWishlist={() => handleAddToWishlist(item)}
@@ -187,7 +207,7 @@ export default function ScannerScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.primary,
+    backgroundColor: Colors.deepNavy,
   },
   centered: {
     flex: 1,
@@ -198,7 +218,7 @@ const styles = StyleSheet.create({
   },
   title: {
     ...Typography.h3,
-    color: Colors.primary,
+    color: Colors.deepNavy,
     marginTop: Spacing.md,
     marginBottom: Spacing.sm,
   },
@@ -213,7 +233,7 @@ const styles = StyleSheet.create({
   },
   overlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0, 0, 0, 0.4)',
+    backgroundColor: 'rgba(0, 0, 0, 0.25)',
   },
   header: {
     alignItems: 'center',
@@ -241,7 +261,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     width: 40,
     height: 40,
-    borderColor: Colors.background,
+    borderColor: Colors.lavender,
   },
   cornerTopLeft: {
     top: 0,
@@ -280,11 +300,13 @@ const styles = StyleSheet.create({
   },
   loadingText: {
     ...Typography.body,
-    color: Colors.background,
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    color: Colors.deepNavy,
+    backgroundColor: Colors.glassBg,
     paddingHorizontal: Spacing.lg,
     paddingVertical: Spacing.sm,
     borderRadius: BorderRadius.full,
+    overflow: 'hidden',
+    ...Shadows.sm,
   },
   resultsContainer: {
     flex: 1,
@@ -299,8 +321,8 @@ const styles = StyleSheet.create({
     borderBottomColor: Colors.divider,
   },
   resultsTitle: {
-    ...Typography.h3,
-    color: Colors.primary,
+    ...Typography.h2,
+    color: Colors.deepNavy,
   },
   resultsList: {
     padding: Spacing.md,

@@ -113,6 +113,7 @@ export interface MasterRelease {
   genres?: string[];
   styles?: string[];
   cover_image_url?: string;
+  tracklist?: Track[];
 }
 
 export interface MasterVersion {

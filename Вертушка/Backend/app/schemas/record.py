@@ -141,6 +141,7 @@ class MasterRelease(BaseModel):
     genres: list[str] = []
     styles: list[str] = []
     cover_image_url: str | None = None
+    tracklist: list | None = None
 
 
 class MasterSearchResponse(BaseModel):

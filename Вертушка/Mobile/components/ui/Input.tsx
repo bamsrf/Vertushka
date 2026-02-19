@@ -1,5 +1,5 @@
 /**
- * Поле ввода в стиле Nike
+ * Поле ввода — Blue Gradient Edition
  */
 import React, { useState } from 'react';
 import {
@@ -143,12 +143,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     height: ComponentSizes.inputHeight,
     backgroundColor: Colors.surface,
-    borderRadius: BorderRadius.md,
+    borderRadius: BorderRadius.xl,
     borderWidth: 1.5,
-    borderColor: 'transparent',
+    borderColor: Colors.border,
   },
   inputContainerFocused: {
-    borderColor: Colors.primary,
+    borderColor: Colors.royalBlue,
     backgroundColor: Colors.background,
   },
   inputContainerError: {

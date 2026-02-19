@@ -1,5 +1,5 @@
 /**
- * Сегментированный контрол (Моё / Хочу)
+ * Сегментированный контрол — Blue Gradient Edition
  */
 import React, { useState } from 'react';
 import {
@@ -38,8 +38,8 @@ export function SegmentedControl<T extends string>({
   const selectedIndex = segments.findIndex((s) => s.key === selectedKey);
   const translateX = useSharedValue(0);
 
-  const segmentWidth = containerWidth > 0 
-    ? (containerWidth - PADDING * 2) / segments.length 
+  const segmentWidth = containerWidth > 0
+    ? (containerWidth - PADDING * 2) / segments.length
     : 0;
 
   React.useEffect(() => {
@@ -64,10 +64,10 @@ export function SegmentedControl<T extends string>({
       {containerWidth > 0 && (
         <Animated.View style={[styles.indicator, indicatorStyle]} />
       )}
-      
+
       {segments.map((segment) => {
         const isSelected = segment.key === selectedKey;
-        
+
         return (
           <TouchableOpacity
             key={segment.key}
@@ -98,6 +98,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.surface,
     borderRadius: BorderRadius.md,
     padding: PADDING,
+    height: 48,
     position: 'relative',
   },
   indicator: {
@@ -107,26 +108,27 @@ const styles = StyleSheet.create({
     left: PADDING,
     backgroundColor: Colors.background,
     borderRadius: BorderRadius.sm,
-    shadowColor: '#000',
+    shadowColor: '#3B4BF5',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.1,
-    shadowRadius: 2,
+    shadowRadius: 4,
     elevation: 2,
   },
   segment: {
     flex: 1,
-    paddingVertical: Spacing.sm,
+    paddingVertical: 10,
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 1,
   },
   segmentText: {
     ...Typography.buttonSmall,
-    color: Colors.textSecondary,
+    color: '#666666',
+    fontFamily: 'Inter_500Medium',
   },
   segmentTextSelected: {
-    color: Colors.primary,
-    fontWeight: '600',
+    color: Colors.text,
+    fontFamily: 'Inter_700Bold',
   },
   segmentTextDisabled: {
     opacity: 0.5,

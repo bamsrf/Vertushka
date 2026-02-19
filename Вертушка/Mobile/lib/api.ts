@@ -35,7 +35,7 @@ import {
 // API сервер
 // Для локальной разработки с бэкендом на localhost:
 const API_BASE_URL = __DEV__
-  ? 'http://192.168.1.73:8000/api'  // Локальный IP для разработки (работает на симуляторе и физическом устройстве)
+  ? 'http://192.168.1.68:8000/api'  // Локальный IP для разработки (работает на симуляторе и физическом устройстве)
   : 'https://api.vinyl-vertushka.ru/api'; // Продакшен сервер
 
 const TOKEN_KEY = 'auth_token';
@@ -541,6 +541,25 @@ class ApiClient {
     const params = { page, per_page: perPage };
     const response = await this.client.get<FeedItem[]>('/users/feed', { params });
     return response.data;
+  }
+
+  // ==================== Folders ====================
+
+  async addRecordToFolder(collectionId: string, recordId: string): Promise<CollectionItem> {
+    const response = await this.client.post<CollectionItem>(
+      `/collections/${collectionId}/items`,
+      { record_id: recordId }
+    );
+    return response.data;
+  }
+
+  async renameCollection(id: string, name: string): Promise<Collection> {
+    const response = await this.client.put<Collection>(`/collections/${id}`, { name });
+    return response.data;
+  }
+
+  async deleteCollection(id: string): Promise<void> {
+    await this.client.delete(`/collections/${id}`);
   }
 
   // ==================== Gift Booking ====================

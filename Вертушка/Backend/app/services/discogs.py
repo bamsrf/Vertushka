@@ -475,6 +475,16 @@ class DiscogsService:
         images = data.get("images", [])
         cover_image = images[0].get("uri") if images else None
 
+        tracklist = [
+            {
+                "position": track.get("position"),
+                "title": track.get("title"),
+                "duration": track.get("duration"),
+            }
+            for track in data.get("tracklist", [])
+            if track.get("type_", "track") == "track"
+        ]
+
         return MasterRelease(
             master_id=str(data.get("id")),
             title=data.get("title", ""),
@@ -486,6 +496,7 @@ class DiscogsService:
             genres=data.get("genres", []),
             styles=data.get("styles", []),
             cover_image_url=cover_image,
+            tracklist=tracklist or None,
         )
 
     async def get_master_versions(

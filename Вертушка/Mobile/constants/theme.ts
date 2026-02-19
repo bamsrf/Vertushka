@@ -1,33 +1,42 @@
 /**
- * Дизайн-система Вертушка
- * Nike-inspired: минимализм, воздух, крупная типографика
+ * Дизайн-система Вертушка — Blue Gradient Edition
+ * Сине-розовый градиент, Inter font, glass morphism
  */
 
 export const Colors = {
-  // Основные цвета
-  background: '#FFFFFF',
-  surface: '#F5F5F5',
-  primary: '#1A1A1A',
-  accent: '#8B7355',
-  secondary: '#E8E4DF',
-  
+  // Основная градиентная палитра
+  deepNavy: '#0A0B3B',
+  royalBlue: '#3B4BF5',
+  electricBlue: '#5B6AF5',
+  periwinkle: '#8B9CF7',
+  lavender: '#C5B8F2',
+  softPink: '#F0C4D8',
+  blushPink: '#F8E4EE',
+
+  // Нейтральные
+  background: '#FAFBFF',
+  surface: '#F0F2FA',
+  surfaceHover: '#E8EBFA',
+
   // Текст
-  text: '#1A1A1A',
-  textSecondary: '#6B6B6B',
-  textMuted: '#9B9B9B',
-  
+  text: '#0A0B3B',
+  textSecondary: '#5A5F8A',
+  textMuted: '#9A9EBF',
+
   // Состояния
-  error: '#DC3545',
-  success: '#28A745',
-  warning: '#FFC107',
-  
+  error: '#E5484D',
+  success: '#30A46C',
+  warning: '#F5A623',
+
   // Границы и разделители
-  border: '#E5E5E5',
-  divider: '#F0F0F0',
-  
-  // Прозрачности
-  overlay: 'rgba(0, 0, 0, 0.5)',
-  cardShadow: 'rgba(0, 0, 0, 0.08)',
+  border: '#E0E3F0',
+  divider: '#ECEEF7',
+
+  // Специальные
+  overlay: 'rgba(10, 11, 59, 0.5)',
+  cardShadow: 'rgba(59, 75, 245, 0.08)',
+  glassBg: 'rgba(250, 251, 255, 0.85)',
+
 };
 
 export const Spacing = {
@@ -40,122 +49,154 @@ export const Spacing = {
 };
 
 export const BorderRadius = {
-  sm: 8,
-  md: 12,
-  lg: 16,
-  xl: 24,
+  sm: 10,
+  md: 14,
+  lg: 18,
+  xl: 26,
   full: 9999,
 };
 
+export const Gradients = {
+  blue: ['#3B4BF5', '#5B6AF5'] as const,
+  bluePink: ['#3B4BF5', '#8B9CF7', '#F0C4D8'] as const,
+  blueLight: ['#5B6AF5', '#8B9CF7'] as const,
+  overlay: ['transparent', 'rgba(10, 11, 59, 0.7)'] as const,
+};
+
 export const Typography = {
-  // Заголовки
-  h1: {
-    fontSize: 32,
-    fontWeight: '700' as const,
+  heroTitle: {
+    fontSize: 46,
+    fontFamily: 'Arial Black',
+    lineHeight: 50,
+    letterSpacing: -1.5,
+  },
+  display: {
+    fontSize: 36,
+    fontFamily: 'Arial Black',
     lineHeight: 40,
-    letterSpacing: -0.5,
+    letterSpacing: -1,
+  },
+  h1: {
+    fontSize: 34,
+    fontFamily: 'Inter_800ExtraBold',
+    lineHeight: 40,
+    letterSpacing: -1,
   },
   h2: {
     fontSize: 28,
-    fontWeight: '700' as const,
-    lineHeight: 36,
-    letterSpacing: -0.3,
+    fontFamily: 'Inter_700Bold',
+    lineHeight: 34,
+    letterSpacing: -0.5,
   },
   h3: {
-    fontSize: 24,
-    fontWeight: '600' as const,
-    lineHeight: 32,
-  },
-  h4: {
-    fontSize: 20,
-    fontWeight: '600' as const,
+    fontSize: 22,
+    fontFamily: 'Inter_600SemiBold',
     lineHeight: 28,
   },
-  
-  // Тело текста
+  h4: {
+    fontSize: 18,
+    fontFamily: 'Inter_600SemiBold',
+    lineHeight: 24,
+  },
+
   body: {
     fontSize: 16,
-    fontWeight: '400' as const,
+    fontFamily: 'Inter_400Regular',
     lineHeight: 24,
   },
   bodyBold: {
     fontSize: 16,
-    fontWeight: '600' as const,
+    fontFamily: 'Inter_600SemiBold',
     lineHeight: 24,
   },
   bodySmall: {
     fontSize: 14,
-    fontWeight: '400' as const,
+    fontFamily: 'Inter_400Regular',
     lineHeight: 20,
   },
-  
-  // Подписи
+
   caption: {
     fontSize: 12,
-    fontWeight: '400' as const,
+    fontFamily: 'Inter_400Regular',
     lineHeight: 16,
   },
-  
-  // Кнопки
+
   button: {
     fontSize: 16,
-    fontWeight: '600' as const,
+    fontFamily: 'Inter_600SemiBold',
     lineHeight: 24,
-    letterSpacing: 0.5,
+    letterSpacing: 0.3,
   },
   buttonSmall: {
     fontSize: 14,
-    fontWeight: '600' as const,
+    fontFamily: 'Inter_500Medium',
     lineHeight: 20,
+    letterSpacing: 0.2,
   },
 };
 
 export const Shadows = {
   sm: {
-    shadowColor: '#000',
+    shadowColor: '#3B4BF5',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.06,
     shadowRadius: 4,
     elevation: 2,
   },
   md: {
-    shadowColor: '#000',
+    shadowColor: '#3B4BF5',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.08,
     shadowRadius: 12,
     elevation: 4,
   },
   lg: {
-    shadowColor: '#000',
+    shadowColor: '#3B4BF5',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.15,
+    shadowRadius: 32,
+    elevation: 12,
+  },
+  tabBar: {
+    shadowColor: '#000000',
     shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.12,
+    shadowOpacity: 0.14,
     shadowRadius: 24,
-    elevation: 8,
+    elevation: 14,
   },
 };
 
-// Константы для компонентов
 export const ComponentSizes = {
-  // Кнопки
   buttonHeight: 56,
   buttonHeightSmall: 44,
-  
-  // Инпуты
   inputHeight: 56,
-  
-  // Карточки
   cardPadding: Spacing.md,
-  
-  // Tab bar
   tabBarHeight: 84,
-  
-  // Header
   headerHeight: 56,
-  
-  // Иконки
   iconSm: 20,
   iconMd: 24,
   iconLg: 32,
+};
+
+export const AnimatedGradientPalette = {
+  colors: [
+    '#2D3E8F',  // Тёмно-синий
+    '#4A6FDB',  // Насыщенный синий
+    '#6B9EF5',  // Средне-синий
+    '#93C4FF',  // Светло-синий
+    '#C8D9F7',  // Очень светло-синий
+    '#E8CEEB',  // Светло-розово-фиолетовый
+    '#F5B5D8',  // Светло-розовый
+  ] as const,
+  presets: [
+    ['#2D3E8F', '#4A6FDB', '#6B9EF5'],
+    ['#4A6FDB', '#6B9EF5', '#93C4FF'],
+    ['#6B9EF5', '#93C4FF', '#C8D9F7'],
+    ['#93C4FF', '#C8D9F7', '#E8CEEB'],
+    ['#C8D9F7', '#E8CEEB', '#F5B5D8'],
+    ['#E8CEEB', '#F5B5D8', '#93C4FF'],
+    ['#F5B5D8', '#6B9EF5', '#2D3E8F'],
+  ] as const,
 };
 
 export default {
@@ -165,4 +206,6 @@ export default {
   Typography,
   Shadows,
   ComponentSizes,
+  Gradients,
+  AnimatedGradientPalette,
 };
