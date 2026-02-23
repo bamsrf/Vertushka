@@ -16,6 +16,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Header } from '../../components/Header';
 import { RecordGrid } from '../../components/RecordGrid';
 import { ActionSheet, ActionSheetAction } from '../../components/ui';
+import { AddRecordsModal } from '../../components/AddRecordsModal';
+import { FolderPickerModal } from '../../components/FolderPickerModal';
 import { api } from '../../lib/api';
 import { useCollectionStore } from '../../lib/store';
 import { Collection, CollectionItem } from '../../lib/types';
@@ -31,12 +33,14 @@ export default function FolderScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [showOptions, setShowOptions] = useState(false);
+  const [showAddRecords, setShowAddRecords] = useState(false);
+  const [showFolderPicker, setShowFolderPicker] = useState(false);
 
   // Selection mode
   const [isSelectionMode, setIsSelectionMode] = useState(false);
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
 
-  const { renameFolder, deleteFolder, fetchCollections } = useCollectionStore();
+  const { renameFolder, deleteFolder, fetchCollections, collectionItems, fetchCollectionItems } = useCollectionStore();
 
   const loadFolder = useCallback(async () => {
     if (!id) return;
@@ -71,7 +75,7 @@ export default function FolderScreen() {
 
   const handleRecordPress = (item: CollectionItem) => {
     const recordId = item.record.discogs_id || item.record.id;
-    router.push(`/record/${recordId}`);
+    router.push(`/record/${recordId}?folderId=${id}&folderItemId=${item.id}`);
   };
 
   const handleRename = () => {
@@ -188,7 +192,72 @@ export default function FolderScreen() {
     );
   };
 
+  const handleMoveToFolder = async (targetFolderId: string) => {
+    if (!folder) return;
+    setShowFolderPicker(false);
+
+    try {
+      const itemsToMove = items.filter(i => selectedItems.has(i.id));
+
+      // Загружаем целевую папку, чтобы не дублировать
+      const targetFolder = await api.getCollection(targetFolderId);
+      const existingInTarget = new Set(
+        (targetFolder.items || []).map((i: CollectionItem) => i.record_id)
+      );
+
+      // Добавляем только те, которых нет в целевой папке
+      const toAdd = itemsToMove.filter(i => !existingInTarget.has(i.record_id));
+      await Promise.all(toAdd.map(item => api.addRecordToFolder(targetFolderId, item.record_id)));
+
+      // Убираем из текущей папки
+      await Promise.all(itemsToMove.map(item => api.removeFromCollection(folder.id, item.id)));
+
+      setSelectedItems(new Set());
+      setIsSelectionMode(false);
+      await loadFolder();
+      await fetchCollections();
+    } catch {
+      Alert.alert('Ошибка', 'Не удалось переместить пластинки');
+    }
+  };
+
+  const handleOpenAddRecords = async () => {
+    // Убедимся что коллекция загружена
+    if (collectionItems.length === 0) {
+      await fetchCollectionItems();
+    }
+    setShowAddRecords(true);
+  };
+
+  const handleAddSelectedRecords = async (collectionItemIds: string[]) => {
+    if (!folder) return;
+
+    // Вычисляем record_id уже в папке
+    const existingRecordIds = new Set(items.map(i => i.record_id));
+
+    // Получаем record_id из выбранных items коллекции, дедуплицируя по record_id
+    const seen = new Set<string>();
+    const toAdd = collectionItems.filter(item => {
+      if (!collectionItemIds.includes(item.id)) return false;
+      if (existingRecordIds.has(item.record_id)) return false;
+      if (seen.has(item.record_id)) return false;
+      seen.add(item.record_id);
+      return true;
+    });
+
+    await Promise.all(toAdd.map(item => api.addRecordToFolder(folder.id, item.record_id)));
+
+    // Обновляем папку и счётчики
+    await loadFolder();
+    await fetchCollections();
+  };
+
   const getOptionsActions = (): ActionSheetAction[] => [
+    {
+      label: 'Добавить пластинки',
+      icon: 'add-circle-outline',
+      onPress: handleOpenAddRecords,
+    },
     {
       label: 'Переименовать папку',
       icon: 'pencil-outline',
@@ -278,6 +347,26 @@ export default function FolderScreen() {
       {isSelectionMode && (
         <View style={styles.selectionFooter}>
           <TouchableOpacity
+            style={styles.footerButton}
+            onPress={() => setShowFolderPicker(true)}
+            disabled={selectedItems.size === 0}
+          >
+            <Ionicons
+              name="folder-outline"
+              size={24}
+              color={selectedItems.size > 0 ? Colors.royalBlue : Colors.textMuted}
+            />
+            <Text
+              style={[
+                styles.footerButtonText,
+                selectedItems.size === 0 && styles.footerButtonTextDisabled,
+              ]}
+            >
+              В папку {selectedItems.size > 0 && `(${selectedItems.size})`}
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
             style={[styles.footerButton, styles.footerButtonDelete]}
             onPress={handleBulkRemove}
             disabled={selectedItems.size === 0}
@@ -289,7 +378,7 @@ export default function FolderScreen() {
             />
             <Text
               style={[
-                styles.footerButtonText,
+                styles.footerButtonTextDelete,
                 selectedItems.size === 0 && styles.footerButtonTextDisabled,
               ]}
             >
@@ -303,6 +392,23 @@ export default function FolderScreen() {
         visible={showOptions}
         actions={getOptionsActions()}
         onClose={() => setShowOptions(false)}
+      />
+
+      <AddRecordsModal
+        visible={showAddRecords}
+        onClose={() => setShowAddRecords(false)}
+        existingRecordIds={new Set(items.map(i => i.record_id))}
+        onAdd={handleAddSelectedRecords}
+      />
+
+      <FolderPickerModal
+        visible={showFolderPicker}
+        onClose={() => setShowFolderPicker(false)}
+        onSelectFolder={handleMoveToFolder}
+        selectedRecordIds={items
+          .filter(i => selectedItems.has(i.id))
+          .map(i => i.record_id)}
+        excludeFolderId={folder?.id}
       />
     </View>
   );
@@ -399,6 +505,10 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.surface,
   },
   footerButtonText: {
+    ...Typography.buttonSmall,
+    color: Colors.royalBlue,
+  },
+  footerButtonTextDelete: {
     ...Typography.buttonSmall,
     color: Colors.error,
   },

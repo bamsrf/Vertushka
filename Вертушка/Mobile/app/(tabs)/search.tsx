@@ -27,6 +27,15 @@ import { api } from '../../lib/api';
 import { MasterSearchResult, ReleaseSearchResult, ArtistSearchResult, UserWithStats } from '../../lib/types';
 import { Colors, Typography, Spacing, BorderRadius, Gradients } from '../../constants/theme';
 
+function getFormatDisplayInfo(format?: string): { label: string; verb: string } {
+  if (!format) return { label: 'Винил', verb: 'добавлен' };
+  const f = format.toLowerCase();
+  if (f.includes('cassette')) return { label: 'Кассета', verb: 'добавлена' };
+  if (f.includes('box set')) return { label: 'Бокс-сет', verb: 'добавлен' };
+  if (f.includes('cd')) return { label: 'CD', verb: 'добавлен' };
+  return { label: 'Винил', verb: 'добавлен' };
+}
+
 // Маппинг форматов для отображения на русском
 const FORMAT_OPTIONS = [
   { value: undefined, label: 'Все' },
@@ -316,7 +325,9 @@ export default function SearchScreen() {
     const doAdd = async () => {
       try {
         await addToCollection(discogsId);
-        Alert.alert('Готово!', `"${record.title}" добавлена в коллекцию`);
+        const format = 'format' in record ? record.format : undefined;
+        const fmt = getFormatDisplayInfo(format);
+        Alert.alert('Готово!', `"${record.title}" ${fmt.verb} в коллекцию`);
       } catch (error: any) {
         const message = error?.response?.data?.detail || error?.message || 'Не удалось добавить в коллекцию';
         Alert.alert('Ошибка', message);
@@ -341,7 +352,9 @@ export default function SearchScreen() {
     try {
       const discogsId = 'main_release_id' in record ? record.main_release_id : record.release_id;
       await addToWishlist(discogsId);
-      Alert.alert('Готово!', `"${record.title}" добавлена в список желаний`);
+      const format = 'format' in record ? record.format : undefined;
+      const fmt = getFormatDisplayInfo(format);
+      Alert.alert('Готово!', `"${record.title}" ${fmt.verb} в список желаний`);
     } catch (error: any) {
       const message = error?.response?.data?.detail || error?.message || 'Не удалось добавить в список желаний';
       Alert.alert('Ошибка', message);

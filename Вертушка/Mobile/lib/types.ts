@@ -89,6 +89,16 @@ export interface RecordSearchResponse {
   per_page: number;
 }
 
+// ==================== Cover Scan ====================
+
+export type ScanMode = 'barcode' | 'cover';
+
+export interface CoverScanResponse {
+  recognized_artist: string;
+  recognized_album: string;
+  results: RecordSearchResult[];
+}
+
 // ==================== Master Releases ====================
 
 export interface MasterSearchResult {

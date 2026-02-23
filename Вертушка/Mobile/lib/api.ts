@@ -30,12 +30,13 @@ import {
   FeedItem,
   GiftBookingCreate,
   GiftBookingResponse,
+  CoverScanResponse,
 } from './types';
 
 // API сервер
 // Для локальной разработки с бэкендом на localhost:
 const API_BASE_URL = __DEV__
-  ? 'http://192.168.1.68:8000/api'  // Локальный IP для разработки (работает на симуляторе и физическом устройстве)
+  ? 'http://192.168.1.66:8000/api'  // Локальный IP для разработки (работает на симуляторе и физическом устройстве)
   : 'https://api.vinyl-vertushka.ru/api'; // Продакшен сервер
 
 const TOKEN_KEY = 'auth_token';
@@ -240,6 +241,14 @@ class ApiClient {
       '/records/scan/barcode',
       null,
       { params: { barcode } }
+    );
+    return response.data;
+  }
+
+  async scanCover(imageBase64: string): Promise<CoverScanResponse> {
+    const response = await this.client.post<CoverScanResponse>(
+      '/records/scan/cover/',
+      { image_base64: imageBase64 }
     );
     return response.data;
   }

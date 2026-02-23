@@ -1,7 +1,7 @@
 /**
- * Экран сканера штрихкодов (центральный таб)
+ * Экран сканера штрихкодов и распознавания обложки (центральный таб)
  */
-import { useState, useEffect } from 'react';
+import { useState, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -10,41 +10,88 @@ import {
   TouchableOpacity,
   Modal,
   FlatList,
+  ActivityIndicator,
 } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Button } from '../../components/ui';
+import * as ImageManipulator from 'expo-image-manipulator';
+import { Button, SegmentedControl } from '../../components/ui';
 import { RecordCard } from '../../components/RecordCard';
 import { useScannerStore, useCollectionStore } from '../../lib/store';
-import { RecordSearchResult } from '../../lib/types';
+import { RecordSearchResult, ScanMode } from '../../lib/types';
 import { Colors, Typography, Spacing, BorderRadius, Shadows } from '../../constants/theme';
+
+function getFormatDisplayInfo(format?: string): { label: string; verb: string } {
+  if (!format) return { label: 'Винил', verb: 'добавлен' };
+  const f = format.toLowerCase();
+  if (f.includes('cassette')) return { label: 'Кассета', verb: 'добавлена' };
+  if (f.includes('box set')) return { label: 'Бокс-сет', verb: 'добавлен' };
+  if (f.includes('cd')) return { label: 'CD', verb: 'добавлен' };
+  return { label: 'Винил', verb: 'добавлен' };
+}
 
 export default function ScannerScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const cameraRef = useRef<CameraView>(null);
   const [permission, requestPermission] = useCameraPermissions();
   const [isScanning, setIsScanning] = useState(true);
   const [showResults, setShowResults] = useState(false);
 
-  const { scanResults, isLoading, searchByBarcode, clearScan } = useScannerStore();
-  const { addToCollection, addToWishlist, collectionItems } = useCollectionStore();
+  const {
+    scanMode,
+    setScanMode,
+    scanResults,
+    recognizedInfo,
+    isLoading,
+    searchByBarcode,
+    searchByCover,
+    clearScan,
+  } = useScannerStore();
+  const { addToCollection, addToWishlist, collectionItems, wishlistItems } = useCollectionStore();
 
   const handleBarCodeScanned = async ({ data }: { data: string }) => {
     if (!isScanning || isLoading) return;
-    
+
     setIsScanning(false);
-    
+
     try {
       await searchByBarcode(data);
       setShowResults(true);
     } catch (error) {
       Alert.alert(
         'Не найдено',
-        'Пластинка с таким штрихкодом не найдена в базе Discogs',
+        'Винил с таким штрихкодом не найден в базе Discogs',
         [{ text: 'OK', onPress: () => setIsScanning(true) }]
       );
+    }
+  };
+
+  const handleTakePhoto = async () => {
+    if (!cameraRef.current || isLoading) return;
+
+    try {
+      const photo = await cameraRef.current.takePictureAsync({
+        quality: 0.7,
+      });
+
+      if (!photo?.uri) return;
+
+      const manipulated = await ImageManipulator.manipulateAsync(
+        photo.uri,
+        [{ resize: { width: 1024 } }],
+        { compress: 0.5, format: ImageManipulator.SaveFormat.JPEG, base64: true }
+      );
+
+      if (!manipulated.base64) return;
+
+      await searchByCover(manipulated.base64);
+      setShowResults(true);
+    } catch (error: any) {
+      const message = error?.response?.data?.detail || 'Не удалось распознать обложку. Попробуйте сфотографировать ещё раз.';
+      Alert.alert('Не распознано', message, [{ text: 'OK' }]);
     }
   };
 
@@ -54,7 +101,35 @@ export default function ScannerScreen() {
     setIsScanning(true);
   };
 
+  // ID пластинки, на детали которой ушли (null = не уходили)
+  const viewedDetailId = useRef<string | null>(null);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (!viewedDetailId.current || scanResults.length === 0) return;
+
+      const id = viewedDetailId.current;
+      viewedDetailId.current = null;
+
+      // Если пластинку добавили в коллекцию или вишлист — закрываем список
+      const addedToCollection = collectionItems.some(
+        (item) => item.record.discogs_id === id
+      );
+      const addedToWishlist = wishlistItems.some(
+        (item) => item.record.discogs_id === id
+      );
+
+      if (addedToCollection || addedToWishlist) {
+        clearScan();
+        setIsScanning(true);
+      } else {
+        setShowResults(true);
+      }
+    }, [scanResults.length, collectionItems, wishlistItems])
+  );
+
   const handleRecordPress = (record: RecordSearchResult) => {
+    viewedDetailId.current = record.discogs_id;
     setShowResults(false);
     router.push(`/record/${record.discogs_id}`);
   };
@@ -67,7 +142,8 @@ export default function ScannerScreen() {
     const doAdd = async () => {
       try {
         await addToCollection(record.discogs_id);
-        Alert.alert('Готово!', `"${record.title}" добавлена в коллекцию`);
+        const fmt = getFormatDisplayInfo(record.format_type);
+        Alert.alert('Готово!', `"${record.title}" ${fmt.verb} в коллекцию`);
         handleCloseResults();
       } catch (error) {
         Alert.alert('Ошибка', 'Не удалось добавить в коллекцию');
@@ -91,11 +167,18 @@ export default function ScannerScreen() {
   const handleAddToWishlist = async (record: RecordSearchResult) => {
     try {
       await addToWishlist(record.discogs_id);
-      Alert.alert('Готово!', `"${record.title}" добавлена в список желаний`);
+      const fmt = getFormatDisplayInfo(record.format_type);
+      Alert.alert('Готово!', `"${record.title}" ${fmt.verb} в список желаний`);
       handleCloseResults();
     } catch (error) {
       Alert.alert('Ошибка', 'Не удалось добавить в список желаний');
     }
+  };
+
+  const handleModeChange = (mode: ScanMode) => {
+    setScanMode(mode);
+    setShowResults(false);
+    setIsScanning(true);
   };
 
   // Проверка разрешений
@@ -128,36 +211,74 @@ export default function ScannerScreen() {
     <View style={styles.container}>
       {/* Камера */}
       <CameraView
+        ref={cameraRef}
         style={StyleSheet.absoluteFillObject}
         facing="back"
-        barcodeScannerSettings={{
-          barcodeTypes: ['ean13', 'ean8', 'upc_a', 'upc_e'],
-        }}
-        onBarcodeScanned={isScanning ? handleBarCodeScanned : undefined}
+        barcodeScannerSettings={
+          scanMode === 'barcode'
+            ? { barcodeTypes: ['ean13', 'ean8', 'upc_a', 'upc_e'] }
+            : undefined
+        }
+        onBarcodeScanned={
+          scanMode === 'barcode' && isScanning ? handleBarCodeScanned : undefined
+        }
       />
 
       {/* Оверлей */}
       <View style={[styles.overlay, { paddingTop: insets.top }]}>
-        {/* Заголовок */}
+        {/* Заголовок + переключатель режимов */}
         <View style={styles.header}>
           <Text style={styles.headerTitle}>Сканирование</Text>
+          <SegmentedControl<ScanMode>
+            segments={[
+              { key: 'barcode', label: 'Штрихкод' },
+              { key: 'cover', label: 'Обложка' },
+            ]}
+            selectedKey={scanMode}
+            onSelect={handleModeChange}
+            style={styles.modeSwitch}
+            disabled={isLoading}
+          />
           <Text style={styles.headerSubtitle}>
-            Наведите камеру на штрихкод пластинки
+            {scanMode === 'barcode'
+              ? 'Наведите камеру на штрихкод пластинки'
+              : 'Сфотографируйте обложку пластинки'}
           </Text>
         </View>
 
         {/* Рамка сканера */}
-        <View style={styles.scannerFrame}>
+        <View style={[
+          styles.scannerFrame,
+          scanMode === 'cover' && styles.scannerFrameSquare,
+        ]}>
           <View style={[styles.corner, styles.cornerTopLeft]} />
           <View style={[styles.corner, styles.cornerTopRight]} />
           <View style={[styles.corner, styles.cornerBottomLeft]} />
           <View style={[styles.corner, styles.cornerBottomRight]} />
         </View>
 
+        {/* Кнопка затвора (режим обложки) */}
+        {scanMode === 'cover' && !isLoading && (
+          <View style={styles.shutterContainer}>
+            <TouchableOpacity
+              style={styles.shutterButton}
+              onPress={handleTakePhoto}
+              activeOpacity={0.7}
+            >
+              <View style={styles.shutterInner} />
+            </TouchableOpacity>
+          </View>
+        )}
+
         {/* Индикатор загрузки */}
         {isLoading && (
           <View style={styles.loadingContainer}>
-            <Text style={styles.loadingText}>Поиск...</Text>
+            <View style={styles.loadingPill}>
+              <ActivityIndicator size="small" color={Colors.deepNavy} />
+              <Text style={styles.loadingText}>
+                {scanMode === 'barcode' ? 'Поиск...' : 'Распознавание...'}
+              </Text>
+            </View>
           </View>
         )}
       </View>
@@ -177,6 +298,17 @@ export default function ScannerScreen() {
             </TouchableOpacity>
           </View>
 
+          {/* Баннер распознавания (режим обложки) */}
+          {recognizedInfo && (
+            <View style={styles.recognizedBanner}>
+              <Ionicons name="sparkles" size={16} color={Colors.royalBlue} />
+              <Text style={styles.recognizedText} numberOfLines={1}>
+                {recognizedInfo.artist}
+                {recognizedInfo.album ? ` — ${recognizedInfo.album}` : ''}
+              </Text>
+            </View>
+          )}
+
           <FlatList
             data={scanResults}
             keyExtractor={(item) => item.discogs_id}
@@ -194,7 +326,7 @@ export default function ScannerScreen() {
             )}
             ListEmptyComponent={
               <View style={styles.emptyResults}>
-                <Text style={styles.emptyText}>Пластинка не найдена</Text>
+                <Text style={styles.emptyText}>Ничего не найдено</Text>
               </View>
             }
           />
@@ -245,10 +377,16 @@ const styles = StyleSheet.create({
     color: Colors.background,
     marginBottom: Spacing.xs,
   },
+  modeSwitch: {
+    marginTop: Spacing.sm,
+    marginHorizontal: Spacing.md,
+    alignSelf: 'stretch',
+  },
   headerSubtitle: {
     ...Typography.body,
     color: 'rgba(255, 255, 255, 0.8)',
     textAlign: 'center',
+    marginTop: Spacing.sm,
   },
   scannerFrame: {
     position: 'absolute',
@@ -256,6 +394,12 @@ const styles = StyleSheet.create({
     left: '15%',
     right: '15%',
     aspectRatio: 1.5,
+  },
+  scannerFrameSquare: {
+    aspectRatio: 1,
+    left: '18%',
+    right: '18%',
+    top: '28%',
   },
   corner: {
     position: 'absolute',
@@ -291,6 +435,29 @@ const styles = StyleSheet.create({
     borderRightWidth: 4,
     borderBottomRightRadius: 8,
   },
+  shutterContainer: {
+    position: 'absolute',
+    bottom: '12%',
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+  },
+  shutterButton: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: 'rgba(255, 255, 255, 0.3)',
+    borderWidth: 4,
+    borderColor: Colors.background,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  shutterInner: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: Colors.background,
+  },
   loadingContainer: {
     position: 'absolute',
     bottom: '20%',
@@ -298,15 +465,19 @@ const styles = StyleSheet.create({
     right: 0,
     alignItems: 'center',
   },
-  loadingText: {
-    ...Typography.body,
-    color: Colors.deepNavy,
+  loadingPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
     backgroundColor: Colors.glassBg,
     paddingHorizontal: Spacing.lg,
     paddingVertical: Spacing.sm,
     borderRadius: BorderRadius.full,
-    overflow: 'hidden',
     ...Shadows.sm,
+  },
+  loadingText: {
+    ...Typography.body,
+    color: Colors.deepNavy,
   },
   resultsContainer: {
     flex: 1,
@@ -323,6 +494,21 @@ const styles = StyleSheet.create({
   resultsTitle: {
     ...Typography.h2,
     color: Colors.deepNavy,
+  },
+  recognizedBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.xs,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    backgroundColor: Colors.surface,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.divider,
+  },
+  recognizedText: {
+    ...Typography.bodySmall,
+    color: Colors.textSecondary,
+    flex: 1,
   },
   resultsList: {
     padding: Spacing.md,

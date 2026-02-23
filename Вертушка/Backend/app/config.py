@@ -32,6 +32,9 @@ class Settings(BaseSettings):
     discogs_api_secret: str = Field(default="", alias="DISCOGS_API_SECRET")
     discogs_user_agent: str = Field(default="VertushkaApp/1.0", alias="DISCOGS_USER_AGENT")
     
+    # OpenAI API (распознавание обложки)
+    openai_api_key: str = Field(default="", alias="OPENAI_API_KEY")
+
     # Apple Sign In
     apple_client_id: str = Field(default="", alias="APPLE_CLIENT_ID")
     apple_team_id: str = Field(default="", alias="APPLE_TEAM_ID")

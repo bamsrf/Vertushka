@@ -20,6 +20,7 @@ import {
   UserWithStats,
   UserPublic,
   FeedItem,
+  ScanMode,
 } from './types';
 
 const SEARCH_HISTORY_KEY = '@vertushka:search_history';
@@ -386,13 +387,39 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
   },
 
   removeFromCollection: async (itemId, skipRefetch = false) => {
-    const { defaultCollection } = get();
+    const { defaultCollection, collectionItems, folders } = get();
 
     if (!defaultCollection || !itemId) {
       throw new Error('Не указана коллекция или элемент');
     }
 
+    // Находим record_id удаляемой пластинки, чтобы каскадно убрать из папок
+    const removedItem = collectionItems.find(i => i.id === itemId);
+    const recordId = removedItem?.record_id;
+
+    // Удаляем из основной коллекции
     await api.removeFromCollection(defaultCollection.id, itemId);
+
+    // Каскадно удаляем эту пластинку из всех папок
+    if (recordId && folders.length > 0) {
+      await Promise.all(
+        folders.map(async (folder) => {
+          try {
+            const folderData = await api.getCollection(folder.id);
+            const folderItem = (folderData.items || []).find(
+              (i: CollectionItem) => i.record_id === recordId
+            );
+            if (folderItem) {
+              await api.removeFromCollection(folder.id, folderItem.id);
+            }
+          } catch {
+            // Папка недоступна — пропускаем
+          }
+        })
+      );
+      await get().fetchCollections();
+    }
+
     if (!skipRefetch) await get().fetchCollectionItems();
   },
 
@@ -447,22 +474,30 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
 // ==================== Scanner Store ====================
 
 interface ScannerState {
+  scanMode: ScanMode;
   scannedBarcode: string | null;
   scanResults: RecordSearchResult[];
+  recognizedInfo: { artist: string; album: string } | null;
   isScanning: boolean;
   isLoading: boolean;
 
   // Actions
+  setScanMode: (mode: ScanMode) => void;
   setScannedBarcode: (barcode: string | null) => void;
   searchByBarcode: (barcode: string) => Promise<void>;
+  searchByCover: (imageBase64: string) => Promise<void>;
   clearScan: () => void;
 }
 
 export const useScannerStore = create<ScannerState>((set) => ({
+  scanMode: 'barcode',
   scannedBarcode: null,
   scanResults: [],
+  recognizedInfo: null,
   isScanning: false,
   isLoading: false,
+
+  setScanMode: (mode) => set({ scanMode: mode, scanResults: [], recognizedInfo: null, scannedBarcode: null }),
 
   setScannedBarcode: (barcode) => set({ scannedBarcode: barcode }),
 
@@ -477,7 +512,25 @@ export const useScannerStore = create<ScannerState>((set) => ({
     }
   },
 
-  clearScan: () => set({ scannedBarcode: null, scanResults: [] }),
+  searchByCover: async (imageBase64) => {
+    set({ isLoading: true, recognizedInfo: null });
+    try {
+      const response = await api.scanCover(imageBase64);
+      set({
+        scanResults: response.results,
+        recognizedInfo: {
+          artist: response.recognized_artist,
+          album: response.recognized_album,
+        },
+        isLoading: false,
+      });
+    } catch (error) {
+      set({ isLoading: false, scanResults: [], recognizedInfo: null });
+      throw error;
+    }
+  },
+
+  clearScan: () => set({ scannedBarcode: null, scanResults: [], recognizedInfo: null }),
 }));
 
 // ==================== Profile Store ====================

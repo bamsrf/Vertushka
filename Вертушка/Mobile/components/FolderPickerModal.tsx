@@ -1,8 +1,9 @@
 /**
  * FolderPickerModal — поп-ап выбора папки
  * Горизонтальный скролл карточек + кнопка создания новой папки
+ * Показывает галочку на папках, где уже лежат выбранные пластинки
  */
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -16,6 +17,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useCollectionStore } from '../lib/store';
+import { api } from '../lib/api';
 import { Colors, Spacing, Typography, BorderRadius } from '../constants/theme';
 
 const folderPlaceholder = require('../assets/images/folder-placeholder.png');
@@ -24,11 +26,64 @@ interface FolderPickerModalProps {
   visible: boolean;
   onClose: () => void;
   onSelectFolder: (folderId: string) => void;
+  /** record_id пластинок, которые добавляем/переносим — чтобы показать галочку */
+  selectedRecordIds?: string[];
+  /** ID папки, которую скрыть из списка (текущая папка при переносе) */
+  excludeFolderId?: string;
 }
 
-export function FolderPickerModal({ visible, onClose, onSelectFolder }: FolderPickerModalProps) {
+export function FolderPickerModal({
+  visible,
+  onClose,
+  onSelectFolder,
+  selectedRecordIds,
+  excludeFolderId,
+}: FolderPickerModalProps) {
   const { folders, createFolder } = useCollectionStore();
   const [isCreating, setIsCreating] = useState(false);
+  const [folderRecordIds, setFolderRecordIds] = useState<Record<string, Set<string>>>({});
+
+  const visibleFolders = folders.filter(f => f.id !== excludeFolderId);
+
+  // Загружаем состав папок, чтобы показать галочки на тех, где уже есть выбранные пластинки
+  useEffect(() => {
+    if (!visible || !selectedRecordIds?.length || visibleFolders.length === 0) return;
+
+    let cancelled = false;
+
+    Promise.all(
+      visibleFolders.map(async folder => {
+        try {
+          const collection = await api.getCollection(folder.id);
+          return {
+            id: folder.id,
+            recordIds: new Set((collection.items || []).map(i => i.record_id)),
+          };
+        } catch {
+          return { id: folder.id, recordIds: new Set<string>() };
+        }
+      })
+    ).then(results => {
+      if (cancelled) return;
+      const map: Record<string, Set<string>> = {};
+      results.forEach(r => { map[r.id] = r.recordIds; });
+      setFolderRecordIds(map);
+    });
+
+    return () => { cancelled = true; };
+  }, [visible, folders.length]);
+
+  // Сбрасываем при закрытии
+  useEffect(() => {
+    if (!visible) setFolderRecordIds({});
+  }, [visible]);
+
+  const folderHasSelected = (folderId: string): boolean => {
+    if (!selectedRecordIds?.length) return false;
+    const recordIds = folderRecordIds[folderId];
+    if (!recordIds) return false;
+    return selectedRecordIds.some(id => recordIds.has(id));
+  };
 
   const handleCreateFolder = () => {
     Alert.prompt(
@@ -86,17 +141,27 @@ export function FolderPickerModal({ visible, onClose, onSelectFolder }: FolderPi
                 <Text style={styles.folderName} numberOfLines={1}>Новая</Text>
               </TouchableOpacity>
 
-              {folders.map(folder => (
-                <TouchableOpacity
-                  key={folder.id}
-                  style={styles.folderCard}
-                  onPress={() => onSelectFolder(folder.id)}
-                >
-                  <Image source={folderPlaceholder} style={styles.folderImage} />
-                  <Text style={styles.folderName} numberOfLines={1}>{folder.name}</Text>
-                  <Text style={styles.folderCount}>{folder.items_count} пл.</Text>
-                </TouchableOpacity>
-              ))}
+              {visibleFolders.map(folder => {
+                const hasOverlap = folderHasSelected(folder.id);
+                return (
+                  <TouchableOpacity
+                    key={folder.id}
+                    style={styles.folderCard}
+                    onPress={() => onSelectFolder(folder.id)}
+                  >
+                    <View style={styles.imageWrapper}>
+                      <Image source={folderPlaceholder} style={styles.folderImage} />
+                      {hasOverlap && (
+                        <View style={styles.checkBadge}>
+                          <Ionicons name="checkmark" size={10} color={Colors.background} />
+                        </View>
+                      )}
+                    </View>
+                    <Text style={styles.folderName} numberOfLines={1}>{folder.name}</Text>
+                    <Text style={styles.folderCount}>{folder.items_count} пл.</Text>
+                  </TouchableOpacity>
+                );
+              })}
             </ScrollView>
           )}
         </View>
@@ -154,11 +219,27 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  imageWrapper: {
+    position: 'relative',
+    width: 80,
+    height: 80,
+  },
   folderImage: {
     width: 80,
     height: 80,
     borderRadius: BorderRadius.md,
     backgroundColor: Colors.surface,
+  },
+  checkBadge: {
+    position: 'absolute',
+    top: 5,
+    right: 5,
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: Colors.royalBlue,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   folderName: {
     ...Typography.caption,

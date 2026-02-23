@@ -16,6 +16,8 @@ from app.schemas.record import (
     RecordResponse,
     RecordSearchResult,
     RecordSearchResponse,
+    CoverScanRequest,
+    CoverScanResponse,
     MasterSearchResponse,
     MasterRelease,
     MasterVersionsResponse,
@@ -24,6 +26,7 @@ from app.schemas.record import (
     Artist,
 )
 from app.services.discogs import DiscogsService
+from app.services.openai_vision import OpenAIVisionService, CoverRecognitionError
 
 router = APIRouter()
 
@@ -206,6 +209,68 @@ async def scan_barcode(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=f"Ошибка при поиске по штрихкоду: {str(e)}"
         )
+
+
+@router.post("/scan/cover/", response_model=CoverScanResponse)
+async def scan_cover(
+    request: CoverScanRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Распознавание обложки пластинки через AI Vision.
+    Принимает base64-encoded JPEG, возвращает результаты поиска Discogs.
+    Требует авторизации.
+    """
+    if len(request.image_base64) > 10_000_000:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail="Изображение слишком большое (макс. ~7.5 МБ)"
+        )
+
+    vision = OpenAIVisionService()
+    try:
+        recognition = await vision.recognize_cover(request.image_base64)
+    except CoverRecognitionError as e:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(e)
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Ошибка AI-сервиса: {str(e)}"
+        )
+
+    artist = recognition["artist"]
+    album = recognition["album"]
+
+    query_parts = []
+    if artist:
+        query_parts.append(artist)
+    if album:
+        query_parts.append(album)
+    search_query = " ".join(query_parts)
+
+    discogs = DiscogsService()
+    try:
+        search_response = await discogs.search(
+            query=search_query,
+            artist=artist if artist else None,
+            per_page=10,
+        )
+        results = search_response.results
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Ошибка при поиске в Discogs: {str(e)}"
+        )
+
+    return CoverScanResponse(
+        recognized_artist=artist,
+        recognized_album=album,
+        results=results,
+    )
 
 
 @router.get("/{record_id}", response_model=RecordResponse)

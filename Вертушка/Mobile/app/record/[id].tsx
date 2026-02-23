@@ -22,8 +22,17 @@ import { FolderPickerModal } from '../../components/FolderPickerModal';
 import { Button, Card, ActionSheet, ActionSheetAction } from '../../components/ui';
 import { api } from '../../lib/api';
 import { useCollectionStore } from '../../lib/store';
-import { VinylRecord } from '../../lib/types';
+import { VinylRecord, CollectionItem } from '../../lib/types';
 import { Colors, Typography, Spacing, BorderRadius, Gradients } from '../../constants/theme';
+
+function getFormatDisplayInfo(format?: string): { label: string; verb: string } {
+  if (!format) return { label: 'Винил', verb: 'добавлен' };
+  const f = format.toLowerCase();
+  if (f.includes('cassette')) return { label: 'Кассета', verb: 'добавлена' };
+  if (f.includes('box set')) return { label: 'Бокс-сет', verb: 'добавлен' };
+  if (f.includes('cd')) return { label: 'CD', verb: 'добавлен' };
+  return { label: 'Винил', verb: 'добавлен' };
+}
 
 const handleArtistNavigation = async (artistName: string, router: ReturnType<typeof useRouter>) => {
   try {
@@ -37,7 +46,7 @@ const handleArtistNavigation = async (artistName: string, router: ReturnType<typ
 };
 
 export default function RecordDetailScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, folderId, folderItemId } = useLocalSearchParams<{ id: string; folderId?: string; folderItemId?: string }>();
   const router = useRouter();
   const insets = useSafeAreaInsets();
 
@@ -151,7 +160,7 @@ export default function RecordDetailScreen() {
           fetchCollectionItems(),
           fetchWishlistItems(),
         ]);
-        Alert.alert('Готово!', 'Пластинка перенесена в коллекцию');
+        Alert.alert('Готово!', 'Винил перенесён в коллекцию');
       } catch (error: any) {
         const message = error?.response?.data?.detail || error?.message || 'Не удалось перенести в коллекцию';
         Alert.alert('Ошибка', message);
@@ -169,7 +178,8 @@ export default function RecordDetailScreen() {
     try {
       await addToCollection(discogsId);
       // addToCollection уже обновляет оба списка
-      Alert.alert('Готово!', 'Пластинка добавлена в коллекцию');
+      const fmt = getFormatDisplayInfo(record?.format_type);
+      Alert.alert('Готово!', `${fmt.label} ${fmt.verb} в коллекцию`);
     } catch (error: any) {
       const message = error?.response?.data?.detail || error?.message || 'Не удалось добавить в коллекцию';
       Alert.alert('Ошибка', message);
@@ -188,7 +198,8 @@ export default function RecordDetailScreen() {
 
     try {
       await addToWishlist(discogsId);
-      Alert.alert('Готово!', 'Пластинка добавлена в список желаний');
+      const fmt = getFormatDisplayInfo(record?.format_type);
+      Alert.alert('Готово!', `${fmt.label} ${fmt.verb} в список желаний`);
     } catch (error: any) {
       const message = error?.response?.data?.detail || error?.message || 'Не удалось добавить в список желаний';
       Alert.alert('Ошибка', message);
@@ -210,7 +221,7 @@ export default function RecordDetailScreen() {
           onPress: async () => {
             try {
               await removeFromCollection(status.collectionItemId!);
-              Alert.alert('Готово!', 'Пластинка удалена из коллекции');
+              Alert.alert('Готово!', 'Винил удалён из коллекции');
             } catch (error: any) {
               Alert.alert('Ошибка', 'Не удалось удалить из коллекции');
             }
@@ -235,7 +246,7 @@ export default function RecordDetailScreen() {
           onPress: async () => {
             try {
               await removeFromWishlist(status.wishlistItemId!);
-              Alert.alert('Готово!', 'Пластинка удалена из списка желаний');
+              Alert.alert('Готово!', 'Винил удалён из списка желаний');
             } catch (error: any) {
               Alert.alert('Ошибка', 'Не удалось удалить из списка');
             }
@@ -245,13 +256,49 @@ export default function RecordDetailScreen() {
     );
   };
 
+  const handleRemoveFromFolder = async () => {
+    if (!folderId || !folderItemId) return;
+
+    Alert.alert(
+      'Убрать из папки?',
+      `"${record?.title}" будет убрана из папки`,
+      [
+        { text: 'Отмена', style: 'cancel' },
+        {
+          text: 'Убрать',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await api.removeFromCollection(folderId, folderItemId);
+              await fetchCollections();
+              Alert.alert('Готово!', 'Винил убран из папки');
+              router.back();
+            } catch {
+              Alert.alert('Ошибка', 'Не удалось убрать из папки');
+            }
+          },
+        },
+      ]
+    );
+  };
+
   const handleAddRecordToFolder = async (folderId: string) => {
     const status = getRecordStatus();
-    if (!status.collectionItemId) return;
+    if (!status.collectionItemId || !record) return;
     try {
+      const folderData = await api.getCollection(folderId);
+      const alreadyInFolder = (folderData.items || []).some(
+        (i: CollectionItem) => i.record_id === record.id
+      );
+      if (alreadyInFolder) {
+        setShowFolderPicker(false);
+        Alert.alert('Уже есть', 'Эта пластинка уже в этой папке');
+        return;
+      }
       await addItemsToFolder(folderId, [status.collectionItemId]);
       setShowFolderPicker(false);
-      Alert.alert('Готово!', 'Пластинка добавлена в папку');
+      const fmt = getFormatDisplayInfo(record?.format_type);
+      Alert.alert('Готово!', `${fmt.label} ${fmt.verb} в папку`);
     } catch {
       Alert.alert('Ошибка', 'Не удалось добавить в папку');
     }
@@ -269,13 +316,23 @@ export default function RecordDetailScreen() {
         onPress: () => setShowFolderPicker(true),
       });
 
-      // Удалить
-      actions.push({
-        label: 'Удалить',
-        icon: 'trash-outline',
-        onPress: handleRemoveFromCollection,
-        destructive: true,
-      });
+      if (folderId && folderItemId) {
+        // Открыли из папки — показываем «Убрать из папки»
+        actions.push({
+          label: 'Убрать из папки',
+          icon: 'folder-open-outline',
+          onPress: handleRemoveFromFolder,
+          destructive: true,
+        });
+      } else {
+        // Открыли из основной коллекции — показываем «Удалить из коллекции»
+        actions.push({
+          label: 'Удалить',
+          icon: 'trash-outline',
+          onPress: handleRemoveFromCollection,
+          destructive: true,
+        });
+      }
     }
 
     return actions;
@@ -295,7 +352,7 @@ export default function RecordDetailScreen() {
         <Header title="Ошибка" showBack showProfile={false} />
         <View style={styles.centered}>
           <Ionicons name="alert-circle-outline" size={64} color={Colors.textMuted} />
-          <Text style={styles.errorText}>{error || 'Пластинка не найдена'}</Text>
+          <Text style={styles.errorText}>{error || 'Винил не найден'}</Text>
           <Button title="Назад" onPress={() => router.back()} variant="outline" />
         </View>
       </View>
@@ -365,7 +422,7 @@ export default function RecordDetailScreen() {
             {record.format_type ? (
               <View style={styles.metaItem}>
                 <Ionicons name="disc-outline" size={16} color={Colors.textSecondary} />
-                <Text style={styles.metaText}>{record.format_type}</Text>
+                <Text style={styles.metaText}>{getFormatDisplayInfo(record.format_type).label}</Text>
               </View>
             ) : null}
             {record.country ? (
@@ -534,6 +591,7 @@ export default function RecordDetailScreen() {
         visible={showFolderPicker}
         onClose={() => setShowFolderPicker(false)}
         onSelectFolder={handleAddRecordToFolder}
+        selectedRecordIds={record ? [record.id] : []}
       />
     </View>
   );

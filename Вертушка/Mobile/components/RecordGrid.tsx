@@ -34,7 +34,8 @@ interface RecordGridProps<T extends RecordItem = RecordItem> {
   isSelectionMode?: boolean;
   selectedItems?: Set<string>;
   onToggleItemSelection?: (itemId: string) => void;
-  cardVariant?: 'compact' | 'expanded';
+  cardVariant?: 'compact' | 'expanded' | 'list';
+  numColumns?: number;
 }
 
 export function RecordGrid<T extends RecordItem = RecordItem>({
@@ -55,6 +56,7 @@ export function RecordGrid<T extends RecordItem = RecordItem>({
   selectedItems = new Set(),
   onToggleItemSelection,
   cardVariant = 'expanded',
+  numColumns = 2,
 }: RecordGridProps<T>) {
   // Извлекаем запись из разных типов
   const getRecord = (item: RecordItem): RecordSearchResult | VinylRecord | MasterSearchResult | ReleaseSearchResult => {
@@ -132,8 +134,8 @@ export function RecordGrid<T extends RecordItem = RecordItem>({
       data={data}
       renderItem={renderItem}
       keyExtractor={keyExtractor}
-      numColumns={2}
-      columnWrapperStyle={styles.row}
+      numColumns={numColumns}
+      columnWrapperStyle={numColumns > 1 ? styles.row : undefined}
       contentContainerStyle={styles.container}
       showsVerticalScrollIndicator={false}
       keyboardShouldPersistTaps="handled"

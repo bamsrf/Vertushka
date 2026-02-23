@@ -278,6 +278,28 @@ async def add_record_to_collection(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Пластинка не найдена"
             )
+        # Папки не допускают дубликатов — возвращаем существующий item идемпотентно
+        existing_result = await db.execute(
+            select(CollectionItem)
+            .where(
+                CollectionItem.collection_id == collection_id,
+                CollectionItem.record_id == record.id,
+            )
+            .options(selectinload(CollectionItem.record))
+        )
+        existing_item = existing_result.scalar_one_or_none()
+        if existing_item:
+            return CollectionItemResponse(
+                id=existing_item.id,
+                collection_id=existing_item.collection_id,
+                record_id=existing_item.record_id,
+                condition=existing_item.condition,
+                sleeve_condition=existing_item.sleeve_condition,
+                notes=existing_item.notes,
+                shelf_position=existing_item.shelf_position,
+                added_at=existing_item.added_at,
+                record=existing_item.record,
+            )
     else:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

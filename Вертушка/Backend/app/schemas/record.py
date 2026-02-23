@@ -80,6 +80,7 @@ class RecordBrief(BaseModel):
     year: int | None
     cover_image_url: str | None
     thumb_image_url: str | None
+    format_type: str | None = None
     estimated_price_median: Decimal | None
     price_currency: str
 
@@ -180,6 +181,18 @@ class ReleaseSearchResponse(BaseModel):
     total: int
     page: int
     per_page: int
+
+
+class CoverScanRequest(BaseModel):
+    """Запрос на распознавание обложки"""
+    image_base64: str = Field(..., description="Base64-encoded JPEG image")
+
+
+class CoverScanResponse(BaseModel):
+    """Ответ на распознавание обложки"""
+    recognized_artist: str
+    recognized_album: str
+    results: list[RecordSearchResult]
 
 
 class ArtistSearchResult(BaseModel):

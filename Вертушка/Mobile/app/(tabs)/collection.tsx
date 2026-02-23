@@ -3,7 +3,7 @@
  * Переключатель Моё / Хочу, editorial заголовок, expanded cards
  */
 import { useEffect, useCallback, useState, useRef } from 'react';
-import { View, StyleSheet, Alert, TouchableOpacity, Text, Animated, ScrollView, Image } from 'react-native';
+import { View, StyleSheet, Alert, TouchableOpacity, Text, Animated, ScrollView, Image, LayoutAnimation, UIManager, Platform } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -16,13 +16,38 @@ import { SegmentedControl } from '../../components/ui';
 import { useCollectionStore, useAuthStore } from '../../lib/store';
 import { api } from '../../lib/api';
 import { CollectionItem, WishlistItem, CollectionTab } from '../../lib/types';
-import { Colors, Spacing, Typography, BorderRadius, Gradients } from '../../constants/theme';
+import { Colors, Spacing, Typography, BorderRadius, Gradients, Shadows } from '../../constants/theme';
+
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
+
+function getFormatDisplayInfo(format?: string): { label: string; verb: string } {
+  if (!format) return { label: 'Винил', verb: 'добавлен' };
+  const f = format.toLowerCase();
+  if (f.includes('cassette')) return { label: 'Кассета', verb: 'добавлена' };
+  if (f.includes('box set')) return { label: 'Бокс-сет', verb: 'добавлен' };
+  if (f.includes('cd')) return { label: 'CD', verb: 'добавлен' };
+  return { label: 'Винил', verb: 'добавлен' };
+}
 
 const folderPlaceholder = require('../../assets/images/folder-placeholder.png');
 
 const SEGMENTS: { key: CollectionTab; label: string }[] = [
-  { key: 'collection', label: 'Моё' },
+  { key: 'collection', label: 'В наличии' },
   { key: 'wishlist', label: 'Хочу' },
+];
+
+type ViewMode = 'grid' | 'list';
+
+type FormatFilter = 'all' | 'vinyl' | 'cd' | 'cassette' | 'box_set';
+
+const FORMAT_OPTIONS: { key: FormatFilter; label: string; match: string[] }[] = [
+  { key: 'all', label: 'Все форматы', match: [] },
+  { key: 'vinyl', label: 'Винил', match: ['Vinyl', 'LP', '12"', '10"', '7"'] },
+  { key: 'cd', label: 'CD', match: ['CD'] },
+  { key: 'cassette', label: 'Кассета', match: ['Cassette'] },
+  { key: 'box_set', label: 'Бокс-сет', match: ['Box Set'] },
 ];
 
 export default function CollectionScreen() {
@@ -31,7 +56,14 @@ export default function CollectionScreen() {
   const [isSelectionMode, setIsSelectionMode] = useState(false);
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [viewMode, setViewMode] = useState<ViewMode>('grid');
+  const [activeFilter, setActiveFilter] = useState<FormatFilter>('all');
   const modeAnim = useRef(new Animated.Value(0)).current;
+  const menuAnim = useRef(new Animated.Value(0)).current;
+  const viewIconAnim = useRef(new Animated.Value(0)).current; // 0 = grid, 1 = list
+  const filterMenuAnim = useRef(new Animated.Value(0)).current; // 0 = closed, 1 = open
+
+  const filterMenuOpen = useRef(false);
 
   const [showFolderPicker, setShowFolderPicker] = useState(false);
   const { user } = useAuthStore();
@@ -71,15 +103,69 @@ export default function CollectionScreen() {
     setSelectedItems(new Set());
   }, [activeTab]);
 
-  // Анимация смены кнопки Выбрать ↔ Отмена
+  // Анимация смены кнопки Выбрать ↔ Отмена + скрытие меню
   useEffect(() => {
-    Animated.spring(modeAnim, {
-      toValue: isSelectionMode ? 1 : 0,
-      tension: 220,
-      friction: 14,
+    Animated.parallel([
+      Animated.spring(modeAnim, {
+        toValue: isSelectionMode ? 1 : 0,
+        tension: 220,
+        friction: 14,
+        useNativeDriver: true,
+      }),
+      Animated.timing(menuAnim, {
+        toValue: isSelectionMode ? 0 : 1,
+        duration: 300,
+        useNativeDriver: false, // height animation needs false
+      }),
+    ]).start();
+  }, [isSelectionMode]);
+
+  // Анимация иконки grid/list
+  const handleToggleViewMode = () => {
+    const next: ViewMode = viewMode === 'grid' ? 'list' : 'grid';
+    Animated.timing(viewIconAnim, {
+      toValue: next === 'list' ? 1 : 0,
+      duration: 250,
       useNativeDriver: true,
     }).start();
-  }, [isSelectionMode]);
+    LayoutAnimation.configureNext(LayoutAnimation.create(
+      300,
+      LayoutAnimation.Types.easeInEaseOut,
+      LayoutAnimation.Properties.opacity,
+    ));
+    setViewMode(next);
+  };
+
+  // useNativeDriver: false — нужен для анимации maxHeight
+  const smoothCloseFilter = (cb?: () => void) => {
+    Animated.timing(filterMenuAnim, {
+      toValue: 0,
+      duration: 220,
+      useNativeDriver: false,
+    }).start(() => {
+      filterMenuOpen.current = false;
+      cb?.();
+    });
+  };
+
+  // Открытие/закрытие фильтр-меню с анимацией
+  const handleToggleFilterMenu = () => {
+    if (filterMenuOpen.current) {
+      smoothCloseFilter();
+    } else {
+      filterMenuOpen.current = true;
+      Animated.spring(filterMenuAnim, {
+        toValue: 1,
+        tension: 280,
+        friction: 22,
+        useNativeDriver: false,
+      }).start();
+    }
+  };
+
+  const handleSelectFilter = (filter: FormatFilter) => {
+    smoothCloseFilter(() => setActiveFilter(filter));
+  };
 
   const handleRefresh = useCallback(async () => {
     setIsRefreshing(true);
@@ -167,7 +253,8 @@ export default function CollectionScreen() {
           onPress: async () => {
             try {
               await moveToCollection(item.id);
-              Alert.alert('Готово!', 'Пластинка добавлена в коллекцию');
+              const fmt = getFormatDisplayInfo(item.record.format_type);
+              Alert.alert('Готово!', `${fmt.label} ${fmt.verb} в коллекцию`);
             } catch (error) {
               Alert.alert('Ошибка', 'Не удалось перенести в коллекцию');
             }
@@ -239,10 +326,47 @@ export default function CollectionScreen() {
 
   const handleAddToFolder = async (folderId: string) => {
     try {
-      await addItemsToFolder(folderId, Array.from(selectedItems));
+      // Определяем record_id для выбранных items
+      const selectedCollectionItems = collectionItems.filter(item => selectedItems.has(item.id));
+
+      // Загружаем папку, чтобы проверить что уже есть внутри
+      const folderData = await api.getCollection(folderId);
+      const existingRecordIds = new Set(
+        (folderData.items || []).map((i: CollectionItem) => i.record_id)
+      );
+
+      // Фильтруем: только те, которых ещё нет в папке, дедуплицируя по record_id
+      const seen = new Set<string>();
+      const newItems = selectedCollectionItems.filter(item => {
+        if (existingRecordIds.has(item.record_id)) return false;
+        if (seen.has(item.record_id)) return false;
+        seen.add(item.record_id);
+        return true;
+      });
+      const duplicateCount = selectedCollectionItems.length - newItems.length;
+
+      if (newItems.length === 0) {
+        setShowFolderPicker(false);
+        Alert.alert(
+          'Уже в папке',
+          duplicateCount === 1
+            ? 'Эта пластинка уже находится в папке'
+            : 'Все выбранные пластинки уже находятся в этой папке'
+        );
+        return;
+      }
+
+      await addItemsToFolder(folderId, newItems.map(item => item.id));
       setShowFolderPicker(false);
       setSelectedItems(new Set());
       setIsSelectionMode(false);
+
+      if (duplicateCount > 0) {
+        Alert.alert(
+          'Готово',
+          `${newItems.length} пл. добавлено. ${duplicateCount} уже были в папке — пропущены.`
+        );
+      }
     } catch {
       Alert.alert('Ошибка', 'Не удалось добавить в папку');
     }
@@ -289,16 +413,38 @@ export default function CollectionScreen() {
     );
   };
 
-  const data = (activeTab === 'collection' ? collectionItems : wishlistItems) as (CollectionItem | WishlistItem)[];
+  const rawData = (activeTab === 'collection' ? collectionItems : wishlistItems) as (CollectionItem | WishlistItem)[];
+
+  // Фильтрация по формату
+  const data = activeFilter === 'all' ? rawData : rawData.filter(item => {
+    const formatType = (item.record.format_type || '').toLowerCase();
+    const formatDesc = (item.record.format_description || '').toLowerCase();
+    const matchWords = FORMAT_OPTIONS.find(f => f.key === activeFilter)?.match || [];
+    return matchWords.some(w => {
+      const wLower = w.toLowerCase();
+      return formatType.includes(wLower) || formatDesc.includes(wLower);
+    });
+  });
 
   const selectOpacity = modeAnim.interpolate({ inputRange: [0, 1], outputRange: [1, 0] });
   const selectScale = modeAnim.interpolate({ inputRange: [0, 1], outputRange: [1, 0.85] });
   const cancelOpacity = modeAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 1] });
   const cancelScale = modeAnim.interpolate({ inputRange: [0, 1], outputRange: [0.85, 1] });
 
+  // Анимация скрытия меню (segments + folders)
+  const menuOpacity = menuAnim.interpolate({ inputRange: [0, 0.5, 1], outputRange: [0, 0, 1] });
+
+  // Анимация иконки view toggle
+  const gridIconOpacity = viewIconAnim.interpolate({ inputRange: [0, 1], outputRange: [1, 0] });
+  const gridIconScale = viewIconAnim.interpolate({ inputRange: [0, 1], outputRange: [1, 0.5] });
+  const listIconOpacity = viewIconAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 1] });
+  const listIconScale = viewIconAnim.interpolate({ inputRange: [0, 1], outputRange: [0.5, 1] });
+
+  const activeFilterLabel = FORMAT_OPTIONS.find(f => f.key === activeFilter)?.label || 'Все';
+
   const CollectionHeader = (
     <View style={styles.headerContainer}>
-      {/* Title row: avatar + "Выбрать/Отмена" */}
+      {/* Title row: avatar */}
       <View style={styles.avatarRow}>
         <AnimatedGradientText style={Typography.heroTitle}>Коллекция</AnimatedGradientText>
         <TouchableOpacity style={styles.profileButton} onPress={handleProfilePress}>
@@ -315,10 +461,10 @@ export default function CollectionScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* Select / Cancel row */}
-      <View style={styles.titleRow}>
+      {/* Toolbar row: Выбрать/Отмена + Grid/List + Filter */}
+      <View style={styles.toolbarRow}>
+        {/* Select / Cancel */}
         <View style={styles.headerButtonWrapper}>
-          {/* Cancel button (selection mode) */}
           <Animated.View
             style={[styles.headerButtonAbsolute, { opacity: cancelOpacity, transform: [{ scale: cancelScale }] }]}
             pointerEvents={isSelectionMode ? 'auto' : 'none'}
@@ -328,7 +474,6 @@ export default function CollectionScreen() {
             </TouchableOpacity>
           </Animated.View>
 
-          {/* Select button (gradient border) */}
           <Animated.View
             style={{ opacity: selectOpacity, transform: [{ scale: selectScale }] }}
             pointerEvents={isSelectionMode ? 'none' : 'auto'}
@@ -347,10 +492,49 @@ export default function CollectionScreen() {
             </TouchableOpacity>
           </Animated.View>
         </View>
+
+        {/* Grid / List toggle */}
+        {!isSelectionMode && (
+          <TouchableOpacity
+            style={styles.viewToggleButton}
+            onPress={handleToggleViewMode}
+            activeOpacity={0.7}
+          >
+            <View style={styles.viewToggleIconContainer}>
+              <Animated.View style={[styles.viewToggleIcon, { opacity: gridIconOpacity, transform: [{ scale: gridIconScale }] }]}>
+                <Ionicons name="grid-outline" size={18} color={Colors.royalBlue} />
+              </Animated.View>
+              <Animated.View style={[styles.viewToggleIcon, styles.viewToggleIconAbsolute, { opacity: listIconOpacity, transform: [{ scale: listIconScale }] }]}>
+                <Ionicons name="list-outline" size={18} color={Colors.royalBlue} />
+              </Animated.View>
+            </View>
+          </TouchableOpacity>
+        )}
+
+        {/* Filter button */}
+        {!isSelectionMode && (
+          <View>
+            <TouchableOpacity
+              style={[styles.filterButton, activeFilter !== 'all' && styles.filterButtonActive]}
+              onPress={handleToggleFilterMenu}
+              activeOpacity={0.7}
+            >
+              <Ionicons
+                name="options-outline"
+                size={18}
+                color={activeFilter !== 'all' ? Colors.background : Colors.royalBlue}
+              />
+              {activeFilter !== 'all' && (
+                <Text style={styles.filterButtonActiveText}>{activeFilterLabel}</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+        )}
       </View>
 
-      {/* Segmented control */}
-      {!isSelectionMode && (
+      {/* Animated menu: segments + folders */}
+      <Animated.View style={{ opacity: menuOpacity, maxHeight: menuAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 500] }), overflow: 'hidden' }}>
+        {/* Segmented control */}
         <View style={styles.segmentContainer}>
           <SegmentedControl
             segments={SEGMENTS}
@@ -359,49 +543,78 @@ export default function CollectionScreen() {
             disabled={isSelectionMode}
           />
         </View>
-      )}
 
-      {/* Folders section */}
-      {activeTab === 'collection' && !isSelectionMode && folders.length > 0 && (
-        <View style={styles.foldersSection}>
-          <Text style={styles.foldersSectionTitle}>Папки</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.foldersScroll}>
-            <TouchableOpacity style={styles.newFolderCard} onPress={handleCreateFolder}>
-              <View style={styles.newFolderIcon}>
-                <Ionicons name="add" size={32} color={Colors.textMuted} />
-              </View>
-              <Text style={styles.newFolderText}>Новая</Text>
-            </TouchableOpacity>
-            {folders.map(folder => (
-              <TouchableOpacity
-                key={folder.id}
-                style={styles.folderCard}
-                onPress={() => router.push(`/folder/${folder.id}` as any)}
-              >
-                <Image source={folderPlaceholder} style={styles.folderImage} />
-                <Text style={styles.folderName} numberOfLines={1}>{folder.name}</Text>
-                <Text style={styles.folderCount}>{folder.items_count} пл.</Text>
+        {/* Folders section */}
+        {activeTab === 'collection' && folders.length > 0 && (
+          <View style={styles.foldersSection}>
+            <Text style={styles.foldersSectionTitle}>Папки</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.foldersScroll}>
+              <TouchableOpacity style={styles.newFolderCard} onPress={handleCreateFolder}>
+                <View style={styles.newFolderIcon}>
+                  <Ionicons name="add" size={32} color={Colors.textMuted} />
+                </View>
+                <Text style={styles.newFolderText}>Новая</Text>
               </TouchableOpacity>
-            ))}
-          </ScrollView>
-        </View>
-      )}
+              {folders.map(folder => (
+                <TouchableOpacity
+                  key={folder.id}
+                  style={styles.folderCard}
+                  onPress={() => router.push(`/folder/${folder.id}` as any)}
+                >
+                  <Image source={folderPlaceholder} style={styles.folderImage} />
+                  <Text style={styles.folderName} numberOfLines={1}>{folder.name}</Text>
+                  <Text style={styles.folderCount}>{folder.items_count} пл.</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        )}
 
-      {/* Create first folder button */}
-      {activeTab === 'collection' && !isSelectionMode && folders.length === 0 && (
-        <TouchableOpacity style={styles.createFirstFolder} onPress={handleCreateFolder}>
-          <Ionicons name="folder-outline" size={20} color={Colors.textMuted} />
-          <Text style={styles.createFirstFolderText}>Создать папку</Text>
-        </TouchableOpacity>
-      )}
+        {/* Create first folder button */}
+        {activeTab === 'collection' && folders.length === 0 && (
+          <TouchableOpacity style={styles.createFirstFolder} onPress={handleCreateFolder}>
+            <Ionicons name="folder-outline" size={20} color={Colors.textMuted} />
+            <Text style={styles.createFirstFolderText}>Создать папку</Text>
+          </TouchableOpacity>
+        )}
+      </Animated.View>
+
+      {/* Filter dropdown — всегда в дереве, высота управляется анимацией */}
+      <Animated.View
+        style={{
+          maxHeight: filterMenuAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 300] }),
+          opacity: filterMenuAnim,
+          overflow: 'hidden',
+        }}
+        pointerEvents="box-none"
+      >
+        <View style={styles.filterDropdown}>
+          {FORMAT_OPTIONS.map(option => (
+            <TouchableOpacity
+              key={option.key}
+              style={[styles.filterOption, activeFilter === option.key && styles.filterOptionActive]}
+              onPress={() => handleSelectFilter(option.key)}
+            >
+              <Text style={[styles.filterOptionText, activeFilter === option.key && styles.filterOptionTextActive]}>
+                {option.label}
+              </Text>
+              {activeFilter === option.key && (
+                <Ionicons name="checkmark" size={18} color={Colors.royalBlue} />
+              )}
+            </TouchableOpacity>
+          ))}
+        </View>
+      </Animated.View>
     </View>
   );
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
       <RecordGrid
+        key={viewMode}
         data={data}
-        cardVariant="expanded"
+        cardVariant={viewMode === 'list' ? 'list' : 'expanded'}
+        numColumns={viewMode === 'list' ? 1 : 2}
         onRecordPress={isSelectionMode ? undefined : handleRecordPress}
         onArtistPress={isSelectionMode ? undefined : handleArtistPress}
         onRemove={
@@ -495,6 +708,9 @@ export default function CollectionScreen() {
         visible={showFolderPicker}
         onClose={() => setShowFolderPicker(false)}
         onSelectFolder={handleAddToFolder}
+        selectedRecordIds={collectionItems
+          .filter(item => selectedItems.has(item.id))
+          .map(item => item.record_id)}
       />
     </View>
   );
@@ -532,14 +748,88 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  titleRow: {
-    flexDirection: 'column',
-    alignItems: 'flex-start',
+  toolbarRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
     marginBottom: Spacing.md,
     gap: Spacing.sm,
   },
   segmentContainer: {
     paddingBottom: Spacing.sm,
+  },
+
+  // View toggle (grid/list)
+  viewToggleButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: Colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  viewToggleIconContainer: {
+    width: 18,
+    height: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  viewToggleIcon: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  viewToggleIconAbsolute: {
+    position: 'absolute',
+  },
+
+  // Filter button
+  filterButton: {
+    height: 36,
+    paddingHorizontal: 10,
+    borderRadius: 18,
+    backgroundColor: Colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 4,
+  },
+  filterButtonActive: {
+    backgroundColor: Colors.royalBlue,
+  },
+  filterButtonActiveText: {
+    ...Typography.caption,
+    color: Colors.background,
+    fontFamily: 'Inter_600SemiBold',
+  },
+
+  filterOverlayInHeader: {
+    // пустой враппер — нужен только для перехвата тапа мимо dropdown
+  },
+  filterDropdown: {
+    backgroundColor: Colors.background,
+    borderRadius: BorderRadius.md,
+    padding: Spacing.xs,
+    ...Shadows.md,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  filterOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: Spacing.sm + 2,
+    paddingHorizontal: Spacing.md,
+    borderRadius: BorderRadius.sm,
+  },
+  filterOptionActive: {
+    backgroundColor: Colors.surface,
+  },
+  filterOptionText: {
+    ...Typography.bodySmall,
+    color: Colors.text,
+  },
+  filterOptionTextActive: {
+    color: Colors.royalBlue,
+    fontFamily: 'Inter_600SemiBold',
   },
 
   // Gradient border "Выбрать" button
