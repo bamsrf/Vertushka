@@ -11,6 +11,8 @@ from app.database import get_db
 from app.models.user import User
 from app.models.record import Record
 from app.api.auth import get_current_user, get_current_user_optional
+from app.services.exchange import get_usd_rub_rate
+from app.config import get_settings
 from app.schemas.record import (
     RecordCreate,
     RecordResponse,
@@ -29,6 +31,54 @@ from app.services.discogs import DiscogsService
 from app.services.openai_vision import OpenAIVisionService, CoverRecognitionError
 
 router = APIRouter()
+
+
+async def _enrich_response_with_rub(response: RecordResponse) -> RecordResponse:
+    """Добавляет рублёвые цены в ответ на основе USD-цен из Discogs.
+    Discogs без Pro-подписки отдаёт только lowest_price,
+    поэтому используем min как основную оценку если median недоступен.
+    """
+    # Нужна хотя бы одна цена в USD
+    base_price = response.estimated_price_median or response.estimated_price_min
+    if not base_price:
+        return response
+    try:
+        rate = await get_usd_rub_rate()
+        markup = get_settings().ru_vinyl_markup
+        response.usd_rub_rate = rate
+        response.ru_markup = markup
+        if response.estimated_price_min:
+            response.estimated_price_min_rub = round(float(response.estimated_price_min) * rate * markup, 0)
+        if response.estimated_price_median:
+            response.estimated_price_median_rub = round(float(response.estimated_price_median) * rate * markup, 0)
+        if response.estimated_price_max:
+            response.estimated_price_max_rub = round(float(response.estimated_price_max) * rate * markup, 0)
+    except Exception:
+        pass
+    return response
+
+
+async def _ensure_record_price_data(record: Record, db: AsyncSession) -> None:
+    """Подтягивает цены из Discogs, если они отсутствуют в записи."""
+    if record.estimated_price_min or record.estimated_price_median:
+        return
+    if not record.discogs_id:
+        return
+    try:
+        discogs = DiscogsService()
+        stats = await discogs._get_price_stats(record.discogs_id)
+        if stats:
+            lowest = stats.get("lowest_price", {}).get("value") if isinstance(stats.get("lowest_price"), dict) else stats.get("lowest_price")
+            median = stats.get("median_price", {}).get("value") if isinstance(stats.get("median_price"), dict) else stats.get("median_price")
+            highest = stats.get("highest_price", {}).get("value") if isinstance(stats.get("highest_price"), dict) else stats.get("highest_price")
+            if lowest or median:
+                record.estimated_price_min = lowest
+                record.estimated_price_median = median
+                record.estimated_price_max = highest
+                await db.commit()
+                await db.refresh(record)
+    except Exception:
+        pass
 
 
 async def _ensure_record_artist_data(record: Record, db: AsyncSession) -> None:
@@ -289,10 +339,15 @@ async def get_record(
             detail="Пластинка не найдена"
         )
 
-    # Обогащаем данные артиста, если отсутствуют
+    # Обогащаем данные артиста и цены, если отсутствуют
     await _ensure_record_artist_data(record, db)
+    await _ensure_record_price_data(record, db)
 
-    return record
+    response = RecordResponse.model_validate(record)
+    discogs_data = record.discogs_data or {}
+    response.artist_id = discogs_data.get("artist_id")
+    response.artist_thumb_image_url = discogs_data.get("artist_thumb_image_url")
+    return await _enrich_response_with_rub(response)
 
 
 @router.get("/discogs/{discogs_id}", response_model=RecordResponse)
@@ -312,14 +367,15 @@ async def get_record_by_discogs_id(
     record = result.scalar_one_or_none()
 
     if record:
-        # Обогащаем данные артиста, если отсутствуют
+        # Обогащаем данные артиста и цены, если отсутствуют
         await _ensure_record_artist_data(record, db)
+        await _ensure_record_price_data(record, db)
 
         discogs_data = record.discogs_data or {}
         response = RecordResponse.model_validate(record)
         response.artist_id = discogs_data.get("artist_id")
         response.artist_thumb_image_url = discogs_data.get("artist_thumb_image_url")
-        return response
+        return await _enrich_response_with_rub(response)
 
     # Запрос в Discogs
     discogs = DiscogsService()
@@ -357,7 +413,7 @@ async def get_record_by_discogs_id(
         response = RecordResponse.model_validate(record)
         response.artist_id = record_data.get("artist_id")
         response.artist_thumb_image_url = record_data.get("artist_thumb_image_url")
-        return response
+        return await _enrich_response_with_rub(response)
 
     except Exception as e:
         raise HTTPException(

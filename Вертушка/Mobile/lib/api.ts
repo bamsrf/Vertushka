@@ -13,6 +13,7 @@ import {
   RecordSearchResult,
   Collection,
   CollectionItem,
+  CollectionStats,
   Wishlist,
   WishlistItem,
   SearchFilters,
@@ -395,10 +396,20 @@ class ApiClient {
     return response.data;
   }
 
-  async getCollectionItems(collectionId: string): Promise<CollectionItem[]> {
+  async getCollectionItems(
+    collectionId: string,
+    sortBy: string = 'added_at'
+  ): Promise<CollectionItem[]> {
     // Бэкенд возвращает коллекцию с items внутри через GET /collections/{id}
-    const collection = await this.getCollection(collectionId);
-    return collection.items || [];
+    const response = await this.client.get<Collection>(`/collections/${collectionId}`, {
+      params: { sort_by: sortBy },
+    });
+    return response.data.items || [];
+  }
+
+  async getCollectionStats(collectionId: string): Promise<CollectionStats> {
+    const response = await this.client.get<CollectionStats>(`/collections/${collectionId}/stats`);
+    return response.data;
   }
 
   async addToCollection(

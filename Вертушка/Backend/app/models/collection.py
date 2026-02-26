@@ -3,7 +3,7 @@
 """
 import uuid
 from datetime import datetime
-from sqlalchemy import String, DateTime, ForeignKey, Text, Integer
+from sqlalchemy import String, DateTime, ForeignKey, Text, Integer, Numeric
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import UUID
 
@@ -112,6 +112,12 @@ class CollectionItem(Base):
         nullable=True
     )
     
+    # Оценочная стоимость в рублях (на момент добавления)
+    estimated_price_rub: Mapped[float | None] = mapped_column(
+        Numeric(10, 2),
+        nullable=True
+    )
+
     # Порядок на полке
     shelf_position: Mapped[int | None] = mapped_column(
         Integer,

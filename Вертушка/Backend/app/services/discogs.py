@@ -36,6 +36,7 @@ class DiscogsService:
     def __init__(self):
         self.api_key = settings.discogs_api_key
         self.api_secret = settings.discogs_api_secret
+        self.token = settings.discogs_token
         self.user_agent = settings.discogs_user_agent
 
     @classmethod
@@ -529,6 +530,8 @@ class DiscogsService:
             label = item.get("label", "")
             catalog_number = item.get("catno", "")
 
+            major_formats = item.get("major_formats", [])
+
             results.append(MasterVersion(
                 release_id=str(item.get("id", "")),
                 title=item.get("title", ""),
@@ -537,6 +540,7 @@ class DiscogsService:
                 country=item.get("country"),
                 year=int(item.get("released")) if item.get("released") else None,
                 format=format_info if format_info else None,
+                major_formats=major_formats if major_formats else [],
                 thumb_image_url=item.get("thumb"),
             ))
 
@@ -794,13 +798,23 @@ class DiscogsService:
             per_page=pagination.get("per_page", per_page)
         )
 
+    def _get_token_headers(self) -> dict:
+        """Заголовки с personal access token (нужен для median/highest price)"""
+        headers = {"User-Agent": self.user_agent}
+        if self.token:
+            headers["Authorization"] = f"Discogs token={self.token}"
+        elif self.api_key:
+            headers["Authorization"] = f"Discogs key={self.api_key}, secret={self.api_secret}"
+        return headers
+
     async def _get_price_stats(self, release_id: str) -> dict | None:
-        """Получение статистики цен для релиза"""
+        """Получение статистики цен для релиза (всегда в USD)"""
         try:
             client = self._get_shared_client()
             response = await client.get(
                 f"{self.BASE_URL}/marketplace/stats/{release_id}",
-                headers=self._get_headers(),
+                params={"curr_abbr": "USD"},
+                headers=self._get_token_headers(),
                 timeout=10.0,
             )
             if response.status_code == 200:

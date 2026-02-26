@@ -192,9 +192,12 @@ async def get_user_wishlist_by_username(
     wishlist = result.scalar_one_or_none()
 
     if not wishlist:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Вишлист не найден"
+        return WishlistPublicResponse(
+            owner_name=user.display_name or user.username,
+            owner_avatar=user.avatar_url,
+            custom_message=None,
+            items=[],
+            total_items=0
         )
 
     # Доступ: вишлист публичный ИЛИ фолловер ИЛИ владелец
@@ -214,16 +217,7 @@ async def get_user_wishlist_by_username(
 
             public_items.append(WishlistPublicItemResponse(
                 id=item.id,
-                record=RecordBrief(
-                    id=item.record.id,
-                    title=item.record.title,
-                    artist=item.record.artist,
-                    year=item.record.year,
-                    cover_image_url=item.record.cover_image_url,
-                    thumb_image_url=item.record.thumb_image_url,
-                    estimated_price_median=item.record.estimated_price_median,
-                    price_currency=item.record.price_currency
-                ),
+                record=RecordBrief.model_validate(item.record),
                 priority=item.priority,
                 notes=item.notes,
                 is_booked=is_booked,
@@ -262,11 +256,127 @@ async def update_current_user(
         current_user.bio = data.bio
     if data.avatar_url is not None:
         current_user.avatar_url = data.avatar_url
-    
+
     await db.commit()
     await db.refresh(current_user)
-    
+
     return current_user
+
+
+@router.get("/me/following", response_model=list[UserPublicResponse])
+async def get_following(
+    page: int = Query(1, ge=1),
+    per_page: int = Query(20, ge=1, le=50),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Список подписок текущего пользователя"""
+    offset = (page - 1) * per_page
+
+    result = await db.execute(
+        select(User)
+        .join(Follow, Follow.following_id == User.id)
+        .where(Follow.follower_id == current_user.id)
+        .offset(offset)
+        .limit(per_page)
+    )
+    users = result.scalars().all()
+
+    return [UserPublicResponse(
+        id=u.id,
+        username=u.username,
+        display_name=u.display_name,
+        avatar_url=u.avatar_url,
+        bio=u.bio,
+        created_at=u.created_at
+    ) for u in users]
+
+
+@router.get("/me/followers", response_model=list[UserPublicResponse])
+async def get_followers(
+    page: int = Query(1, ge=1),
+    per_page: int = Query(20, ge=1, le=50),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Список подписчиков текущего пользователя"""
+    offset = (page - 1) * per_page
+
+    result = await db.execute(
+        select(User)
+        .join(Follow, Follow.follower_id == User.id)
+        .where(Follow.following_id == current_user.id)
+        .offset(offset)
+        .limit(per_page)
+    )
+    users = result.scalars().all()
+
+    return [UserPublicResponse(
+        id=u.id,
+        username=u.username,
+        display_name=u.display_name,
+        avatar_url=u.avatar_url,
+        bio=u.bio,
+        created_at=u.created_at
+    ) for u in users]
+
+
+@router.get("/feed", response_model=list[dict])
+async def get_feed(
+    page: int = Query(1, ge=1),
+    per_page: int = Query(20, ge=1, le=50),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Лента активности подписок.
+    Показывает недавно добавленные пластинки в коллекции пользователей, на которых подписан.
+    """
+    offset = (page - 1) * per_page
+
+    following_result = await db.execute(
+        select(Follow.following_id).where(Follow.follower_id == current_user.id)
+    )
+    following_ids = [f[0] for f in following_result.all()]
+
+    if not following_ids:
+        return []
+
+    result = await db.execute(
+        select(CollectionItem)
+        .join(Collection)
+        .where(Collection.user_id.in_(following_ids))
+        .options(
+            selectinload(CollectionItem.record),
+            selectinload(CollectionItem.collection).selectinload(Collection.user)
+        )
+        .order_by(CollectionItem.added_at.desc())
+        .offset(offset)
+        .limit(per_page)
+    )
+    items = result.scalars().all()
+
+    return [{
+        "type": "collection_add",
+        "user": {
+            "id": str(item.collection.user.id),
+            "username": item.collection.user.username,
+            "display_name": item.collection.user.display_name,
+            "avatar_url": item.collection.user.avatar_url
+        },
+        "collection": {
+            "id": str(item.collection.id),
+            "name": item.collection.name
+        },
+        "record": {
+            "id": str(item.record.id),
+            "title": item.record.title,
+            "artist": item.record.artist,
+            "year": item.record.year,
+            "cover_image_url": item.record.cover_image_url
+        },
+        "added_at": item.added_at.isoformat()
+    } for item in items]
 
 
 @router.get("/{user_id}", response_model=UserWithStats)
@@ -395,64 +505,6 @@ async def unfollow_user(
     await db.commit()
 
 
-@router.get("/me/following", response_model=list[UserPublicResponse])
-async def get_following(
-    page: int = Query(1, ge=1),
-    per_page: int = Query(20, ge=1, le=50),
-    current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
-):
-    """Список подписок текущего пользователя"""
-    offset = (page - 1) * per_page
-    
-    result = await db.execute(
-        select(User)
-        .join(Follow, Follow.following_id == User.id)
-        .where(Follow.follower_id == current_user.id)
-        .offset(offset)
-        .limit(per_page)
-    )
-    users = result.scalars().all()
-    
-    return [UserPublicResponse(
-        id=u.id,
-        username=u.username,
-        display_name=u.display_name,
-        avatar_url=u.avatar_url,
-        bio=u.bio,
-        created_at=u.created_at
-    ) for u in users]
-
-
-@router.get("/me/followers", response_model=list[UserPublicResponse])
-async def get_followers(
-    page: int = Query(1, ge=1),
-    per_page: int = Query(20, ge=1, le=50),
-    current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
-):
-    """Список подписчиков текущего пользователя"""
-    offset = (page - 1) * per_page
-    
-    result = await db.execute(
-        select(User)
-        .join(Follow, Follow.follower_id == User.id)
-        .where(Follow.following_id == current_user.id)
-        .offset(offset)
-        .limit(per_page)
-    )
-    users = result.scalars().all()
-    
-    return [UserPublicResponse(
-        id=u.id,
-        username=u.username,
-        display_name=u.display_name,
-        avatar_url=u.avatar_url,
-        bio=u.bio,
-        created_at=u.created_at
-    ) for u in users]
-
-
 @router.get("/{user_id}/collection", response_model=list[CollectionWithItems])
 async def get_user_collection(
     user_id: UUID,
@@ -462,29 +514,26 @@ async def get_user_collection(
     db: AsyncSession = Depends(get_db)
 ):
     """Получение коллекции пользователя (для просмотра подписчиками)"""
-    # Проверяем существование пользователя
     result = await db.execute(
         select(User).where(User.id == user_id, User.is_active == True)
     )
     user = result.scalar_one_or_none()
-    
+
     if not user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Пользователь не найден"
         )
-    
-    # Получаем коллекции
+
     result = await db.execute(
         select(Collection)
         .where(Collection.user_id == user_id)
         .order_by(Collection.sort_order)
     )
     collections = result.scalars().all()
-    
+
     response = []
     for collection in collections:
-        # Получаем элементы
         offset = (page - 1) * per_page
         items_result = await db.execute(
             select(CollectionItem)
@@ -495,14 +544,13 @@ async def get_user_collection(
             .limit(per_page)
         )
         items = items_result.scalars().all()
-        
-        # Подсчёт
+
         count_result = await db.execute(
             select(func.count(CollectionItem.id))
             .where(CollectionItem.collection_id == collection.id)
         )
         items_count = count_result.scalar() or 0
-        
+
         response.append(CollectionWithItems(
             id=collection.id,
             user_id=collection.user_id,
@@ -524,66 +572,6 @@ async def get_user_collection(
                 record=item.record
             ) for item in items]
         ))
-    
+
     return response
-
-
-@router.get("/feed", response_model=list[dict])
-async def get_feed(
-    page: int = Query(1, ge=1),
-    per_page: int = Query(20, ge=1, le=50),
-    current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
-):
-    """
-    Лента активности подписок.
-    Показывает недавно добавленные пластинки в коллекции пользователей, на которых подписан.
-    """
-    offset = (page - 1) * per_page
-    
-    # Получаем ID пользователей, на которых подписаны
-    following_result = await db.execute(
-        select(Follow.following_id).where(Follow.follower_id == current_user.id)
-    )
-    following_ids = [f[0] for f in following_result.all()]
-    
-    if not following_ids:
-        return []
-    
-    # Получаем недавние добавления
-    result = await db.execute(
-        select(CollectionItem)
-        .join(Collection)
-        .where(Collection.user_id.in_(following_ids))
-        .options(
-            selectinload(CollectionItem.record),
-            selectinload(CollectionItem.collection).selectinload(Collection.user)
-        )
-        .order_by(CollectionItem.added_at.desc())
-        .offset(offset)
-        .limit(per_page)
-    )
-    items = result.scalars().all()
-    
-    return [{
-        "type": "collection_add",
-        "user": {
-            "id": str(item.collection.user.id),
-            "username": item.collection.user.username,
-            "display_name": item.collection.user.display_name,
-            "avatar_url": item.collection.user.avatar_url
-        },
-        "collection": {
-            "id": str(item.collection.id),
-            "name": item.collection.name
-        },
-        "record": {
-            "id": str(item.record.id),
-            "title": item.record.title,
-            "artist": item.record.artist,
-            "year": item.record.year,
-            "cover_image_url": item.record.cover_image_url
-        },
-        "added_at": item.added_at.isoformat()
-    } for item in items]
 

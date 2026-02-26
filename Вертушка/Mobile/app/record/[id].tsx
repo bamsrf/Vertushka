@@ -16,6 +16,7 @@ import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
+import { BlurView } from 'expo-blur';
 import { Header } from '../../components/Header';
 import { GradientText } from '../../components/GradientText';
 import { FolderPickerModal } from '../../components/FolderPickerModal';
@@ -465,35 +466,52 @@ export default function RecordDetailScreen() {
         )}
 
         {/* Цена */}
-        {record.estimated_price_median && (
-          <Card variant="flat" style={styles.card}>
-            <Text style={styles.cardTitle}>Оценочная стоимость</Text>
-            <View style={styles.priceContainer}>
-              {record.estimated_price_min && (
-                <View style={styles.priceItem}>
-                  <Text style={styles.priceLabel}>Мин.</Text>
-                  <Text style={styles.priceValue}>
-                    ${record.estimated_price_min.toFixed(2)}
-                  </Text>
+        {(() => {
+          const rubPrice = record.estimated_price_median_rub || record.estimated_price_min_rub;
+          const usdPrice = record.estimated_price_median || record.estimated_price_min;
+          if (!rubPrice && !usdPrice) return null;
+
+          return (
+            <Card variant="flat" style={styles.card}>
+              <Text style={[styles.cardTitle, { textAlign: 'center' }]}>Примерная стоимость</Text>
+
+              {rubPrice ? (
+                <View style={styles.priceContainer}>
+                  {record.estimated_price_min_rub && record.estimated_price_median_rub ? (
+                    <View style={styles.priceItem}>
+                      <Text style={styles.priceLabel}>от</Text>
+                      <Text style={styles.priceValue}>
+                        {Math.round(record.estimated_price_min_rub).toLocaleString('ru-RU')} ₽
+                      </Text>
+                    </View>
+                  ) : null}
+                  <View style={styles.priceItem}>
+                    <Text style={styles.priceLabel}>{record.estimated_price_median_rub ? '~' : 'от'}</Text>
+                    <GradientText style={styles.priceMedian}>
+                      {Math.round(rubPrice).toLocaleString('ru-RU')} ₽
+                    </GradientText>
+                  </View>
+                  {record.estimated_price_max_rub ? (
+                    <View style={styles.priceItem}>
+                      <Text style={styles.priceLabel}>до</Text>
+                      <Text style={styles.priceValue}>
+                        {Math.round(record.estimated_price_max_rub).toLocaleString('ru-RU')} ₽
+                      </Text>
+                    </View>
+                  ) : null}
                 </View>
-              )}
-              <View style={styles.priceItem}>
-                <Text style={styles.priceLabel}>Медиана</Text>
-                <GradientText style={styles.priceMedian}>
-                  ${record.estimated_price_median.toFixed(2)}
-                </GradientText>
-              </View>
-              {record.estimated_price_max && (
-                <View style={styles.priceItem}>
-                  <Text style={styles.priceLabel}>Макс.</Text>
-                  <Text style={styles.priceValue}>
-                    ${record.estimated_price_max.toFixed(2)}
-                  </Text>
-                </View>
-              )}
-            </View>
-          </Card>
-        )}
+              ) : null}
+
+              {usdPrice != null ? (
+                <Text style={styles.priceNote}>
+                  Discogs: ${Number(usdPrice).toFixed(2)}
+                  {record.usd_rub_rate ? ` · курс ${Number(record.usd_rub_rate).toFixed(1)} ₽` : ''}
+                  {record.ru_markup ? ` · × ${record.ru_markup}` : ''}
+                </Text>
+              ) : null}
+            </Card>
+          );
+        })()}
 
         {/* Треклист */}
         {record.tracklist && record.tracklist.length > 0 && (
@@ -521,7 +539,7 @@ export default function RecordDetailScreen() {
         // ========== СТАТУС: В КОЛЛЕКЦИИ ==========
         if (recordStatus.status === 'in_collection') {
           return (
-            <View style={[styles.actionsContainer, { paddingBottom: insets.bottom + Spacing.md }]}>
+            <BlurView intensity={60} tint="light" style={[styles.actionsContainer, { paddingBottom: insets.bottom + Spacing.md }]}>
               <View style={styles.addedButtonContainer}>
                 <View style={styles.addedButton}>
                   <Ionicons name="checkmark-circle" size={20} color={Colors.textSecondary} />
@@ -539,14 +557,14 @@ export default function RecordDetailScreen() {
                   <Ionicons name="ellipsis-vertical" size={24} color={Colors.background} />
                 </TouchableOpacity>
               </View>
-            </View>
+            </BlurView>
           );
         }
 
         // ========== СТАТУС: В ВИШЛИСТЕ ==========
         if (recordStatus.status === 'in_wishlist') {
           return (
-            <View style={[styles.actionsContainer, { paddingBottom: insets.bottom + Spacing.md }]}>
+            <BlurView intensity={60} tint="light" style={[styles.actionsContainer, { paddingBottom: insets.bottom + Spacing.md }]}>
               <Button
                 title="Добавить"
                 onPress={handleAddToCollection}
@@ -558,25 +576,25 @@ export default function RecordDetailScreen() {
               >
                 <Text style={styles.removeButtonText}>Удалить</Text>
               </TouchableOpacity>
-            </View>
+            </BlurView>
           );
         }
 
         // ========== СТАТУС: НЕ ДОБАВЛЕНА ==========
         return (
-          <View style={[styles.actionsContainer, { paddingBottom: insets.bottom + Spacing.md }]}>
+          <BlurView intensity={60} tint="light" style={[styles.actionsContainer, { paddingBottom: insets.bottom + Spacing.md }]}>
             <Button
               title="Добавить"
               onPress={handleAddToCollection}
               style={styles.actionButton}
             />
             <Button
-              title="Хочу"
+              title="В вишлист"
               onPress={handleAddToWishlist}
               variant="outline"
-              style={styles.actionButton}
+              style={{ ...styles.actionButton, backgroundColor: Colors.surface }}
             />
-          </View>
+          </BlurView>
         );
       })()}
 
@@ -741,6 +759,12 @@ const styles = StyleSheet.create({
   priceMedian: {
     ...Typography.h4,
     fontFamily: 'Inter_700Bold',
+  },
+  priceNote: {
+    ...Typography.caption,
+    color: Colors.textMuted,
+    textAlign: 'center' as const,
+    marginTop: Spacing.sm,
   },
   trackRow: {
     flexDirection: 'row',

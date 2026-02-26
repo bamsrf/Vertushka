@@ -39,7 +39,7 @@ class RecordCreate(RecordBase):
 class RecordResponse(BaseModel):
     """Полная схема пластинки"""
     model_config = ConfigDict(from_attributes=True)
-    
+
     id: UUID
     discogs_id: str | None
     discogs_master_id: str | None
@@ -54,10 +54,15 @@ class RecordResponse(BaseModel):
     format_type: str | None
     format_description: str | None
     barcode: str | None
-    estimated_price_min: Decimal | None
-    estimated_price_max: Decimal | None
-    estimated_price_median: Decimal | None
+    estimated_price_min: float | None
+    estimated_price_max: float | None
+    estimated_price_median: float | None
     price_currency: str
+    estimated_price_min_rub: float | None = None
+    estimated_price_median_rub: float | None = None
+    estimated_price_max_rub: float | None = None
+    usd_rub_rate: float | None = None
+    ru_markup: float | None = None
     cover_image_url: str | None
     thumb_image_url: str | None
     artist_id: str | None = None
@@ -81,7 +86,7 @@ class RecordBrief(BaseModel):
     cover_image_url: str | None
     thumb_image_url: str | None
     format_type: str | None = None
-    estimated_price_median: Decimal | None
+    estimated_price_median: float | None
     price_currency: str
 
 
@@ -127,6 +132,7 @@ class MasterVersion(BaseModel):
     country: str | None = None
     year: int | None = None
     format: str | None = None
+    major_formats: list[str] = []
     thumb_image_url: str | None = None
 
 

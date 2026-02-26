@@ -15,6 +15,10 @@ import {
   Modal,
   TextInput,
   RefreshControl,
+  Keyboard,
+  TouchableWithoutFeedback,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -386,7 +390,14 @@ export default function UserProfileScreen() {
         animationType="slide"
         onRequestClose={() => setBookingItem(null)}
       >
-        <View style={styles.modalOverlay}>
+        <KeyboardAvoidingView
+          style={styles.modalOverlay}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? -insets.bottom : 0}
+        >
+          <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+            <View style={styles.modalOverlayFill} />
+          </TouchableWithoutFeedback>
           <View style={[styles.modalContent, { paddingBottom: insets.bottom + Spacing.lg }]}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Забронировать подарок</Text>
@@ -446,7 +457,7 @@ export default function UserProfileScreen() {
               )}
             </TouchableOpacity>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </View>
   );
@@ -626,6 +637,9 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'flex-end',
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
+  },
+  modalOverlayFill: {
+    flex: 1,
   },
   modalContent: {
     backgroundColor: Colors.background,

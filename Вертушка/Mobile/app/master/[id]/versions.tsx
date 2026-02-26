@@ -1,7 +1,7 @@
 /**
  * Страница со списком всех версий мастер-релиза
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -9,6 +9,8 @@ import {
   FlatList,
   ActivityIndicator,
   Alert,
+  ScrollView,
+  TouchableOpacity,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -17,7 +19,17 @@ import { Header } from '../../../components/Header';
 import { VersionCard } from '../../../components/VersionCard';
 import { api } from '../../../lib/api';
 import { MasterVersion } from '../../../lib/types';
-import { Colors, Typography, Spacing } from '../../../constants/theme';
+import { Colors, Typography, Spacing, BorderRadius } from '../../../constants/theme';
+
+type FormatFilter = 'all' | 'vinyl' | 'cd' | 'cassette' | 'box_set';
+
+const FORMAT_OPTIONS: { key: FormatFilter; label: string; match: string[] }[] = [
+  { key: 'all', label: 'Все', match: [] },
+  { key: 'vinyl', label: 'Винил', match: ['Vinyl', 'LP', '12"', '10"', '7"'] },
+  { key: 'cd', label: 'CD', match: ['CD'] },
+  { key: 'cassette', label: 'Кассета', match: ['Cassette'] },
+  { key: 'box_set', label: 'Бокс-сет', match: ['Box Set'] },
+];
 
 export default function VersionsScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -29,6 +41,7 @@ export default function VersionsScreen() {
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
   const [total, setTotal] = useState(0);
+  const [activeFilter, setActiveFilter] = useState<FormatFilter>('all');
 
   useEffect(() => {
     loadVersions();
@@ -70,15 +83,54 @@ export default function VersionsScreen() {
     router.push(`/record/${version.release_id}`);
   };
 
+  const filteredVersions = useMemo(() => {
+    if (activeFilter === 'all') return versions;
+    const option = FORMAT_OPTIONS.find((o) => o.key === activeFilter);
+    if (!option) return versions;
+    return versions.filter((v) => {
+      const majorFmts = (v.major_formats || []).map((f) => f.toLowerCase());
+      const fmtStr = (v.format || '').toLowerCase();
+      return option.match.some(
+        (m) => majorFmts.includes(m.toLowerCase()) || fmtStr.includes(m.toLowerCase())
+      );
+    });
+  }, [versions, activeFilter]);
+
+  const filteredCount = activeFilter === 'all' ? total : filteredVersions.length;
+
   return (
     <View style={styles.container}>
       <Header
-        title={`Все версии (${total})`}
+        title={`Все версии (${filteredCount})`}
         showBack
       />
 
+      <View style={styles.filterBar}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.filterScroll}
+        >
+          {FORMAT_OPTIONS.map((option) => {
+            const isActive = activeFilter === option.key;
+            return (
+              <TouchableOpacity
+                key={option.key}
+                style={[styles.filterChip, isActive && styles.filterChipActive]}
+                onPress={() => setActiveFilter(option.key)}
+                activeOpacity={0.7}
+              >
+                <Text style={[styles.filterChipText, isActive && styles.filterChipTextActive]}>
+                  {option.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+      </View>
+
       <FlatList
-        data={versions}
+        data={filteredVersions}
         keyExtractor={(item) => item.release_id}
         renderItem={({ item }) => (
           <VersionCard
@@ -92,7 +144,9 @@ export default function VersionsScreen() {
           !isLoading ? (
             <View style={styles.emptyContainer}>
               <Ionicons name="disc-outline" size={64} color={Colors.textMuted} />
-              <Text style={styles.emptyText}>Версии не найдены</Text>
+              <Text style={styles.emptyText}>
+                {activeFilter === 'all' ? 'Версии не найдены' : 'Нет версий в этом формате'}
+              </Text>
             </View>
           ) : null
         }
@@ -116,6 +170,35 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: Colors.surface,
+  },
+  filterBar: {
+    paddingVertical: Spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.divider,
+    backgroundColor: Colors.surface,
+  },
+  filterScroll: {
+    paddingHorizontal: Spacing.md,
+    gap: Spacing.sm,
+  },
+  filterChip: {
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.xs + 2,
+    borderRadius: BorderRadius.full,
+    backgroundColor: Colors.background,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  filterChipActive: {
+    backgroundColor: Colors.royalBlue,
+    borderColor: Colors.royalBlue,
+  },
+  filterChipText: {
+    ...Typography.buttonSmall,
+    color: Colors.textSecondary,
+  },
+  filterChipTextActive: {
+    color: '#FFFFFF',
   },
   listContent: {
     padding: Spacing.md,

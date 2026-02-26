@@ -30,6 +30,7 @@ class Settings(BaseSettings):
     # Discogs API
     discogs_api_key: str = Field(default="", alias="DISCOGS_API_KEY")
     discogs_api_secret: str = Field(default="", alias="DISCOGS_API_SECRET")
+    discogs_token: str = Field(default="", alias="DISCOGS_TOKEN")
     discogs_user_agent: str = Field(default="VertushkaApp/1.0", alias="DISCOGS_USER_AGENT")
     
     # OpenAI API (распознавание обложки)
@@ -51,6 +52,9 @@ class Settings(BaseSettings):
     smtp_password: str = Field(default="", alias="SMTP_PASSWORD")
     email_from: str = Field(default="noreply@recordscanner.app", alias="EMAIL_FROM")
     
+    # Наценка на винил для РФ (доставка + таможня + маржа)
+    ru_vinyl_markup: float = Field(default=2.5, alias="RU_VINYL_MARKUP")
+
     # URL приложения
     app_url: str = Field(default="http://localhost:8000", alias="APP_URL")
     frontend_url: str = Field(default="https://recordscanner.app", alias="FRONTEND_URL")

@@ -10,6 +10,7 @@ import {
   RecordSearchResult,
   Collection,
   CollectionItem,
+  CollectionStats,
   WishlistItem,
   CollectionTab,
   SearchFilters,
@@ -286,12 +287,17 @@ interface CollectionState {
   collectionItems: CollectionItem[];
   wishlistItems: WishlistItem[];
   isLoading: boolean;
+  stats: CollectionStats | null;
+  isLoadingStats: boolean;
+  sortBy: 'added_at' | 'price_desc' | 'price_asc';
 
   // Actions
   setActiveTab: (tab: CollectionTab) => void;
   fetchCollections: () => Promise<void>;
   fetchCollectionItems: () => Promise<void>;
   fetchWishlistItems: () => Promise<void>;
+  fetchStats: () => Promise<void>;
+  setSortBy: (sort: 'added_at' | 'price_desc' | 'price_asc') => void;
   addToCollection: (discogsId: string) => Promise<void>;
   addToWishlist: (discogsId: string) => Promise<void>;
   removeFromCollection: (itemId: string, skipRefetch?: boolean) => Promise<void>;
@@ -313,6 +319,9 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
   collectionItems: [],
   wishlistItems: [],
   isLoading: false,
+  stats: null,
+  isLoadingStats: false,
+  sortBy: 'added_at',
 
   setActiveTab: (tab) => set({ activeTab: tab }),
 
@@ -331,17 +340,36 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
   },
 
   fetchCollectionItems: async () => {
-    const { defaultCollection } = get();
+    const { defaultCollection, sortBy } = get();
     if (!defaultCollection) return;
 
     set({ isLoading: true });
     try {
-      const items = await api.getCollectionItems(defaultCollection.id);
+      const items = await api.getCollectionItems(defaultCollection.id, sortBy);
       set({ collectionItems: items, isLoading: false });
     } catch (error) {
       set({ isLoading: false });
       throw error;
     }
+  },
+
+  fetchStats: async () => {
+    const { defaultCollection } = get();
+    if (!defaultCollection) return;
+
+    set({ isLoadingStats: true });
+    try {
+      const stats = await api.getCollectionStats(defaultCollection.id);
+      set({ stats, isLoadingStats: false });
+    } catch (error) {
+      set({ isLoadingStats: false });
+      throw error;
+    }
+  },
+
+  setSortBy: (sort) => {
+    set({ sortBy: sort });
+    get().fetchCollectionItems();
   },
 
   fetchWishlistItems: async () => {

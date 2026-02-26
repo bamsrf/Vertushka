@@ -71,6 +71,7 @@ export default function RootLayout() {
           <Stack.Screen name="settings/edit-profile" />
           <Stack.Screen name="settings/share-profile" />
           <Stack.Screen name="user/[username]/index" />
+          <Stack.Screen name="collection/value" />
         </Stack>
       </SafeAreaProvider>
     </GestureHandlerRootView>

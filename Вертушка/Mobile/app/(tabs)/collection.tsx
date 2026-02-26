@@ -35,7 +35,7 @@ const folderPlaceholder = require('../../assets/images/folder-placeholder.png');
 
 const SEGMENTS: { key: CollectionTab; label: string }[] = [
   { key: 'collection', label: 'В наличии' },
-  { key: 'wishlist', label: 'Хочу' },
+  { key: 'wishlist', label: 'Вишлист' },
 ];
 
 type ViewMode = 'grid' | 'list';
@@ -511,6 +511,17 @@ export default function CollectionScreen() {
           </TouchableOpacity>
         )}
 
+        {/* Value button */}
+        {!isSelectionMode && activeTab === 'collection' && (
+          <TouchableOpacity
+            style={styles.valueButton}
+            onPress={() => router.push('/collection/value')}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="cash-outline" size={18} color={Colors.royalBlue} />
+          </TouchableOpacity>
+        )}
+
         {/* Filter button */}
         {!isSelectionMode && (
           <View>
@@ -779,6 +790,16 @@ const styles = StyleSheet.create({
   },
   viewToggleIconAbsolute: {
     position: 'absolute',
+  },
+
+  // Value button
+  valueButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: Colors.surface,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
   },
 
   // Filter button

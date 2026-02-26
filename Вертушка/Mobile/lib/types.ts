@@ -55,6 +55,11 @@ export interface VinylRecord {
   estimated_price_max?: number;
   estimated_price_median?: number;
   price_currency: string;
+  estimated_price_min_rub?: number;
+  estimated_price_median_rub?: number;
+  estimated_price_max_rub?: number;
+  usd_rub_rate?: number;
+  ru_markup?: number;
   cover_image_url?: string;
   thumb_image_url?: string;
   artist_id?: string;
@@ -134,6 +139,7 @@ export interface MasterVersion {
   country?: string;
   year?: number;
   format?: string;
+  major_formats?: string[];
   thumb_image_url?: string;
 }
 
@@ -174,7 +180,25 @@ export interface CollectionItem {
   notes?: string;
   purchase_price?: number;
   purchase_date?: string;
+  estimated_price_rub?: number;
   added_at: string;
+}
+
+export interface CollectionStats {
+  total_records: number;
+  total_estimated_value_min: number | null;
+  total_estimated_value_max: number | null;
+  total_estimated_value_median: number | null;
+  total_estimated_value_rub: number | null;
+  usd_rub_rate: number | null;
+  ru_markup: number;
+  most_expensive: VinylRecord | null;
+  most_expensive_price_rub: number | null;
+  records_with_price: number;
+  records_by_year: Record<number, number>;
+  records_by_genre: Record<string, number>;
+  oldest_record_year: number | null;
+  newest_record_year: number | null;
 }
 
 // ==================== Wishlist ====================

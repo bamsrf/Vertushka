@@ -220,6 +220,19 @@ export default function ShareProfileScreen() {
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
       >
+        {/* Активация профиля */}
+        <Text style={styles.sectionTitle}>Публичный профиль</Text>
+        <View style={styles.section}>
+          <SettingRow
+            label="Активировать профиль"
+            description="Ваш профиль будет доступен по ссылке"
+            value={settings?.is_active ?? false}
+            settingKey="is_active"
+            onToggle={handleToggle}
+            disabled={isSaving}
+          />
+        </View>
+
         {/* Настройки карточек */}
         <Text style={styles.sectionTitle}>Информация на карточках</Text>
         <View style={styles.section}>
