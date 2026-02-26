@@ -215,10 +215,19 @@ export default function SearchScreen() {
           await searchUsers(userQuery);
         }
       } else {
-        await Promise.all([
+        const [recordsResult, usersResult] = await Promise.allSettled([
           search(trimmed),
           searchUsers(trimmed),
         ]);
+        // Показываем ошибку только если оба запроса упали
+        if (recordsResult.status === 'rejected' && usersResult.status === 'rejected') {
+          const error = recordsResult.reason;
+          const message = error?.response?.status === 503
+            ? 'Сервис временно недоступен. Попробуйте позже.'
+            : error?.message || 'Ошибка при поиске';
+          Alert.alert('Ошибка', message);
+        }
+        return;
       }
     } catch (error: any) {
       const message = error?.response?.status === 503
@@ -273,10 +282,18 @@ export default function SearchScreen() {
           await searchUsers(userQuery);
         }
       } else {
-        await Promise.all([
+        const [recordsResult, usersResult] = await Promise.allSettled([
           search(historyQuery),
           searchUsers(historyQuery),
         ]);
+        if (recordsResult.status === 'rejected' && usersResult.status === 'rejected') {
+          const error = recordsResult.reason;
+          const message = error?.response?.status === 503
+            ? 'Сервис временно недоступен. Попробуйте позже.'
+            : error?.message || 'Ошибка при поиске';
+          Alert.alert('Ошибка', message);
+        }
+        return;
       }
     } catch (error: any) {
       const message = error?.response?.status === 503

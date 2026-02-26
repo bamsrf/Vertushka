@@ -4,7 +4,7 @@ API для работы с пользователями и социальным�
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
-from sqlalchemy import select, func
+from sqlalchemy import select, func, literal
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -32,47 +32,68 @@ async def search_users(
 ):
     """Поиск пользователей по имени или username"""
     offset = (page - 1) * per_page
-    
+
+    # Экранируем спецсимволы ILIKE
+    safe_q = q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+    # Subqueries для подсчёта статистики одним запросом
+    followers_sub = (
+        select(func.count(Follow.id))
+        .where(Follow.following_id == User.id)
+        .correlate(User)
+        .scalar_subquery()
+        .label("followers_count")
+    )
+    following_sub = (
+        select(func.count(Follow.id))
+        .where(Follow.follower_id == User.id)
+        .correlate(User)
+        .scalar_subquery()
+        .label("following_count")
+    )
+    collection_sub = (
+        select(func.count(CollectionItem.id))
+        .join(Collection, CollectionItem.collection_id == Collection.id)
+        .where(Collection.user_id == User.id)
+        .correlate(User)
+        .scalar_subquery()
+        .label("collection_count")
+    )
+
+    # Subquery для is_following
+    if current_user:
+        is_following_sub = (
+            select(literal(True))
+            .where(
+                Follow.follower_id == current_user.id,
+                Follow.following_id == User.id
+            )
+            .correlate(User)
+            .exists()
+            .label("is_following")
+        )
+    else:
+        is_following_sub = literal(False).label("is_following")
+
     result = await db.execute(
-        select(User)
+        select(
+            User,
+            followers_sub,
+            following_sub,
+            collection_sub,
+            is_following_sub,
+        )
         .where(
             User.is_active == True,
-            (User.username.ilike(f"%{q}%")) | (User.display_name.ilike(f"%{q}%"))
+            (User.username.ilike(f"%{safe_q}%")) | (User.display_name.ilike(f"%{safe_q}%"))
         )
         .offset(offset)
         .limit(per_page)
     )
-    users = result.scalars().all()
-    
-    response = []
-    for user in users:
-        # Подсчёт подписчиков и подписок
-        followers_count = await db.scalar(
-            select(func.count(Follow.id)).where(Follow.following_id == user.id)
-        )
-        following_count = await db.scalar(
-            select(func.count(Follow.id)).where(Follow.follower_id == user.id)
-        )
-        
-        # Подсчёт пластинок в коллекции
-        collection_count = await db.scalar(
-            select(func.count(CollectionItem.id))
-            .join(Collection)
-            .where(Collection.user_id == user.id)
-        )
-        
-        # Проверка подписки текущего пользователя
-        is_following = False
-        if current_user:
-            follow_check = await db.execute(
-                select(Follow).where(
-                    Follow.follower_id == current_user.id,
-                    Follow.following_id == user.id
-                )
-            )
-            is_following = follow_check.scalar_one_or_none() is not None
-        
-        response.append(UserWithStats(
+    rows = result.all()
+
+    return [
+        UserWithStats(
             id=user.id,
             username=user.username,
             display_name=user.display_name,
@@ -82,10 +103,10 @@ async def search_users(
             followers_count=followers_count or 0,
             following_count=following_count or 0,
             collection_count=collection_count or 0,
-            is_following=is_following
-        ))
-    
-    return response
+            is_following=bool(is_following),
+        )
+        for user, followers_count, following_count, collection_count, is_following in rows
+    ]
 
 
 @router.get("/by-username/{username}", response_model=UserWithStats)

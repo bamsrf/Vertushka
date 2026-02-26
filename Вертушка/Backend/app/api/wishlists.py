@@ -383,7 +383,7 @@ async def generate_share_link(
 async def update_wishlist_settings(
     is_public: bool | None = None,
     show_gifter_names: bool | None = None,
-    custom_message: str | None = None,
+    custom_message: str | None = Query(None, max_length=500),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):

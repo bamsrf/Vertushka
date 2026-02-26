@@ -255,7 +255,6 @@ async def get_my_bookings_by_email(
         "for_user": b.wishlist_item.wishlist.user.display_name or b.wishlist_item.wishlist.user.username,
         "status": b.status,
         "booked_at": b.booked_at,
-        "cancel_token": b.cancel_token
     } for b in bookings]
 
 

@@ -2,10 +2,13 @@
 Сервис для работы с Discogs API
 """
 import asyncio
+import logging
 import re
 
 import httpx
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 from app.config import get_settings
 from app.schemas.record import (
@@ -62,16 +65,17 @@ class DiscogsService:
             headers["Authorization"] = f"Discogs key={self.api_key}, secret={self.api_secret}"
         return headers
 
-    async def _get(self, url: str, params: dict | None = None) -> dict:
+    async def _get(self, url: str, params: dict | None = None, headers: dict | None = None) -> dict:
         """GET с повторными попытками при 429/503 от Discogs."""
         client = self._get_shared_client()
+        request_headers = headers or self._get_headers()
         async with self._semaphore:
             last_response = None
             for attempt in range(3):
                 last_response = await client.get(
                     url,
                     params=params,
-                    headers=self._get_headers(),
+                    headers=request_headers,
                     timeout=30.0,
                 )
                 if last_response.status_code in (429, 503) and attempt < 2:
@@ -284,7 +288,7 @@ class DiscogsService:
                 price_max = stats_response.get("highest_price", {}).get("value")
                 price_median = stats_response.get("median_price", {}).get("value")
         except Exception:
-            pass  # Игнорируем ошибки получения цен
+            logger.exception("Failed to get price stats for release %s", release_id)
         
         return {
             "id": str(data.get("id")),
@@ -707,6 +711,7 @@ class DiscogsService:
 
             return {"cover": cover, "release_type": release_type}
         except Exception:
+            logger.exception("Failed to get master info for %s", master_id)
             return {"cover": None, "release_type": None}
 
     async def _get_artist_thumb(self, artist_id: str) -> str | None:
@@ -717,7 +722,7 @@ class DiscogsService:
             if images:
                 return images[0].get("uri150") or images[0].get("uri")
         except Exception:
-            pass
+            logger.exception("Failed to get artist thumb for %s", artist_id)
         return None
 
     async def get_artist_masters(
@@ -746,48 +751,38 @@ class DiscogsService:
 
         data = await self._get(f"{self.BASE_URL}/artists/{artist_id}/releases", params=params)
 
-        # Собираем master releases
-        masters_data = []
+        # Собираем master releases — используем thumb из ответа вместо отдельных запросов
+        results = []
         for item in data.get("releases", []):
             release_type = item.get("type", "")
             role = item.get("role", "")
 
             # Показываем только masters где артист - Main
             if release_type == "master" and role == "Main":
-                masters_data.append({
-                    "master_id": str(item.get("id", "")),
-                    "title": item.get("title", ""),
-                    "artist": item.get("artist", "Unknown"),
-                    "year": item.get("year"),
-                    "main_release_id": str(item.get("main_release", "")),
-                    "thumb": item.get("thumb"),
-                    "release_type": item.get("format"),
-                })
+                thumb = item.get("thumb")
+                # Определяем тип релиза из поля format
+                format_str = item.get("format", "")
+                if format_str:
+                    fmt_lower = format_str.lower()
+                    if "single" in fmt_lower:
+                        rel_type = "single"
+                    elif "ep" in fmt_lower or "mini" in fmt_lower:
+                        rel_type = "ep"
+                    else:
+                        rel_type = "album"
+                else:
+                    rel_type = "album"
 
-        # Параллельно загружаем обложки и определяем типы для всех masters
-        info_tasks = [
-            self._get_master_info(m["master_id"]) for m in masters_data
-        ]
-        infos = await asyncio.gather(*info_tasks, return_exceptions=True)
-
-        # Формируем результаты с обложками и типами
-        results = []
-        for i, m in enumerate(masters_data):
-            info = infos[i] if not isinstance(infos[i], Exception) else {}
-            cover_url = info.get("cover") if isinstance(info, dict) else None
-            release_type = info.get("release_type") if isinstance(info, dict) else None
-            thumb = m["thumb"]
-
-            results.append(MasterSearchResult(
-                master_id=m["master_id"],
-                title=m["title"],
-                artist=m["artist"],
-                year=int(m["year"]) if m["year"] else None,
-                main_release_id=m["main_release_id"],
-                cover_image_url=cover_url or self._thumb_to_cover(thumb),
-                thumb_image_url=thumb if thumb else None,
-                release_type=release_type,
-            ))
+                results.append(MasterSearchResult(
+                    master_id=str(item.get("id", "")),
+                    title=item.get("title", ""),
+                    artist=item.get("artist", "Unknown"),
+                    year=int(item["year"]) if item.get("year") else None,
+                    main_release_id=str(item.get("main_release", "")),
+                    cover_image_url=self._thumb_to_cover(thumb),
+                    thumb_image_url=thumb if thumb else None,
+                    release_type=rel_type,
+                ))
 
         pagination = data.get("pagination", {})
 
@@ -808,18 +803,15 @@ class DiscogsService:
         return headers
 
     async def _get_price_stats(self, release_id: str) -> dict | None:
-        """Получение статистики цен для релиза (всегда в USD)"""
+        """Получение статистики цен для релиза (всегда в USD).
+        Использует семафор и retry через _get() для соблюдения rate limits."""
         try:
-            client = self._get_shared_client()
-            response = await client.get(
+            return await self._get(
                 f"{self.BASE_URL}/marketplace/stats/{release_id}",
                 params={"curr_abbr": "USD"},
                 headers=self._get_token_headers(),
-                timeout=10.0,
             )
-            if response.status_code == 200:
-                return response.json()
         except Exception:
-            pass
+            logger.exception("Failed to get price stats for release %s", release_id)
         return None
 

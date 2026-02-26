@@ -1,14 +1,19 @@
 """
 API для аутентификации
 """
+import logging
+import uuid as uuid_mod
 from datetime import datetime, timezone
 from uuid import UUID
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from jose import jwt as jose_jwt, JWTError, jwk
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import get_settings
 from app.database import get_db
 from app.models.user import User
 from app.models.wishlist import Wishlist
@@ -23,8 +28,73 @@ from app.utils.security import (
     verify_token_type,
 )
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter()
 security = HTTPBearer()
+
+# ---------- Apple Sign In verification ----------
+
+APPLE_JWKS_URL = "https://appleid.apple.com/auth/keys"
+_apple_jwks_cache: dict | None = None
+
+
+async def _get_apple_jwks() -> dict:
+    """Получение Apple JWKS (с кэшированием в памяти)."""
+    global _apple_jwks_cache
+    if _apple_jwks_cache:
+        return _apple_jwks_cache
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(APPLE_JWKS_URL, timeout=10.0)
+        resp.raise_for_status()
+        _apple_jwks_cache = resp.json()
+        return _apple_jwks_cache
+
+
+async def _verify_apple_identity_token(identity_token: str) -> dict:
+    """Верифицирует Apple identity_token через Apple JWKS.
+    Возвращает payload с sub, email и др."""
+    settings = get_settings()
+    try:
+        unverified_header = jose_jwt.get_unverified_header(identity_token)
+        kid = unverified_header.get("kid")
+        if not kid:
+            raise ValueError("No kid in token header")
+
+        jwks = await _get_apple_jwks()
+        key_data = None
+        for key in jwks.get("keys", []):
+            if key["kid"] == kid:
+                key_data = key
+                break
+
+        if not key_data:
+            global _apple_jwks_cache
+            _apple_jwks_cache = None
+            jwks = await _get_apple_jwks()
+            for key in jwks.get("keys", []):
+                if key["kid"] == kid:
+                    key_data = key
+                    break
+
+        if not key_data:
+            raise ValueError(f"Apple public key with kid={kid} not found")
+
+        public_key = jwk.construct(key_data)
+        payload = jose_jwt.decode(
+            identity_token,
+            public_key,
+            algorithms=["RS256"],
+            audience=settings.apple_client_id,
+            issuer="https://appleid.apple.com",
+        )
+        return payload
+    except (JWTError, ValueError, Exception) as e:
+        logger.warning("Apple identity_token verification failed: %s", e)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Недействительный Apple identity token"
+        )
 
 
 async def get_current_user(
@@ -218,36 +288,46 @@ async def apple_sign_in(
     db: AsyncSession = Depends(get_db)
 ):
     """Вход через Apple Sign In"""
-    # TODO: Верификация identity_token через Apple
-    # Пока заглушка для структуры
-    
+    # Верификация identity_token через Apple JWKS
+    apple_payload = await _verify_apple_identity_token(data.identity_token)
+    apple_sub = apple_payload.get("sub")
+    if apple_sub != data.user_identifier:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="user_identifier не совпадает с sub токена"
+        )
+
     # Поиск пользователя по Apple ID
     result = await db.execute(
         select(User).where(User.apple_id == data.user_identifier)
     )
     user = result.scalar_one_or_none()
-    
+
     if not user:
         # Создание нового пользователя
-        if not data.email:
+        email = data.email or apple_payload.get("email")
+        if not email:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Email обязателен для регистрации"
             )
-        
-        # Генерация уникального username
-        base_username = data.email.split("@")[0]
+
+        # Генерация уникального username (с лимитом итераций)
+        base_username = email.split("@")[0]
         username = base_username
         counter = 1
-        while True:
+        while counter <= 100:
             result = await db.execute(select(User).where(User.username == username))
             if not result.scalar_one_or_none():
                 break
             username = f"{base_username}{counter}"
             counter += 1
-        
+        else:
+            # Fallback на UUID-суффикс
+            username = f"{base_username}_{uuid_mod.uuid4().hex[:8]}"
+
         user = User(
-            email=data.email,
+            email=email,
             username=username,
             apple_id=data.user_identifier,
             display_name=data.full_name or username,
@@ -255,18 +335,18 @@ async def apple_sign_in(
         )
         db.add(user)
         await db.flush()
-        
+
         # Создание вишлиста
         wishlist = Wishlist(user_id=user.id)
         db.add(wishlist)
-        
+
         # Создание коллекции
         collection = Collection(
             user_id=user.id,
             name="Моя коллекция"
         )
         db.add(collection)
-        
+
         await db.commit()
     
     user.last_login_at = datetime.now(timezone.utc)

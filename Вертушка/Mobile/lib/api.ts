@@ -37,17 +37,11 @@ import {
 // API сервер
 // Для локальной разработки с бэкендом на localhost:
 const API_BASE_URL = __DEV__
-  ? 'http://192.168.1.66:8000/api'  // Локальный IP для разработки (работает на симуляторе и физическом устройстве)
+  ? 'http://192.168.1.68:8000/api'  // Локальный IP для разработки (работает на симуляторе и физическом устройстве)
   : 'https://api.vinyl-vertushka.ru/api'; // Продакшен сервер
 
 const TOKEN_KEY = 'auth_token';
 const REFRESH_TOKEN_KEY = 'refresh_token';
-
-// Retry конфигурация для 503 ошибок (Discogs rate limiting)
-const MAX_RETRIES = 3;
-const RETRY_DELAY = 1500; // 1.5 секунды между попытками
-
-const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 class ApiClient {
   private client: AxiosInstance;
@@ -76,17 +70,6 @@ class ApiClient {
       (response) => response,
       async (error: AxiosError) => {
         const originalRequest = error.config as any;
-
-        // Retry логика для 503 ошибок (Discogs rate limiting)
-        if (error.response?.status === 503) {
-          const retryCount = originalRequest._retryCount || 0;
-
-          if (retryCount < MAX_RETRIES) {
-            originalRequest._retryCount = retryCount + 1;
-            await sleep(RETRY_DELAY * (retryCount + 1));
-            return this.client(originalRequest);
-          }
-        }
 
         // Если 401 и это не запрос на refresh — пробуем обновить токен
         if (error.response?.status === 401 && !originalRequest._retry) {

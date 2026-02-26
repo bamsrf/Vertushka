@@ -2,6 +2,7 @@
  * Zustand Store для Вертушка
  */
 import { create } from 'zustand';
+import { Alert } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { api } from './api';
 import {
@@ -368,8 +369,11 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
   },
 
   setSortBy: (sort) => {
+    const prevSort = get().sortBy;
     set({ sortBy: sort });
-    get().fetchCollectionItems();
+    get().fetchCollectionItems().catch(() => {
+      set({ sortBy: prevSort });
+    });
   },
 
   fetchWishlistItems: async () => {
@@ -440,8 +444,9 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
             if (folderItem) {
               await api.removeFromCollection(folder.id, folderItem.id);
             }
-          } catch {
-            // Папка недоступна — пропускаем
+          } catch (error) {
+            console.error(`Failed to remove from folder "${folder.name}":`, error);
+            Alert.alert('Ошибка', `Не удалось удалить из папки "${folder.name}"`);
           }
         })
       );

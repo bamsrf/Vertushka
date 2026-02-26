@@ -1,7 +1,10 @@
 """
 API для работы с пластинками
 """
+import logging
 from uuid import UUID
+
+logger = logging.getLogger(__name__)
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy import select
@@ -54,7 +57,7 @@ async def _enrich_response_with_rub(response: RecordResponse) -> RecordResponse:
         if response.estimated_price_max:
             response.estimated_price_max_rub = round(float(response.estimated_price_max) * rate * markup, 0)
     except Exception:
-        pass
+        logger.exception("Failed to enrich response with RUB prices")
     return response
 
 
@@ -78,7 +81,7 @@ async def _ensure_record_price_data(record: Record, db: AsyncSession) -> None:
                 await db.commit()
                 await db.refresh(record)
     except Exception:
-        pass
+        logger.exception("Failed to ensure price data for record %s", record.discogs_id)
 
 
 async def _ensure_record_artist_data(record: Record, db: AsyncSession) -> None:
@@ -107,6 +110,7 @@ async def _ensure_record_artist_data(record: Record, db: AsyncSession) -> None:
             if artists:
                 artist_id = str(artists[0].get("id"))
         except Exception:
+            logger.exception("Failed to fetch artist_id from Discogs for record %s", record.discogs_id)
             return
 
     if not artist_id:
@@ -123,7 +127,7 @@ async def _ensure_record_artist_data(record: Record, db: AsyncSession) -> None:
             await db.commit()
             await db.refresh(record)
     except Exception:
-        pass
+        logger.exception("Failed to get artist thumb for artist %s", artist_id)
 
 
 async def get_or_create_record_by_discogs_id(
