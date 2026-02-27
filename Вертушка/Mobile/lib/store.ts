@@ -25,8 +25,78 @@ import {
   ScanMode,
 } from './types';
 
-const SEARCH_HISTORY_KEY = '@vertushka:search_history';
+const getSearchHistoryKey = () => {
+  const userId = useAuthStore.getState().user?.id;
+  return userId ? `@vertushka:search_history:${userId}` : '@vertushka:search_history';
+};
 const MAX_HISTORY_ITEMS = 20;
+const ONBOARDING_KEY = '@vertushka:onboarding_complete';
+
+// ==================== Onboarding Store ====================
+
+interface OnboardingState {
+  hasSeenWelcome: boolean;
+  tourStep: number | null;
+  isReady: boolean;
+
+  checkOnboarding: () => Promise<void>;
+  completeWelcome: () => Promise<void>;
+  startTour: () => void;
+  nextStep: () => void;
+  skipTour: () => Promise<void>;
+  completeTour: () => Promise<void>;
+}
+
+export const useOnboardingStore = create<OnboardingState>((set, get) => ({
+  hasSeenWelcome: true,
+  tourStep: null,
+  isReady: false,
+
+  checkOnboarding: async () => {
+    try {
+      const value = await AsyncStorage.getItem(ONBOARDING_KEY);
+      set({ hasSeenWelcome: value === 'true', isReady: true });
+    } catch {
+      set({ hasSeenWelcome: true, isReady: true });
+    }
+  },
+
+  completeWelcome: async () => {
+    set({ hasSeenWelcome: true });
+    try {
+      await AsyncStorage.setItem(ONBOARDING_KEY, 'true');
+    } catch (error) {
+      console.error('Failed to save onboarding state:', error);
+    }
+  },
+
+  startTour: () => set({ tourStep: 0 }),
+
+  nextStep: () => {
+    const { tourStep } = get();
+    if (tourStep !== null && tourStep < 2) {
+      set({ tourStep: tourStep + 1 });
+    }
+  },
+
+  skipTour: async () => {
+    set({ tourStep: null });
+    try {
+      await AsyncStorage.setItem(ONBOARDING_KEY, 'true');
+    } catch (error) {
+      console.error('Failed to save onboarding state:', error);
+    }
+  },
+
+  completeTour: async () => {
+    set({ tourStep: null });
+    try {
+      await AsyncStorage.setItem(ONBOARDING_KEY, 'true');
+    } catch (error) {
+      console.error('Failed to save onboarding state:', error);
+    }
+  },
+}));
 
 // ==================== Auth Store ====================
 
@@ -36,7 +106,7 @@ interface AuthState {
   isAuthenticated: boolean;
   
   // Actions
-  login: (email: string, password: string) => Promise<void>;
+  login: (login: string, password: string) => Promise<void>;
   register: (email: string, username: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   checkAuth: () => Promise<void>;
@@ -48,10 +118,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   isLoading: true,
   isAuthenticated: false,
 
-  login: async (email, password) => {
+  login: async (login, password) => {
     set({ isLoading: true });
     try {
-      await api.login({ email, password });
+      await api.login({ login, password });
       const user = await api.getMe();
       set({ user, isAuthenticated: true, isLoading: false });
     } catch (error) {
@@ -226,7 +296,7 @@ export const useSearchStore = create<SearchState>((set, get) => ({
 
   loadHistory: async () => {
     try {
-      const stored = await AsyncStorage.getItem(SEARCH_HISTORY_KEY);
+      const stored = await AsyncStorage.getItem(getSearchHistoryKey());
       if (stored) {
         const history = JSON.parse(stored) as string[];
         set({ searchHistory: history });
@@ -248,7 +318,7 @@ export const useSearchStore = create<SearchState>((set, get) => ({
     set({ searchHistory: newHistory });
 
     try {
-      await AsyncStorage.setItem(SEARCH_HISTORY_KEY, JSON.stringify(newHistory));
+      await AsyncStorage.setItem(getSearchHistoryKey(), JSON.stringify(newHistory));
     } catch (error) {
       console.error('Failed to save search history:', error);
     }
@@ -261,7 +331,7 @@ export const useSearchStore = create<SearchState>((set, get) => ({
     set({ searchHistory: newHistory });
 
     try {
-      await AsyncStorage.setItem(SEARCH_HISTORY_KEY, JSON.stringify(newHistory));
+      await AsyncStorage.setItem(getSearchHistoryKey(), JSON.stringify(newHistory));
     } catch (error) {
       console.error('Failed to update search history:', error);
     }
@@ -271,7 +341,7 @@ export const useSearchStore = create<SearchState>((set, get) => ({
     set({ searchHistory: [] });
 
     try {
-      await AsyncStorage.removeItem(SEARCH_HISTORY_KEY);
+      await AsyncStorage.removeItem(getSearchHistoryKey());
     } catch (error) {
       console.error('Failed to clear search history:', error);
     }

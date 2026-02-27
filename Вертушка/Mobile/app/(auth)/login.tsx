@@ -23,17 +23,15 @@ export default function LoginScreen() {
   const insets = useSafeAreaInsets();
   const { login, isLoading } = useAuthStore();
 
-  const [email, setEmail] = useState('');
+  const [loginValue, setLoginValue] = useState('');
   const [password, setPassword] = useState('');
-  const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
+  const [errors, setErrors] = useState<{ login?: string; password?: string }>({});
 
   const validate = () => {
-    const newErrors: { email?: string; password?: string } = {};
+    const newErrors: { login?: string; password?: string } = {};
 
-    if (!email.trim()) {
-      newErrors.email = 'Введите email';
-    } else if (!/\S+@\S+\.\S+/.test(email)) {
-      newErrors.email = 'Некорректный email';
+    if (!loginValue.trim()) {
+      newErrors.login = 'Введите email или имя пользователя';
     }
 
     if (!password) {
@@ -50,11 +48,11 @@ export default function LoginScreen() {
     if (!validate()) return;
 
     try {
-      await login(email, password);
+      await login(loginValue, password);
     } catch (error: any) {
       Alert.alert(
         'Ошибка входа',
-        error.response?.data?.detail || 'Неверный email или пароль'
+        error.response?.data?.detail || 'Неверный логин или пароль'
       );
     }
   };
@@ -89,14 +87,15 @@ export default function LoginScreen() {
           <Text style={styles.title}>Вход</Text>
 
           <Input
-            label="Email"
-            value={email}
-            onChangeText={setEmail}
-            placeholder="email@example.com"
-            keyboardType="email-address"
-            autoComplete="email"
-            leftIcon="mail-outline"
-            error={errors.email}
+            label="Email или имя пользователя"
+            value={loginValue}
+            onChangeText={setLoginValue}
+            placeholder="email@example.com или username"
+            autoCapitalize="none"
+            autoCorrect={false}
+            autoComplete="username"
+            leftIcon="person-outline"
+            error={errors.login}
           />
 
           <Input
@@ -117,6 +116,10 @@ export default function LoginScreen() {
             fullWidth
             style={styles.button}
           />
+
+          <Link href="/(auth)/forgot-password" style={styles.forgotLink}>
+            <Text style={styles.forgotText}>Забыли пароль?</Text>
+          </Link>
         </View>
 
         {/* Ссылка на регистрацию */}
@@ -172,6 +175,15 @@ const styles = StyleSheet.create({
   },
   button: {
     marginTop: Spacing.md,
+  },
+  forgotLink: {
+    alignSelf: 'center',
+    marginTop: Spacing.md,
+    padding: Spacing.xs,
+  },
+  forgotText: {
+    ...Typography.bodySmall,
+    color: Colors.royalBlue,
   },
   footer: {
     flexDirection: 'row',

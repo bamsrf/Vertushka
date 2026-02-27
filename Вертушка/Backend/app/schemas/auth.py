@@ -2,7 +2,7 @@
 Схемы для аутентификации
 """
 from uuid import UUID
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr, Field
 
 
 class Token(BaseModel):
@@ -36,4 +36,21 @@ class AppleSignIn(BaseModel):
 class GoogleSignIn(BaseModel):
     """Схема для Google Sign In"""
     id_token: str
+
+
+class ForgotPasswordRequest(BaseModel):
+    """Запрос на сброс пароля"""
+    email: EmailStr
+
+
+class VerifyResetCodeRequest(BaseModel):
+    """Проверка кода сброса"""
+    email: EmailStr
+    code: str = Field(..., min_length=6, max_length=6)
+
+
+class ResetPasswordRequest(BaseModel):
+    """Установка нового пароля"""
+    reset_token: str
+    new_password: str = Field(..., min_length=8, max_length=100)
 

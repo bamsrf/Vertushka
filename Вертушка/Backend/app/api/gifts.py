@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -18,6 +18,8 @@ from app.schemas.wishlist import (
     GiftBookingCreate,
     GiftBookingResponse,
     GiftBookingOwnerResponse,
+    GiftGivenResponse,
+    GiftRecipientInfo,
 )
 from app.schemas.record import RecordBrief
 from app.utils.security import generate_random_token
@@ -256,6 +258,56 @@ async def get_my_bookings_by_email(
         "status": b.status,
         "booked_at": b.booked_at,
     } for b in bookings]
+
+
+@router.get("/me/given", response_model=list[GiftGivenResponse])
+async def get_given_bookings(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Получение списка бронирований, сделанных текущим пользователем (секция 'Я дарю')"""
+    result = await db.execute(
+        select(GiftBooking)
+        .where(
+            or_(
+                GiftBooking.booked_by_user_id == current_user.id,
+                GiftBooking.gifter_email == current_user.email,
+            ),
+            GiftBooking.status.in_([GiftStatus.BOOKED, GiftStatus.COMPLETED])
+        )
+        .options(
+            selectinload(GiftBooking.wishlist_item)
+            .selectinload(WishlistItem.record),
+            selectinload(GiftBooking.wishlist_item)
+            .selectinload(WishlistItem.wishlist)
+            .selectinload(Wishlist.user)
+        )
+        .order_by(GiftBooking.booked_at.desc())
+    )
+    bookings = result.scalars().all()
+
+    return [GiftGivenResponse(
+        id=b.id,
+        status=b.status,
+        cancel_token=b.cancel_token,
+        booked_at=b.booked_at,
+        completed_at=b.completed_at,
+        record=RecordBrief(
+            id=b.wishlist_item.record.id,
+            title=b.wishlist_item.record.title,
+            artist=b.wishlist_item.record.artist,
+            year=b.wishlist_item.record.year,
+            cover_image_url=b.wishlist_item.record.cover_image_url,
+            thumb_image_url=b.wishlist_item.record.thumb_image_url,
+            estimated_price_median=b.wishlist_item.record.estimated_price_median,
+            price_currency=b.wishlist_item.record.price_currency
+        ),
+        for_user=GiftRecipientInfo(
+            username=b.wishlist_item.wishlist.user.username,
+            display_name=b.wishlist_item.wishlist.user.display_name,
+            avatar_url=b.wishlist_item.wishlist.user.avatar_url
+        )
+    ) for b in bookings]
 
 
 @router.get("/me/received", response_model=list[GiftBookingOwnerResponse])

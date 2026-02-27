@@ -45,15 +45,18 @@ class Settings(BaseSettings):
     google_client_id: str = Field(default="", alias="GOOGLE_CLIENT_ID")
     google_client_secret: str = Field(default="", alias="GOOGLE_CLIENT_SECRET")
     
-    # Email настройки
-    smtp_host: str = Field(default="smtp.gmail.com", alias="SMTP_HOST")
-    smtp_port: int = Field(default=587, alias="SMTP_PORT")
+    # Email настройки (Yandex SMTP)
+    smtp_host: str = Field(default="smtp.yandex.ru", alias="SMTP_HOST")
+    smtp_port: int = Field(default=465, alias="SMTP_PORT")
     smtp_user: str = Field(default="", alias="SMTP_USER")
     smtp_password: str = Field(default="", alias="SMTP_PASSWORD")
-    email_from: str = Field(default="noreply@recordscanner.app", alias="EMAIL_FROM")
+    email_from: str = Field(default="", alias="EMAIL_FROM")
     
     # Наценка на винил для РФ (доставка + таможня + маржа)
     ru_vinyl_markup: float = Field(default=2.5, alias="RU_VINYL_MARKUP")
+
+    # Sentry
+    sentry_dsn: str = Field(default="", alias="SENTRY_DSN")
 
     # URL приложения
     app_url: str = Field(default="http://localhost:8000", alias="APP_URL")

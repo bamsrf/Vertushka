@@ -31,6 +31,7 @@ import {
   FeedItem,
   GiftBookingCreate,
   GiftBookingResponse,
+  GiftGivenItem,
   CoverScanResponse,
 } from './types';
 
@@ -167,7 +168,7 @@ class ApiClient {
 
   async login(data: LoginRequest): Promise<AuthTokens> {
     const response = await this.client.post<AuthTokens>('/auth/login', {
-      email: data.email,
+      login: data.login,
       password: data.password,
     });
     
@@ -180,6 +181,24 @@ class ApiClient {
     const response = await this.client.post<AuthTokens>('/auth/register', data);
     
     // Сохраняем оба токена сразу после регистрации
+    await this.setTokens(response.data.access_token, response.data.refresh_token || '');
+    return response.data;
+  }
+
+  async forgotPassword(email: string): Promise<void> {
+    await this.client.post('/auth/forgot-password/', { email });
+  }
+
+  async verifyResetCode(email: string, code: string): Promise<string> {
+    const response = await this.client.post<{ reset_token: string }>('/auth/verify-reset-code/', { email, code });
+    return response.data.reset_token;
+  }
+
+  async resetPassword(resetToken: string, newPassword: string): Promise<AuthTokens> {
+    const response = await this.client.post<AuthTokens>('/auth/reset-password/', {
+      reset_token: resetToken,
+      new_password: newPassword,
+    });
     await this.setTokens(response.data.access_token, response.data.refresh_token || '');
     return response.data;
   }
@@ -565,11 +584,40 @@ class ApiClient {
     await this.client.delete(`/collections/${id}`);
   }
 
+  // ==================== Export ====================
+
+  async exportCollectionCSV(): Promise<string> {
+    const response = await this.client.get('/export/collection.csv', {
+      responseType: 'text',
+      headers: { Accept: 'text/csv' },
+    });
+    return response.data;
+  }
+
+  async exportWishlistCSV(): Promise<string> {
+    const response = await this.client.get('/export/wishlist.csv', {
+      responseType: 'text',
+      headers: { Accept: 'text/csv' },
+    });
+    return response.data;
+  }
+
   // ==================== Gift Booking ====================
 
   async bookGift(data: GiftBookingCreate): Promise<GiftBookingResponse> {
     const response = await this.client.post<GiftBookingResponse>('/gifts/book', data);
     return response.data;
+  }
+
+  async getMyGivenGifts(): Promise<GiftGivenItem[]> {
+    const response = await this.client.get<GiftGivenItem[]>('/gifts/me/given');
+    return response.data;
+  }
+
+  async cancelGiftBooking(bookingId: string, cancelToken: string): Promise<void> {
+    await this.client.put(`/gifts/${bookingId}/cancel`, null, {
+      params: { cancel_token: cancelToken },
+    });
   }
 }
 

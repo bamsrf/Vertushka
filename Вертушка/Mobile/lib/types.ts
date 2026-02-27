@@ -24,7 +24,7 @@ export interface AuthTokens {
 }
 
 export interface LoginRequest {
-  email: string;
+  login: string;
   password: string;
 }
 
@@ -410,6 +410,22 @@ export interface GiftBookingResponse {
   cancel_token: string;
   booked_at: string;
   record: PublicProfileRecord;
+}
+
+export interface GiftRecipientInfo {
+  username: string;
+  display_name?: string;
+  avatar_url?: string;
+}
+
+export interface GiftGivenItem {
+  id: string;
+  status: 'booked' | 'completed';
+  cancel_token: string;
+  booked_at: string;
+  completed_at?: string;
+  record: PublicProfileRecord;
+  for_user: GiftRecipientInfo;
 }
 
 // ==================== Social ====================

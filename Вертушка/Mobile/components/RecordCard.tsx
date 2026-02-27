@@ -2,7 +2,7 @@
  * Карточка пластинки — Editorial Gradient Edition
  * Два варианта: compact (overlay) и expanded (card с инфо)
  */
-import React from 'react';
+import React, { useRef } from 'react';
 import {
   View,
   Text,
@@ -37,6 +37,7 @@ interface RecordCardProps {
   isSelectionMode?: boolean;
   isSelected?: boolean;
   onToggleSelection?: () => void;
+  onLongPress?: () => void;
   isBooked?: boolean;
 }
 
@@ -89,6 +90,7 @@ export function RecordCard({
   isSelectionMode = false,
   isSelected = false,
   onToggleSelection,
+  onLongPress,
   isBooked = false,
 }: RecordCardProps) {
   const imageUrl = record.cover_image_url || record.thumb_image_url;
@@ -96,6 +98,7 @@ export function RecordCard({
   const imageHeight = size === 'large' ? cardWidth * 0.8 : CARD_WIDTH;
 
   const scale = useSharedValue(1);
+  const didLongPress = useRef(false);
 
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [{ scale: scale.value }],
@@ -110,11 +113,20 @@ export function RecordCard({
   };
 
   const handlePress = () => {
+    if (didLongPress.current) {
+      didLongPress.current = false;
+      return;
+    }
     if (isSelectionMode && onToggleSelection) {
       onToggleSelection();
     } else if (onPress) {
       onPress();
     }
+  };
+
+  const handleLongPress = () => {
+    didLongPress.current = true;
+    onLongPress?.();
   };
 
   if (variant === 'compact') {
@@ -124,9 +136,11 @@ export function RecordCard({
           styles.compactContainer,
           { width: cardWidth, height: imageHeight },
           Shadows.md,
+          isSelectionMode && isSelected && styles.containerSelected,
           animatedStyle,
         ]}
         onPress={handlePress}
+        onLongPress={!isSelectionMode ? handleLongPress : undefined}
         onPressIn={handlePressIn}
         onPressOut={handlePressOut}
         disabled={isSelectionMode ? !onToggleSelection : !onPress}
@@ -146,8 +160,6 @@ export function RecordCard({
             <Ionicons name="disc-outline" size={48} color={Colors.periwinkle} />
           </View>
         )}
-
-        {isSelectionMode && isSelected && <View style={styles.selectedOverlay} />}
 
         {/* Год badge в правом верхнем углу */}
         {record.year != null && record.year !== 0 && (
@@ -201,6 +213,7 @@ export function RecordCard({
           animatedStyle,
         ]}
         onPress={handlePress}
+        onLongPress={!isSelectionMode ? handleLongPress : undefined}
         onPressIn={handlePressIn}
         onPressOut={handlePressOut}
         disabled={isSelectionMode ? !onToggleSelection : !onPress}
@@ -272,6 +285,7 @@ export function RecordCard({
         animatedStyle,
       ]}
       onPress={handlePress}
+      onLongPress={!isSelectionMode ? handleLongPress : undefined}
       onPressIn={handlePressIn}
       onPressOut={handlePressOut}
       disabled={isSelectionMode ? !onToggleSelection : !onPress}
@@ -292,7 +306,6 @@ export function RecordCard({
             <Ionicons name="disc-outline" size={48} color={Colors.periwinkle} />
           </View>
         )}
-        {isSelectionMode && isSelected && <View style={styles.selectedOverlay} />}
         {isBooked && !isSelectionMode && (
           <LinearGradient
             colors={[Colors.royalBlue, Colors.periwinkle]}
@@ -377,6 +390,8 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.md,
     position: 'relative',
     backgroundColor: Colors.surface,
+    borderWidth: 2,
+    borderColor: 'transparent',
   },
   compactImage: {
     width: '100%',
@@ -433,16 +448,16 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     marginBottom: Spacing.md,
     position: 'relative',
+    borderWidth: 2,
+    borderColor: 'transparent',
+    backgroundColor: '#FFFFFF',
   },
   containerSelected: {
-    borderWidth: 2,
     borderColor: Colors.royalBlue,
   },
   expandedImageContainer: {
     width: '100%',
     backgroundColor: Colors.surface,
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
     overflow: 'hidden',
   },
   expandedImage: {
@@ -504,6 +519,8 @@ const styles = StyleSheet.create({
     padding: Spacing.sm,
     gap: Spacing.sm,
     position: 'relative',
+    borderWidth: 2,
+    borderColor: 'transparent',
   },
   listCheckboxContainer: {
     marginRight: 2,
@@ -581,14 +598,6 @@ const styles = StyleSheet.create({
   },
   checkboxSelected: {
     backgroundColor: Colors.royalBlue,
-  },
-  selectedOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(10, 11, 59, 0.3)',
   },
   actions: {
     flexDirection: 'row',

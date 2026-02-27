@@ -3,7 +3,7 @@
 """
 import uuid
 from datetime import datetime
-from sqlalchemy import String, DateTime, Boolean, Text
+from sqlalchemy import String, DateTime, Boolean, Text, Integer
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import UUID
 
@@ -79,6 +79,21 @@ class User(Base):
         nullable=False
     )
     
+    # Сброс пароля
+    reset_code_hash: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True
+    )
+    reset_code_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime,
+        nullable=True
+    )
+    reset_code_attempts: Mapped[int] = mapped_column(
+        default=0,
+        nullable=False,
+        server_default="0"
+    )
+
     # Временные метки
     created_at: Mapped[datetime] = mapped_column(
         DateTime,

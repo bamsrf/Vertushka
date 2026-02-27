@@ -2,6 +2,7 @@
  * Экран содержимого папки — список пластинок + rename/delete
  */
 import { useEffect, useState, useCallback } from 'react';
+import * as Haptics from 'expo-haptics';
 import {
   View,
   Text,
@@ -149,6 +150,14 @@ export default function FolderScreen() {
   const handleToggleSelectionMode = () => {
     setIsSelectionMode(!isSelectionMode);
     setSelectedItems(new Set());
+  };
+
+  const handleLongPressItem = (itemId: string) => {
+    if (!isSelectionMode) {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      setIsSelectionMode(true);
+      setSelectedItems(new Set([itemId]));
+    }
   };
 
   const handleToggleItemSelection = (itemId: string) => {
@@ -341,6 +350,7 @@ export default function FolderScreen() {
         isSelectionMode={isSelectionMode}
         selectedItems={selectedItems}
         onToggleItemSelection={handleToggleItemSelection}
+        onLongPressItem={handleLongPressItem}
       />
 
       {/* Selection footer */}

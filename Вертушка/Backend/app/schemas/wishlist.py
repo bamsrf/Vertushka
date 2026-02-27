@@ -128,6 +128,26 @@ class GiftBookingOwnerResponse(BaseModel):
     record: RecordBrief
 
 
+class GiftRecipientInfo(BaseModel):
+    """Информация о получателе подарка"""
+    username: str
+    display_name: str | None = None
+    avatar_url: str | None = None
+
+
+class GiftGivenResponse(BaseModel):
+    """Схема бронирования для дарителя (секция 'Я дарю')"""
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    status: GiftStatus
+    cancel_token: str
+    booked_at: datetime
+    completed_at: datetime | None = None
+    record: RecordBrief
+    for_user: GiftRecipientInfo
+
+
 class MoveToCollectionRequest(BaseModel):
     """Схема для переноса из вишлиста в коллекцию"""
     collection_id: UUID

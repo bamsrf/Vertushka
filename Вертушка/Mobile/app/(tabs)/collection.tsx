@@ -8,6 +8,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import * as Haptics from 'expo-haptics';
 import { AnimatedGradientText } from '../../components/AnimatedGradientText';
 import { GradientText } from '../../components/GradientText';
 import { RecordGrid } from '../../components/RecordGrid';
@@ -268,6 +269,14 @@ export default function CollectionScreen() {
   const handleToggleSelectionMode = () => {
     setIsSelectionMode(!isSelectionMode);
     setSelectedItems(new Set());
+  };
+
+  const handleLongPressItem = (itemId: string) => {
+    if (!isSelectionMode) {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      setIsSelectionMode(true);
+      setSelectedItems(new Set([itemId]));
+    }
   };
 
   const handleToggleItemSelection = (itemId: string) => {
@@ -644,6 +653,7 @@ export default function CollectionScreen() {
         isSelectionMode={isSelectionMode}
         selectedItems={selectedItems}
         onToggleItemSelection={handleToggleItemSelection}
+        onLongPressItem={handleLongPressItem}
       />
 
       {/* Нижний подвал в режиме выбора */}

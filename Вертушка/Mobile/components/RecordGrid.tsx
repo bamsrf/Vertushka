@@ -34,6 +34,7 @@ interface RecordGridProps<T extends RecordItem = RecordItem> {
   isSelectionMode?: boolean;
   selectedItems?: Set<string>;
   onToggleItemSelection?: (itemId: string) => void;
+  onLongPressItem?: (itemId: string) => void;
   cardVariant?: 'compact' | 'expanded' | 'list';
   numColumns?: number;
 }
@@ -55,6 +56,7 @@ export function RecordGrid<T extends RecordItem = RecordItem>({
   isSelectionMode = false,
   selectedItems = new Set(),
   onToggleItemSelection,
+  onLongPressItem,
   cardVariant = 'expanded',
   numColumns = 2,
 }: RecordGridProps<T>) {
@@ -92,6 +94,11 @@ export function RecordGrid<T extends RecordItem = RecordItem>({
           onToggleSelection={
             onToggleItemSelection && itemId
               ? () => onToggleItemSelection(itemId)
+              : undefined
+          }
+          onLongPress={
+            onLongPressItem && itemId
+              ? () => onLongPressItem(itemId)
               : undefined
           }
           isBooked={isBooked}

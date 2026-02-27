@@ -3,7 +3,7 @@
 """
 from datetime import datetime
 from uuid import UUID
-from pydantic import BaseModel, EmailStr, Field, ConfigDict
+from pydantic import BaseModel, EmailStr, Field, ConfigDict, model_validator
 
 
 class UserBase(BaseModel):
@@ -19,9 +19,17 @@ class UserCreate(UserBase):
 
 
 class UserLogin(BaseModel):
-    """Схема для входа"""
-    email: EmailStr
+    """Схема для входа (email или username)"""
+    login: str | None = Field(None, min_length=1)
+    email: str | None = None  # обратная совместимость
     password: str
+
+    @model_validator(mode='after')
+    def set_login_from_email(self) -> 'UserLogin':
+        """Если пришёл email (старый формат) — копируем в login"""
+        if not self.login and self.email:
+            self.login = self.email
+        return self
 
 
 class UserUpdate(BaseModel):

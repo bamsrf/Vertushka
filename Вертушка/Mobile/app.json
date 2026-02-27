@@ -16,6 +16,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.vertushka.app",
+      "usesAppleSignIn": true,
       "infoPlist": {
         "NSCameraUsageDescription": "Приложению нужен доступ к камере для сканирования штрихкодов пластинок"
       }
@@ -39,6 +40,7 @@
     "plugins": [
       "expo-router",
       "expo-secure-store",
+      "expo-apple-authentication",
       [
         "expo-camera",
         {
@@ -48,6 +50,10 @@
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "privacyPolicyUrl": "https://vinyl-vertushka.ru/privacy",
+      "termsOfServiceUrl": "https://vinyl-vertushka.ru/terms"
     }
   }
 }

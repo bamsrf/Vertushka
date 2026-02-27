@@ -6,9 +6,13 @@ import logging
 import re
 
 import httpx
+from cachetools import TTLCache
 from typing import Any
 
 logger = logging.getLogger(__name__)
+
+# In-memory кэш: 1024 записи, TTL 24 часа
+_cache = TTLCache(maxsize=1024, ttl=86400)
 
 from app.config import get_settings
 from app.schemas.record import (
@@ -211,7 +215,7 @@ class DiscogsService:
     
     async def get_release(self, release_id: str) -> dict[str, Any]:
         """
-        Получение детальной информации о релизе.
+        Получение детальной информации о релизе. Кэшируется на 24 часа.
 
         Args:
             release_id: ID релиза в Discogs
@@ -219,6 +223,10 @@ class DiscogsService:
         Returns:
             Словарь с данными релиза
         """
+        cache_key = f"release:{release_id}"
+        if cache_key in _cache:
+            return _cache[cache_key]
+
         # Запускаем price_stats параллельно с основным запросом —
         # price_stats нужен только release_id, который у нас уже есть.
         stats_task = asyncio.create_task(self._get_price_stats(release_id))
@@ -290,7 +298,7 @@ class DiscogsService:
         except Exception:
             logger.exception("Failed to get price stats for release %s", release_id)
         
-        return {
+        result = {
             "id": str(data.get("id")),
             "master_id": str(data.get("master_id")) if data.get("master_id") else None,
             "title": data.get("title"),
@@ -315,6 +323,8 @@ class DiscogsService:
             "notes": data.get("notes"),
             "data_quality": data.get("data_quality"),
         }
+        _cache[cache_key] = result
+        return result
     
     async def search_masters(
         self,
@@ -689,9 +699,18 @@ class DiscogsService:
         """Получение обложки и типа релиза из master endpoint.
         Тип определяется по количеству треков в треклисте:
         1-3 → single, 4-6 → ep, 7+ → album.
+        Таймаут 10с чтобы не блокировать весь список.
+        Результат кэшируется на 24 часа.
         """
+        cache_key = f"master_info:{master_id}"
+        if cache_key in _cache:
+            return _cache[cache_key]
+
         try:
-            data = await self._get(f"{self.BASE_URL}/masters/{master_id}")
+            data = await asyncio.wait_for(
+                self._get(f"{self.BASE_URL}/masters/{master_id}"),
+                timeout=10.0,
+            )
             cover = None
             images = data.get("images", [])
             if images:
@@ -709,18 +728,26 @@ class DiscogsService:
             else:
                 release_type = "album"
 
-            return {"cover": cover, "release_type": release_type}
+            result = {"cover": cover, "release_type": release_type}
+            _cache[cache_key] = result
+            return result
         except Exception:
             logger.exception("Failed to get master info for %s", master_id)
             return {"cover": None, "release_type": None}
 
     async def _get_artist_thumb(self, artist_id: str) -> str | None:
-        """Получение миниатюры артиста по ID."""
+        """Получение миниатюры артиста по ID. Кэшируется на 24 часа."""
+        cache_key = f"artist_thumb:{artist_id}"
+        if cache_key in _cache:
+            return _cache[cache_key]
+
         try:
             data = await self._get(f"{self.BASE_URL}/artists/{artist_id}")
             images = data.get("images", [])
             if images:
-                return images[0].get("uri150") or images[0].get("uri")
+                thumb = images[0].get("uri150") or images[0].get("uri")
+                _cache[cache_key] = thumb
+                return thumb
         except Exception:
             logger.exception("Failed to get artist thumb for %s", artist_id)
         return None
@@ -751,38 +778,35 @@ class DiscogsService:
 
         data = await self._get(f"{self.BASE_URL}/artists/{artist_id}/releases", params=params)
 
-        # Собираем master releases — используем thumb из ответа вместо отдельных запросов
+        # Собираем master releases
+        masters = [
+            item for item in data.get("releases", [])
+            if item.get("type") == "master" and item.get("role") == "Main"
+        ]
+
+        # Загружаем обложки и тип релиза параллельно (семафор ограничит concurrency)
+        # return_exceptions=True — чтобы таймаут одного не убивал остальные
+        master_infos = await asyncio.gather(
+            *(self._get_master_info(str(item.get("id", ""))) for item in masters),
+            return_exceptions=True,
+        )
+
+        _fallback_info = {"cover": None, "release_type": None}
         results = []
-        for item in data.get("releases", []):
-            release_type = item.get("type", "")
-            role = item.get("role", "")
-
-            # Показываем только masters где артист - Main
-            if release_type == "master" and role == "Main":
-                thumb = item.get("thumb")
-                # Определяем тип релиза из поля format
-                format_str = item.get("format", "")
-                if format_str:
-                    fmt_lower = format_str.lower()
-                    if "single" in fmt_lower:
-                        rel_type = "single"
-                    elif "ep" in fmt_lower or "mini" in fmt_lower:
-                        rel_type = "ep"
-                    else:
-                        rel_type = "album"
-                else:
-                    rel_type = "album"
-
-                results.append(MasterSearchResult(
-                    master_id=str(item.get("id", "")),
-                    title=item.get("title", ""),
-                    artist=item.get("artist", "Unknown"),
-                    year=int(item["year"]) if item.get("year") else None,
-                    main_release_id=str(item.get("main_release", "")),
-                    cover_image_url=self._thumb_to_cover(thumb),
-                    thumb_image_url=thumb if thumb else None,
-                    release_type=rel_type,
-                ))
+        for item, info in zip(masters, master_infos):
+            if isinstance(info, BaseException):
+                info = _fallback_info
+            thumb = item.get("thumb")
+            results.append(MasterSearchResult(
+                master_id=str(item.get("id", "")),
+                title=item.get("title", ""),
+                artist=item.get("artist", "Unknown"),
+                year=int(item["year"]) if item.get("year") else None,
+                main_release_id=str(item.get("main_release", "")),
+                cover_image_url=info["cover"] or self._thumb_to_cover(thumb),
+                thumb_image_url=thumb if thumb else None,
+                release_type=info["release_type"],
+            ))
 
         pagination = data.get("pagination", {})
 
