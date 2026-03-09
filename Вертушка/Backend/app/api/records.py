@@ -1,9 +1,12 @@
 """
 API для работы с пластинками
 """
+import logging
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+logger = logging.getLogger(__name__)
+
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -11,11 +14,15 @@ from app.database import get_db
 from app.models.user import User
 from app.models.record import Record
 from app.api.auth import get_current_user, get_current_user_optional
+from app.services.exchange import get_usd_rub_rate
+from app.config import get_settings
 from app.schemas.record import (
     RecordCreate,
     RecordResponse,
     RecordSearchResult,
     RecordSearchResponse,
+    CoverScanRequest,
+    CoverScanResponse,
     MasterSearchResponse,
     MasterRelease,
     MasterVersionsResponse,
@@ -24,8 +31,60 @@ from app.schemas.record import (
     Artist,
 )
 from app.services.discogs import DiscogsService
+from app.services.openai_vision import OpenAIVisionService, CoverRecognitionError
 
 router = APIRouter()
+
+
+_LOCAL_COUNTRIES = {'Russia', 'USSR', 'Россия', 'СССР'}
+
+
+async def _enrich_response_with_rub(response: RecordResponse) -> RecordResponse:
+    """Добавляет рублёвые цены в ответ на основе USD-цен из Discogs.
+    Для РФ/СССР-изданий наценка импорта не применяется.
+    """
+    base_price = response.estimated_price_median or response.estimated_price_min
+    if not base_price:
+        return response
+    try:
+        rate = await get_usd_rub_rate()
+        markup = get_settings().ru_vinyl_markup
+        is_local = response.country and response.country in _LOCAL_COUNTRIES
+        effective_markup = 1.0 if is_local else markup
+        response.usd_rub_rate = rate
+        response.ru_markup = effective_markup
+        if response.estimated_price_min:
+            response.estimated_price_min_rub = round(float(response.estimated_price_min) * rate * effective_markup, 0)
+        if response.estimated_price_median:
+            response.estimated_price_median_rub = round(float(response.estimated_price_median) * rate * effective_markup, 0)
+        if response.estimated_price_max:
+            response.estimated_price_max_rub = round(float(response.estimated_price_max) * rate * effective_markup, 0)
+    except Exception:
+        logger.exception("Failed to enrich response with RUB prices")
+    return response
+
+
+async def _ensure_record_price_data(record: Record, db: AsyncSession) -> None:
+    """Подтягивает цены из Discogs, если они отсутствуют в записи."""
+    if record.estimated_price_min or record.estimated_price_median:
+        return
+    if not record.discogs_id:
+        return
+    try:
+        discogs = DiscogsService()
+        stats = await discogs._get_price_stats(record.discogs_id)
+        if stats:
+            lowest = stats.get("lowest_price", {}).get("value") if isinstance(stats.get("lowest_price"), dict) else stats.get("lowest_price")
+            median = stats.get("median_price", {}).get("value") if isinstance(stats.get("median_price"), dict) else stats.get("median_price")
+            highest = stats.get("highest_price", {}).get("value") if isinstance(stats.get("highest_price"), dict) else stats.get("highest_price")
+            if lowest or median:
+                record.estimated_price_min = lowest
+                record.estimated_price_median = median
+                record.estimated_price_max = highest
+                await db.commit()
+                await db.refresh(record)
+    except Exception:
+        logger.exception("Failed to ensure price data for record %s", record.discogs_id)
 
 
 async def _ensure_record_artist_data(record: Record, db: AsyncSession) -> None:
@@ -54,6 +113,7 @@ async def _ensure_record_artist_data(record: Record, db: AsyncSession) -> None:
             if artists:
                 artist_id = str(artists[0].get("id"))
         except Exception:
+            logger.exception("Failed to fetch artist_id from Discogs for record %s", record.discogs_id)
             return
 
     if not artist_id:
@@ -70,7 +130,7 @@ async def _ensure_record_artist_data(record: Record, db: AsyncSession) -> None:
             await db.commit()
             await db.refresh(record)
     except Exception:
-        pass
+        logger.exception("Failed to get artist thumb for artist %s", artist_id)
 
 
 async def get_or_create_record_by_discogs_id(
@@ -134,6 +194,7 @@ async def get_or_create_record_by_discogs_id(
 
 @router.get("/search", response_model=RecordSearchResponse)
 async def search_records(
+    response: Response,
     q: str = Query(..., min_length=1, description="Поисковый запрос"),
     artist: str | None = Query(None, description="Фильтр по артисту"),
     year: int | None = Query(None, description="Фильтр по году"),
@@ -147,8 +208,9 @@ async def search_records(
     Поиск пластинок в Discogs.
     Не требует авторизации, но с авторизацией может сохранять историю.
     """
+    response.headers["Cache-Control"] = "public, max-age=300"
     discogs = DiscogsService()
-    
+
     try:
         results = await discogs.search(
             query=q,
@@ -208,6 +270,68 @@ async def scan_barcode(
         )
 
 
+@router.post("/scan/cover/", response_model=CoverScanResponse)
+async def scan_cover(
+    request: CoverScanRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Распознавание обложки пластинки через AI Vision.
+    Принимает base64-encoded JPEG, возвращает результаты поиска Discogs.
+    Требует авторизации.
+    """
+    if len(request.image_base64) > 10_000_000:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail="Изображение слишком большое (макс. ~7.5 МБ)"
+        )
+
+    vision = OpenAIVisionService()
+    try:
+        recognition = await vision.recognize_cover(request.image_base64)
+    except CoverRecognitionError as e:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(e)
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Ошибка AI-сервиса: {str(e)}"
+        )
+
+    artist = recognition["artist"]
+    album = recognition["album"]
+
+    query_parts = []
+    if artist:
+        query_parts.append(artist)
+    if album:
+        query_parts.append(album)
+    search_query = " ".join(query_parts)
+
+    discogs = DiscogsService()
+    try:
+        search_response = await discogs.search(
+            query=search_query,
+            artist=artist if artist else None,
+            per_page=10,
+        )
+        results = search_response.results
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Ошибка при поиске в Discogs: {str(e)}"
+        )
+
+    return CoverScanResponse(
+        recognized_artist=artist,
+        recognized_album=album,
+        results=results,
+    )
+
+
 @router.get("/{record_id}", response_model=RecordResponse)
 async def get_record(
     record_id: UUID,
@@ -224,15 +348,21 @@ async def get_record(
             detail="Пластинка не найдена"
         )
 
-    # Обогащаем данные артиста, если отсутствуют
+    # Обогащаем данные артиста и цены, если отсутствуют
     await _ensure_record_artist_data(record, db)
+    await _ensure_record_price_data(record, db)
 
-    return record
+    response = RecordResponse.model_validate(record)
+    discogs_data = record.discogs_data or {}
+    response.artist_id = discogs_data.get("artist_id")
+    response.artist_thumb_image_url = discogs_data.get("artist_thumb_image_url")
+    return await _enrich_response_with_rub(response)
 
 
 @router.get("/discogs/{discogs_id}", response_model=RecordResponse)
 async def get_record_by_discogs_id(
     discogs_id: str,
+    response: Response,
     current_user: User | None = Depends(get_current_user_optional),
     db: AsyncSession = Depends(get_db)
 ):
@@ -240,6 +370,7 @@ async def get_record_by_discogs_id(
     Получение информации о пластинке по Discogs ID.
     Если пластинка не найдена в локальной БД, запрашивает Discogs и сохраняет.
     """
+    response.headers["Cache-Control"] = "public, max-age=3600"
     # Проверяем локальную БД
     result = await db.execute(
         select(Record).where(Record.discogs_id == discogs_id)
@@ -247,14 +378,15 @@ async def get_record_by_discogs_id(
     record = result.scalar_one_or_none()
 
     if record:
-        # Обогащаем данные артиста, если отсутствуют
+        # Обогащаем данные артиста и цены, если отсутствуют
         await _ensure_record_artist_data(record, db)
+        await _ensure_record_price_data(record, db)
 
         discogs_data = record.discogs_data or {}
         response = RecordResponse.model_validate(record)
         response.artist_id = discogs_data.get("artist_id")
         response.artist_thumb_image_url = discogs_data.get("artist_thumb_image_url")
-        return response
+        return await _enrich_response_with_rub(response)
 
     # Запрос в Discogs
     discogs = DiscogsService()
@@ -292,7 +424,7 @@ async def get_record_by_discogs_id(
         response = RecordResponse.model_validate(record)
         response.artist_id = record_data.get("artist_id")
         response.artist_thumb_image_url = record_data.get("artist_thumb_image_url")
-        return response
+        return await _enrich_response_with_rub(response)
 
     except Exception as e:
         raise HTTPException(
@@ -321,6 +453,7 @@ async def create_record(
 
 @router.get("/masters/search", response_model=MasterSearchResponse)
 async def search_masters(
+    response: Response,
     q: str = Query(..., min_length=1, description="Поисковый запрос"),
     page: int = Query(1, ge=1, description="Номер страницы"),
     per_page: int = Query(20, ge=1, le=100, description="Записей на страницу"),
@@ -330,6 +463,7 @@ async def search_masters(
     Поиск мастер-релизов в Discogs.
     Не требует авторизации.
     """
+    response.headers["Cache-Control"] = "public, max-age=300"
     discogs = DiscogsService()
 
     try:
@@ -348,6 +482,7 @@ async def search_masters(
 
 @router.get("/releases/search", response_model=ReleaseSearchResponse)
 async def search_releases(
+    response: Response,
     q: str = Query(..., min_length=1, description="Поисковый запрос"),
     format: str | None = Query(None, description="Фильтр по формату (Vinyl, CD, Cassette)"),
     country: str | None = Query(None, description="Фильтр по стране"),
@@ -360,6 +495,7 @@ async def search_releases(
     Поиск конкретных релизов с фильтрами в Discogs.
     Не требует авторизации.
     """
+    response.headers["Cache-Control"] = "public, max-age=300"
     discogs = DiscogsService()
 
     try:
@@ -382,12 +518,14 @@ async def search_releases(
 @router.get("/masters/{master_id}", response_model=MasterRelease)
 async def get_master(
     master_id: str,
+    response: Response,
     current_user: User | None = Depends(get_current_user_optional),
 ):
     """
     Получение информации о мастер-релизе.
     Не требует авторизации.
     """
+    response.headers["Cache-Control"] = "public, max-age=3600"
     discogs = DiscogsService()
 
     try:
@@ -403,6 +541,7 @@ async def get_master(
 @router.get("/masters/{master_id}/versions", response_model=MasterVersionsResponse)
 async def get_master_versions(
     master_id: str,
+    response: Response,
     page: int = Query(1, ge=1, description="Номер страницы"),
     per_page: int = Query(50, ge=1, le=100, description="Записей на страницу"),
     current_user: User | None = Depends(get_current_user_optional),
@@ -411,6 +550,7 @@ async def get_master_versions(
     Получение всех версий (изданий) мастер-релиза.
     Не требует авторизации.
     """
+    response.headers["Cache-Control"] = "public, max-age=3600"
     discogs = DiscogsService()
 
     try:
@@ -429,6 +569,7 @@ async def get_master_versions(
 
 @router.get("/artists/search", response_model=ArtistSearchResponse)
 async def search_artists(
+    response: Response,
     q: str = Query(..., min_length=1, description="Поисковый запрос"),
     page: int = Query(1, ge=1, description="Номер страницы"),
     per_page: int = Query(20, ge=1, le=100, description="Записей на страницу"),
@@ -438,6 +579,7 @@ async def search_artists(
     Поиск артистов в Discogs.
     Не требует авторизации.
     """
+    response.headers["Cache-Control"] = "public, max-age=300"
     discogs = DiscogsService()
 
     try:
@@ -457,12 +599,14 @@ async def search_artists(
 @router.get("/artists/{artist_id}", response_model=Artist)
 async def get_artist(
     artist_id: str,
+    response: Response,
     current_user: User | None = Depends(get_current_user_optional),
 ):
     """
     Получение информации об артисте.
     Не требует авторизации.
     """
+    response.headers["Cache-Control"] = "public, max-age=1800"
     discogs = DiscogsService()
 
     try:
@@ -478,6 +622,7 @@ async def get_artist(
 @router.get("/artists/{artist_id}/releases", response_model=ReleaseSearchResponse)
 async def get_artist_releases(
     artist_id: str,
+    response: Response,
     page: int = Query(1, ge=1, description="Номер страницы"),
     per_page: int = Query(50, ge=1, le=100, description="Записей на страницу"),
     current_user: User | None = Depends(get_current_user_optional),
@@ -486,6 +631,7 @@ async def get_artist_releases(
     Получение релизов артиста.
     Не требует авторизации.
     """
+    response.headers["Cache-Control"] = "public, max-age=1800"
     discogs = DiscogsService()
 
     try:
@@ -505,22 +651,27 @@ async def get_artist_releases(
 @router.get("/artists/{artist_id}/masters", response_model=MasterSearchResponse)
 async def get_artist_masters(
     artist_id: str,
+    response: Response,
     page: int = Query(1, ge=1, description="Номер страницы"),
-    per_page: int = Query(50, ge=1, le=100, description="Записей на страницу"),
+    per_page: int = Query(100, ge=1, le=100, description="Записей на страницу"),
+    load_all: bool = Query(False, description="Загрузить все страницы сразу"),
     current_user: User | None = Depends(get_current_user_optional),
 ):
     """
     Получение только master releases артиста (альбомы, синглы, EP).
     Возвращает только основные релизы без всех версий/изданий.
+    При load_all=true загружает все страницы за один вызов.
     Не требует авторизации.
     """
+    response.headers["Cache-Control"] = "public, max-age=1800"
     discogs = DiscogsService()
 
     try:
         masters = await discogs.get_artist_masters(
             artist_id=artist_id,
             page=page,
-            per_page=per_page
+            per_page=per_page,
+            load_all=load_all,
         )
         return masters
     except Exception as e:

@@ -1,5 +1,5 @@
 /**
- * Экран входа
+ * Экран входа — Blue Gradient Edition
  */
 import { useState } from 'react';
 import {
@@ -12,27 +12,26 @@ import {
   Alert,
 } from 'react-native';
 import { Link } from 'expo-router';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Button, Input } from '../../components/ui';
 import { useAuthStore } from '../../lib/store';
-import { Colors, Typography, Spacing } from '../../constants/theme';
+import { Colors, Typography, Spacing, BorderRadius } from '../../constants/theme';
 
 export default function LoginScreen() {
   const insets = useSafeAreaInsets();
   const { login, isLoading } = useAuthStore();
 
-  const [email, setEmail] = useState('');
+  const [loginValue, setLoginValue] = useState('');
   const [password, setPassword] = useState('');
-  const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
+  const [errors, setErrors] = useState<{ login?: string; password?: string }>({});
 
   const validate = () => {
-    const newErrors: { email?: string; password?: string } = {};
+    const newErrors: { login?: string; password?: string } = {};
 
-    if (!email.trim()) {
-      newErrors.email = 'Введите email';
-    } else if (!/\S+@\S+\.\S+/.test(email)) {
-      newErrors.email = 'Некорректный email';
+    if (!loginValue.trim()) {
+      newErrors.login = 'Введите email или имя пользователя';
     }
 
     if (!password) {
@@ -49,11 +48,11 @@ export default function LoginScreen() {
     if (!validate()) return;
 
     try {
-      await login(email, password);
+      await login(loginValue, password);
     } catch (error: any) {
       Alert.alert(
         'Ошибка входа',
-        error.response?.data?.detail || 'Неверный email или пароль'
+        error.response?.data?.detail || 'Неверный логин или пароль'
       );
     }
   };
@@ -73,9 +72,12 @@ export default function LoginScreen() {
       >
         {/* Логотип */}
         <View style={styles.logoContainer}>
-          <View style={styles.logo}>
-            <Ionicons name="disc" size={64} color={Colors.primary} />
-          </View>
+          <LinearGradient
+            colors={[Colors.royalBlue, Colors.periwinkle]}
+            style={styles.logo}
+          >
+            <Ionicons name="disc" size={64} color={Colors.background} />
+          </LinearGradient>
           <Text style={styles.appName}>Вертушка</Text>
           <Text style={styles.tagline}>Твоя коллекция винила</Text>
         </View>
@@ -85,14 +87,15 @@ export default function LoginScreen() {
           <Text style={styles.title}>Вход</Text>
 
           <Input
-            label="Email"
-            value={email}
-            onChangeText={setEmail}
-            placeholder="email@example.com"
-            keyboardType="email-address"
-            autoComplete="email"
-            leftIcon="mail-outline"
-            error={errors.email}
+            label="Email или имя пользователя"
+            value={loginValue}
+            onChangeText={setLoginValue}
+            placeholder="email@example.com или username"
+            autoCapitalize="none"
+            autoCorrect={false}
+            autoComplete="username"
+            leftIcon="person-outline"
+            error={errors.login}
           />
 
           <Input
@@ -113,6 +116,10 @@ export default function LoginScreen() {
             fullWidth
             style={styles.button}
           />
+
+          <Link href="/(auth)/forgot-password" style={styles.forgotLink}>
+            <Text style={styles.forgotText}>Забыли пароль?</Text>
+          </Link>
         </View>
 
         {/* Ссылка на регистрацию */}
@@ -145,14 +152,13 @@ const styles = StyleSheet.create({
     width: 100,
     height: 100,
     borderRadius: 50,
-    backgroundColor: Colors.surface,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: Spacing.md,
   },
   appName: {
     ...Typography.h1,
-    color: Colors.primary,
+    color: Colors.deepNavy,
   },
   tagline: {
     ...Typography.body,
@@ -164,11 +170,20 @@ const styles = StyleSheet.create({
   },
   title: {
     ...Typography.h2,
-    color: Colors.primary,
+    color: Colors.deepNavy,
     marginBottom: Spacing.lg,
   },
   button: {
     marginTop: Spacing.md,
+  },
+  forgotLink: {
+    alignSelf: 'center',
+    marginTop: Spacing.md,
+    padding: Spacing.xs,
+  },
+  forgotText: {
+    ...Typography.bodySmall,
+    color: Colors.royalBlue,
   },
   footer: {
     flexDirection: 'row',
@@ -185,7 +200,7 @@ const styles = StyleSheet.create({
   },
   linkText: {
     ...Typography.body,
-    color: Colors.primary,
+    color: Colors.royalBlue,
     fontWeight: '600',
   },
 });

@@ -1,5 +1,5 @@
 /**
- * Экран регистрации
+ * Экран регистрации — Blue Gradient Edition
  */
 import { useState } from 'react';
 import {
@@ -12,6 +12,7 @@ import {
   Alert,
 } from 'react-native';
 import { Link } from 'expo-router';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Button, Input } from '../../components/ui';
@@ -94,9 +95,12 @@ export default function RegisterScreen() {
       >
         {/* Логотип */}
         <View style={styles.logoContainer}>
-          <View style={styles.logo}>
-            <Ionicons name="disc" size={48} color={Colors.primary} />
-          </View>
+          <LinearGradient
+            colors={[Colors.royalBlue, Colors.periwinkle]}
+            style={styles.logo}
+          >
+            <Ionicons name="disc" size={48} color={Colors.background} />
+          </LinearGradient>
           <Text style={styles.appName}>Вертушка</Text>
         </View>
 
@@ -185,21 +189,20 @@ const styles = StyleSheet.create({
     width: 80,
     height: 80,
     borderRadius: 40,
-    backgroundColor: Colors.surface,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: Spacing.sm,
   },
   appName: {
     ...Typography.h2,
-    color: Colors.primary,
+    color: Colors.deepNavy,
   },
   form: {
     marginBottom: Spacing.xl,
   },
   title: {
     ...Typography.h2,
-    color: Colors.primary,
+    color: Colors.deepNavy,
     marginBottom: Spacing.lg,
   },
   button: {
@@ -220,7 +223,7 @@ const styles = StyleSheet.create({
   },
   linkText: {
     ...Typography.body,
-    color: Colors.primary,
+    color: Colors.royalBlue,
     fontWeight: '600',
   },
 });

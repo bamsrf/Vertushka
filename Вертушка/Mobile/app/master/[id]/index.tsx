@@ -7,16 +7,16 @@ import {
   Text,
   StyleSheet,
   ScrollView,
-  Image,
   ActivityIndicator,
   TouchableOpacity,
 } from 'react-native';
+import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Header } from '../../../components/Header';
 import { api } from '../../../lib/api';
-import { MasterRelease } from '../../../lib/types';
+import { MasterRelease, Track } from '../../../lib/types';
 import { Colors, Typography, Spacing, BorderRadius } from '../../../constants/theme';
 
 export default function MasterScreen() {
@@ -77,7 +77,7 @@ export default function MasterScreen() {
       <View style={styles.container}>
         <Header title="Мастер-релиз" showBack />
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={Colors.primary} />
+          <ActivityIndicator size="large" color={Colors.royalBlue} />
         </View>
       </View>
     );
@@ -114,9 +114,10 @@ export default function MasterScreen() {
         <View style={styles.coverContainer}>
           {imageUrl ? (
             <Image
-              source={{ uri: imageUrl }}
+              source={imageUrl}
               style={styles.cover}
-              resizeMode="cover"
+              contentFit="cover"
+              cachePolicy="disk"
             />
           ) : (
             <View style={styles.coverPlaceholder}>
@@ -139,8 +140,10 @@ export default function MasterScreen() {
         >
           {master.artist_thumb_image_url ? (
             <Image
-              source={{ uri: master.artist_thumb_image_url }}
+              source={master.artist_thumb_image_url}
               style={styles.artistAvatar}
+              contentFit="cover"
+              cachePolicy="disk"
             />
           ) : (
             <View style={styles.artistAvatarPlaceholder}>
@@ -192,6 +195,24 @@ export default function MasterScreen() {
           <View style={styles.stylesSection}>
             <Text style={styles.sectionTitle}>Стили:</Text>
             <Text style={styles.stylesText}>{master.styles.join(', ')}</Text>
+          </View>
+        )}
+
+        {/* Треклист */}
+        {master.tracklist && master.tracklist.length > 0 && (
+          <View style={styles.tracklistSection}>
+            <Text style={styles.sectionTitle}>Треклист</Text>
+            {master.tracklist.map((track, index) => (
+              <View key={index} style={styles.trackRow}>
+                <Text style={styles.trackPosition}>{track.position || index + 1}</Text>
+                <Text style={styles.trackTitle} numberOfLines={1}>
+                  {track.title}
+                </Text>
+                {track.duration ? (
+                  <Text style={styles.trackDuration}>{track.duration}</Text>
+                ) : null}
+              </View>
+            ))}
           </View>
         )}
       </ScrollView>
@@ -322,6 +343,31 @@ const styles = StyleSheet.create({
   stylesText: {
     ...Typography.body,
     color: Colors.textMuted,
+  },
+  tracklistSection: {
+    marginTop: Spacing.md,
+  },
+  trackRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: Spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+  },
+  trackPosition: {
+    ...Typography.caption,
+    color: Colors.textMuted,
+    width: 30,
+  },
+  trackTitle: {
+    ...Typography.body,
+    color: Colors.text,
+    flex: 1,
+  },
+  trackDuration: {
+    ...Typography.caption,
+    color: Colors.textSecondary,
+    marginLeft: Spacing.sm,
   },
   allVersionsButton: {
     backgroundColor: Colors.background,

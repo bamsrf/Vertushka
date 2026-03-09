@@ -5,11 +5,11 @@ import React from 'react';
 import {
   View,
   Text,
-  Image,
   StyleSheet,
   TouchableOpacity,
   Dimensions,
 } from 'react-native';
+import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, Typography, BorderRadius, Shadows, Spacing } from '../constants/theme';
 import { ArtistSearchResult } from '../lib/types';
@@ -37,9 +37,10 @@ export function ArtistCard({ artist, onPress }: ArtistCardProps) {
       <View style={styles.imageContainer}>
         {imageUrl ? (
           <Image
-            source={{ uri: imageUrl }}
+            source={imageUrl}
             style={styles.image}
-            resizeMode="cover"
+            contentFit="cover"
+            cachePolicy="disk"
           />
         ) : (
           <View style={styles.placeholderImage}>

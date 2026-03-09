@@ -2,6 +2,7 @@
  * Zustand Store для Вертушка
  */
 import { create } from 'zustand';
+import { Alert } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { api } from './api';
 import {
@@ -10,20 +11,95 @@ import {
   RecordSearchResult,
   Collection,
   CollectionItem,
+  CollectionStats,
   WishlistItem,
   CollectionTab,
   SearchFilters,
   MasterSearchResult,
+  MasterSearchResponse,
+  MasterRelease,
   ReleaseSearchResult,
   ArtistSearchResult,
+  Artist,
   ProfileShareSettings,
   UserWithStats,
   UserPublic,
   FeedItem,
+  ScanMode,
 } from './types';
 
-const SEARCH_HISTORY_KEY = '@vertushka:search_history';
+const getSearchHistoryKey = () => {
+  const userId = useAuthStore.getState().user?.id;
+  return userId ? `@vertushka:search_history:${userId}` : '@vertushka:search_history';
+};
 const MAX_HISTORY_ITEMS = 20;
+const ONBOARDING_KEY = '@vertushka:onboarding_complete';
+
+// ==================== Onboarding Store ====================
+
+interface OnboardingState {
+  hasSeenWelcome: boolean;
+  tourStep: number | null;
+  isReady: boolean;
+
+  checkOnboarding: () => Promise<void>;
+  completeWelcome: () => Promise<void>;
+  startTour: () => void;
+  nextStep: () => void;
+  skipTour: () => Promise<void>;
+  completeTour: () => Promise<void>;
+}
+
+export const useOnboardingStore = create<OnboardingState>((set, get) => ({
+  hasSeenWelcome: true,
+  tourStep: null,
+  isReady: false,
+
+  checkOnboarding: async () => {
+    try {
+      const value = await AsyncStorage.getItem(ONBOARDING_KEY);
+      set({ hasSeenWelcome: value === 'true', isReady: true });
+    } catch {
+      set({ hasSeenWelcome: true, isReady: true });
+    }
+  },
+
+  completeWelcome: async () => {
+    set({ hasSeenWelcome: true });
+    try {
+      await AsyncStorage.setItem(ONBOARDING_KEY, 'true');
+    } catch (error) {
+      console.error('Failed to save onboarding state:', error);
+    }
+  },
+
+  startTour: () => set({ tourStep: 0 }),
+
+  nextStep: () => {
+    const { tourStep } = get();
+    if (tourStep !== null && tourStep < 2) {
+      set({ tourStep: tourStep + 1 });
+    }
+  },
+
+  skipTour: async () => {
+    set({ tourStep: null });
+    try {
+      await AsyncStorage.setItem(ONBOARDING_KEY, 'true');
+    } catch (error) {
+      console.error('Failed to save onboarding state:', error);
+    }
+  },
+
+  completeTour: async () => {
+    set({ tourStep: null });
+    try {
+      await AsyncStorage.setItem(ONBOARDING_KEY, 'true');
+    } catch (error) {
+      console.error('Failed to save onboarding state:', error);
+    }
+  },
+}));
 
 // ==================== Auth Store ====================
 
@@ -33,7 +109,7 @@ interface AuthState {
   isAuthenticated: boolean;
   
   // Actions
-  login: (email: string, password: string) => Promise<void>;
+  login: (login: string, password: string) => Promise<void>;
   register: (email: string, username: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   checkAuth: () => Promise<void>;
@@ -45,10 +121,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   isLoading: true,
   isAuthenticated: false,
 
-  login: async (email, password) => {
+  login: async (login, password) => {
     set({ isLoading: true });
     try {
-      await api.login({ email, password });
+      await api.login({ login, password });
       const user = await api.getMe();
       set({ user, isAuthenticated: true, isLoading: false });
     } catch (error) {
@@ -155,23 +231,45 @@ export const useSearchStore = create<SearchState>((set, get) => ({
       const { filters } = get();
       const hasFilters = !!(filters.format || filters.country || filters.year);
 
+      // Ключ кэша поиска
+      const cacheKey = `${query}|${hasFilters ? JSON.stringify(filters) : ''}|1`;
+      const cached = useCacheStore.getState().getSearch(cacheKey);
+
+      if (cached) {
+        set({
+          results: cached.results,
+          totalResults: cached.totalResults,
+          hasMore: cached.hasMore,
+          artistResults: cached.artistResults,
+          totalArtistResults: cached.totalArtistResults,
+          hasMoreArtists: cached.hasMoreArtists,
+          isLoading: false,
+        });
+        await get().addToHistory(query.trim());
+        return;
+      }
+
       // Универсальный поиск: делаем оба запроса параллельно
       const [releasesResponse, artistsResponse] = await Promise.all([
-        // Если есть фильтры - ищем конкретные релизы, иначе - мастеры
         hasFilters
           ? api.searchReleases(query, filters, 1)
           : api.searchMasters(query, 1),
-        // Всегда ищем артистов
-        api.searchArtists(query, 1, 10), // Ограничиваем 10 артистами для первой страницы
+        api.searchArtists(query, 1, 10),
       ]);
 
-      set({
+      const searchResult = {
         results: releasesResponse.results,
         totalResults: releasesResponse.total,
         hasMore: releasesResponse.results.length < releasesResponse.total,
         artistResults: artistsResponse.results,
         totalArtistResults: artistsResponse.total,
         hasMoreArtists: artistsResponse.results.length < artistsResponse.total,
+      };
+
+      useCacheStore.getState().setSearch(cacheKey, searchResult);
+
+      set({
+        ...searchResult,
         isLoading: false,
       });
 
@@ -223,7 +321,7 @@ export const useSearchStore = create<SearchState>((set, get) => ({
 
   loadHistory: async () => {
     try {
-      const stored = await AsyncStorage.getItem(SEARCH_HISTORY_KEY);
+      const stored = await AsyncStorage.getItem(getSearchHistoryKey());
       if (stored) {
         const history = JSON.parse(stored) as string[];
         set({ searchHistory: history });
@@ -245,7 +343,7 @@ export const useSearchStore = create<SearchState>((set, get) => ({
     set({ searchHistory: newHistory });
 
     try {
-      await AsyncStorage.setItem(SEARCH_HISTORY_KEY, JSON.stringify(newHistory));
+      await AsyncStorage.setItem(getSearchHistoryKey(), JSON.stringify(newHistory));
     } catch (error) {
       console.error('Failed to save search history:', error);
     }
@@ -258,7 +356,7 @@ export const useSearchStore = create<SearchState>((set, get) => ({
     set({ searchHistory: newHistory });
 
     try {
-      await AsyncStorage.setItem(SEARCH_HISTORY_KEY, JSON.stringify(newHistory));
+      await AsyncStorage.setItem(getSearchHistoryKey(), JSON.stringify(newHistory));
     } catch (error) {
       console.error('Failed to update search history:', error);
     }
@@ -268,7 +366,7 @@ export const useSearchStore = create<SearchState>((set, get) => ({
     set({ searchHistory: [] });
 
     try {
-      await AsyncStorage.removeItem(SEARCH_HISTORY_KEY);
+      await AsyncStorage.removeItem(getSearchHistoryKey());
     } catch (error) {
       console.error('Failed to clear search history:', error);
     }
@@ -281,29 +379,45 @@ interface CollectionState {
   activeTab: CollectionTab;
   collections: Collection[];
   defaultCollection: Collection | null;
+  folders: Collection[];
   collectionItems: CollectionItem[];
   wishlistItems: WishlistItem[];
   isLoading: boolean;
+  stats: CollectionStats | null;
+  isLoadingStats: boolean;
+  sortBy: 'added_at' | 'price_desc' | 'price_asc';
 
   // Actions
   setActiveTab: (tab: CollectionTab) => void;
   fetchCollections: () => Promise<void>;
   fetchCollectionItems: () => Promise<void>;
   fetchWishlistItems: () => Promise<void>;
+  fetchStats: () => Promise<void>;
+  setSortBy: (sort: 'added_at' | 'price_desc' | 'price_asc') => void;
   addToCollection: (discogsId: string) => Promise<void>;
   addToWishlist: (discogsId: string) => Promise<void>;
   removeFromCollection: (itemId: string, skipRefetch?: boolean) => Promise<void>;
   removeFromWishlist: (itemId: string, skipRefetch?: boolean) => Promise<void>;
   moveToCollection: (wishlistItemId: string) => Promise<void>;
+
+  // Folder actions
+  createFolder: (name: string) => Promise<Collection>;
+  renameFolder: (id: string, name: string) => Promise<void>;
+  deleteFolder: (id: string) => Promise<void>;
+  addItemsToFolder: (folderId: string, collectionItemIds: string[]) => Promise<void>;
 }
 
 export const useCollectionStore = create<CollectionState>((set, get) => ({
   activeTab: 'collection',
   collections: [],
   defaultCollection: null,
+  folders: [],
   collectionItems: [],
   wishlistItems: [],
   isLoading: false,
+  stats: null,
+  isLoadingStats: false,
+  sortBy: 'added_at',
 
   setActiveTab: (tab) => set({ activeTab: tab }),
 
@@ -313,7 +427,8 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
       const collections = await api.getCollections();
       const sortedCollections = [...collections].sort((a, b) => a.sort_order - b.sort_order);
       const defaultCollection = sortedCollections[0] || null;
-      set({ collections, defaultCollection, isLoading: false });
+      const folders = sortedCollections.filter(c => c.id !== defaultCollection?.id);
+      set({ collections, defaultCollection, folders, isLoading: false });
     } catch (error) {
       set({ isLoading: false });
       throw error;
@@ -321,17 +436,39 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
   },
 
   fetchCollectionItems: async () => {
-    const { defaultCollection } = get();
+    const { defaultCollection, sortBy } = get();
     if (!defaultCollection) return;
 
     set({ isLoading: true });
     try {
-      const items = await api.getCollectionItems(defaultCollection.id);
+      const items = await api.getCollectionItems(defaultCollection.id, sortBy);
       set({ collectionItems: items, isLoading: false });
     } catch (error) {
       set({ isLoading: false });
       throw error;
     }
+  },
+
+  fetchStats: async () => {
+    const { defaultCollection } = get();
+    if (!defaultCollection) return;
+
+    set({ isLoadingStats: true });
+    try {
+      const stats = await api.getCollectionStats(defaultCollection.id);
+      set({ stats, isLoadingStats: false });
+    } catch (error) {
+      set({ isLoadingStats: false });
+      throw error;
+    }
+  },
+
+  setSortBy: (sort) => {
+    const prevSort = get().sortBy;
+    set({ sortBy: sort });
+    get().fetchCollectionItems().catch(() => {
+      set({ sortBy: prevSort });
+    });
   },
 
   fetchWishlistItems: async () => {
@@ -361,6 +498,8 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
     }
 
     await api.addToCollection(defaultCollection.id, discogsId);
+    // Инвалидируем кэш поиска — счётчики коллекции могли измениться
+    useCacheStore.getState().invalidateAll();
 
     await Promise.all([
       fetchCollectionItems(),
@@ -373,22 +512,52 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
       throw new Error('Не указан ID пластинки');
     }
     await api.addToWishlist(discogsId);
+    useCacheStore.getState().invalidateAll();
     await get().fetchWishlistItems();
   },
 
   removeFromCollection: async (itemId, skipRefetch = false) => {
-    const { defaultCollection } = get();
+    const { defaultCollection, collectionItems, folders } = get();
 
     if (!defaultCollection || !itemId) {
       throw new Error('Не указана коллекция или элемент');
     }
 
+    // Находим record_id удаляемой пластинки, чтобы каскадно убрать из папок
+    const removedItem = collectionItems.find(i => i.id === itemId);
+    const recordId = removedItem?.record_id;
+
+    // Удаляем из основной коллекции
     await api.removeFromCollection(defaultCollection.id, itemId);
+    useCacheStore.getState().invalidateAll();
+
+    // Каскадно удаляем эту пластинку из всех папок
+    if (recordId && folders.length > 0) {
+      await Promise.all(
+        folders.map(async (folder) => {
+          try {
+            const folderData = await api.getCollection(folder.id);
+            const folderItem = (folderData.items || []).find(
+              (i: CollectionItem) => i.record_id === recordId
+            );
+            if (folderItem) {
+              await api.removeFromCollection(folder.id, folderItem.id);
+            }
+          } catch (error) {
+            console.error(`Failed to remove from folder "${folder.name}":`, error);
+            Alert.alert('Ошибка', `Не удалось удалить из папки "${folder.name}"`);
+          }
+        })
+      );
+      await get().fetchCollections();
+    }
+
     if (!skipRefetch) await get().fetchCollectionItems();
   },
 
   removeFromWishlist: async (itemId, skipRefetch = false) => {
     await api.removeFromWishlist(itemId);
+    useCacheStore.getState().invalidateAll();
     if (!skipRefetch) await get().fetchWishlistItems();
   },
 
@@ -408,27 +577,60 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
     ]);
   },
 
+  createFolder: async (name) => {
+    const collection = await api.createCollection({ name });
+    await get().fetchCollections();
+    return collection;
+  },
+
+  renameFolder: async (id, name) => {
+    await api.renameCollection(id, name);
+    await get().fetchCollections();
+  },
+
+  deleteFolder: async (id) => {
+    await api.deleteCollection(id);
+    await get().fetchCollections();
+  },
+
+  addItemsToFolder: async (folderId, collectionItemIds) => {
+    const { collectionItems } = get();
+    const items = collectionItems.filter(item => collectionItemIds.includes(item.id));
+    await Promise.all(
+      items.map(item => api.addRecordToFolder(folderId, item.record_id))
+    );
+    await get().fetchCollections();
+  },
+
 }));
 
 // ==================== Scanner Store ====================
 
 interface ScannerState {
+  scanMode: ScanMode;
   scannedBarcode: string | null;
   scanResults: RecordSearchResult[];
+  recognizedInfo: { artist: string; album: string } | null;
   isScanning: boolean;
   isLoading: boolean;
 
   // Actions
+  setScanMode: (mode: ScanMode) => void;
   setScannedBarcode: (barcode: string | null) => void;
   searchByBarcode: (barcode: string) => Promise<void>;
+  searchByCover: (imageBase64: string) => Promise<void>;
   clearScan: () => void;
 }
 
 export const useScannerStore = create<ScannerState>((set) => ({
+  scanMode: 'barcode',
   scannedBarcode: null,
   scanResults: [],
+  recognizedInfo: null,
   isScanning: false,
   isLoading: false,
+
+  setScanMode: (mode) => set({ scanMode: mode, scanResults: [], recognizedInfo: null, scannedBarcode: null }),
 
   setScannedBarcode: (barcode) => set({ scannedBarcode: barcode }),
 
@@ -443,7 +645,25 @@ export const useScannerStore = create<ScannerState>((set) => ({
     }
   },
 
-  clearScan: () => set({ scannedBarcode: null, scanResults: [] }),
+  searchByCover: async (imageBase64) => {
+    set({ isLoading: true, recognizedInfo: null });
+    try {
+      const response = await api.scanCover(imageBase64);
+      set({
+        scanResults: response.results,
+        recognizedInfo: {
+          artist: response.recognized_artist,
+          album: response.recognized_album,
+        },
+        isLoading: false,
+      });
+    } catch (error) {
+      set({ isLoading: false, scanResults: [], recognizedInfo: null });
+      throw error;
+    }
+  },
+
+  clearScan: () => set({ scannedBarcode: null, scanResults: [], recognizedInfo: null }),
 }));
 
 // ==================== Profile Store ====================
@@ -590,6 +810,116 @@ interface FollowState {
   fetchFeed: () => Promise<void>;
   loadMoreFeed: () => Promise<void>;
 }
+
+// ==================== Cache Store ====================
+
+interface CacheEntry<T> {
+  data: T;
+  timestamp: number;
+  ttl: number;
+}
+
+interface SearchCacheEntry {
+  results: (MasterSearchResult | ReleaseSearchResult)[];
+  artistResults: ArtistSearchResult[];
+  totalResults: number;
+  totalArtistResults: number;
+  hasMore: boolean;
+  hasMoreArtists: boolean;
+}
+
+interface CacheStore {
+  releases: Record<string, CacheEntry<VinylRecord>>;
+  artists: Record<string, CacheEntry<Artist>>;
+  artistMasters: Record<string, CacheEntry<MasterSearchResponse>>;
+  masters: Record<string, CacheEntry<MasterRelease>>;
+  searches: Record<string, CacheEntry<SearchCacheEntry>>;
+
+  getRelease: (id: string) => VinylRecord | null;
+  setRelease: (id: string, data: VinylRecord) => void;
+  getArtist: (id: string) => Artist | null;
+  setArtist: (id: string, data: Artist) => void;
+  getArtistMasters: (id: string) => MasterSearchResponse | null;
+  setArtistMasters: (id: string, data: MasterSearchResponse) => void;
+  getMaster: (id: string) => MasterRelease | null;
+  setMaster: (id: string, data: MasterRelease) => void;
+  getSearch: (key: string) => SearchCacheEntry | null;
+  setSearch: (key: string, data: SearchCacheEntry) => void;
+  invalidateAll: () => void;
+}
+
+const TTL = {
+  release: 30 * 60 * 1000,     // 30 минут
+  artist: 30 * 60 * 1000,      // 30 минут
+  artistMasters: 5 * 60 * 1000, // 5 минут (первая страница)
+  master: 30 * 60 * 1000,      // 30 минут
+  search: 5 * 60 * 1000,       // 5 минут
+};
+
+const MAX_CACHE_ENTRIES = 100;
+
+function isValid<T>(entry: CacheEntry<T> | undefined): boolean {
+  if (!entry) return false;
+  return Date.now() - entry.timestamp < entry.ttl;
+}
+
+function trimCache<T>(cache: Record<string, CacheEntry<T>>): Record<string, CacheEntry<T>> {
+  const entries = Object.entries(cache);
+  if (entries.length <= MAX_CACHE_ENTRIES) return cache;
+  // Удаляем самые старые записи
+  entries.sort((a, b) => a[1].timestamp - b[1].timestamp);
+  return Object.fromEntries(entries.slice(entries.length - MAX_CACHE_ENTRIES));
+}
+
+export const useCacheStore = create<CacheStore>((set, get) => ({
+  releases: {},
+  artists: {},
+  artistMasters: {},
+  masters: {},
+  searches: {},
+
+  getRelease: (id) => {
+    const entry = get().releases[id];
+    return isValid(entry) ? entry.data : null;
+  },
+  setRelease: (id, data) => set((state) => ({
+    releases: { ...state.releases, [id]: { data, timestamp: Date.now(), ttl: TTL.release } },
+  })),
+
+  getArtist: (id) => {
+    const entry = get().artists[id];
+    return isValid(entry) ? entry.data : null;
+  },
+  setArtist: (id, data) => set((state) => ({
+    artists: { ...state.artists, [id]: { data, timestamp: Date.now(), ttl: TTL.artist } },
+  })),
+
+  getArtistMasters: (id) => {
+    const entry = get().artistMasters[id];
+    return isValid(entry) ? entry.data : null;
+  },
+  setArtistMasters: (id, data) => set((state) => ({
+    artistMasters: { ...state.artistMasters, [id]: { data, timestamp: Date.now(), ttl: TTL.artistMasters } },
+  })),
+
+  getMaster: (id) => {
+    const entry = get().masters[id];
+    return isValid(entry) ? entry.data : null;
+  },
+  setMaster: (id, data) => set((state) => ({
+    masters: { ...state.masters, [id]: { data, timestamp: Date.now(), ttl: TTL.master } },
+  })),
+
+  getSearch: (key) => {
+    const entry = get().searches[key];
+    return isValid(entry) ? entry.data : null;
+  },
+  setSearch: (key, data) => set((state) => ({
+    searches: trimCache({ ...state.searches, [key]: { data, timestamp: Date.now(), ttl: TTL.search } }),
+  })),
+
+  invalidateAll: () => set({ releases: {}, artists: {}, artistMasters: {}, masters: {}, searches: {} }),
+}));
 
 export const useFollowStore = create<FollowState>((set, get) => ({
   following: [],

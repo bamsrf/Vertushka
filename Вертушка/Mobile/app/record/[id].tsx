@@ -1,5 +1,5 @@
 /**
- * Экран детальной информации о пластинке
+ * Экран детальной информации о пластинке — Blue Gradient Edition
  */
 import { useEffect, useState, useCallback } from 'react';
 import {
@@ -7,20 +7,33 @@ import {
   Text,
   StyleSheet,
   ScrollView,
-  Image,
   ActivityIndicator,
   Alert,
   TouchableOpacity,
 } from 'react-native';
+import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { LinearGradient } from 'expo-linear-gradient';
+import { BlurView } from 'expo-blur';
 import { Header } from '../../components/Header';
+import { GradientText } from '../../components/GradientText';
+import { FolderPickerModal } from '../../components/FolderPickerModal';
 import { Button, Card, ActionSheet, ActionSheetAction } from '../../components/ui';
 import { api } from '../../lib/api';
 import { useCollectionStore } from '../../lib/store';
-import { VinylRecord } from '../../lib/types';
-import { Colors, Typography, Spacing, BorderRadius } from '../../constants/theme';
+import { VinylRecord, CollectionItem } from '../../lib/types';
+import { Colors, Typography, Spacing, BorderRadius, Gradients } from '../../constants/theme';
+
+function getFormatDisplayInfo(format?: string): { label: string; verb: string } {
+  if (!format) return { label: 'Винил', verb: 'добавлен' };
+  const f = format.toLowerCase();
+  if (f.includes('cassette')) return { label: 'Кассета', verb: 'добавлена' };
+  if (f.includes('box set')) return { label: 'Бокс-сет', verb: 'добавлен' };
+  if (f.includes('cd')) return { label: 'CD', verb: 'добавлен' };
+  return { label: 'Винил', verb: 'добавлен' };
+}
 
 const handleArtistNavigation = async (artistName: string, router: ReturnType<typeof useRouter>) => {
   try {
@@ -34,7 +47,7 @@ const handleArtistNavigation = async (artistName: string, router: ReturnType<typ
 };
 
 export default function RecordDetailScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, folderId, folderItemId } = useLocalSearchParams<{ id: string; folderId?: string; folderItemId?: string }>();
   const router = useRouter();
   const insets = useSafeAreaInsets();
 
@@ -42,6 +55,7 @@ export default function RecordDetailScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showActionSheet, setShowActionSheet] = useState(false);
+  const [showFolderPicker, setShowFolderPicker] = useState(false);
 
   const {
     addToCollection,
@@ -54,6 +68,7 @@ export default function RecordDetailScreen() {
     fetchCollectionItems,
     fetchWishlistItems,
     fetchCollections,
+    addItemsToFolder,
   } = useCollectionStore();
 
   useEffect(() => {
@@ -146,7 +161,7 @@ export default function RecordDetailScreen() {
           fetchCollectionItems(),
           fetchWishlistItems(),
         ]);
-        Alert.alert('Готово!', 'Пластинка перенесена в коллекцию');
+        Alert.alert('Готово!', 'Винил перенесён в коллекцию');
       } catch (error: any) {
         const message = error?.response?.data?.detail || error?.message || 'Не удалось перенести в коллекцию';
         Alert.alert('Ошибка', message);
@@ -164,7 +179,8 @@ export default function RecordDetailScreen() {
     try {
       await addToCollection(discogsId);
       // addToCollection уже обновляет оба списка
-      Alert.alert('Готово!', 'Пластинка добавлена в коллекцию');
+      const fmt = getFormatDisplayInfo(record?.format_type);
+      Alert.alert('Готово!', `${fmt.label} ${fmt.verb} в коллекцию`);
     } catch (error: any) {
       const message = error?.response?.data?.detail || error?.message || 'Не удалось добавить в коллекцию';
       Alert.alert('Ошибка', message);
@@ -183,7 +199,8 @@ export default function RecordDetailScreen() {
 
     try {
       await addToWishlist(discogsId);
-      Alert.alert('Готово!', 'Пластинка добавлена в список желаний');
+      const fmt = getFormatDisplayInfo(record?.format_type);
+      Alert.alert('Готово!', `${fmt.label} ${fmt.verb} в список желаний`);
     } catch (error: any) {
       const message = error?.response?.data?.detail || error?.message || 'Не удалось добавить в список желаний';
       Alert.alert('Ошибка', message);
@@ -205,7 +222,7 @@ export default function RecordDetailScreen() {
           onPress: async () => {
             try {
               await removeFromCollection(status.collectionItemId!);
-              Alert.alert('Готово!', 'Пластинка удалена из коллекции');
+              Alert.alert('Готово!', 'Винил удалён из коллекции');
             } catch (error: any) {
               Alert.alert('Ошибка', 'Не удалось удалить из коллекции');
             }
@@ -230,7 +247,7 @@ export default function RecordDetailScreen() {
           onPress: async () => {
             try {
               await removeFromWishlist(status.wishlistItemId!);
-              Alert.alert('Готово!', 'Пластинка удалена из списка желаний');
+              Alert.alert('Готово!', 'Винил удалён из списка желаний');
             } catch (error: any) {
               Alert.alert('Ошибка', 'Не удалось удалить из списка');
             }
@@ -240,46 +257,83 @@ export default function RecordDetailScreen() {
     );
   };
 
-  const handleAddCopyToCollection = async () => {
-    if (!record) return;
-    const discogsId = String(record.discogs_id || id);
-    if (!discogsId) {
-      Alert.alert('Ошибка', 'Не найден идентификатор пластинки');
-      return;
-    }
+  const handleRemoveFromFolder = async () => {
+    if (!folderId || !folderItemId) return;
 
-    try {
-      await addToCollection(discogsId);
-      Alert.alert('Готово!', 'Копия добавлена в коллекцию');
-    } catch (error: any) {
-      const message = error?.response?.data?.detail || error?.message || 'Не удалось добавить в коллекцию';
-      Alert.alert('Ошибка', message);
-    }
+    Alert.alert(
+      'Убрать из папки?',
+      `"${record?.title}" будет убрана из папки`,
+      [
+        { text: 'Отмена', style: 'cancel' },
+        {
+          text: 'Убрать',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await api.removeFromCollection(folderId, folderItemId);
+              await fetchCollections();
+              Alert.alert('Готово!', 'Винил убран из папки');
+              router.back();
+            } catch {
+              Alert.alert('Ошибка', 'Не удалось убрать из папки');
+            }
+          },
+        },
+      ]
+    );
   };
 
+  const handleAddRecordToFolder = async (folderId: string) => {
+    const status = getRecordStatus();
+    if (!status.collectionItemId || !record) return;
+    try {
+      const folderData = await api.getCollection(folderId);
+      const alreadyInFolder = (folderData.items || []).some(
+        (i: CollectionItem) => i.record_id === record.id
+      );
+      if (alreadyInFolder) {
+        setShowFolderPicker(false);
+        Alert.alert('Уже есть', 'Эта пластинка уже в этой папке');
+        return;
+      }
+      await addItemsToFolder(folderId, [status.collectionItemId]);
+      setShowFolderPicker(false);
+      const fmt = getFormatDisplayInfo(record?.format_type);
+      Alert.alert('Готово!', `${fmt.label} ${fmt.verb} в папку`);
+    } catch {
+      Alert.alert('Ошибка', 'Не удалось добавить в папку');
+    }
+  };
 
   const getActionSheetActions = (): ActionSheetAction[] => {
     const recordStatus = getRecordStatus();
     const actions: ActionSheetAction[] = [];
 
     if (recordStatus.status === 'in_collection') {
-      // Добавить копию (всегда доступно)
+      // Добавить в папку
       actions.push({
-        label: 'Добавить копию в коллекцию',
-        icon: 'copy-outline',
-        onPress: handleAddCopyToCollection,
+        label: 'Добавить в папку',
+        icon: 'folder-outline',
+        onPress: () => setShowFolderPicker(true),
       });
 
-      // УБРАЛИ "Отправить в вишлист" - как в Discogs
-      // Пользователь должен удалить все копии и добавить в вишлист вручную
-
-      // Удалить эту копию
-      actions.push({
-        label: 'Удалить',
-        icon: 'trash-outline',
-        onPress: handleRemoveFromCollection,
-        destructive: true,
-      });
+      if (folderId && folderItemId) {
+        // Открыли из папки — показываем «Убрать из папки»
+        actions.push({
+          label: 'Убрать из папки',
+          icon: 'folder-open-outline',
+          onPress: handleRemoveFromFolder,
+          destructive: true,
+        });
+      } else {
+        // Открыли из основной коллекции — показываем «Удалить из коллекции»
+        actions.push({
+          label: 'Удалить',
+          icon: 'trash-outline',
+          onPress: handleRemoveFromCollection,
+          destructive: true,
+        });
+      }
     }
 
     return actions;
@@ -288,7 +342,7 @@ export default function RecordDetailScreen() {
   if (isLoading) {
     return (
       <View style={styles.centered}>
-        <ActivityIndicator size="large" color={Colors.primary} />
+        <ActivityIndicator size="large" color={Colors.royalBlue} />
       </View>
     );
   }
@@ -299,7 +353,7 @@ export default function RecordDetailScreen() {
         <Header title="Ошибка" showBack showProfile={false} />
         <View style={styles.centered}>
           <Ionicons name="alert-circle-outline" size={64} color={Colors.textMuted} />
-          <Text style={styles.errorText}>{error || 'Пластинка не найдена'}</Text>
+          <Text style={styles.errorText}>{error || 'Винил не найден'}</Text>
           <Button title="Назад" onPress={() => router.back()} variant="outline" />
         </View>
       </View>
@@ -319,7 +373,7 @@ export default function RecordDetailScreen() {
         {/* Обложка */}
         <View style={styles.coverContainer}>
           {imageUrl ? (
-            <Image source={{ uri: imageUrl }} style={styles.cover} resizeMode="cover" />
+            <Image source={imageUrl} style={styles.cover} contentFit="cover" cachePolicy="disk" />
           ) : (
             <View style={[styles.cover, styles.coverPlaceholder]}>
               <Ionicons name="disc-outline" size={80} color={Colors.textMuted} />
@@ -339,16 +393,25 @@ export default function RecordDetailScreen() {
             }
             activeOpacity={0.7}
           >
-            {record.artist_thumb_image_url ? (
-              <Image
-                source={{ uri: record.artist_thumb_image_url }}
-                style={styles.artistAvatar}
-              />
-            ) : (
-              <View style={styles.artistAvatarPlaceholder}>
-                <Ionicons name="person" size={24} color={Colors.textMuted} />
-              </View>
-            )}
+            <LinearGradient
+              colors={Gradients.blue}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.artistAvatarBorder}
+            >
+              {record.artist_thumb_image_url ? (
+                <Image
+                  source={record.artist_thumb_image_url}
+                  style={styles.artistAvatar}
+                  contentFit="cover"
+                  cachePolicy="disk"
+                />
+              ) : (
+                <View style={styles.artistAvatarPlaceholder}>
+                  <Ionicons name="person" size={24} color={Colors.textMuted} />
+                </View>
+              )}
+            </LinearGradient>
             <Text style={styles.artistName}>{record.artist}</Text>
           </TouchableOpacity>
 
@@ -362,7 +425,7 @@ export default function RecordDetailScreen() {
             {record.format_type ? (
               <View style={styles.metaItem}>
                 <Ionicons name="disc-outline" size={16} color={Colors.textSecondary} />
-                <Text style={styles.metaText}>{record.format_type}</Text>
+                <Text style={styles.metaText}>{getFormatDisplayInfo(record.format_type).label}</Text>
               </View>
             ) : null}
             {record.country ? (
@@ -405,35 +468,52 @@ export default function RecordDetailScreen() {
         )}
 
         {/* Цена */}
-        {record.estimated_price_median && (
-          <Card variant="flat" style={styles.card}>
-            <Text style={styles.cardTitle}>Оценочная стоимость</Text>
-            <View style={styles.priceContainer}>
-              {record.estimated_price_min && (
-                <View style={styles.priceItem}>
-                  <Text style={styles.priceLabel}>Мин.</Text>
-                  <Text style={styles.priceValue}>
-                    ${record.estimated_price_min.toFixed(2)}
-                  </Text>
+        {(() => {
+          const rubPrice = record.estimated_price_median_rub || record.estimated_price_min_rub;
+          const usdPrice = record.estimated_price_median || record.estimated_price_min;
+          if (!rubPrice && !usdPrice) return null;
+
+          return (
+            <Card variant="flat" style={styles.card}>
+              <Text style={[styles.cardTitle, { textAlign: 'center' }]}>Примерная стоимость</Text>
+
+              {rubPrice ? (
+                <View style={styles.priceContainer}>
+                  {record.estimated_price_min_rub && record.estimated_price_median_rub ? (
+                    <View style={styles.priceItem}>
+                      <Text style={styles.priceLabel}>от</Text>
+                      <Text style={styles.priceValue}>
+                        {Math.round(record.estimated_price_min_rub).toLocaleString('ru-RU')} ₽
+                      </Text>
+                    </View>
+                  ) : null}
+                  <View style={styles.priceItem}>
+                    <Text style={styles.priceLabel}>{record.estimated_price_median_rub ? '~' : 'от'}</Text>
+                    <GradientText style={styles.priceMedian}>
+                      {Math.round(rubPrice).toLocaleString('ru-RU')} ₽
+                    </GradientText>
+                  </View>
+                  {record.estimated_price_max_rub ? (
+                    <View style={styles.priceItem}>
+                      <Text style={styles.priceLabel}>до</Text>
+                      <Text style={styles.priceValue}>
+                        {Math.round(record.estimated_price_max_rub).toLocaleString('ru-RU')} ₽
+                      </Text>
+                    </View>
+                  ) : null}
                 </View>
-              )}
-              <View style={styles.priceItem}>
-                <Text style={styles.priceLabel}>Медиана</Text>
-                <Text style={[styles.priceValue, styles.priceMedian]}>
-                  ${record.estimated_price_median.toFixed(2)}
+              ) : null}
+
+              {usdPrice != null ? (
+                <Text style={styles.priceNote}>
+                  Discogs: ${Number(usdPrice).toFixed(2)}
+                  {record.usd_rub_rate ? ` · курс ${Number(record.usd_rub_rate).toFixed(1)} ₽` : ''}
+                  {record.ru_markup ? ` · × ${record.ru_markup}` : ''}
                 </Text>
-              </View>
-              {record.estimated_price_max && (
-                <View style={styles.priceItem}>
-                  <Text style={styles.priceLabel}>Макс.</Text>
-                  <Text style={styles.priceValue}>
-                    ${record.estimated_price_max.toFixed(2)}
-                  </Text>
-                </View>
-              )}
-            </View>
-          </Card>
-        )}
+              ) : null}
+            </Card>
+          );
+        })()}
 
         {/* Треклист */}
         {record.tracklist && record.tracklist.length > 0 && (
@@ -461,7 +541,7 @@ export default function RecordDetailScreen() {
         // ========== СТАТУС: В КОЛЛЕКЦИИ ==========
         if (recordStatus.status === 'in_collection') {
           return (
-            <View style={[styles.actionsContainer, { paddingBottom: insets.bottom + Spacing.md }]}>
+            <BlurView intensity={60} tint="light" style={[styles.actionsContainer, { paddingBottom: insets.bottom + Spacing.md }]}>
               <View style={styles.addedButtonContainer}>
                 <View style={styles.addedButton}>
                   <Ionicons name="checkmark-circle" size={20} color={Colors.textSecondary} />
@@ -479,16 +559,16 @@ export default function RecordDetailScreen() {
                   <Ionicons name="ellipsis-vertical" size={24} color={Colors.background} />
                 </TouchableOpacity>
               </View>
-            </View>
+            </BlurView>
           );
         }
 
         // ========== СТАТУС: В ВИШЛИСТЕ ==========
         if (recordStatus.status === 'in_wishlist') {
           return (
-            <View style={[styles.actionsContainer, { paddingBottom: insets.bottom + Spacing.md }]}>
+            <BlurView intensity={60} tint="light" style={[styles.actionsContainer, { paddingBottom: insets.bottom + Spacing.md }]}>
               <Button
-                title="В коллекцию"
+                title="Добавить"
                 onPress={handleAddToCollection}
                 style={styles.actionButton}
               />
@@ -498,25 +578,25 @@ export default function RecordDetailScreen() {
               >
                 <Text style={styles.removeButtonText}>Удалить</Text>
               </TouchableOpacity>
-            </View>
+            </BlurView>
           );
         }
 
         // ========== СТАТУС: НЕ ДОБАВЛЕНА ==========
         return (
-          <View style={[styles.actionsContainer, { paddingBottom: insets.bottom + Spacing.md }]}>
+          <BlurView intensity={60} tint="light" style={[styles.actionsContainer, { paddingBottom: insets.bottom + Spacing.md }]}>
             <Button
-              title="В коллекцию"
+              title="Добавить"
               onPress={handleAddToCollection}
               style={styles.actionButton}
             />
             <Button
-              title="Хочу"
+              title="В вишлист"
               onPress={handleAddToWishlist}
               variant="outline"
-              style={styles.actionButton}
+              style={{ ...styles.actionButton, backgroundColor: Colors.surface }}
             />
-          </View>
+          </BlurView>
         );
       })()}
 
@@ -525,6 +605,13 @@ export default function RecordDetailScreen() {
         visible={showActionSheet}
         actions={getActionSheetActions()}
         onClose={() => setShowActionSheet(false)}
+      />
+
+      <FolderPickerModal
+        visible={showFolderPicker}
+        onClose={() => setShowFolderPicker(false)}
+        onSelectFolder={handleAddRecordToFolder}
+        selectedRecordIds={record ? [record.id] : []}
       />
     </View>
   );
@@ -557,7 +644,7 @@ const styles = StyleSheet.create({
   cover: {
     width: '100%',
     aspectRatio: 1,
-    borderRadius: BorderRadius.lg,
+    borderRadius: 24,
   },
   coverPlaceholder: {
     backgroundColor: Colors.surface,
@@ -575,6 +662,12 @@ const styles = StyleSheet.create({
     padding: Spacing.sm,
     marginBottom: Spacing.md,
     gap: Spacing.sm,
+  },
+  artistAvatarBorder: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    padding: 2,
   },
   artistAvatar: {
     width: 48,
@@ -597,8 +690,11 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   title: {
-    ...Typography.h1,
-    color: Colors.primary,
+    fontSize: 36,
+    fontFamily: 'Inter_800ExtraBold',
+    lineHeight: 42,
+    letterSpacing: -1,
+    color: Colors.deepNavy,
     marginBottom: Spacing.md,
   },
   metaRow: {
@@ -620,7 +716,7 @@ const styles = StyleSheet.create({
   },
   cardTitle: {
     ...Typography.h4,
-    color: Colors.primary,
+    color: Colors.deepNavy,
     marginBottom: Spacing.sm,
   },
   detailRow: {
@@ -663,7 +759,14 @@ const styles = StyleSheet.create({
     color: Colors.text,
   },
   priceMedian: {
-    color: Colors.accent,
+    ...Typography.h4,
+    fontFamily: 'Inter_700Bold',
+  },
+  priceNote: {
+    ...Typography.caption,
+    color: Colors.textMuted,
+    textAlign: 'center' as const,
+    marginTop: Spacing.sm,
   },
   trackRow: {
     flexDirection: 'row',
@@ -694,10 +797,9 @@ const styles = StyleSheet.create({
     right: 0,
     flexDirection: 'row',
     padding: Spacing.md,
-    backgroundColor: Colors.background,
-    borderTopWidth: 1,
-    borderTopColor: Colors.divider,
+    backgroundColor: Colors.glassBg,
     gap: Spacing.sm,
+    overflow: 'hidden',
   },
   actionButton: {
     flex: 1,
@@ -727,7 +829,7 @@ const styles = StyleSheet.create({
     height: 56,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: Colors.primary,
+    backgroundColor: Colors.royalBlue,
     borderRadius: BorderRadius.md,
   },
   removeButton: {

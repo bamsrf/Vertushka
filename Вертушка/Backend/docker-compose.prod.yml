@@ -18,6 +18,20 @@ services:
       timeout: 5s
       retries: 5
 
+  # Redis кэш
+  redis:
+    image: redis:7-alpine
+    container_name: vertushka_redis
+    restart: always
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   # API сервер
   api:
     build:
@@ -29,8 +43,11 @@ services:
       - .env.prod
     environment:
       - DATABASE_URL=postgresql+asyncpg://${DB_USER}:${DB_PASSWORD}@db:5432/vertushka
+      - REDIS_URL=redis://redis:6379/0
     depends_on:
       db:
+        condition: service_healthy
+      redis:
         condition: service_healthy
 
   # Nginx reverse proxy
@@ -58,3 +75,4 @@ services:
 
 volumes:
   postgres_data:
+  redis_data:

@@ -9,8 +9,9 @@ BASE_URL = "https://yandex.ru/jobs"
 LISTING_URL = f"{BASE_URL}/vacancies/"
 
 PROFESSIONS = [
-    "product-manager-it",
-    "project-manager-it",
+    "product-manager",
+    "project-manager",
+    "project-manager-business",
 ]
 
 

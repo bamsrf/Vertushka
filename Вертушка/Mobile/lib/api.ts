@@ -13,6 +13,7 @@ import {
   RecordSearchResult,
   Collection,
   CollectionItem,
+  CollectionStats,
   Wishlist,
   WishlistItem,
   SearchFilters,
@@ -30,27 +31,24 @@ import {
   FeedItem,
   GiftBookingCreate,
   GiftBookingResponse,
+  GiftGivenItem,
+  CoverScanResponse,
 } from './types';
 
 // API сервер
 // Для локальной разработки с бэкендом на localhost:
 const API_BASE_URL = __DEV__
-  ? 'http://192.168.1.73:8000/api'  // Локальный IP для разработки (работает на симуляторе и физическом устройстве)
+  ? 'http://192.168.1.66:8000/api'  // Локальный IP для разработки (работает на симуляторе и физическом устройстве)
   : 'https://api.vinyl-vertushka.ru/api'; // Продакшен сервер
 
 const TOKEN_KEY = 'auth_token';
 const REFRESH_TOKEN_KEY = 'refresh_token';
 
-// Retry конфигурация для 503 ошибок (Discogs rate limiting)
-const MAX_RETRIES = 3;
-const RETRY_DELAY = 1500; // 1.5 секунды между попытками
-
-const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
-
 class ApiClient {
   private client: AxiosInstance;
   private isRefreshing = false;
   private refreshSubscribers: ((token: string) => void)[] = [];
+  private inflightRequests = new Map<string, Promise<any>>();
 
   constructor() {
     this.client = axios.create({
@@ -74,17 +72,6 @@ class ApiClient {
       (response) => response,
       async (error: AxiosError) => {
         const originalRequest = error.config as any;
-
-        // Retry логика для 503 ошибок (Discogs rate limiting)
-        if (error.response?.status === 503) {
-          const retryCount = originalRequest._retryCount || 0;
-
-          if (retryCount < MAX_RETRIES) {
-            originalRequest._retryCount = retryCount + 1;
-            await sleep(RETRY_DELAY * (retryCount + 1));
-            return this.client(originalRequest);
-          }
-        }
 
         // Если 401 и это не запрос на refresh — пробуем обновить токен
         if (error.response?.status === 401 && !originalRequest._retry) {
@@ -117,6 +104,31 @@ class ApiClient {
           }
         }
         
+        return Promise.reject(error);
+      }
+    );
+
+    // Retry interceptor для 503/429
+    this.client.interceptors.response.use(
+      (response) => response,
+      async (error: AxiosError) => {
+        const originalRequest = error.config as any;
+        const status = error.response?.status;
+
+        if ((status === 503 || status === 429) && !originalRequest._retryCount) {
+          originalRequest._retryCount = 0;
+        }
+
+        if ((status === 503 || status === 429) && originalRequest._retryCount < 3) {
+          originalRequest._retryCount += 1;
+          const retryAfter = status === 429
+            ? parseInt(String(error.response?.headers?.['retry-after'] || '5'), 10) * 1000
+            : Math.pow(2, originalRequest._retryCount - 1) * 1000;
+
+          await new Promise((resolve) => setTimeout(resolve, retryAfter));
+          return this.client(originalRequest);
+        }
+
         return Promise.reject(error);
       }
     );
@@ -178,11 +190,34 @@ class ApiClient {
     }
   }
 
+  /**
+   * Дедупликация GET-запросов: если запрос с теми же параметрами уже в полёте,
+   * возвращаем промис первого запроса вместо создания нового.
+   */
+  private deduplicatedGet<T>(url: string, config?: { params?: Record<string, any> }): Promise<T> {
+    const key = url + (config?.params ? '?' + JSON.stringify(config.params) : '');
+    const existing = this.inflightRequests.get(key);
+    if (existing) return existing;
+
+    const promise = this.client.get<T>(url, config)
+      .then((res) => {
+        this.inflightRequests.delete(key);
+        return res.data;
+      })
+      .catch((err) => {
+        this.inflightRequests.delete(key);
+        throw err;
+      });
+
+    this.inflightRequests.set(key, promise);
+    return promise;
+  }
+
   // ==================== Auth ====================
 
   async login(data: LoginRequest): Promise<AuthTokens> {
     const response = await this.client.post<AuthTokens>('/auth/login', {
-      email: data.email,
+      login: data.login,
       password: data.password,
     });
     
@@ -195,6 +230,24 @@ class ApiClient {
     const response = await this.client.post<AuthTokens>('/auth/register', data);
     
     // Сохраняем оба токена сразу после регистрации
+    await this.setTokens(response.data.access_token, response.data.refresh_token || '');
+    return response.data;
+  }
+
+  async forgotPassword(email: string): Promise<void> {
+    await this.client.post('/auth/forgot-password/', { email });
+  }
+
+  async verifyResetCode(email: string, code: string): Promise<string> {
+    const response = await this.client.post<{ reset_token: string }>('/auth/verify-reset-code/', { email, code });
+    return response.data.reset_token;
+  }
+
+  async resetPassword(resetToken: string, newPassword: string): Promise<AuthTokens> {
+    const response = await this.client.post<AuthTokens>('/auth/reset-password/', {
+      reset_token: resetToken,
+      new_password: newPassword,
+    });
     await this.setTokens(response.data.access_token, response.data.refresh_token || '');
     return response.data;
   }
@@ -231,8 +284,7 @@ class ApiClient {
     if (filters?.year) params.year = filters.year;
     if (filters?.label) params.label = filters.label;
 
-    const response = await this.client.get<RecordSearchResponse>('/records/search', { params });
-    return response.data;
+    return this.deduplicatedGet<RecordSearchResponse>('/records/search', { params });
   }
 
   async scanBarcode(barcode: string): Promise<RecordSearchResult[]> {
@@ -244,14 +296,20 @@ class ApiClient {
     return response.data;
   }
 
-  async getRecord(id: string): Promise<VinylRecord> {
-    const response = await this.client.get<VinylRecord>(`/records/${id}`);
+  async scanCover(imageBase64: string): Promise<CoverScanResponse> {
+    const response = await this.client.post<CoverScanResponse>(
+      '/records/scan/cover/',
+      { image_base64: imageBase64 }
+    );
     return response.data;
   }
 
+  async getRecord(id: string): Promise<VinylRecord> {
+    return this.deduplicatedGet<VinylRecord>(`/records/${id}`);
+  }
+
   async getRecordByDiscogsId(discogsId: string): Promise<VinylRecord> {
-    const response = await this.client.get<VinylRecord>(`/records/discogs/${discogsId}`);
-    return response.data;
+    return this.deduplicatedGet<VinylRecord>(`/records/discogs/${discogsId}`);
   }
 
   // ==================== Masters ====================
@@ -267,13 +325,11 @@ class ApiClient {
       per_page: perPage,
     };
 
-    const response = await this.client.get<MasterSearchResponse>('/records/masters/search', { params });
-    return response.data;
+    return this.deduplicatedGet<MasterSearchResponse>('/records/masters/search', { params });
   }
 
   async getMaster(masterId: string): Promise<MasterRelease> {
-    const response = await this.client.get<MasterRelease>(`/records/masters/${masterId}`);
-    return response.data;
+    return this.deduplicatedGet<MasterRelease>(`/records/masters/${masterId}`);
   }
 
   async getMasterVersions(
@@ -286,11 +342,7 @@ class ApiClient {
       per_page: perPage,
     };
 
-    const response = await this.client.get<MasterVersionsResponse>(
-      `/records/masters/${masterId}/versions`,
-      { params }
-    );
-    return response.data;
+    return this.deduplicatedGet<MasterVersionsResponse>(`/records/masters/${masterId}/versions`, { params });
   }
 
   async searchReleases(
@@ -309,8 +361,7 @@ class ApiClient {
     if (filters?.country) params.country = filters.country;
     if (filters?.year) params.year = filters.year;
 
-    const response = await this.client.get<ReleaseSearchResponse>('/records/releases/search', { params });
-    return response.data;
+    return this.deduplicatedGet<ReleaseSearchResponse>('/records/releases/search', { params });
   }
 
   // ==================== Artists ====================
@@ -326,13 +377,11 @@ class ApiClient {
       per_page: perPage,
     };
 
-    const response = await this.client.get<ArtistSearchResponse>('/records/artists/search', { params });
-    return response.data;
+    return this.deduplicatedGet<ArtistSearchResponse>('/records/artists/search', { params });
   }
 
   async getArtist(artistId: string): Promise<Artist> {
-    const response = await this.client.get<Artist>(`/records/artists/${artistId}`);
-    return response.data;
+    return this.deduplicatedGet<Artist>(`/records/artists/${artistId}`);
   }
 
   async getArtistReleases(
@@ -345,28 +394,15 @@ class ApiClient {
       per_page: perPage,
     };
 
-    const response = await this.client.get<ReleaseSearchResponse>(
-      `/records/artists/${artistId}/releases`,
-      { params }
-    );
-    return response.data;
+    return this.deduplicatedGet<ReleaseSearchResponse>(`/records/artists/${artistId}/releases`, { params });
   }
 
   async getArtistMasters(
     artistId: string,
     page = 1,
-    perPage = 50
+    perPage = 20,
   ): Promise<MasterSearchResponse> {
-    const params = {
-      page,
-      per_page: perPage,
-    };
-
-    const response = await this.client.get<MasterSearchResponse>(
-      `/records/artists/${artistId}/masters`,
-      { params }
-    );
-    return response.data;
+    return this.deduplicatedGet<MasterSearchResponse>(`/records/artists/${artistId}/masters`, { params: { per_page: perPage, page } });
   }
 
   // ==================== Collections ====================
@@ -386,10 +422,20 @@ class ApiClient {
     return response.data;
   }
 
-  async getCollectionItems(collectionId: string): Promise<CollectionItem[]> {
+  async getCollectionItems(
+    collectionId: string,
+    sortBy: string = 'added_at'
+  ): Promise<CollectionItem[]> {
     // Бэкенд возвращает коллекцию с items внутри через GET /collections/{id}
-    const collection = await this.getCollection(collectionId);
-    return collection.items || [];
+    const response = await this.client.get<Collection>(`/collections/${collectionId}`, {
+      params: { sort_by: sortBy },
+    });
+    return response.data.items || [];
+  }
+
+  async getCollectionStats(collectionId: string): Promise<CollectionStats> {
+    const response = await this.client.get<CollectionStats>(`/collections/${collectionId}/stats`);
+    return response.data;
   }
 
   async addToCollection(
@@ -543,11 +589,59 @@ class ApiClient {
     return response.data;
   }
 
+  // ==================== Folders ====================
+
+  async addRecordToFolder(collectionId: string, recordId: string): Promise<CollectionItem> {
+    const response = await this.client.post<CollectionItem>(
+      `/collections/${collectionId}/items`,
+      { record_id: recordId }
+    );
+    return response.data;
+  }
+
+  async renameCollection(id: string, name: string): Promise<Collection> {
+    const response = await this.client.put<Collection>(`/collections/${id}`, { name });
+    return response.data;
+  }
+
+  async deleteCollection(id: string): Promise<void> {
+    await this.client.delete(`/collections/${id}`);
+  }
+
+  // ==================== Export ====================
+
+  async exportCollectionCSV(): Promise<string> {
+    const response = await this.client.get('/export/collection.csv', {
+      responseType: 'text',
+      headers: { Accept: 'text/csv' },
+    });
+    return response.data;
+  }
+
+  async exportWishlistCSV(): Promise<string> {
+    const response = await this.client.get('/export/wishlist.csv', {
+      responseType: 'text',
+      headers: { Accept: 'text/csv' },
+    });
+    return response.data;
+  }
+
   // ==================== Gift Booking ====================
 
   async bookGift(data: GiftBookingCreate): Promise<GiftBookingResponse> {
     const response = await this.client.post<GiftBookingResponse>('/gifts/book', data);
     return response.data;
+  }
+
+  async getMyGivenGifts(): Promise<GiftGivenItem[]> {
+    const response = await this.client.get<GiftGivenItem[]>('/gifts/me/given');
+    return response.data;
+  }
+
+  async cancelGiftBooking(bookingId: string, cancelToken: string): Promise<void> {
+    await this.client.put(`/gifts/${bookingId}/cancel`, null, {
+      params: { cancel_token: cancelToken },
+    });
   }
 }
 

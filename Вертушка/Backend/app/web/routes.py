@@ -29,6 +29,18 @@ settings = get_settings()
 BASE_URL = "https://vinyl-vertushka.ru"
 
 
+@router.get("/privacy", response_class=HTMLResponse)
+async def privacy_policy(request: Request):
+    """Политика конфиденциальности"""
+    return templates.TemplateResponse("privacy.html", {"request": request})
+
+
+@router.get("/terms", response_class=HTMLResponse)
+async def terms_of_service(request: Request):
+    """Условия использования"""
+    return templates.TemplateResponse("terms.html", {"request": request})
+
+
 @router.get("/@{username}", response_class=HTMLResponse)
 async def public_profile_page(
     request: Request,

@@ -8,6 +8,7 @@ from app.models.wishlist import Wishlist, WishlistItem
 from app.models.gift_booking import GiftBooking
 from app.models.follow import Follow
 from app.models.profile_share import ProfileShare
+from app.models.search_cache import SearchCache
 
 __all__ = [
     "User",
@@ -19,5 +20,6 @@ __all__ = [
     "GiftBooking",
     "Follow",
     "ProfileShare",
+    "SearchCache",
 ]
 

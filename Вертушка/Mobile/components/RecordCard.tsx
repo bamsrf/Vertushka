@@ -1,24 +1,31 @@
 /**
- * Карточка пластинки
+ * Карточка пластинки — Editorial Gradient Edition
+ * Два варианта: compact (overlay) и expanded (card с инфо)
  */
-import React from 'react';
+import React, { useRef } from 'react';
 import {
   View,
   Text,
-  Image,
   StyleSheet,
-  TouchableOpacity,
+  Pressable,
   Dimensions,
 } from 'react-native';
+import { Image } from 'expo-image';
+import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { Colors, Typography, BorderRadius, Shadows, Spacing } from '../constants/theme';
-import { RecordSearchResult, VinylRecord, MasterSearchResult, ReleaseSearchResult } from '../lib/types';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withTiming,
+} from 'react-native-reanimated';
+import { Colors, Typography, BorderRadius, Shadows, Spacing, Gradients } from '../constants/theme';
+import { RecordSearchResult, VinylRecord, MasterSearchResult, ReleaseSearchResult, PublicProfileRecord } from '../lib/types';
 
 const { width } = Dimensions.get('window');
 const CARD_WIDTH = (width - Spacing.md * 3) / 2;
 
 interface RecordCardProps {
-  record: RecordSearchResult | VinylRecord | MasterSearchResult | ReleaseSearchResult;
+  record: RecordSearchResult | VinylRecord | MasterSearchResult | ReleaseSearchResult | PublicProfileRecord;
   onPress?: () => void;
   onArtistPress?: (artistName: string) => void;
   onAddToCollection?: () => void;
@@ -26,43 +33,49 @@ interface RecordCardProps {
   onRemove?: () => void;
   showActions?: boolean;
   size?: 'default' | 'large';
+  variant?: 'compact' | 'expanded' | 'list';
   isSelectionMode?: boolean;
   isSelected?: boolean;
   onToggleSelection?: () => void;
+  onLongPress?: () => void;
   isBooked?: boolean;
 }
 
-// Извлекает краткий формат из полной строки (первый значимый элемент)
+const FORMAT_TRANSLATIONS: Record<string, string> = {
+  'Vinyl': 'Винил',
+  'LP': 'Винил',
+  'Cassette': 'Кассета',
+  'Box Set': 'Бокс-сет',
+};
+
 function getShortFormat(format: string | undefined): string | undefined {
   if (!format) return undefined;
 
-  // Разделяем по запятым и берём только первые 2-3 значимых элемента
   const parts = format.split(',').map(s => s.trim()).filter(Boolean);
   if (parts.length === 0) return undefined;
 
-  // Основные типы носителей
   const mainFormats = ['Vinyl', 'CD', 'Cassette', 'DVD', 'Blu-ray', 'Box Set', 'LP', '7"', '12"', '10"'];
-  // Важные дополнения
   const importantDetails = ['Album', 'Single', 'EP', 'Compilation', 'Limited Edition', 'Reissue', 'Remaster'];
 
   const result: string[] = [];
 
-  // Добавляем основной формат (первый найденный)
   const mainFormat = parts.find(p => mainFormats.some(mf => p.includes(mf)));
   if (mainFormat) {
-    result.push(mainFormat);
+    const translatedKey = Object.keys(FORMAT_TRANSLATIONS).find(k => mainFormat.includes(k));
+    result.push(translatedKey ? FORMAT_TRANSLATIONS[translatedKey] : mainFormat);
   } else if (parts[0]) {
     result.push(parts[0]);
   }
 
-  // Добавляем одну важную деталь если есть
-  const detail = parts.find(p => importantDetails.some(d => p.includes(d)) && !result.includes(p));
+  const detail = parts.find(p => importantDetails.some(d => p.includes(d)));
   if (detail && result.length < 2) {
     result.push(detail);
   }
 
   return result.join(', ') || parts[0];
 }
+
+const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 export function RecordCard({
   record,
@@ -73,17 +86,37 @@ export function RecordCard({
   onRemove,
   showActions = false,
   size = 'default',
+  variant = 'expanded',
   isSelectionMode = false,
   isSelected = false,
   onToggleSelection,
+  onLongPress,
   isBooked = false,
 }: RecordCardProps) {
-  // Приоритет: cover_image_url для высокого качества, fallback на thumb
   const imageUrl = record.cover_image_url || record.thumb_image_url;
   const cardWidth = size === 'large' ? width - Spacing.md * 2 : CARD_WIDTH;
   const imageHeight = size === 'large' ? cardWidth * 0.8 : CARD_WIDTH;
 
+  const scale = useSharedValue(1);
+  const didLongPress = useRef(false);
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+  }));
+
+  const handlePressIn = () => {
+    scale.value = withTiming(0.96, { duration: 100 });
+  };
+
+  const handlePressOut = () => {
+    scale.value = withTiming(1, { duration: 150 });
+  };
+
   const handlePress = () => {
+    if (didLongPress.current) {
+      didLongPress.current = false;
+      return;
+    }
     if (isSelectionMode && onToggleSelection) {
       onToggleSelection();
     } else if (onPress) {
@@ -91,75 +124,214 @@ export function RecordCard({
     }
   };
 
+  const handleLongPress = () => {
+    didLongPress.current = true;
+    onLongPress?.();
+  };
+
+  if (variant === 'compact') {
+    return (
+      <AnimatedPressable
+        style={[
+          styles.compactContainer,
+          { width: cardWidth, height: imageHeight },
+          Shadows.md,
+          isSelectionMode && isSelected && styles.containerSelected,
+          animatedStyle,
+        ]}
+        onPress={handlePress}
+        onLongPress={!isSelectionMode ? handleLongPress : undefined}
+        onPressIn={handlePressIn}
+        onPressOut={handlePressOut}
+        disabled={isSelectionMode ? !onToggleSelection : !onPress}
+      >
+        {isSelectionMode && (
+          <View style={styles.checkboxContainer}>
+            <View style={[styles.checkbox, isSelected && styles.checkboxSelected]}>
+              {isSelected && <Ionicons name="checkmark" size={16} color={Colors.background} />}
+            </View>
+          </View>
+        )}
+
+        {imageUrl ? (
+          <Image source={imageUrl} style={styles.compactImage} contentFit="cover" cachePolicy="disk" />
+        ) : (
+          <View style={styles.compactPlaceholder}>
+            <Ionicons name="disc-outline" size={48} color={Colors.periwinkle} />
+          </View>
+        )}
+
+        {/* Год badge в правом верхнем углу */}
+        {record.year != null && record.year !== 0 && (
+          <View style={styles.yearBadge}>
+            <Text style={styles.yearBadgeText}>{record.year}</Text>
+          </View>
+        )}
+
+        {isBooked && !isSelectionMode && (
+          <LinearGradient
+            colors={[Colors.royalBlue, Colors.periwinkle]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={styles.bookedBadge}
+          >
+            <Ionicons name="gift-outline" size={12} color={Colors.background} />
+            <Text style={styles.bookedBadgeText}>Забронировано</Text>
+          </LinearGradient>
+        )}
+
+        {/* Gradient overlay с текстом */}
+        <LinearGradient
+          colors={Gradients.overlay as [string, string]}
+          style={styles.compactOverlay}
+        >
+          <Text style={styles.compactArtist} numberOfLines={1}>
+            {record.artist}
+          </Text>
+          <Text style={styles.compactTitle} numberOfLines={2}>
+            {record.title}
+          </Text>
+        </LinearGradient>
+      </AnimatedPressable>
+    );
+  }
+
+  // variant === 'list'
+  if (variant === 'list') {
+    const formatText = 'format_type' in record && record.format_type
+      ? getShortFormat(record.format_type)
+      : 'format' in record && record.format
+        ? getShortFormat(record.format as string)
+        : undefined;
+
+    return (
+      <AnimatedPressable
+        style={[
+          styles.listContainer,
+          Shadows.sm,
+          isSelectionMode && isSelected && styles.containerSelected,
+          animatedStyle,
+        ]}
+        onPress={handlePress}
+        onLongPress={!isSelectionMode ? handleLongPress : undefined}
+        onPressIn={handlePressIn}
+        onPressOut={handlePressOut}
+        disabled={isSelectionMode ? !onToggleSelection : !onPress}
+      >
+        {isSelectionMode && (
+          <View style={styles.listCheckboxContainer}>
+            <View style={[styles.checkbox, isSelected && styles.checkboxSelected]}>
+              {isSelected && <Ionicons name="checkmark" size={16} color={Colors.background} />}
+            </View>
+          </View>
+        )}
+
+        <View style={styles.listImageContainer}>
+          {imageUrl ? (
+            <Image source={imageUrl} style={styles.listImage} contentFit="cover" cachePolicy="disk" />
+          ) : (
+            <View style={styles.listPlaceholder}>
+              <Ionicons name="disc-outline" size={28} color={Colors.periwinkle} />
+            </View>
+          )}
+          {isBooked && !isSelectionMode && (
+            <View style={styles.listBookedBadge}>
+              <Ionicons name="gift-outline" size={10} color={Colors.background} />
+            </View>
+          )}
+        </View>
+
+        <View style={styles.listInfo}>
+          {onArtistPress ? (
+            <Pressable onPress={() => onArtistPress(record.artist)}>
+              <Text style={[styles.listArtist, styles.artistClickable]} numberOfLines={1}>
+                {record.artist}
+              </Text>
+            </Pressable>
+          ) : (
+            <Text style={styles.listArtist} numberOfLines={1}>
+              {record.artist}
+            </Text>
+          )}
+          <Text style={styles.listTitle} numberOfLines={1}>
+            {record.title}
+          </Text>
+          <View style={styles.listMeta}>
+            {record.year != null && record.year !== 0 && (
+              <Text style={styles.metaText}>{record.year}</Text>
+            )}
+            {formatText && (
+              <>
+                {record.year != null && record.year !== 0 && <Text style={styles.metaDot}>·</Text>}
+                <Text style={styles.metaText} numberOfLines={1}>{formatText}</Text>
+              </>
+            )}
+          </View>
+        </View>
+
+        <Ionicons name="chevron-forward" size={16} color={Colors.textMuted} style={styles.listChevron} />
+      </AnimatedPressable>
+    );
+  }
+
+  // variant === 'expanded'
   return (
-    <TouchableOpacity
+    <AnimatedPressable
       style={[
-        styles.container,
+        styles.expandedContainer,
         { width: cardWidth },
         Shadows.md,
         isSelectionMode && isSelected && styles.containerSelected,
+        animatedStyle,
       ]}
       onPress={handlePress}
-      activeOpacity={0.9}
+      onLongPress={!isSelectionMode ? handleLongPress : undefined}
+      onPressIn={handlePressIn}
+      onPressOut={handlePressOut}
       disabled={isSelectionMode ? !onToggleSelection : !onPress}
     >
-      {/* Чекбокс в режиме выбора */}
       {isSelectionMode && (
         <View style={styles.checkboxContainer}>
-          <View
-            style={[
-              styles.checkbox,
-              isSelected && styles.checkboxSelected,
-            ]}
-          >
-            {isSelected && (
-              <Ionicons name="checkmark" size={16} color={Colors.background} />
-            )}
+          <View style={[styles.checkbox, isSelected && styles.checkboxSelected]}>
+            {isSelected && <Ionicons name="checkmark" size={16} color={Colors.background} />}
           </View>
         </View>
       )}
 
-      {/* Обложка */}
-      <View style={[styles.imageContainer, { height: imageHeight }]}>
+      <View style={[styles.expandedImageContainer, { height: imageHeight }]}>
         {imageUrl ? (
-          <Image
-            source={{ uri: imageUrl }}
-            style={styles.image}
-            resizeMode="cover"
-          />
+          <Image source={imageUrl} style={styles.expandedImage} contentFit="cover" cachePolicy="disk" />
         ) : (
-          <View style={styles.placeholderImage}>
-            <Ionicons name="disc-outline" size={48} color={Colors.textMuted} />
+          <View style={styles.expandedPlaceholder}>
+            <Ionicons name="disc-outline" size={48} color={Colors.periwinkle} />
           </View>
-        )}
-        {isSelectionMode && isSelected && (
-          <View style={styles.selectedOverlay} />
         )}
         {isBooked && !isSelectionMode && (
-          <View style={styles.bookedBadge}>
+          <LinearGradient
+            colors={[Colors.royalBlue, Colors.periwinkle]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={styles.bookedBadge}
+          >
             <Ionicons name="gift-outline" size={12} color={Colors.background} />
             <Text style={styles.bookedBadgeText}>Забронировано</Text>
-          </View>
+          </LinearGradient>
         )}
       </View>
 
-      {/* Информация */}
-      <View style={styles.info}>
+      <View style={styles.expandedInfo}>
         {onArtistPress ? (
-          <TouchableOpacity
-            onPress={() => onArtistPress(record.artist)}
-            activeOpacity={0.7}
-          >
-            <Text style={[styles.artist, styles.artistClickable]} numberOfLines={1}>
+          <Pressable onPress={() => onArtistPress(record.artist)}>
+            <Text style={[styles.expandedArtist, styles.artistClickable]} numberOfLines={1}>
               {record.artist}
             </Text>
-          </TouchableOpacity>
+          </Pressable>
         ) : (
-          <Text style={styles.artist} numberOfLines={1}>
+          <Text style={styles.expandedArtist} numberOfLines={1}>
             {record.artist}
           </Text>
         )}
-        <Text style={styles.title} numberOfLines={2}>
+        <Text style={styles.expandedTitle} numberOfLines={2}>
           {record.title}
         </Text>
         <View style={styles.meta}>
@@ -168,72 +340,246 @@ export function RecordCard({
           )}
           {'country' in record && record.country && (
             <>
-              {record.year != null && record.year !== 0 && <Text style={styles.metaDot}>•</Text>}
+              {record.year != null && record.year !== 0 && <Text style={styles.metaDot}>·</Text>}
               <Text style={styles.metaText}>{record.country}</Text>
             </>
           )}
           {'format_type' in record && record.format_type && (
             <>
-              {(record.year != null && record.year !== 0) || ('country' in record && record.country) ? <Text style={styles.metaDot}>•</Text> : null}
+              {(record.year != null && record.year !== 0) || ('country' in record && record.country) ? <Text style={styles.metaDot}>·</Text> : null}
               <Text style={styles.metaText} numberOfLines={1}>{getShortFormat(record.format_type)}</Text>
             </>
           )}
           {'format' in record && record.format && !('format_type' in record) && (
             <>
-              {(record.year != null && record.year !== 0) || ('country' in record && record.country) ? <Text style={styles.metaDot}>•</Text> : null}
+              {(record.year != null && record.year !== 0) || ('country' in record && record.country) ? <Text style={styles.metaDot}>·</Text> : null}
               <Text style={styles.metaText} numberOfLines={1}>{getShortFormat(record.format)}</Text>
             </>
           )}
         </View>
       </View>
 
-      {/* Кнопки действий */}
       {showActions && (
         <View style={styles.actions}>
           {onAddToCollection && (
-            <TouchableOpacity
-              style={styles.actionButton}
-              onPress={onAddToCollection}
-            >
-              <Ionicons name="add-circle-outline" size={24} color={Colors.primary} />
-            </TouchableOpacity>
+            <Pressable style={styles.actionButton} onPress={onAddToCollection}>
+              <Ionicons name="add-circle-outline" size={24} color={Colors.royalBlue} />
+            </Pressable>
           )}
           {onAddToWishlist && (
-            <TouchableOpacity
-              style={styles.actionButton}
-              onPress={onAddToWishlist}
-            >
-              <Ionicons name="heart-outline" size={24} color={Colors.accent} />
-            </TouchableOpacity>
+            <Pressable style={styles.actionButton} onPress={onAddToWishlist}>
+              <Ionicons name="heart-outline" size={24} color={Colors.softPink} />
+            </Pressable>
           )}
           {onRemove && (
-            <TouchableOpacity
-              style={styles.actionButton}
-              onPress={onRemove}
-            >
+            <Pressable style={styles.actionButton} onPress={onRemove}>
               <Ionicons name="trash-outline" size={24} color={Colors.error} />
-            </TouchableOpacity>
+            </Pressable>
           )}
         </View>
       )}
-    </TouchableOpacity>
+    </AnimatedPressable>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    backgroundColor: Colors.background,
-    borderRadius: BorderRadius.lg,
+  // ===== COMPACT (overlay) =====
+  compactContainer: {
+    borderRadius: 16,
     overflow: 'hidden',
     marginBottom: Spacing.md,
     position: 'relative',
-    borderWidth: 1,
-    borderColor: Colors.border,
+    backgroundColor: Colors.surface,
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
+  compactImage: {
+    width: '100%',
+    height: '100%',
+  },
+  compactPlaceholder: {
+    width: '100%',
+    height: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.surface,
+  },
+  compactOverlay: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    paddingHorizontal: 12,
+    paddingBottom: 12,
+    paddingTop: 40,
+  },
+  compactArtist: {
+    fontSize: 12,
+    fontFamily: 'Inter_500Medium',
+    color: 'rgba(255,255,255,0.85)',
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+    marginBottom: 2,
+  },
+  compactTitle: {
+    fontSize: 16,
+    fontFamily: 'Inter_700Bold',
+    color: '#FFFFFF',
+    lineHeight: 20,
+  },
+  yearBadge: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    backgroundColor: 'rgba(255,255,255,0.25)',
+    borderRadius: 10,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  yearBadgeText: {
+    fontSize: 11,
+    fontFamily: 'Inter_600SemiBold',
+    color: '#FFFFFF',
+  },
+
+  // ===== EXPANDED (card) =====
+  expandedContainer: {
+    borderRadius: 16,
+    overflow: 'hidden',
+    marginBottom: Spacing.md,
+    position: 'relative',
+    borderWidth: 2,
+    borderColor: 'transparent',
+    backgroundColor: '#FFFFFF',
   },
   containerSelected: {
-    borderWidth: 2,
-    borderColor: Colors.primary,
+    borderColor: Colors.royalBlue,
   },
+  expandedImageContainer: {
+    width: '100%',
+    backgroundColor: Colors.surface,
+    overflow: 'hidden',
+  },
+  expandedImage: {
+    width: '100%',
+    height: '100%',
+  },
+  expandedPlaceholder: {
+    width: '100%',
+    height: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.surface,
+  },
+  expandedInfo: {
+    padding: 12,
+    backgroundColor: '#FFFFFF',
+  },
+  expandedArtist: {
+    ...Typography.caption,
+    color: Colors.textSecondary,
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+    marginBottom: 2,
+  },
+  artistClickable: {
+    color: Colors.royalBlue,
+  },
+  expandedTitle: {
+    ...Typography.bodySmall,
+    fontFamily: 'Inter_600SemiBold',
+    color: Colors.text,
+    marginBottom: Spacing.xs,
+  },
+  meta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    maxHeight: 36,
+    overflow: 'hidden',
+  },
+  metaText: {
+    ...Typography.caption,
+    color: '#999999',
+  },
+  metaDot: {
+    ...Typography.caption,
+    color: '#999999',
+    marginHorizontal: 4,
+  },
+
+  // ===== LIST =====
+  listContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    overflow: 'hidden',
+    marginBottom: Spacing.sm,
+    padding: Spacing.sm,
+    gap: Spacing.sm,
+    position: 'relative',
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
+  listCheckboxContainer: {
+    marginRight: 2,
+  },
+  listImageContainer: {
+    width: 56,
+    height: 56,
+    borderRadius: 10,
+    overflow: 'hidden',
+    backgroundColor: Colors.surface,
+    position: 'relative',
+  },
+  listImage: {
+    width: '100%',
+    height: '100%',
+  },
+  listPlaceholder: {
+    width: '100%',
+    height: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.surface,
+  },
+  listBookedBadge: {
+    position: 'absolute',
+    bottom: 2,
+    right: 2,
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: Colors.royalBlue,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  listInfo: {
+    flex: 1,
+    justifyContent: 'center',
+    gap: 1,
+  },
+  listArtist: {
+    ...Typography.caption,
+    color: Colors.textSecondary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+  },
+  listTitle: {
+    ...Typography.bodySmall,
+    fontFamily: 'Inter_600SemiBold',
+    color: Colors.text,
+  },
+  listMeta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  listChevron: {
+    marginLeft: Spacing.xs,
+  },
+
+  // ===== SHARED =====
   checkboxContainer: {
     position: 'absolute',
     top: Spacing.sm,
@@ -245,71 +591,13 @@ const styles = StyleSheet.create({
     height: 24,
     borderRadius: 12,
     borderWidth: 2,
-    borderColor: Colors.primary,
+    borderColor: Colors.royalBlue,
     backgroundColor: Colors.background,
     alignItems: 'center',
     justifyContent: 'center',
   },
   checkboxSelected: {
-    backgroundColor: Colors.primary,
-  },
-  selectedOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(26, 26, 26, 0.3)',
-  },
-  imageContainer: {
-    width: '100%',
-    backgroundColor: Colors.surface,
-  },
-  image: {
-    width: '100%',
-    height: '100%',
-  },
-  placeholderImage: {
-    width: '100%',
-    height: '100%',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: Colors.surface,
-  },
-  info: {
-    padding: Spacing.sm,
-  },
-  artist: {
-    ...Typography.caption,
-    color: Colors.textSecondary,
-    letterSpacing: 0.5,
-    marginBottom: 2,
-  },
-  artistClickable: {
-    color: Colors.primary,
-  },
-  title: {
-    ...Typography.bodySmall,
-    fontWeight: '600',
-    color: Colors.text,
-    marginBottom: Spacing.xs,
-  },
-  meta: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flexWrap: 'wrap',
-    maxHeight: 36, // Ограничиваем высоту мета-блока (примерно 2 строки)
-    overflow: 'hidden',
-  },
-  metaText: {
-    ...Typography.caption,
-    color: Colors.textMuted,
-    flexShrink: 1,
-  },
-  metaDot: {
-    ...Typography.caption,
-    color: Colors.textMuted,
-    marginHorizontal: 4,
+    backgroundColor: Colors.royalBlue,
   },
   actions: {
     flexDirection: 'row',
@@ -330,7 +618,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 4,
-    backgroundColor: Colors.accent,
     paddingVertical: 4,
     paddingHorizontal: Spacing.sm,
     borderRadius: BorderRadius.sm,
@@ -338,7 +625,7 @@ const styles = StyleSheet.create({
   bookedBadgeText: {
     ...Typography.caption,
     color: Colors.background,
-    fontWeight: '600',
+    fontFamily: 'Inter_600SemiBold',
   },
 });
 

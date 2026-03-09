@@ -24,7 +24,7 @@ export interface AuthTokens {
 }
 
 export interface LoginRequest {
-  email: string;
+  login: string;
   password: string;
 }
 
@@ -55,6 +55,11 @@ export interface VinylRecord {
   estimated_price_max?: number;
   estimated_price_median?: number;
   price_currency: string;
+  estimated_price_min_rub?: number;
+  estimated_price_median_rub?: number;
+  estimated_price_max_rub?: number;
+  usd_rub_rate?: number;
+  ru_markup?: number;
   cover_image_url?: string;
   thumb_image_url?: string;
   artist_id?: string;
@@ -89,6 +94,16 @@ export interface RecordSearchResponse {
   per_page: number;
 }
 
+// ==================== Cover Scan ====================
+
+export type ScanMode = 'barcode' | 'cover';
+
+export interface CoverScanResponse {
+  recognized_artist: string;
+  recognized_album: string;
+  results: RecordSearchResult[];
+}
+
 // ==================== Master Releases ====================
 
 export interface MasterSearchResult {
@@ -113,6 +128,7 @@ export interface MasterRelease {
   genres?: string[];
   styles?: string[];
   cover_image_url?: string;
+  tracklist?: Track[];
 }
 
 export interface MasterVersion {
@@ -123,6 +139,7 @@ export interface MasterVersion {
   country?: string;
   year?: number;
   format?: string;
+  major_formats?: string[];
   thumb_image_url?: string;
 }
 
@@ -163,7 +180,25 @@ export interface CollectionItem {
   notes?: string;
   purchase_price?: number;
   purchase_date?: string;
+  estimated_price_rub?: number;
   added_at: string;
+}
+
+export interface CollectionStats {
+  total_records: number;
+  total_estimated_value_min: number | null;
+  total_estimated_value_max: number | null;
+  total_estimated_value_median: number | null;
+  total_estimated_value_rub: number | null;
+  usd_rub_rate: number | null;
+  ru_markup: number;
+  most_expensive: VinylRecord | null;
+  most_expensive_price_rub: number | null;
+  records_with_price: number;
+  records_by_year: Record<number, number>;
+  records_by_genre: Record<string, number>;
+  oldest_record_year: number | null;
+  newest_record_year: number | null;
 }
 
 // ==================== Wishlist ====================
@@ -375,6 +410,22 @@ export interface GiftBookingResponse {
   cancel_token: string;
   booked_at: string;
   record: PublicProfileRecord;
+}
+
+export interface GiftRecipientInfo {
+  username: string;
+  display_name?: string;
+  avatar_url?: string;
+}
+
+export interface GiftGivenItem {
+  id: string;
+  status: 'booked' | 'completed';
+  cancel_token: string;
+  booked_at: string;
+  completed_at?: string;
+  record: PublicProfileRecord;
+  for_user: GiftRecipientInfo;
 }
 
 // ==================== Social ====================

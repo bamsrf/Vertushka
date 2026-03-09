@@ -55,7 +55,7 @@ function VinylToggle({ value, onValueChange, disabled }: {
 
   const trackBg = anim.interpolate({
     inputRange: [0, 1],
-    outputRange: [Colors.border, Colors.accent],
+    outputRange: [Colors.border, Colors.royalBlue],
   });
 
   return (
@@ -120,7 +120,7 @@ const vinylStyles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: Colors.accent,
+    backgroundColor: Colors.royalBlue,
   },
 });
 
@@ -200,7 +200,7 @@ export default function ShareProfileScreen() {
   if (isLoading && !settings) {
     return (
       <View style={[styles.container, styles.center, { paddingTop: insets.top }]}>
-        <ActivityIndicator size="large" color={Colors.primary} />
+        <ActivityIndicator size="large" color={Colors.royalBlue} />
       </View>
     );
   }
@@ -210,7 +210,7 @@ export default function ShareProfileScreen() {
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-          <Ionicons name="arrow-back" size={24} color={Colors.primary} />
+          <Ionicons name="arrow-back" size={24} color={Colors.royalBlue} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Настройки профиля</Text>
         <View style={styles.placeholder} />
@@ -220,6 +220,19 @@ export default function ShareProfileScreen() {
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
       >
+        {/* Активация профиля */}
+        <Text style={styles.sectionTitle}>Публичный профиль</Text>
+        <View style={styles.section}>
+          <SettingRow
+            label="Активировать профиль"
+            description="Ваш профиль будет доступен по ссылке"
+            value={settings?.is_active ?? false}
+            settingKey="is_active"
+            onToggle={handleToggle}
+            disabled={isSaving}
+          />
+        </View>
+
         {/* Настройки карточек */}
         <Text style={styles.sectionTitle}>Информация на карточках</Text>
         <View style={styles.section}>
@@ -278,7 +291,7 @@ export default function ShareProfileScreen() {
             style={styles.highlightsButton}
             onPress={() => setSelectingHighlights(true)}
           >
-            <Ionicons name="star-outline" size={20} color={Colors.primary} />
+            <Ionicons name="star-outline" size={20} color={Colors.royalBlue} />
             <Text style={styles.highlightsButtonText}>
               Выбрать избранные ({selectedHighlights.size}/4)
             </Text>
@@ -357,7 +370,7 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     ...Typography.h4,
-    color: Colors.primary,
+    color: Colors.royalBlue,
   },
   backButton: {
     width: 36,
@@ -374,7 +387,7 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     ...Typography.h4,
-    color: Colors.primary,
+    color: Colors.royalBlue,
     marginBottom: Spacing.sm,
     marginTop: Spacing.md,
   },
@@ -425,7 +438,7 @@ const styles = StyleSheet.create({
   },
   highlightsButtonText: {
     ...Typography.body,
-    color: Colors.primary,
+    color: Colors.royalBlue,
   },
   highlightsHeader: {
     flexDirection: 'row',
@@ -455,7 +468,7 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.sm,
     paddingHorizontal: Spacing.md,
     borderRadius: BorderRadius.md,
-    backgroundColor: Colors.primary,
+    backgroundColor: Colors.royalBlue,
   },
   highlightsSaveText: {
     ...Typography.buttonSmall,

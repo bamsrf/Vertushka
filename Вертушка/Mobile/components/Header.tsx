@@ -1,18 +1,20 @@
 /**
- * Хедер приложения с профилем слева
+ * Хедер приложения — Editorial Gradient Edition
+ * Huge left-aligned GradientText, аватар справа
  */
 import React from 'react';
 import {
   View,
-  Text,
   TouchableOpacity,
   StyleSheet,
-  Image,
 } from 'react-native';
+import { Image } from 'expo-image';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { Colors, Typography, Spacing, ComponentSizes } from '../constants/theme';
+import { GradientText } from './GradientText';
+import { Colors, Typography, Spacing } from '../constants/theme';
 import { useAuthStore } from '../lib/store';
 
 interface HeaderProps {
@@ -41,48 +43,46 @@ export function Header({
   };
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
-      <View style={styles.content}>
-        {/* Левая часть: профиль или кнопка назад */}
+    <View style={[styles.container, { paddingTop: insets.top + 8 }]}>
+      {/* Верхняя строка: back / пустота + аватар / rightAction */}
+      <View style={styles.topRow}>
         <View style={styles.leftSection}>
-          {showBack ? (
-            <TouchableOpacity
-              style={styles.backButton}
-              onPress={handleBackPress}
-            >
-              <Ionicons name="arrow-back" size={24} color={Colors.primary} />
+          {showBack && (
+            <TouchableOpacity style={styles.backButton} onPress={handleBackPress}>
+              <Ionicons name="arrow-back" size={24} color={Colors.deepNavy} />
             </TouchableOpacity>
-          ) : showProfile ? (
-            <TouchableOpacity
-              style={styles.profileButton}
-              onPress={handleProfilePress}
-            >
-              {user?.avatar_url ? (
-                <Image
-                  source={{ uri: user.avatar_url }}
-                  style={styles.avatar}
-                />
-              ) : (
-                <View style={styles.avatarPlaceholder}>
-                  <Ionicons name="disc" size={20} color={Colors.background} />
-                </View>
-              )}
-            </TouchableOpacity>
-          ) : (
-            <View style={styles.placeholder} />
+          )}
+          {showBack && title ? (
+            <GradientText style={styles.inlineTitle}>{title}</GradientText>
+          ) : null}
+        </View>
+
+        <View style={styles.rightSection}>
+          {rightAction || (
+            showProfile && (
+              <TouchableOpacity style={styles.profileButton} onPress={handleProfilePress}>
+                {user?.avatar_url ? (
+                  <Image source={user.avatar_url} style={styles.avatar} cachePolicy="disk" />
+                ) : (
+                  <LinearGradient
+                    colors={[Colors.royalBlue, Colors.periwinkle]}
+                    style={styles.avatarPlaceholder}
+                  >
+                    <Ionicons name="disc" size={20} color={Colors.background} />
+                  </LinearGradient>
+                )}
+              </TouchableOpacity>
+            )
           )}
         </View>
-
-        {/* Центр: заголовок */}
-        <View style={styles.centerSection}>
-          <Text style={styles.title}>{title}</Text>
-        </View>
-
-        {/* Правая часть: дополнительное действие */}
-        <View style={styles.rightSection}>
-          {rightAction || <View style={styles.placeholder} />}
-        </View>
       </View>
+
+      {/* Заголовок: huge, left-aligned, GradientText — только когда нет back */}
+      {!showBack && title ? (
+        <View style={styles.titleRow}>
+          <GradientText style={Typography.display}>{title}</GradientText>
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -90,37 +90,34 @@ export function Header({
 const styles = StyleSheet.create({
   container: {
     backgroundColor: Colors.background,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.divider,
+    paddingHorizontal: Spacing.md,
+    paddingBottom: Spacing.sm,
   },
-  content: {
+  topRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    height: ComponentSizes.headerHeight,
-    paddingHorizontal: Spacing.md,
+    minHeight: 40,
   },
   leftSection: {
-    width: 44,
-    alignItems: 'flex-start',
-  },
-  centerSection: {
-    flex: 1,
+    flexDirection: 'row',
     alignItems: 'center',
+    flex: 1,
+    gap: 8,
   },
   rightSection: {
-    minWidth: 44,
     alignItems: 'flex-end',
   },
-  title: {
-    ...Typography.h4,
-    color: Colors.primary,
+  titleRow: {
+    marginTop: 4,
   },
   profileButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     overflow: 'hidden',
+    borderWidth: 2,
+    borderColor: Colors.lavender,
   },
   avatar: {
     width: '100%',
@@ -129,19 +126,18 @@ const styles = StyleSheet.create({
   avatarPlaceholder: {
     width: '100%',
     height: '100%',
-    backgroundColor: Colors.accent,
     alignItems: 'center',
     justifyContent: 'center',
   },
   backButton: {
-    width: 36,
-    height: 36,
+    width: 40,
+    height: 40,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  placeholder: {
-    width: 36,
-    height: 36,
+  inlineTitle: {
+    ...Typography.h2,
+    flexShrink: 1,
   },
 });
 

@@ -7,31 +7,43 @@ import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import * as SplashScreen from 'expo-splash-screen';
-import { useFonts } from 'expo-font';
-import { useAuthStore } from '../lib/store';
+import {
+  useFonts,
+  Inter_400Regular,
+  Inter_500Medium,
+  Inter_600SemiBold,
+  Inter_700Bold,
+  Inter_800ExtraBold,
+} from '@expo-google-fonts/inter';
+import { useAuthStore, useOnboardingStore } from '../lib/store';
 import { Colors } from '../constants/theme';
 
-// Не скрываем splash screen до загрузки
 SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
   const { checkAuth, isLoading } = useAuthStore();
+  const { checkOnboarding, isReady: onboardingReady } = useOnboardingStore();
 
   const [fontsLoaded] = useFonts({
-    SpaceMono: require('../assets/fonts/SpaceMono-Regular.ttf'),
+    Inter_400Regular,
+    Inter_500Medium,
+    Inter_600SemiBold,
+    Inter_700Bold,
+    Inter_800ExtraBold,
   });
 
   useEffect(() => {
     checkAuth();
+    checkOnboarding();
   }, []);
 
   useEffect(() => {
-    if (fontsLoaded && !isLoading) {
+    if (fontsLoaded && !isLoading && onboardingReady) {
       SplashScreen.hideAsync().catch(() => {});
     }
-  }, [fontsLoaded, isLoading]);
+  }, [fontsLoaded, isLoading, onboardingReady]);
 
-  if (!fontsLoaded || isLoading) {
+  if (!fontsLoaded || isLoading || !onboardingReady) {
     return null;
   }
 
@@ -48,6 +60,7 @@ export default function RootLayout() {
           }}
         >
           <Stack.Screen name="(auth)" />
+          <Stack.Screen name="onboarding" options={{ animation: 'fade' }} />
           <Stack.Screen name="(tabs)" />
           <Stack.Screen
             name="profile"
@@ -57,9 +70,11 @@ export default function RootLayout() {
             }}
           />
           <Stack.Screen name="record/[id]" />
+          <Stack.Screen name="folder/[id]" />
           <Stack.Screen name="settings/edit-profile" />
           <Stack.Screen name="settings/share-profile" />
           <Stack.Screen name="user/[username]/index" />
+          <Stack.Screen name="collection/value" />
         </Stack>
       </SafeAreaProvider>
     </GestureHandlerRootView>

@@ -13,6 +13,17 @@ from app.models.user import User
 from app.models.record import Record
 from app.models.collection import Collection, CollectionItem
 from app.api.auth import get_current_user
+from app.config import get_settings
+from app.services.exchange import get_usd_rub_rate
+
+# Страны, для которых наценка импорта не применяется
+_LOCAL_COUNTRIES = {'Russia', 'USSR', 'Россия', 'СССР'}
+
+
+def _calc_price_rub(price_usd: float, usd_rub: float, markup: float, country: str | None) -> float:
+    """Рассчитывает цену в рублях. Для РФ/СССР-изданий наценка не применяется."""
+    effective_markup = 1.0 if country and country in _LOCAL_COUNTRIES else markup
+    return round(price_usd * usd_rub * effective_markup, 2)
 from app.schemas.collection import (
     CollectionCreate,
     CollectionUpdate,
@@ -27,6 +38,81 @@ from app.schemas.collection import (
 router = APIRouter()
 
 
+@router.post("/recalculate-prices")
+async def recalculate_prices(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Пересчёт цен: перезапрашивает lowest_price из Discogs (в USD) и пересчитывает рубли.
+    Ограничен до 50 уникальных записей за вызов. Для полного обновления используйте
+    фоновую задачу update_prices_batch (ежедневно в 4:00).
+    """
+    from app.services.discogs import DiscogsService
+
+    MAX_RECORDS = 50
+
+    # Элементы коллекций ТЕКУЩЕГО пользователя
+    items_result = await db.execute(
+        select(CollectionItem)
+        .join(Collection, CollectionItem.collection_id == Collection.id)
+        .where(Collection.user_id == current_user.id)
+        .options(selectinload(CollectionItem.record))
+    )
+    items = items_result.scalars().all()
+
+    if not items:
+        return {"updated": 0, "total": 0}
+
+    settings = get_settings()
+    usd_rub = await get_usd_rub_rate()
+    discogs = DiscogsService()
+
+    # Группируем по discogs_id, лимитируем до MAX_RECORDS
+    records_map: dict[str, Record] = {}
+    for item in items:
+        if item.record and item.record.discogs_id:
+            records_map[item.record.discogs_id] = item.record
+            if len(records_map) >= MAX_RECORDS:
+                break
+
+    # Перезапрашиваем цены из Discogs (в USD)
+    updated_records = 0
+    for discogs_id, record in records_map.items():
+        try:
+            stats = await discogs._get_price_stats(discogs_id)
+            if stats:
+                lowest = stats.get("lowest_price", {}).get("value")
+                if lowest is not None:
+                    record.estimated_price_min = lowest
+                    record.price_currency = "USD"
+                    updated_records += 1
+        except Exception:
+            continue
+
+    # Пересчитываем рубли во всех CollectionItem
+    updated_items = 0
+    for item in items:
+        record = item.record
+        if record and record.estimated_price_min:
+            item.estimated_price_rub = _calc_price_rub(
+                float(record.estimated_price_min), usd_rub, settings.ru_vinyl_markup, record.country
+            )
+            updated_items += 1
+        else:
+            item.estimated_price_rub = None
+
+    await db.commit()
+
+    return {
+        "updated_records": updated_records,
+        "updated_items": updated_items,
+        "total_items": len(items),
+        "max_records_per_call": MAX_RECORDS,
+        "usd_rub_rate": usd_rub,
+        "markup": settings.ru_vinyl_markup,
+    }
+
+
 @router.get("/", response_model=list[CollectionResponse])
 async def get_collections(
     current_user: User = Depends(get_current_user),
@@ -39,7 +125,7 @@ async def get_collections(
         .order_by(Collection.sort_order, Collection.created_at)
     )
     collections = result.scalars().all()
-    
+
     # Подсчёт элементов в каждой коллекции
     response = []
     for collection in collections:
@@ -48,7 +134,7 @@ async def get_collections(
             .where(CollectionItem.collection_id == collection.id)
         )
         items_count = count_result.scalar()
-        
+
         response.append(CollectionResponse(
             id=collection.id,
             user_id=collection.user_id,
@@ -59,7 +145,7 @@ async def get_collections(
             updated_at=collection.updated_at,
             items_count=items_count or 0
         ))
-    
+
     return response
 
 
@@ -76,7 +162,7 @@ async def create_collection(
         .where(Collection.user_id == current_user.id)
     )
     max_order = result.scalar() or 0
-    
+
     collection = Collection(
         user_id=current_user.id,
         name=data.name,
@@ -86,7 +172,7 @@ async def create_collection(
     db.add(collection)
     await db.commit()
     await db.refresh(collection)
-    
+
     return CollectionResponse(
         id=collection.id,
         user_id=collection.user_id,
@@ -104,6 +190,7 @@ async def get_collection(
     collection_id: UUID,
     page: int = Query(1, ge=1),
     per_page: int = Query(50, ge=1, le=200),
+    sort_by: str = Query("added_at", regex="^(added_at|price_desc|price_asc)$"),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
@@ -116,32 +203,40 @@ async def get_collection(
         )
     )
     collection = result.scalar_one_or_none()
-    
+
     if not collection:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Коллекция не найдена"
         )
-    
+
+    # Определяем порядок сортировки
+    if sort_by == "price_desc":
+        order_clause = CollectionItem.estimated_price_rub.desc().nullslast()
+    elif sort_by == "price_asc":
+        order_clause = CollectionItem.estimated_price_rub.asc().nullslast()
+    else:
+        order_clause = CollectionItem.added_at.desc()
+
     # Получаем элементы с пагинацией
     offset = (page - 1) * per_page
     items_result = await db.execute(
         select(CollectionItem)
         .where(CollectionItem.collection_id == collection_id)
         .options(selectinload(CollectionItem.record))
-        .order_by(CollectionItem.added_at.desc())
+        .order_by(order_clause)
         .offset(offset)
         .limit(per_page)
     )
     items = items_result.scalars().all()
-    
+
     # Подсчёт общего количества
     count_result = await db.execute(
         select(func.count(CollectionItem.id))
         .where(CollectionItem.collection_id == collection_id)
     )
     items_count = count_result.scalar() or 0
-    
+
     return CollectionWithItems(
         id=collection.id,
         user_id=collection.user_id,
@@ -159,6 +254,7 @@ async def get_collection(
             sleeve_condition=item.sleeve_condition,
             notes=item.notes,
             shelf_position=item.shelf_position,
+            estimated_price_rub=float(item.estimated_price_rub) if item.estimated_price_rub else None,
             added_at=item.added_at,
             record=item.record
         ) for item in items]
@@ -181,28 +277,28 @@ async def update_collection(
         )
     )
     collection = result.scalar_one_or_none()
-    
+
     if not collection:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Коллекция не найдена"
         )
-    
+
     if data.name is not None:
         collection.name = data.name
     if data.description is not None:
         collection.description = data.description
-    
+
     await db.commit()
     await db.refresh(collection)
-    
+
     # Подсчёт элементов
     count_result = await db.execute(
         select(func.count(CollectionItem.id))
         .where(CollectionItem.collection_id == collection_id)
     )
     items_count = count_result.scalar() or 0
-    
+
     return CollectionResponse(
         id=collection.id,
         user_id=collection.user_id,
@@ -230,13 +326,13 @@ async def delete_collection(
         )
     )
     collection = result.scalar_one_or_none()
-    
+
     if not collection:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Коллекция не найдена"
         )
-    
+
     await db.delete(collection)
     await db.commit()
 
@@ -250,7 +346,7 @@ async def add_record_to_collection(
 ):
     """Добавление пластинки в коллекцию"""
     from app.api.records import get_or_create_record_by_discogs_id
-    
+
     # Проверяем коллекцию
     result = await db.execute(
         select(Collection)
@@ -260,13 +356,13 @@ async def add_record_to_collection(
         )
     )
     collection = result.scalar_one_or_none()
-    
+
     if not collection:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Коллекция не найдена"
         )
-    
+
     # Получаем Record: либо по discogs_id, либо по record_id
     if data.discogs_id:
         record = await get_or_create_record_by_discogs_id(data.discogs_id, db)
@@ -277,6 +373,29 @@ async def add_record_to_collection(
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Пластинка не найдена"
+            )
+        # Папки не допускают дубликатов — возвращаем существующий item идемпотентно
+        existing_result = await db.execute(
+            select(CollectionItem)
+            .where(
+                CollectionItem.collection_id == collection_id,
+                CollectionItem.record_id == record.id,
+            )
+            .options(selectinload(CollectionItem.record))
+        )
+        existing_item = existing_result.scalar_one_or_none()
+        if existing_item:
+            return CollectionItemResponse(
+                id=existing_item.id,
+                collection_id=existing_item.collection_id,
+                record_id=existing_item.record_id,
+                condition=existing_item.condition,
+                sleeve_condition=existing_item.sleeve_condition,
+                notes=existing_item.notes,
+                shelf_position=existing_item.shelf_position,
+                estimated_price_rub=float(existing_item.estimated_price_rub) if existing_item.estimated_price_rub else None,
+                added_at=existing_item.added_at,
+                record=existing_item.record,
             )
     else:
         raise HTTPException(
@@ -301,18 +420,28 @@ async def add_record_to_collection(
     if wishlist_item:
         await db.delete(wishlist_item)
 
+    # Пересчитываем цену в рубли (lowest_price из Discogs)
+    estimated_price_rub = None
+    if record.estimated_price_min:
+        settings = get_settings()
+        usd_rub = await get_usd_rub_rate()
+        estimated_price_rub = _calc_price_rub(
+            float(record.estimated_price_min), usd_rub, settings.ru_vinyl_markup, record.country
+        )
+
     # Добавляем в коллекцию (дубликаты разрешены - можно иметь несколько копий одной пластинки)
     item = CollectionItem(
         collection_id=collection_id,
         record_id=record.id,
         condition=data.condition,
         sleeve_condition=data.sleeve_condition,
-        notes=data.notes
+        notes=data.notes,
+        estimated_price_rub=estimated_price_rub
     )
     db.add(item)
     await db.commit()
     await db.refresh(item)
-    
+
     return CollectionItemResponse(
         id=item.id,
         collection_id=item.collection_id,
@@ -321,6 +450,7 @@ async def add_record_to_collection(
         sleeve_condition=item.sleeve_condition,
         notes=item.notes,
         shelf_position=item.shelf_position,
+        estimated_price_rub=float(item.estimated_price_rub) if item.estimated_price_rub else None,
         added_at=item.added_at,
         record=record
     )
@@ -347,7 +477,7 @@ async def remove_record_from_collection(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Коллекция не найдена"
         )
-    
+
     # Находим и удаляем элемент (first() т.к. могут быть дубликаты)
     result = await db.execute(
         select(CollectionItem)
@@ -357,13 +487,13 @@ async def remove_record_from_collection(
         )
     )
     item = result.scalars().first()
-    
+
     if not item:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Пластинка не найдена в коллекции"
         )
-    
+
     await db.delete(item)
     await db.commit()
 
@@ -430,7 +560,7 @@ async def get_collection_stats(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Коллекция не найдена"
         )
-    
+
     # Получаем все пластинки коллекции
     result = await db.execute(
         select(CollectionItem)
@@ -438,36 +568,63 @@ async def get_collection_stats(
         .options(selectinload(CollectionItem.record))
     )
     items = result.scalars().all()
-    
+
     total_records = len(items)
     total_min = 0.0
     total_max = 0.0
+    total_median = 0.0
+    total_rub = 0.0
+    records_with_price = 0
     records_by_year = {}
     records_by_genre = {}
     years = []
-    
+
+    most_expensive_item = None
+    most_expensive_rub = 0.0
+
     for item in items:
         record = item.record
-        
+
         if record.estimated_price_min:
             total_min += float(record.estimated_price_min)
+            records_with_price += 1
         if record.estimated_price_max:
             total_max += float(record.estimated_price_max)
-        
+        if record.estimated_price_median:
+            total_median += float(record.estimated_price_median)
+
+        if item.estimated_price_rub:
+            rub = float(item.estimated_price_rub)
+            total_rub += rub
+            if rub > most_expensive_rub:
+                most_expensive_rub = rub
+                most_expensive_item = item
+
         if record.year:
             years.append(record.year)
             records_by_year[record.year] = records_by_year.get(record.year, 0) + 1
-        
+
         if record.genre:
             records_by_genre[record.genre] = records_by_genre.get(record.genre, 0) + 1
-    
+
+    settings = get_settings()
+    usd_rub = await get_usd_rub_rate()
+
     return CollectionStats(
         total_records=total_records,
         total_estimated_value_min=total_min if total_min > 0 else None,
         total_estimated_value_max=total_max if total_max > 0 else None,
+        total_estimated_value_median=total_median if total_median > 0 else None,
+        total_estimated_value_rub=round(total_rub, 2) if total_rub > 0 else None,
+        usd_rub_rate=usd_rub,
+        ru_markup=settings.ru_vinyl_markup,
+        most_expensive=most_expensive_item.record if most_expensive_item else None,
+        most_expensive_price_rub=most_expensive_rub if most_expensive_item else None,
+        records_with_price=records_with_price,
         records_by_year=records_by_year,
         records_by_genre=records_by_genre,
         oldest_record_year=min(years) if years else None,
         newest_record_year=max(years) if years else None
     )
+
 

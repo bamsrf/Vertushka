@@ -7,7 +7,6 @@ import {
   Text,
   StyleSheet,
   ScrollView,
-  Image,
   TouchableOpacity,
   ActivityIndicator,
   Alert,
@@ -15,7 +14,12 @@ import {
   Modal,
   TextInput,
   RefreshControl,
+  Keyboard,
+  TouchableWithoutFeedback,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
+import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -199,7 +203,7 @@ export default function UserProfileScreen() {
   if (isLoading) {
     return (
       <View style={[styles.container, styles.center, { paddingTop: insets.top }]}>
-        <ActivityIndicator size="large" color={Colors.primary} />
+        <ActivityIndicator size="large" color={Colors.royalBlue} />
       </View>
     );
   }
@@ -212,7 +216,7 @@ export default function UserProfileScreen() {
       <View style={styles.profileSection}>
         <View style={styles.avatarContainer}>
           {profile.avatar_url ? (
-            <Image source={{ uri: profile.avatar_url }} style={styles.avatar} />
+            <Image source={profile.avatar_url} style={styles.avatar} cachePolicy="disk" />
           ) : (
             <View style={styles.avatarPlaceholder}>
               <Ionicons name="person" size={40} color={Colors.background} />
@@ -256,13 +260,13 @@ export default function UserProfileScreen() {
           disabled={isFollowLoading}
         >
           {isFollowLoading ? (
-            <ActivityIndicator size="small" color={profile.is_following ? Colors.primary : Colors.background} />
+            <ActivityIndicator size="small" color={profile.is_following ? Colors.royalBlue : Colors.background} />
           ) : (
             <>
               <Ionicons
                 name={profile.is_following ? 'checkmark' : 'person-add-outline'}
                 size={18}
-                color={profile.is_following ? Colors.primary : Colors.background}
+                color={profile.is_following ? Colors.royalBlue : Colors.background}
               />
               <Text style={[
                 styles.followButtonText,
@@ -331,7 +335,7 @@ export default function UserProfileScreen() {
     if (loading) {
       return (
         <View style={styles.emptyContainer}>
-          <ActivityIndicator color={Colors.primary} />
+          <ActivityIndicator color={Colors.royalBlue} />
         </View>
       );
     }
@@ -345,7 +349,7 @@ export default function UserProfileScreen() {
     );
   };
 
-  const data = activeTab === 'collection' ? collectionItems : (wishlist?.items || []);
+  const data: (CollectionItem | WishlistPublicItem)[] = activeTab === 'collection' ? collectionItems : (wishlist?.items || []);
   const isDataLoading = activeTab === 'collection' ? isLoadingCollection : isLoadingWishlist;
   const showEmpty = (!isDataLoading && data.length === 0) || (activeTab === 'wishlist' && wishlistError);
 
@@ -354,7 +358,7 @@ export default function UserProfileScreen() {
       {/* Back button */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-          <Ionicons name="arrow-back" size={24} color={Colors.primary} />
+          <Ionicons name="arrow-back" size={24} color={Colors.royalBlue} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>@{username}</Text>
         <View style={styles.headerPlaceholder} />
@@ -374,7 +378,7 @@ export default function UserProfileScreen() {
           <RefreshControl
             refreshing={isRefreshing}
             onRefresh={handleRefresh}
-            tintColor={Colors.primary}
+            tintColor={Colors.royalBlue}
           />
         }
       />
@@ -386,7 +390,14 @@ export default function UserProfileScreen() {
         animationType="slide"
         onRequestClose={() => setBookingItem(null)}
       >
-        <View style={styles.modalOverlay}>
+        <KeyboardAvoidingView
+          style={styles.modalOverlay}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? -insets.bottom : 0}
+        >
+          <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+            <View style={styles.modalOverlayFill} />
+          </TouchableWithoutFeedback>
           <View style={[styles.modalContent, { paddingBottom: insets.bottom + Spacing.lg }]}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Забронировать подарок</Text>
@@ -446,7 +457,7 @@ export default function UserProfileScreen() {
               )}
             </TouchableOpacity>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </View>
   );
@@ -472,7 +483,7 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     ...Typography.h4,
-    color: Colors.primary,
+    color: Colors.royalBlue,
   },
   backButton: {
     width: 36,
@@ -505,13 +516,13 @@ const styles = StyleSheet.create({
     width: 96,
     height: 96,
     borderRadius: 48,
-    backgroundColor: Colors.accent,
+    backgroundColor: Colors.royalBlue,
     alignItems: 'center',
     justifyContent: 'center',
   },
   displayName: {
     ...Typography.h3,
-    color: Colors.primary,
+    color: Colors.royalBlue,
     marginBottom: 2,
   },
   username: {
@@ -542,7 +553,7 @@ const styles = StyleSheet.create({
   },
   statValue: {
     ...Typography.h4,
-    color: Colors.primary,
+    color: Colors.royalBlue,
   },
   statLabel: {
     ...Typography.caption,
@@ -559,7 +570,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: Spacing.sm,
-    backgroundColor: Colors.primary,
+    backgroundColor: Colors.royalBlue,
     borderRadius: BorderRadius.md,
     paddingVertical: Spacing.sm,
     marginBottom: Spacing.lg,
@@ -574,7 +585,7 @@ const styles = StyleSheet.create({
     color: Colors.background,
   },
   followButtonTextActive: {
-    color: Colors.primary,
+    color: Colors.royalBlue,
   },
   tabContainer: {
     marginBottom: Spacing.md,
@@ -588,7 +599,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 4,
-    backgroundColor: Colors.accent,
+    backgroundColor: Colors.royalBlue,
     borderRadius: BorderRadius.sm,
     paddingVertical: Spacing.xs,
     marginHorizontal: 2,
@@ -611,7 +622,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   followPromptButton: {
-    backgroundColor: Colors.primary,
+    backgroundColor: Colors.royalBlue,
     borderRadius: BorderRadius.md,
     paddingVertical: Spacing.sm,
     paddingHorizontal: Spacing.xl,
@@ -626,6 +637,9 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'flex-end',
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
+  },
+  modalOverlayFill: {
+    flex: 1,
   },
   modalContent: {
     backgroundColor: Colors.background,
@@ -667,7 +681,7 @@ const styles = StyleSheet.create({
     textAlignVertical: 'top',
   },
   bookButton: {
-    backgroundColor: Colors.accent,
+    backgroundColor: Colors.royalBlue,
     borderRadius: BorderRadius.lg,
     paddingVertical: Spacing.md,
     alignItems: 'center',

@@ -28,7 +28,7 @@ class CollectionUpdate(BaseModel):
 class CollectionResponse(BaseModel):
     """Схема коллекции"""
     model_config = ConfigDict(from_attributes=True)
-    
+
     id: UUID
     user_id: UUID
     name: str
@@ -59,7 +59,7 @@ class CollectionItemUpdate(BaseModel):
 class CollectionItemResponse(BaseModel):
     """Схема элемента коллекции"""
     model_config = ConfigDict(from_attributes=True)
-    
+
     id: UUID
     collection_id: UUID
     record_id: UUID
@@ -67,6 +67,7 @@ class CollectionItemResponse(BaseModel):
     sleeve_condition: str | None
     notes: str | None
     shelf_position: int | None
+    estimated_price_rub: float | None
     added_at: datetime
     record: RecordBrief
 
@@ -81,8 +82,14 @@ class CollectionStats(BaseModel):
     total_records: int
     total_estimated_value_min: float | None
     total_estimated_value_max: float | None
+    total_estimated_value_median: float | None
+    total_estimated_value_rub: float | None
+    usd_rub_rate: float | None
+    ru_markup: float
+    most_expensive: RecordBrief | None
+    most_expensive_price_rub: float | None
+    records_with_price: int
     records_by_year: dict[int, int]
     records_by_genre: dict[str, int]
     oldest_record_year: int | None
     newest_record_year: int | None
-

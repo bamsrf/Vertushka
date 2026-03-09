@@ -1,0 +1,15 @@
+[Unit]
+Description=Yandex Jobs Telegram Bot
+After=network.target
+
+[Service]
+Type=simple
+User=deploy
+WorkingDirectory=/home/deploy/yandex-jobs-bot
+ExecStart=/home/deploy/yandex-jobs-bot/.venv/bin/python bot.py
+Restart=always
+RestartSec=10
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target

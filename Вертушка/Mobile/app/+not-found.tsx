@@ -33,7 +33,7 @@ const styles = StyleSheet.create({
   },
   title: {
     ...Typography.h3,
-    color: Colors.primary,
+    color: Colors.royalBlue,
     marginTop: Spacing.md,
   },
   subtitle: {
@@ -45,7 +45,7 @@ const styles = StyleSheet.create({
     marginTop: Spacing.lg,
     paddingVertical: Spacing.md,
     paddingHorizontal: Spacing.lg,
-    backgroundColor: Colors.primary,
+    backgroundColor: Colors.royalBlue,
     borderRadius: 12,
   },
   linkText: {
