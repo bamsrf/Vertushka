@@ -1,8 +1,9 @@
 /**
  * Анимированный градиентный текст — плавная смена цветов
  * MaskedView + AnimatedLinearGradient + Reanimated
+ * Один shared value управляет всей анимацией — без рассинхрона.
  */
-import React, { useState, useEffect } from 'react';
+import React, { useEffect } from 'react';
 import { TextStyle, Text } from 'react-native';
 import MaskedView from '@react-native-masked-view/masked-view';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -19,6 +20,7 @@ import { AnimatedGradientPalette } from '../constants/theme';
 const AnimatedLinearGradient = Animated.createAnimatedComponent(LinearGradient);
 
 const { presets } = AnimatedGradientPalette;
+const PRESET_COUNT = presets.length;
 
 interface AnimatedGradientTextProps {
   children: React.ReactNode;
@@ -32,31 +34,28 @@ export const AnimatedGradientText = React.memo(function AnimatedGradientText({
   duration = 3500,
 }: AnimatedGradientTextProps) {
   const progress = useSharedValue(0);
-  const [currentIndex, setCurrentIndex] = useState(0);
 
   useEffect(() => {
     progress.value = 0;
     progress.value = withRepeat(
-      withTiming(1, { duration, easing: Easing.inOut(Easing.ease) }),
+      withTiming(PRESET_COUNT, {
+        duration: duration * PRESET_COUNT,
+        easing: Easing.linear,
+      }),
       -1,
     );
   }, [duration]);
 
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setCurrentIndex((prev) => (prev + 1) % presets.length);
-    }, duration);
-    return () => clearInterval(interval);
-  }, [duration]);
-
-  const nextIndex = (currentIndex + 1) % presets.length;
-  const fromColors = presets[currentIndex];
-  const toColors = presets[nextIndex];
-
   const animatedProps = useAnimatedProps(() => {
-    const c0 = interpolateColor(progress.value, [0, 1], [fromColors[0], toColors[0]]);
-    const c1 = interpolateColor(progress.value, [0, 1], [fromColors[1], toColors[1]]);
-    const c2 = interpolateColor(progress.value, [0, 1], [fromColors[2], toColors[2]]);
+    const raw = progress.value % PRESET_COUNT;
+    const fromIdx = Math.floor(raw) % PRESET_COUNT;
+    const toIdx = (fromIdx + 1) % PRESET_COUNT;
+    const t = raw - Math.floor(raw);
+
+    const c0 = interpolateColor(t, [0, 1], [presets[fromIdx][0], presets[toIdx][0]]);
+    const c1 = interpolateColor(t, [0, 1], [presets[fromIdx][1], presets[toIdx][1]]);
+    const c2 = interpolateColor(t, [0, 1], [presets[fromIdx][2], presets[toIdx][2]]);
+
     return {
       colors: [c0, c1, c2],
     };
@@ -68,7 +67,7 @@ export const AnimatedGradientText = React.memo(function AnimatedGradientText({
     >
       <AnimatedLinearGradient
         animatedProps={animatedProps}
-        colors={fromColors as unknown as string[]}
+        colors={[...presets[0]] as unknown as string[]}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 0 }}
       >

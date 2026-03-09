@@ -66,13 +66,13 @@ export const Gradients = {
 export const Typography = {
   heroTitle: {
     fontSize: 46,
-    fontFamily: 'Arial Black',
+    fontFamily: 'Inter_700Bold',
     lineHeight: 50,
     letterSpacing: -1.5,
   },
   display: {
     fontSize: 36,
-    fontFamily: 'Arial Black',
+    fontFamily: 'Inter_700Bold',
     lineHeight: 40,
     letterSpacing: -1,
   },
@@ -196,6 +196,14 @@ export const AnimatedGradientPalette = {
     ['#C8D9F7', '#E8CEEB', '#F5B5D8'],
     ['#E8CEEB', '#F5B5D8', '#93C4FF'],
     ['#F5B5D8', '#6B9EF5', '#2D3E8F'],
+  ] as const,
+  darkPresets: [
+    ['#2D3E8F', '#4A6FDB', '#6B5EC2'],
+    ['#4A6FDB', '#6B5EC2', '#5B3FA0'],
+    ['#6B5EC2', '#5B3FA0', '#8B4DA8'],
+    ['#5B3FA0', '#8B4DA8', '#C75895'],
+    ['#8B4DA8', '#C75895', '#4A6FDB'],
+    ['#C75895', '#4A6FDB', '#2D3E8F'],
   ] as const,
 };
 

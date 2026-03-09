@@ -26,15 +26,9 @@ const features = [
 
 export default function OnboardingScreen() {
   const insets = useSafeAreaInsets();
-  const { completeWelcome, startTour, completeTour } = useOnboardingStore();
+  const { completeWelcome, completeTour } = useOnboardingStore();
 
   const handleStart = async () => {
-    await completeWelcome();
-    startTour();
-    router.replace('/(tabs)');
-  };
-
-  const handleSkip = async () => {
     await completeWelcome();
     await completeTour();
     router.replace('/(tabs)');
@@ -68,9 +62,6 @@ export default function OnboardingScreen() {
         <View style={styles.actions}>
           <Pressable style={styles.startButton} onPress={handleStart}>
             <Text style={styles.startButtonText}>Начать</Text>
-          </Pressable>
-          <Pressable style={styles.skipButton} onPress={handleSkip}>
-            <Text style={styles.skipButtonText}>Пропустить</Text>
           </Pressable>
         </View>
       </View>
@@ -146,12 +137,5 @@ const styles = StyleSheet.create({
   startButtonText: {
     ...Typography.button,
     color: Colors.royalBlue,
-  },
-  skipButton: {
-    paddingVertical: Spacing.sm,
-  },
-  skipButtonText: {
-    ...Typography.bodySmall,
-    color: 'rgba(255, 255, 255, 0.7)',
   },
 });

@@ -7,11 +7,11 @@ import {
   Text,
   StyleSheet,
   ScrollView,
-  Image,
   ActivityIndicator,
   Alert,
   TouchableOpacity,
 } from 'react-native';
+import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -373,7 +373,7 @@ export default function RecordDetailScreen() {
         {/* Обложка */}
         <View style={styles.coverContainer}>
           {imageUrl ? (
-            <Image source={{ uri: imageUrl }} style={styles.cover} resizeMode="cover" />
+            <Image source={imageUrl} style={styles.cover} contentFit="cover" cachePolicy="disk" />
           ) : (
             <View style={[styles.cover, styles.coverPlaceholder]}>
               <Ionicons name="disc-outline" size={80} color={Colors.textMuted} />
@@ -401,8 +401,10 @@ export default function RecordDetailScreen() {
             >
               {record.artist_thumb_image_url ? (
                 <Image
-                  source={{ uri: record.artist_thumb_image_url }}
+                  source={record.artist_thumb_image_url}
                   style={styles.artistAvatar}
+                  contentFit="cover"
+                  cachePolicy="disk"
                 />
               ) : (
                 <View style={styles.artistAvatarPlaceholder}>

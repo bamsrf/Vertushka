@@ -10,10 +10,10 @@ import {
   StyleSheet,
   TouchableOpacity,
   FlatList,
-  Image,
   ActivityIndicator,
   Alert,
 } from 'react-native';
+import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useCollectionStore } from '../lib/store';
@@ -81,7 +81,7 @@ export function AddRecordsModal({
         activeOpacity={isInFolder ? 1 : 0.7}
       >
         {coverUrl ? (
-          <Image source={{ uri: coverUrl }} style={styles.cover} />
+          <Image source={coverUrl} style={styles.cover} contentFit="cover" cachePolicy="disk" />
         ) : (
           <View style={[styles.cover, styles.coverPlaceholder]}>
             <Ionicons name="disc-outline" size={20} color={Colors.textMuted} />

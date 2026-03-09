@@ -16,8 +16,11 @@ import {
   CollectionTab,
   SearchFilters,
   MasterSearchResult,
+  MasterSearchResponse,
+  MasterRelease,
   ReleaseSearchResult,
   ArtistSearchResult,
+  Artist,
   ProfileShareSettings,
   UserWithStats,
   UserPublic,
@@ -228,23 +231,45 @@ export const useSearchStore = create<SearchState>((set, get) => ({
       const { filters } = get();
       const hasFilters = !!(filters.format || filters.country || filters.year);
 
+      // Ключ кэша поиска
+      const cacheKey = `${query}|${hasFilters ? JSON.stringify(filters) : ''}|1`;
+      const cached = useCacheStore.getState().getSearch(cacheKey);
+
+      if (cached) {
+        set({
+          results: cached.results,
+          totalResults: cached.totalResults,
+          hasMore: cached.hasMore,
+          artistResults: cached.artistResults,
+          totalArtistResults: cached.totalArtistResults,
+          hasMoreArtists: cached.hasMoreArtists,
+          isLoading: false,
+        });
+        await get().addToHistory(query.trim());
+        return;
+      }
+
       // Универсальный поиск: делаем оба запроса параллельно
       const [releasesResponse, artistsResponse] = await Promise.all([
-        // Если есть фильтры - ищем конкретные релизы, иначе - мастеры
         hasFilters
           ? api.searchReleases(query, filters, 1)
           : api.searchMasters(query, 1),
-        // Всегда ищем артистов
-        api.searchArtists(query, 1, 10), // Ограничиваем 10 артистами для первой страницы
+        api.searchArtists(query, 1, 10),
       ]);
 
-      set({
+      const searchResult = {
         results: releasesResponse.results,
         totalResults: releasesResponse.total,
         hasMore: releasesResponse.results.length < releasesResponse.total,
         artistResults: artistsResponse.results,
         totalArtistResults: artistsResponse.total,
         hasMoreArtists: artistsResponse.results.length < artistsResponse.total,
+      };
+
+      useCacheStore.getState().setSearch(cacheKey, searchResult);
+
+      set({
+        ...searchResult,
         isLoading: false,
       });
 
@@ -473,6 +498,8 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
     }
 
     await api.addToCollection(defaultCollection.id, discogsId);
+    // Инвалидируем кэш поиска — счётчики коллекции могли измениться
+    useCacheStore.getState().invalidateAll();
 
     await Promise.all([
       fetchCollectionItems(),
@@ -485,6 +512,7 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
       throw new Error('Не указан ID пластинки');
     }
     await api.addToWishlist(discogsId);
+    useCacheStore.getState().invalidateAll();
     await get().fetchWishlistItems();
   },
 
@@ -501,6 +529,7 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
 
     // Удаляем из основной коллекции
     await api.removeFromCollection(defaultCollection.id, itemId);
+    useCacheStore.getState().invalidateAll();
 
     // Каскадно удаляем эту пластинку из всех папок
     if (recordId && folders.length > 0) {
@@ -528,6 +557,7 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
 
   removeFromWishlist: async (itemId, skipRefetch = false) => {
     await api.removeFromWishlist(itemId);
+    useCacheStore.getState().invalidateAll();
     if (!skipRefetch) await get().fetchWishlistItems();
   },
 
@@ -780,6 +810,116 @@ interface FollowState {
   fetchFeed: () => Promise<void>;
   loadMoreFeed: () => Promise<void>;
 }
+
+// ==================== Cache Store ====================
+
+interface CacheEntry<T> {
+  data: T;
+  timestamp: number;
+  ttl: number;
+}
+
+interface SearchCacheEntry {
+  results: (MasterSearchResult | ReleaseSearchResult)[];
+  artistResults: ArtistSearchResult[];
+  totalResults: number;
+  totalArtistResults: number;
+  hasMore: boolean;
+  hasMoreArtists: boolean;
+}
+
+interface CacheStore {
+  releases: Record<string, CacheEntry<VinylRecord>>;
+  artists: Record<string, CacheEntry<Artist>>;
+  artistMasters: Record<string, CacheEntry<MasterSearchResponse>>;
+  masters: Record<string, CacheEntry<MasterRelease>>;
+  searches: Record<string, CacheEntry<SearchCacheEntry>>;
+
+  getRelease: (id: string) => VinylRecord | null;
+  setRelease: (id: string, data: VinylRecord) => void;
+  getArtist: (id: string) => Artist | null;
+  setArtist: (id: string, data: Artist) => void;
+  getArtistMasters: (id: string) => MasterSearchResponse | null;
+  setArtistMasters: (id: string, data: MasterSearchResponse) => void;
+  getMaster: (id: string) => MasterRelease | null;
+  setMaster: (id: string, data: MasterRelease) => void;
+  getSearch: (key: string) => SearchCacheEntry | null;
+  setSearch: (key: string, data: SearchCacheEntry) => void;
+  invalidateAll: () => void;
+}
+
+const TTL = {
+  release: 30 * 60 * 1000,     // 30 минут
+  artist: 30 * 60 * 1000,      // 30 минут
+  artistMasters: 5 * 60 * 1000, // 5 минут (первая страница)
+  master: 30 * 60 * 1000,      // 30 минут
+  search: 5 * 60 * 1000,       // 5 минут
+};
+
+const MAX_CACHE_ENTRIES = 100;
+
+function isValid<T>(entry: CacheEntry<T> | undefined): boolean {
+  if (!entry) return false;
+  return Date.now() - entry.timestamp < entry.ttl;
+}
+
+function trimCache<T>(cache: Record<string, CacheEntry<T>>): Record<string, CacheEntry<T>> {
+  const entries = Object.entries(cache);
+  if (entries.length <= MAX_CACHE_ENTRIES) return cache;
+  // Удаляем самые старые записи
+  entries.sort((a, b) => a[1].timestamp - b[1].timestamp);
+  return Object.fromEntries(entries.slice(entries.length - MAX_CACHE_ENTRIES));
+}
+
+export const useCacheStore = create<CacheStore>((set, get) => ({
+  releases: {},
+  artists: {},
+  artistMasters: {},
+  masters: {},
+  searches: {},
+
+  getRelease: (id) => {
+    const entry = get().releases[id];
+    return isValid(entry) ? entry.data : null;
+  },
+  setRelease: (id, data) => set((state) => ({
+    releases: { ...state.releases, [id]: { data, timestamp: Date.now(), ttl: TTL.release } },
+  })),
+
+  getArtist: (id) => {
+    const entry = get().artists[id];
+    return isValid(entry) ? entry.data : null;
+  },
+  setArtist: (id, data) => set((state) => ({
+    artists: { ...state.artists, [id]: { data, timestamp: Date.now(), ttl: TTL.artist } },
+  })),
+
+  getArtistMasters: (id) => {
+    const entry = get().artistMasters[id];
+    return isValid(entry) ? entry.data : null;
+  },
+  setArtistMasters: (id, data) => set((state) => ({
+    artistMasters: { ...state.artistMasters, [id]: { data, timestamp: Date.now(), ttl: TTL.artistMasters } },
+  })),
+
+  getMaster: (id) => {
+    const entry = get().masters[id];
+    return isValid(entry) ? entry.data : null;
+  },
+  setMaster: (id, data) => set((state) => ({
+    masters: { ...state.masters, [id]: { data, timestamp: Date.now(), ttl: TTL.master } },
+  })),
+
+  getSearch: (key) => {
+    const entry = get().searches[key];
+    return isValid(entry) ? entry.data : null;
+  },
+  setSearch: (key, data) => set((state) => ({
+    searches: trimCache({ ...state.searches, [key]: { data, timestamp: Date.now(), ttl: TTL.search } }),
+  })),
+
+  invalidateAll: () => set({ releases: {}, artists: {}, artistMasters: {}, masters: {}, searches: {} }),
+}));
 
 export const useFollowStore = create<FollowState>((set, get) => ({
   following: [],

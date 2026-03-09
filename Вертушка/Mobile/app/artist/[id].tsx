@@ -1,34 +1,41 @@
 /**
  * Экран детальной информации об артисте
  */
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useMemo } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
-  Image,
   ActivityIndicator,
-  Alert,
   TouchableOpacity,
   Animated,
   Pressable,
 } from 'react-native';
+import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Header } from '../../components/Header';
 import { RecordCard } from '../../components/RecordCard';
 import { api } from '../../lib/api';
+import { useCacheStore } from '../../lib/store';
 import { Artist, MasterSearchResult } from '../../lib/types';
 import { Colors, Typography, Spacing, BorderRadius } from '../../constants/theme';
 
 type ReleaseFilter = 'album' | 'ep' | 'single';
+type SortMode = 'year_desc' | 'year_asc' | 'title';
 
 const FILTERS: { key: ReleaseFilter; label: string }[] = [
   { key: 'album', label: 'Альбомы' },
   { key: 'ep', label: 'EP' },
   { key: 'single', label: 'Синглы' },
+];
+
+const SORT_OPTIONS: { key: SortMode; label: string }[] = [
+  { key: 'year_desc', label: 'Сначала новые' },
+  { key: 'year_asc', label: 'Сначала старые' },
+  { key: 'title', label: 'По названию' },
 ];
 
 const matchesFilter = (master: MasterSearchResult, filter: ReleaseFilter): boolean => {
@@ -106,15 +113,18 @@ export default function ArtistDetailScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
 
+  const cache = useCacheStore();
+
   const [artist, setArtist] = useState<Artist | null>(null);
   const [masters, setMasters] = useState<MasterSearchResult[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingMasters, setIsLoadingMasters] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [page, setPage] = useState(1);
-  const [totalMasters, setTotalMasters] = useState(0);
-  const [hasMore, setHasMore] = useState(true);
   const [activeFilter, setActiveFilter] = useState<ReleaseFilter | null>(null);
+  const [sortMode, setSortMode] = useState<SortMode>('year_asc');
+  const [showSortMenu, setShowSortMenu] = useState(false);
+  const [mastersPage, setMastersPage] = useState(1);
+  const [hasMoreMasters, setHasMoreMasters] = useState(false);
 
   useEffect(() => {
     if (id) {
@@ -126,48 +136,65 @@ export default function ArtistDetailScreen() {
   const loadArtist = async () => {
     if (!id) return;
 
+    const cached = cache.getArtist(id);
+    if (cached) {
+      setArtist(cached);
+      setIsLoading(false);
+      return;
+    }
+
     setIsLoading(true);
     setError(null);
 
     try {
       const data = await api.getArtist(id);
+      cache.setArtist(id, data);
       setArtist(data);
     } catch (err) {
       console.error('Ошибка загрузки артиста:', err);
       setError('Не удалось загрузить информацию об артисте');
-      Alert.alert('Ошибка', 'Не удалось загрузить информацию об артисте');
     } finally {
       setIsLoading(false);
     }
   };
 
-  const loadMasters = async (pageNum: number) => {
+  const loadMasters = async (page: number) => {
     if (!id || isLoadingMasters) return;
+
+    if (page === 1) {
+      const cached = cache.getArtistMasters(id);
+      if (cached) {
+        setMasters(cached.results);
+        setHasMoreMasters(cached.results.length < cached.total);
+        setMastersPage(1);
+        return;
+      }
+    }
 
     setIsLoadingMasters(true);
 
     try {
-      const data = await api.getArtistMasters(id, pageNum, 20);
-
-      const newMasters = pageNum === 1
-        ? data.results
-        : [...masters, ...data.results];
-
-      setMasters(newMasters);
-      setTotalMasters(data.total);
-      setHasMore(newMasters.length < data.total);
-      setPage(pageNum);
+      setError(null);
+      const data = await api.getArtistMasters(id, page, 20);
+      if (page === 1) {
+        cache.setArtistMasters(id, data);
+        setMasters(data.results);
+      } else {
+        setMasters((prev) => [...prev, ...data.results]);
+      }
+      setMastersPage(page);
+      setHasMoreMasters(masters.length + data.results.length < data.total);
     } catch (err) {
       console.error('Ошибка загрузки релизов:', err);
-      Alert.alert('Ошибка', 'Не удалось загрузить релизы артиста');
+      setError('Не удалось загрузить релизы артиста');
     } finally {
       setIsLoadingMasters(false);
     }
   };
 
-  const handleLoadMore = () => {
-    if (hasMore && !isLoadingMasters) {
-      loadMasters(page + 1);
+  const loadMoreMasters = () => {
+    if (hasMoreMasters && !isLoadingMasters) {
+      loadMasters(mastersPage + 1);
     }
   };
 
@@ -179,9 +206,20 @@ export default function ArtistDetailScreen() {
     setActiveFilter(activeFilter === filter ? null : filter);
   };
 
-  const filteredMasters = activeFilter
-    ? masters.filter((m) => matchesFilter(m, activeFilter))
-    : masters;
+  const filteredMasters = useMemo(() => {
+    const filtered = activeFilter
+      ? masters.filter((m) => matchesFilter(m, activeFilter))
+      : [...masters];
+
+    switch (sortMode) {
+      case 'year_asc':
+        return filtered.sort((a, b) => (a.year || 0) - (b.year || 0));
+      case 'year_desc':
+        return filtered.sort((a, b) => (b.year || 0) - (a.year || 0));
+      case 'title':
+        return filtered.sort((a, b) => a.title.localeCompare(b.title, 'ru'));
+    }
+  }, [masters, activeFilter, sortMode]);
 
   if (isLoading) {
     return (
@@ -221,22 +259,15 @@ export default function ArtistDetailScreen() {
           { paddingBottom: insets.bottom + Spacing.xl },
         ]}
         showsVerticalScrollIndicator={false}
-        onScroll={({ nativeEvent }) => {
-          const { layoutMeasurement, contentOffset, contentSize } = nativeEvent;
-          const isCloseToBottom = layoutMeasurement.height + contentOffset.y >= contentSize.height - 100;
-          if (isCloseToBottom) {
-            handleLoadMore();
-          }
-        }}
-        scrollEventThrottle={400}
       >
         {/* Изображение артиста */}
         <View style={styles.imageContainer}>
           {imageUrl ? (
             <Image
-              source={{ uri: imageUrl }}
+              source={imageUrl}
               style={styles.image}
-              resizeMode="cover"
+              contentFit="cover"
+              cachePolicy="disk"
             />
           ) : (
             <View style={styles.placeholderImage}>
@@ -254,7 +285,7 @@ export default function ArtistDetailScreen() {
         <View style={styles.releasesSection}>
           <Text style={styles.sectionTitle}>Релизы</Text>
 
-          {/* Фильтры */}
+          {/* Фильтры + сортировка */}
           <View style={styles.filtersRow}>
             {FILTERS.map((f) => (
               <FilterChip
@@ -264,7 +295,36 @@ export default function ArtistDetailScreen() {
                 onPress={() => handleFilterPress(f.key)}
               />
             ))}
+            <View style={{ marginLeft: 'auto' }}>
+              <TouchableOpacity
+                style={styles.sortButton}
+                onPress={() => setShowSortMenu(!showSortMenu)}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="swap-vertical-outline" size={18} color={Colors.royalBlue} />
+              </TouchableOpacity>
+            </View>
           </View>
+
+          {/* Меню сортировки */}
+          {showSortMenu && (
+            <View style={styles.sortMenu}>
+              {SORT_OPTIONS.map((option) => (
+                <TouchableOpacity
+                  key={option.key}
+                  style={[styles.sortOption, sortMode === option.key && styles.sortOptionActive]}
+                  onPress={() => { setSortMode(option.key); setShowSortMenu(false); }}
+                >
+                  <Text style={[styles.sortOptionText, sortMode === option.key && styles.sortOptionTextActive]}>
+                    {option.label}
+                  </Text>
+                  {sortMode === option.key && (
+                    <Ionicons name="checkmark" size={16} color={Colors.royalBlue} />
+                  )}
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
 
           <View style={styles.releasesGrid}>
             {filteredMasters.map((master) => (
@@ -283,16 +343,32 @@ export default function ArtistDetailScreen() {
             </View>
           )}
 
-          {!hasMore && filteredMasters.length > 0 && (
-            <Text style={styles.endText}>Все релизы загружены</Text>
+          {hasMoreMasters && !isLoadingMasters && !activeFilter && (
+            <TouchableOpacity style={styles.loadMoreButton} onPress={loadMoreMasters} activeOpacity={0.7}>
+              <Text style={styles.loadMoreButtonText}>Загрузить ещё</Text>
+            </TouchableOpacity>
           )}
 
           {filteredMasters.length === 0 && !isLoadingMasters && (
             <View style={styles.emptyContainer}>
-              <Ionicons name="musical-notes-outline" size={48} color={Colors.textMuted} />
+              <Ionicons
+                name={error ? 'cloud-offline-outline' : 'musical-notes-outline'}
+                size={48}
+                color={error ? Colors.error : Colors.textMuted}
+              />
               <Text style={styles.emptyText}>
-                {activeFilter ? 'Нет релизов в этой категории' : 'Релизы не найдены'}
+                {error || (activeFilter ? 'Нет релизов в этой категории' : 'Релизы не найдены')}
               </Text>
+              {error && (
+                <TouchableOpacity
+                  style={styles.retryButton}
+                  onPress={() => { setError(null); loadMasters(1); }}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="refresh" size={18} color={Colors.royalBlue} />
+                  <Text style={styles.retryText}>Повторить</Text>
+                </TouchableOpacity>
+              )}
             </View>
           )}
         </View>
@@ -397,6 +473,41 @@ const styles = StyleSheet.create({
   filterCloseIcon: {
     marginLeft: 2,
   },
+  sortButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: Colors.surface,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+  },
+  sortMenu: {
+    backgroundColor: Colors.background,
+    borderRadius: BorderRadius.md,
+    padding: Spacing.xs,
+    marginBottom: Spacing.md,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  sortOption: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    justifyContent: 'space-between' as const,
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.md,
+    borderRadius: BorderRadius.sm,
+  },
+  sortOptionActive: {
+    backgroundColor: Colors.surface,
+  },
+  sortOptionText: {
+    ...Typography.bodySmall,
+    color: Colors.text,
+  },
+  sortOptionTextActive: {
+    color: Colors.royalBlue,
+    fontFamily: 'Inter_600SemiBold',
+  },
   releasesGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -428,5 +539,34 @@ const styles = StyleSheet.create({
     ...Typography.body,
     color: Colors.textMuted,
     marginTop: Spacing.sm,
+    textAlign: 'center',
+  },
+  retryButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.xs,
+    marginTop: Spacing.md,
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.md,
+    borderRadius: BorderRadius.md,
+    backgroundColor: Colors.surface,
+  },
+  retryText: {
+    ...Typography.bodySmall,
+    color: Colors.royalBlue,
+    fontFamily: 'Inter_600SemiBold',
+  },
+  loadMoreButton: {
+    alignSelf: 'center',
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.lg,
+    borderRadius: BorderRadius.md,
+    backgroundColor: Colors.surface,
+    marginBottom: Spacing.md,
+  },
+  loadMoreButtonText: {
+    ...Typography.bodySmall,
+    color: Colors.royalBlue,
+    fontFamily: 'Inter_600SemiBold',
   },
 });

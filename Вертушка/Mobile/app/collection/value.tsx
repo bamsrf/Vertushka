@@ -8,20 +8,19 @@ import {
   Text,
   StyleSheet,
   FlatList,
-  Image,
   TouchableOpacity,
   ActivityIndicator,
 } from 'react-native';
+import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
-  useAnimatedProps,
   withTiming,
   withDelay,
+  withRepeat,
   useDerivedValue,
   Easing,
   runOnJS,
@@ -29,7 +28,8 @@ import Animated, {
 import { Header } from '../../components/Header';
 import { useCollectionStore } from '../../lib/store';
 import { CollectionItem } from '../../lib/types';
-import { Colors, Typography, Spacing, BorderRadius, Gradients, Shadows } from '../../constants/theme';
+import { Colors, Typography, Spacing, BorderRadius, Shadows } from '../../constants/theme';
+
 
 function formatRub(value: number): string {
   return Math.round(value).toLocaleString('ru-RU');
@@ -76,13 +76,19 @@ import React from 'react';
 
 export default function CollectionValueScreen() {
   const router = useRouter();
-  const insets = useSafeAreaInsets();
   const { stats, isLoadingStats, fetchStats, collectionItems, defaultCollection } = useCollectionStore();
 
   const barWidth = useSharedValue(0);
+  const gradientShift = useSharedValue(0);
 
   useEffect(() => {
     fetchStats();
+    gradientShift.value = 0;
+    gradientShift.value = withRepeat(
+      withTiming(1, { duration: 4000, easing: Easing.inOut(Easing.ease) }),
+      -1,
+      true,
+    );
   }, []);
 
   useEffect(() => {
@@ -98,6 +104,11 @@ export default function CollectionValueScreen() {
   const barAnimatedStyle = useAnimatedStyle(() => ({
     width: `${barWidth.value * 100}%`,
   }));
+
+  const gradientSlideStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: -gradientShift.value * 200 }],
+  }));
+
 
   // Сортируем items по цене для списка
   const sortedByPrice = React.useMemo(() => {
@@ -116,8 +127,10 @@ export default function CollectionValueScreen() {
       >
         <Text style={styles.listRank}>#{index + 1}</Text>
         <Image
-          source={{ uri: record.thumb_image_url || record.cover_image_url }}
+          source={record.thumb_image_url || record.cover_image_url}
           style={styles.listThumb}
+          contentFit="cover"
+          cachePolicy="disk"
         />
         <View style={styles.listInfo}>
           <Text style={styles.listTitle} numberOfLines={1}>{record.title}</Text>
@@ -132,7 +145,7 @@ export default function CollectionValueScreen() {
 
   if (isLoadingStats) {
     return (
-      <View style={[styles.container, { paddingTop: insets.top }]}>
+      <View style={styles.container}>
         <Header title="Оценка стоимости" showBack showProfile={false} />
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={Colors.royalBlue} />
@@ -143,7 +156,7 @@ export default function CollectionValueScreen() {
   }
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
+    <View style={styles.container}>
       <Header title="Оценка стоимости" showBack showProfile={false} />
 
       <FlatList
@@ -155,12 +168,15 @@ export default function CollectionValueScreen() {
           <View>
             {/* Основной блок стоимости */}
             <View style={styles.valueCard}>
-              <LinearGradient
-                colors={[...Gradients.bluePink]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={styles.valueGradient}
-              >
+              <View style={styles.valueGradient}>
+                <Animated.View style={[styles.gradientSlider, gradientSlideStyle]}>
+                  <LinearGradient
+                    colors={['#2D3E8F', '#4A6FDB', '#6B5EC2', '#5B3FA0', '#8B4DA8', '#C75895', '#8B4DA8', '#5B3FA0']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 0.5 }}
+                    style={StyleSheet.absoluteFill}
+                  />
+                </Animated.View>
                 <Text style={styles.valueLabel}>Примерная стоимость</Text>
 
                 {/* Анимированная шкала */}
@@ -188,7 +204,7 @@ export default function CollectionValueScreen() {
                     {formatUsd(stats.total_estimated_value_median)} на Discogs
                   </Text>
                 )}
-              </LinearGradient>
+              </View>
             </View>
 
             {/* Детали */}
@@ -224,8 +240,10 @@ export default function CollectionValueScreen() {
                 </View>
                 <View style={styles.expensiveContent}>
                   <Image
-                    source={{ uri: stats.most_expensive.thumb_image_url || stats.most_expensive.cover_image_url }}
+                    source={stats.most_expensive.thumb_image_url || stats.most_expensive.cover_image_url}
                     style={styles.expensiveImage}
+                    contentFit="cover"
+                    cachePolicy="disk"
                   />
                   <View style={styles.expensiveInfo}>
                     <Text style={styles.expensiveTitle} numberOfLines={1}>
@@ -292,6 +310,14 @@ const styles = StyleSheet.create({
   valueGradient: {
     padding: Spacing.lg,
     alignItems: 'center',
+    overflow: 'hidden',
+  },
+  gradientSlider: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    left: -200,
+    right: -200,
   },
   valueLabel: {
     ...Typography.bodySmall,

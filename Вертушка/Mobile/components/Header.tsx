@@ -7,8 +7,8 @@ import {
   View,
   TouchableOpacity,
   StyleSheet,
-  Image,
 } from 'react-native';
+import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -52,6 +52,9 @@ export function Header({
               <Ionicons name="arrow-back" size={24} color={Colors.deepNavy} />
             </TouchableOpacity>
           )}
+          {showBack && title ? (
+            <GradientText style={styles.inlineTitle}>{title}</GradientText>
+          ) : null}
         </View>
 
         <View style={styles.rightSection}>
@@ -59,7 +62,7 @@ export function Header({
             showProfile && (
               <TouchableOpacity style={styles.profileButton} onPress={handleProfilePress}>
                 {user?.avatar_url ? (
-                  <Image source={{ uri: user.avatar_url }} style={styles.avatar} />
+                  <Image source={user.avatar_url} style={styles.avatar} cachePolicy="disk" />
                 ) : (
                   <LinearGradient
                     colors={[Colors.royalBlue, Colors.periwinkle]}
@@ -74,8 +77,8 @@ export function Header({
         </View>
       </View>
 
-      {/* Заголовок: huge, left-aligned, GradientText */}
-      {title ? (
+      {/* Заголовок: huge, left-aligned, GradientText — только когда нет back */}
+      {!showBack && title ? (
         <View style={styles.titleRow}>
           <GradientText style={Typography.display}>{title}</GradientText>
         </View>
@@ -97,7 +100,10 @@ const styles = StyleSheet.create({
     minHeight: 40,
   },
   leftSection: {
-    alignItems: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    gap: 8,
   },
   rightSection: {
     alignItems: 'flex-end',
@@ -128,6 +134,10 @@ const styles = StyleSheet.create({
     height: 40,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  inlineTitle: {
+    ...Typography.h2,
+    flexShrink: 1,
   },
 });
 

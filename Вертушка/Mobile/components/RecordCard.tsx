@@ -6,11 +6,11 @@ import React, { useRef } from 'react';
 import {
   View,
   Text,
-  Image,
   StyleSheet,
   Pressable,
   Dimensions,
 } from 'react-native';
+import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import Animated, {
@@ -154,7 +154,7 @@ export function RecordCard({
         )}
 
         {imageUrl ? (
-          <Image source={{ uri: imageUrl }} style={styles.compactImage} resizeMode="cover" />
+          <Image source={imageUrl} style={styles.compactImage} contentFit="cover" cachePolicy="disk" />
         ) : (
           <View style={styles.compactPlaceholder}>
             <Ionicons name="disc-outline" size={48} color={Colors.periwinkle} />
@@ -228,7 +228,7 @@ export function RecordCard({
 
         <View style={styles.listImageContainer}>
           {imageUrl ? (
-            <Image source={{ uri: imageUrl }} style={styles.listImage} resizeMode="cover" />
+            <Image source={imageUrl} style={styles.listImage} contentFit="cover" cachePolicy="disk" />
           ) : (
             <View style={styles.listPlaceholder}>
               <Ionicons name="disc-outline" size={28} color={Colors.periwinkle} />
@@ -300,7 +300,7 @@ export function RecordCard({
 
       <View style={[styles.expandedImageContainer, { height: imageHeight }]}>
         {imageUrl ? (
-          <Image source={{ uri: imageUrl }} style={styles.expandedImage} resizeMode="cover" />
+          <Image source={imageUrl} style={styles.expandedImage} contentFit="cover" cachePolicy="disk" />
         ) : (
           <View style={styles.expandedPlaceholder}>
             <Ionicons name="disc-outline" size={48} color={Colors.periwinkle} />

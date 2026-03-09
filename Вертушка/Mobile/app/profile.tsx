@@ -7,7 +7,6 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  Image,
   Alert,
   ScrollView,
   Share,
@@ -15,6 +14,7 @@ import {
   Platform,
   ActivityIndicator,
 } from 'react-native';
+import { Image } from 'expo-image';
 import ReanimatedSwipeable from 'react-native-gesture-handler/ReanimatedSwipeable';
 import Reanimated, { SharedValue, useAnimatedStyle, interpolate } from 'react-native-reanimated';
 import { File, Paths } from 'expo-file-system';
@@ -223,7 +223,7 @@ export default function ProfileScreen() {
         <View style={styles.profileSection}>
           <View style={styles.avatarContainer}>
             {user?.avatar_url ? (
-              <Image source={{ uri: user.avatar_url }} style={styles.avatar} />
+              <Image source={user.avatar_url} style={styles.avatar} cachePolicy="disk" />
             ) : (
               <LinearGradient
                 colors={[Colors.royalBlue, Colors.periwinkle]}
@@ -323,8 +323,10 @@ export default function ProfileScreen() {
                   >
                     {gift.record.cover_image_url ? (
                       <Image
-                        source={{ uri: gift.record.cover_image_url }}
+                        source={gift.record.cover_image_url}
                         style={styles.giftCardCover}
+                        contentFit="cover"
+                        cachePolicy="disk"
                       />
                     ) : (
                       <View style={[styles.giftCardCover, styles.giftCardCoverPlaceholder]}>
@@ -339,7 +341,7 @@ export default function ProfileScreen() {
                     </Text>
                     <View style={styles.giftCardRecipient}>
                       {gift.for_user.avatar_url ? (
-                        <Image source={{ uri: gift.for_user.avatar_url }} style={styles.giftCardAvatar} />
+                        <Image source={gift.for_user.avatar_url} style={styles.giftCardAvatar} cachePolicy="disk" />
                       ) : (
                         <View style={[styles.giftCardAvatar, styles.giftCardAvatarPlaceholder]}>
                           <Ionicons name="person" size={8} color={Colors.background} />

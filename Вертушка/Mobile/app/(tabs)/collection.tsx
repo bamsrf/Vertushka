@@ -3,7 +3,8 @@
  * Переключатель Моё / Хочу, editorial заголовок, expanded cards
  */
 import { useEffect, useCallback, useState, useRef } from 'react';
-import { View, StyleSheet, Alert, TouchableOpacity, Text, Animated, ScrollView, Image, LayoutAnimation, UIManager, Platform } from 'react-native';
+import { View, StyleSheet, Alert, TouchableOpacity, Text, Animated, ScrollView, LayoutAnimation, UIManager, Platform } from 'react-native';
+import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -451,120 +452,10 @@ export default function CollectionScreen() {
 
   const activeFilterLabel = FORMAT_OPTIONS.find(f => f.key === activeFilter)?.label || 'Все';
 
-  const CollectionHeader = (
+  const ScrollableHeader = (
     <View style={styles.headerContainer}>
-      {/* Title row: avatar */}
-      <View style={styles.avatarRow}>
-        <AnimatedGradientText style={Typography.heroTitle}>Коллекция</AnimatedGradientText>
-        <TouchableOpacity style={styles.profileButton} onPress={handleProfilePress}>
-          {user?.avatar_url ? (
-            <Image source={{ uri: user.avatar_url }} style={styles.avatar} />
-          ) : (
-            <LinearGradient
-              colors={[Colors.royalBlue, Colors.periwinkle] as [string, string]}
-              style={styles.avatarPlaceholder}
-            >
-              <Ionicons name="disc" size={20} color={Colors.background} />
-            </LinearGradient>
-          )}
-        </TouchableOpacity>
-      </View>
-
-      {/* Toolbar row: Выбрать/Отмена + Grid/List + Filter */}
-      <View style={styles.toolbarRow}>
-        {/* Select / Cancel */}
-        <View style={styles.headerButtonWrapper}>
-          <Animated.View
-            style={[styles.headerButtonAbsolute, { opacity: cancelOpacity, transform: [{ scale: cancelScale }] }]}
-            pointerEvents={isSelectionMode ? 'auto' : 'none'}
-          >
-            <TouchableOpacity style={styles.cancelButton} onPress={handleToggleSelectionMode}>
-              <Text style={styles.cancelButtonText}>Отмена</Text>
-            </TouchableOpacity>
-          </Animated.View>
-
-          <Animated.View
-            style={{ opacity: selectOpacity, transform: [{ scale: selectScale }] }}
-            pointerEvents={isSelectionMode ? 'none' : 'auto'}
-          >
-            <TouchableOpacity onPress={handleToggleSelectionMode} activeOpacity={0.7}>
-              <LinearGradient
-                colors={Gradients.blue}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
-                style={styles.selectButtonGradientBorder}
-              >
-                <View style={styles.selectButtonInner}>
-                  <GradientText style={styles.selectButtonText}>Выбрать</GradientText>
-                </View>
-              </LinearGradient>
-            </TouchableOpacity>
-          </Animated.View>
-        </View>
-
-        {/* Grid / List toggle */}
-        {!isSelectionMode && (
-          <TouchableOpacity
-            style={styles.viewToggleButton}
-            onPress={handleToggleViewMode}
-            activeOpacity={0.7}
-          >
-            <View style={styles.viewToggleIconContainer}>
-              <Animated.View style={[styles.viewToggleIcon, { opacity: gridIconOpacity, transform: [{ scale: gridIconScale }] }]}>
-                <Ionicons name="grid-outline" size={18} color={Colors.royalBlue} />
-              </Animated.View>
-              <Animated.View style={[styles.viewToggleIcon, styles.viewToggleIconAbsolute, { opacity: listIconOpacity, transform: [{ scale: listIconScale }] }]}>
-                <Ionicons name="list-outline" size={18} color={Colors.royalBlue} />
-              </Animated.View>
-            </View>
-          </TouchableOpacity>
-        )}
-
-        {/* Value button */}
-        {!isSelectionMode && activeTab === 'collection' && (
-          <TouchableOpacity
-            style={styles.valueButton}
-            onPress={() => router.push('/collection/value')}
-            activeOpacity={0.7}
-          >
-            <Ionicons name="cash-outline" size={18} color={Colors.royalBlue} />
-          </TouchableOpacity>
-        )}
-
-        {/* Filter button */}
-        {!isSelectionMode && (
-          <View>
-            <TouchableOpacity
-              style={[styles.filterButton, activeFilter !== 'all' && styles.filterButtonActive]}
-              onPress={handleToggleFilterMenu}
-              activeOpacity={0.7}
-            >
-              <Ionicons
-                name="options-outline"
-                size={18}
-                color={activeFilter !== 'all' ? Colors.background : Colors.royalBlue}
-              />
-              {activeFilter !== 'all' && (
-                <Text style={styles.filterButtonActiveText}>{activeFilterLabel}</Text>
-              )}
-            </TouchableOpacity>
-          </View>
-        )}
-      </View>
-
-      {/* Animated menu: segments + folders */}
+      {/* Folders section (scrolls away) */}
       <Animated.View style={{ opacity: menuOpacity, maxHeight: menuAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 500] }), overflow: 'hidden' }}>
-        {/* Segmented control */}
-        <View style={styles.segmentContainer}>
-          <SegmentedControl
-            segments={SEGMENTS}
-            selectedKey={activeTab}
-            onSelect={setActiveTab}
-            disabled={isSelectionMode}
-          />
-        </View>
-
-        {/* Folders section */}
         {activeTab === 'collection' && folders.length > 0 && (
           <View style={styles.foldersSection}>
             <Text style={styles.foldersSectionTitle}>Папки</Text>
@@ -590,7 +481,6 @@ export default function CollectionScreen() {
           </View>
         )}
 
-        {/* Create first folder button */}
         {activeTab === 'collection' && folders.length === 0 && (
           <TouchableOpacity style={styles.createFirstFolder} onPress={handleCreateFolder}>
             <Ionicons name="folder-outline" size={20} color={Colors.textMuted} />
@@ -598,38 +488,152 @@ export default function CollectionScreen() {
           </TouchableOpacity>
         )}
       </Animated.View>
-
-      {/* Filter dropdown — всегда в дереве, высота управляется анимацией */}
-      <Animated.View
-        style={{
-          maxHeight: filterMenuAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 300] }),
-          opacity: filterMenuAnim,
-          overflow: 'hidden',
-        }}
-        pointerEvents="box-none"
-      >
-        <View style={styles.filterDropdown}>
-          {FORMAT_OPTIONS.map(option => (
-            <TouchableOpacity
-              key={option.key}
-              style={[styles.filterOption, activeFilter === option.key && styles.filterOptionActive]}
-              onPress={() => handleSelectFilter(option.key)}
-            >
-              <Text style={[styles.filterOptionText, activeFilter === option.key && styles.filterOptionTextActive]}>
-                {option.label}
-              </Text>
-              {activeFilter === option.key && (
-                <Ionicons name="checkmark" size={18} color={Colors.royalBlue} />
-              )}
-            </TouchableOpacity>
-          ))}
-        </View>
-      </Animated.View>
     </View>
   );
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
+      {/* Sticky: Коллекция → Сегменты → Тулбар */}
+      <View style={styles.stickyToolbar}>
+        {/* Title row: Коллекция + avatar */}
+        <View style={styles.avatarRow}>
+          <AnimatedGradientText style={Typography.heroTitle}>Коллекция</AnimatedGradientText>
+          <TouchableOpacity style={styles.profileButton} onPress={handleProfilePress}>
+            {user?.avatar_url ? (
+              <Image source={user.avatar_url} style={styles.avatar} cachePolicy="disk" />
+            ) : (
+              <LinearGradient
+                colors={[Colors.royalBlue, Colors.periwinkle] as [string, string]}
+                style={styles.avatarPlaceholder}
+              >
+                <Ionicons name="disc" size={20} color={Colors.background} />
+              </LinearGradient>
+            )}
+          </TouchableOpacity>
+        </View>
+
+        {/* Segmented control (В наличии / Вишлист) */}
+        <Animated.View style={{ opacity: menuOpacity, maxHeight: menuAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 60] }), overflow: 'hidden' }}>
+          <View style={styles.segmentContainer}>
+            <SegmentedControl
+              segments={SEGMENTS}
+              selectedKey={activeTab}
+              onSelect={setActiveTab}
+              disabled={isSelectionMode}
+            />
+          </View>
+        </Animated.View>
+
+        {/* Toolbar row: Выбрать/Отмена + Grid/List + Filter */}
+        <View style={styles.toolbarRow}>
+          {/* Select / Cancel */}
+          <View style={styles.headerButtonWrapper}>
+            <Animated.View
+              style={[styles.headerButtonAbsolute, { opacity: cancelOpacity, transform: [{ scale: cancelScale }] }]}
+              pointerEvents={isSelectionMode ? 'auto' : 'none'}
+            >
+              <TouchableOpacity style={styles.cancelButton} onPress={handleToggleSelectionMode}>
+                <Text style={styles.cancelButtonText}>Отмена</Text>
+              </TouchableOpacity>
+            </Animated.View>
+
+            <Animated.View
+              style={{ opacity: selectOpacity, transform: [{ scale: selectScale }] }}
+              pointerEvents={isSelectionMode ? 'none' : 'auto'}
+            >
+              <TouchableOpacity onPress={handleToggleSelectionMode} activeOpacity={0.7}>
+                <LinearGradient
+                  colors={Gradients.blue}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={styles.selectButtonGradientBorder}
+                >
+                  <View style={styles.selectButtonInner}>
+                    <GradientText style={styles.selectButtonText}>Выбрать</GradientText>
+                  </View>
+                </LinearGradient>
+              </TouchableOpacity>
+            </Animated.View>
+          </View>
+
+          {/* Grid / List toggle */}
+          {!isSelectionMode && (
+            <TouchableOpacity
+              style={styles.viewToggleButton}
+              onPress={handleToggleViewMode}
+              activeOpacity={0.7}
+            >
+              <View style={styles.viewToggleIconContainer}>
+                <Animated.View style={[styles.viewToggleIcon, { opacity: gridIconOpacity, transform: [{ scale: gridIconScale }] }]}>
+                  <Ionicons name="grid-outline" size={18} color={Colors.royalBlue} />
+                </Animated.View>
+                <Animated.View style={[styles.viewToggleIcon, styles.viewToggleIconAbsolute, { opacity: listIconOpacity, transform: [{ scale: listIconScale }] }]}>
+                  <Ionicons name="list-outline" size={18} color={Colors.royalBlue} />
+                </Animated.View>
+              </View>
+            </TouchableOpacity>
+          )}
+
+          {/* Value button */}
+          {!isSelectionMode && activeTab === 'collection' && (
+            <TouchableOpacity
+              style={styles.valueButton}
+              onPress={() => router.push('/collection/value')}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="cash-outline" size={18} color={Colors.royalBlue} />
+            </TouchableOpacity>
+          )}
+
+          {/* Filter button */}
+          {!isSelectionMode && (
+            <View>
+              <TouchableOpacity
+                style={[styles.filterButton, activeFilter !== 'all' && styles.filterButtonActive]}
+                onPress={handleToggleFilterMenu}
+                activeOpacity={0.7}
+              >
+                <Ionicons
+                  name="options-outline"
+                  size={18}
+                  color={activeFilter !== 'all' ? Colors.background : Colors.royalBlue}
+                />
+                {activeFilter !== 'all' && (
+                  <Text style={styles.filterButtonActiveText}>{activeFilterLabel}</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
+
+        {/* Filter dropdown */}
+        <Animated.View
+          style={{
+            maxHeight: filterMenuAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 300] }),
+            opacity: filterMenuAnim,
+            overflow: 'hidden',
+          }}
+          pointerEvents="box-none"
+        >
+          <View style={styles.filterDropdown}>
+            {FORMAT_OPTIONS.map(option => (
+              <TouchableOpacity
+                key={option.key}
+                style={[styles.filterOption, activeFilter === option.key && styles.filterOptionActive]}
+                onPress={() => handleSelectFilter(option.key)}
+              >
+                <Text style={[styles.filterOptionText, activeFilter === option.key && styles.filterOptionTextActive]}>
+                  {option.label}
+                </Text>
+                {activeFilter === option.key && (
+                  <Ionicons name="checkmark" size={18} color={Colors.royalBlue} />
+                )}
+              </TouchableOpacity>
+            ))}
+          </View>
+        </Animated.View>
+      </View>
+
       <RecordGrid
         key={viewMode}
         data={data}
@@ -649,7 +653,7 @@ export default function CollectionScreen() {
             ? 'Ваша коллекция пуста.\nОтсканируйте или найдите пластинку, чтобы добавить.'
             : 'Список желаний пуст.\nДобавьте пластинки, которые хотите приобрести.'
         }
-        ListHeaderComponent={CollectionHeader}
+        ListHeaderComponent={ScrollableHeader}
         isSelectionMode={isSelectionMode}
         selectedItems={selectedItems}
         onToggleItemSelection={handleToggleItemSelection}
@@ -741,6 +745,12 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: Colors.background,
+  },
+  stickyToolbar: {
+    paddingHorizontal: Spacing.md,
+    paddingTop: Spacing.sm,
+    backgroundColor: Colors.background,
+    zIndex: 1,
   },
   headerContainer: {
     paddingBottom: Spacing.sm,

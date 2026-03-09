@@ -7,10 +7,10 @@ import {
   Text,
   StyleSheet,
   ScrollView,
-  Image,
   ActivityIndicator,
   TouchableOpacity,
 } from 'react-native';
+import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -114,9 +114,10 @@ export default function MasterScreen() {
         <View style={styles.coverContainer}>
           {imageUrl ? (
             <Image
-              source={{ uri: imageUrl }}
+              source={imageUrl}
               style={styles.cover}
-              resizeMode="cover"
+              contentFit="cover"
+              cachePolicy="disk"
             />
           ) : (
             <View style={styles.coverPlaceholder}>
@@ -139,8 +140,10 @@ export default function MasterScreen() {
         >
           {master.artist_thumb_image_url ? (
             <Image
-              source={{ uri: master.artist_thumb_image_url }}
+              source={master.artist_thumb_image_url}
               style={styles.artistAvatar}
+              contentFit="cover"
+              cachePolicy="disk"
             />
           ) : (
             <View style={styles.artistAvatarPlaceholder}>

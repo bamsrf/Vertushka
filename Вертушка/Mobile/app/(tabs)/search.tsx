@@ -9,13 +9,13 @@ import {
   TouchableOpacity,
   Alert,
   Text,
-  Image,
   Modal,
   ScrollView,
   Animated,
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
+import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -98,14 +98,19 @@ export default function SearchScreen() {
   const insets = useSafeAreaInsets();
   const { user } = useAuthStore();
   const [searchInput, setSearchInput] = useState('');
-  const [isFocused, setIsFocused] = useState(false);
   const [inputFocused, setInputFocused] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
   const [showAllCountries, setShowAllCountries] = useState(false);
   const [selectedDecade, setSelectedDecade] = useState<string | undefined>(undefined);
 
   // Временные фильтры для модалки (применяются только при закрытии)
   const [tempFilters, setTempFilters] = useState<{ format?: string; country?: string; year?: number }>({});
+
+  // Защита от спама: cooldown кнопки поиска 500ms
+  const lastSearchTime = useRef(0);
+  // Debounce loadMore: 300ms
+  const loadMoreTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Анимация для модала фильтров
   const overlayOpacity = useRef(new Animated.Value(0)).current;
@@ -206,6 +211,10 @@ export default function SearchScreen() {
     const trimmed = searchInput.trim();
     if (!trimmed) return;
 
+    const now = Date.now();
+    if (now - lastSearchTime.current < 500) return;
+    lastSearchTime.current = now;
+
     try {
       if (trimmed.startsWith('@')) {
         // Режим поиска пользователей — ищем без @
@@ -273,6 +282,7 @@ export default function SearchScreen() {
   }, [searchInput, filters.format, filters.country, filters.year, clearFilters, clearResults, clearUserResults]);
 
   const handleHistoryItemPress = useCallback(async (historyQuery: string) => {
+    setShowHistory(false);
     setSearchInput(historyQuery);
     try {
       if (historyQuery.startsWith('@')) {
@@ -319,7 +329,7 @@ export default function SearchScreen() {
   }, [clearHistory]);
 
   const handleBlur = useCallback(() => {
-    setTimeout(() => setIsFocused(false), 150);
+    // showHistory намеренно не сбрасываем — список остаётся интерактивным
   }, []);
 
   const handleRecordPress = (record: MasterSearchResult | ReleaseSearchResult) => {
@@ -415,8 +425,9 @@ export default function SearchScreen() {
     setSelectedDecade(undefined);
   }, []);
 
-  // Показываем историю только когда поле в фокусе, пустое и нет результатов
-  const shouldShowHistory = isFocused && searchInput === '' && results.length === 0 && artistResults.length === 0 && searchHistory.length > 0;
+  // Показываем историю когда пользователь взаимодействовал с полем, оно пустое и нет результатов
+  // isFocused намеренно не используем — список должен оставаться интерактивным после потери фокуса
+  const shouldShowHistory = showHistory && searchInput === '' && results.length === 0 && artistResults.length === 0 && searchHistory.length > 0;
 
   // Показываем только самого релевантного артиста (первого в списке)
   const topArtist = artistResults.length > 0 ? artistResults[0] : null;
@@ -573,7 +584,7 @@ export default function SearchScreen() {
         <AnimatedGradientText style={Typography.heroTitle}>Поиск</AnimatedGradientText>
         <TouchableOpacity style={styles.profileButton} onPress={handleProfilePress}>
           {user?.avatar_url ? (
-            <Image source={{ uri: user.avatar_url }} style={styles.avatar} />
+            <Image source={user.avatar_url} style={styles.avatar} cachePolicy="disk" />
           ) : (
             <LinearGradient
               colors={[Colors.royalBlue, Colors.periwinkle]}
@@ -597,7 +608,7 @@ export default function SearchScreen() {
             placeholderTextColor={Colors.textMuted}
             returnKeyType="search"
             onSubmitEditing={handleSearch}
-            onFocus={() => { setIsFocused(true); setInputFocused(true); }}
+            onFocus={() => { setInputFocused(true); setShowHistory(true); }}
             onBlur={() => { handleBlur(); setInputFocused(false); }}
             autoCapitalize="none"
             autoCorrect={false}
@@ -635,9 +646,10 @@ export default function SearchScreen() {
         <View style={styles.userImageContainer}>
           {u.avatar_url ? (
             <Image
-              source={{ uri: u.avatar_url }}
+              source={u.avatar_url}
               style={styles.topArtistImage}
-              resizeMode="cover"
+              contentFit="cover"
+              cachePolicy="disk"
             />
           ) : (
             <View style={styles.userPlaceholder}>
@@ -710,9 +722,10 @@ export default function SearchScreen() {
             <View style={styles.topArtistImageContainer}>
               {(topArtist.cover_image_url || topArtist.thumb_image_url) ? (
                 <Image
-                  source={{ uri: topArtist.cover_image_url || topArtist.thumb_image_url }}
+                  source={topArtist.cover_image_url || topArtist.thumb_image_url}
                   style={styles.topArtistImage}
-                  resizeMode="cover"
+                  contentFit="cover"
+                  cachePolicy="disk"
                 />
               ) : (
                 <View style={styles.topArtistPlaceholder}>
@@ -780,7 +793,10 @@ export default function SearchScreen() {
         onAddToWishlist={handleAddToWishlist}
         showActions
         isLoading={isUserSearch ? false : isLoading}
-        onEndReached={!isUserSearch && hasMore ? loadMore : undefined}
+        onEndReached={!isUserSearch && hasMore ? () => {
+          if (loadMoreTimer.current) clearTimeout(loadMoreTimer.current);
+          loadMoreTimer.current = setTimeout(loadMore, 300);
+        } : undefined}
         emptyMessage=""
         ListHeaderComponent={HeaderContent}
         cardVariant="compact"

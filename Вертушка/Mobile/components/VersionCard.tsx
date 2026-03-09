@@ -5,10 +5,10 @@ import React from 'react';
 import {
   View,
   Text,
-  Image,
   StyleSheet,
   TouchableOpacity,
 } from 'react-native';
+import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, Typography, BorderRadius, Shadows, Spacing } from '../constants/theme';
 import { MasterVersion } from '../lib/types';
@@ -32,9 +32,10 @@ export function VersionCard({ version, onPress }: VersionCardProps) {
       <View style={styles.imageContainer}>
         {imageUrl ? (
           <Image
-            source={{ uri: imageUrl }}
+            source={imageUrl}
             style={styles.image}
-            resizeMode="cover"
+            contentFit="cover"
+            cachePolicy="disk"
           />
         ) : (
           <View style={styles.placeholderImage}>

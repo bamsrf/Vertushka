@@ -7,7 +7,6 @@ import {
   Text,
   StyleSheet,
   ScrollView,
-  Image,
   TouchableOpacity,
   ActivityIndicator,
   Alert,
@@ -20,6 +19,7 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
+import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -216,7 +216,7 @@ export default function UserProfileScreen() {
       <View style={styles.profileSection}>
         <View style={styles.avatarContainer}>
           {profile.avatar_url ? (
-            <Image source={{ uri: profile.avatar_url }} style={styles.avatar} />
+            <Image source={profile.avatar_url} style={styles.avatar} cachePolicy="disk" />
           ) : (
             <View style={styles.avatarPlaceholder}>
               <Ionicons name="person" size={40} color={Colors.background} />
