@@ -16,6 +16,7 @@ import { useRouter } from 'expo-router';
 import { GradientText } from './GradientText';
 import { Colors, Typography, Spacing } from '../constants/theme';
 import { useAuthStore } from '../lib/store';
+import { resolveMediaUrl } from '../lib/api';
 
 interface HeaderProps {
   title?: string;
@@ -62,7 +63,7 @@ export function Header({
             showProfile && (
               <TouchableOpacity style={styles.profileButton} onPress={handleProfilePress}>
                 {user?.avatar_url ? (
-                  <Image source={user.avatar_url} style={styles.avatar} cachePolicy="disk" />
+                  <Image source={resolveMediaUrl(user.avatar_url)} style={styles.avatar} cachePolicy="disk" />
                 ) : (
                   <LinearGradient
                     colors={[Colors.royalBlue, Colors.periwinkle]}

@@ -1,7 +1,7 @@
 /**
  * Сетка пластинок
  */
-import React from 'react';
+import React, { memo } from 'react';
 import {
   FlatList,
   StyleSheet,
@@ -39,7 +39,7 @@ interface RecordGridProps<T extends RecordItem = RecordItem> {
   numColumns?: number;
 }
 
-export function RecordGrid<T extends RecordItem = RecordItem>({
+function RecordGridComponent<T extends RecordItem = RecordItem>({
   data,
   onRecordPress,
   onArtistPress,
@@ -190,4 +190,5 @@ const styles = StyleSheet.create({
   },
 });
 
+export const RecordGrid = memo(RecordGridComponent) as typeof RecordGridComponent;
 export default RecordGrid;

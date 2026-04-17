@@ -3,7 +3,7 @@
  * По референсу Trove: floating pill, равные табы, spring zoom, indicator
  */
 import React from 'react';
-import { View, TouchableOpacity, StyleSheet, Platform } from 'react-native';
+import { View, TouchableOpacity, StyleSheet, Platform, useWindowDimensions } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -75,6 +75,7 @@ function TabIcon({
 
 export function GlassTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
   const tabCount = state.routes.length;
+  const { width: screenWidth } = useWindowDimensions();
 
   const indicatorPosition = useDerivedValue(() => {
     return withTiming(state.index, { duration: 250 });
@@ -82,7 +83,9 @@ export function GlassTabBar({ state, descriptors, navigation }: BottomTabBarProp
 
   const indicatorStyle = useAnimatedStyle(() => {
     const tabWidth = 100 / tabCount;
-    const left = `${indicatorPosition.value * tabWidth + tabWidth / 2 - (INDICATOR_WIDTH / 2 / 3.5)}%`;
+    const barWidthPx = screenWidth * 0.65;
+    const iconOffsetPct = (ICON_SIZE / 2 / barWidthPx) * 100;
+    const left = `${indicatorPosition.value * tabWidth + tabWidth / 2 - iconOffsetPct}%`;
     return {
       left: left as unknown as number,
     };

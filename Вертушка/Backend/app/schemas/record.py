@@ -134,6 +134,7 @@ class MasterVersion(BaseModel):
     format: str | None = None
     major_formats: list[str] = []
     thumb_image_url: str | None = None
+    cover_image_url: str | None = None
 
 
 class MasterRelease(BaseModel):
@@ -157,6 +158,8 @@ class MasterSearchResponse(BaseModel):
     total: int
     page: int
     per_page: int
+    has_more: bool = False
+    next_cursor: int | None = None
 
 
 class MasterVersionsResponse(BaseModel):

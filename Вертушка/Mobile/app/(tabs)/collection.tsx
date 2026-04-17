@@ -4,6 +4,7 @@
  */
 import { useEffect, useCallback, useState, useRef } from 'react';
 import { View, StyleSheet, Alert, TouchableOpacity, Text, Animated, ScrollView, LayoutAnimation, UIManager, Platform } from 'react-native';
+import { toast } from '../../lib/toast';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
@@ -16,7 +17,7 @@ import { RecordGrid } from '../../components/RecordGrid';
 import { FolderPickerModal } from '../../components/FolderPickerModal';
 import { SegmentedControl } from '../../components/ui';
 import { useCollectionStore, useAuthStore } from '../../lib/store';
-import { api } from '../../lib/api';
+import { api, resolveMediaUrl } from '../../lib/api';
 import { CollectionItem, WishlistItem, CollectionTab } from '../../lib/types';
 import { Colors, Spacing, Typography, BorderRadius, Gradients, Shadows } from '../../constants/theme';
 
@@ -77,12 +78,15 @@ export default function CollectionScreen() {
   const {
     activeTab,
     collectionItems,
+    collectionHasMore,
+    isLoadingMore,
     wishlistItems,
     folders,
     isLoading,
     setActiveTab,
     fetchCollections,
     fetchCollectionItems,
+    loadMoreCollectionItems,
     fetchWishlistItems,
     removeFromCollection,
     removeFromWishlist,
@@ -194,11 +198,11 @@ export default function CollectionScreen() {
         const artist = response.results[0];
         router.push(`/artist/${artist.artist_id}`);
       } else {
-        Alert.alert('Артист не найден', `Не удалось найти артиста "${artistName}"`);
+        toast.info('Артист не найден', `Не удалось найти артиста "${artistName}"`);
       }
     } catch (error: any) {
       console.error('Ошибка поиска артиста:', error);
-      Alert.alert('Ошибка', 'Не удалось найти артиста');
+      toast.error('Не удалось найти артиста');
     }
   }, [router]);
 
@@ -215,7 +219,7 @@ export default function CollectionScreen() {
             try {
               await removeFromCollection(item.id);
             } catch (error) {
-              Alert.alert('Ошибка', 'Не удалось удалить из коллекции');
+              toast.error('Не удалось удалить из коллекции');
             }
           },
         },
@@ -236,7 +240,7 @@ export default function CollectionScreen() {
             try {
               await removeFromWishlist(item.id);
             } catch (error) {
-              Alert.alert('Ошибка', 'Не удалось удалить из списка');
+              toast.error('Не удалось удалить из списка');
             }
           },
         },
@@ -256,9 +260,9 @@ export default function CollectionScreen() {
             try {
               await moveToCollection(item.id);
               const fmt = getFormatDisplayInfo(item.record.format_type);
-              Alert.alert('Готово!', `${fmt.label} ${fmt.verb} в коллекцию`);
+              toast.success(`${fmt.label} ${fmt.verb} в коллекцию`);
             } catch (error) {
-              Alert.alert('Ошибка', 'Не удалось перенести в коллекцию');
+              toast.error('Не удалось перенести в коллекцию');
             }
           },
         },
@@ -326,7 +330,7 @@ export default function CollectionScreen() {
               setSelectedItems(new Set());
               setIsSelectionMode(false);
             } catch (error) {
-              Alert.alert('Ошибка', 'Не удалось удалить выбранные пластинки');
+              toast.error('Не удалось удалить выбранные пластинки');
             }
           },
         },
@@ -357,7 +361,7 @@ export default function CollectionScreen() {
 
       if (newItems.length === 0) {
         setShowFolderPicker(false);
-        Alert.alert(
+        toast.info(
           'Уже в папке',
           duplicateCount === 1
             ? 'Эта пластинка уже находится в папке'
@@ -372,13 +376,10 @@ export default function CollectionScreen() {
       setIsSelectionMode(false);
 
       if (duplicateCount > 0) {
-        Alert.alert(
-          'Готово',
-          `${newItems.length} пл. добавлено. ${duplicateCount} уже были в папке — пропущены.`
-        );
+        toast.success(`${newItems.length} пл. добавлено`, `${duplicateCount} уже были в папке — пропущены.`);
       }
     } catch {
-      Alert.alert('Ошибка', 'Не удалось добавить в папку');
+      toast.error('Не удалось добавить в папку');
     }
   };
 
@@ -415,7 +416,7 @@ export default function CollectionScreen() {
               setSelectedItems(new Set());
               setIsSelectionMode(false);
             } catch (error) {
-              Alert.alert('Ошибка', 'Не удалось перенести пластинки');
+              toast.error('Не удалось перенести пластинки');
             }
           },
         },
@@ -500,7 +501,7 @@ export default function CollectionScreen() {
           <AnimatedGradientText style={Typography.heroTitle}>Коллекция</AnimatedGradientText>
           <TouchableOpacity style={styles.profileButton} onPress={handleProfilePress}>
             {user?.avatar_url ? (
-              <Image source={user.avatar_url} style={styles.avatar} cachePolicy="disk" />
+              <Image source={resolveMediaUrl(user.avatar_url)} style={styles.avatar} cachePolicy="disk" />
             ) : (
               <LinearGradient
                 colors={[Colors.royalBlue, Colors.periwinkle] as [string, string]}
@@ -648,6 +649,7 @@ export default function CollectionScreen() {
         isLoading={isLoading}
         isRefreshing={isRefreshing}
         onRefresh={handleRefresh}
+        onEndReached={activeTab === 'collection' && collectionHasMore && !isLoadingMore ? loadMoreCollectionItems : undefined}
         emptyMessage={
           activeTab === 'collection'
             ? 'Ваша коллекция пуста.\nОтсканируйте или найдите пластинку, чтобы добавить.'

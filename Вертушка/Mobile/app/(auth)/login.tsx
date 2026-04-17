@@ -9,8 +9,8 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
-  Alert,
 } from 'react-native';
+import { toast } from '../../lib/toast';
 import { Link } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -50,10 +50,7 @@ export default function LoginScreen() {
     try {
       await login(loginValue, password);
     } catch (error: any) {
-      Alert.alert(
-        'Ошибка входа',
-        error.response?.data?.detail || 'Неверный логин или пароль'
-      );
+      toast.error('Ошибка входа', error.response?.data?.detail || 'Неверный логин или пароль');
     }
   };
 

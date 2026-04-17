@@ -40,14 +40,24 @@ export default function MasterScreen() {
     setIsLoading(true);
     setError(null);
 
-    try {
-      const data = await api.getMaster(id);
-      setMaster(data);
-    } catch (err) {
-      console.error('Error loading master:', err);
-      setError('Не удалось загрузить мастер-релиз');
-    } finally {
-      setIsLoading(false);
+    const MAX_RETRIES = 2;
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+      try {
+        const data = await api.getMaster(id);
+        setMaster(data);
+        setIsLoading(false);
+        return;
+      } catch (err: any) {
+        const is503 = err?.response?.status === 503;
+        if (is503 && attempt < MAX_RETRIES) {
+          await new Promise(resolve => setTimeout(resolve, 1500));
+          continue;
+        }
+        console.error('Error loading master:', err);
+        setError('Не удалось загрузить мастер-релиз');
+        setIsLoading(false);
+        return;
+      }
     }
   };
 
@@ -90,6 +100,11 @@ export default function MasterScreen() {
         <View style={styles.errorContainer}>
           <Ionicons name="alert-circle-outline" size={64} color={Colors.error} />
           <Text style={styles.errorText}>{error || 'Мастер-релиз не найден'}</Text>
+          {error && (
+            <TouchableOpacity style={styles.retryButton} onPress={loadMaster} activeOpacity={0.7}>
+              <Text style={styles.retryButtonText}>Повторить</Text>
+            </TouchableOpacity>
+          )}
         </View>
       </View>
     );
@@ -243,6 +258,18 @@ const styles = StyleSheet.create({
     color: Colors.error,
     marginTop: Spacing.md,
     textAlign: 'center',
+  },
+  retryButton: {
+    marginTop: Spacing.lg,
+    backgroundColor: Colors.royalBlue,
+    paddingHorizontal: Spacing.xl,
+    paddingVertical: Spacing.sm,
+    borderRadius: BorderRadius.md,
+  },
+  retryButtonText: {
+    ...Typography.body,
+    color: Colors.background,
+    fontWeight: '600',
   },
   scrollContent: {
     padding: Spacing.md,

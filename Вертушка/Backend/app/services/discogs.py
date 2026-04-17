@@ -113,10 +113,59 @@ class DiscogsService:
     @staticmethod
     def _thumb_to_cover(thumb_url: str | None) -> str | None:
         """Из URL CDN-миниатюры Discogs делает URL большего размера.
-        Discogs CDN: https://i.discogs.com/[hash]_[size].ext"""
-        if not thumb_url:
+        Работает только для стабильных i.discogs.com CDN URL.
+        Подписанные api-img.discogs.com URL возвращает как None — они истекают."""
+        if not thumb_url or "api-img.discogs.com" in thumb_url:
             return None
         return re.sub(r'_\d+\.(jpg|jpeg|png)', r'_500.\1', thumb_url)
+
+    # ------------------------------------------------------------------
+    # Автодополнение (suggest)
+    # ------------------------------------------------------------------
+
+    async def suggest(self, query: str, per_page: int = 8) -> dict:
+        """Автодополнение: один запрос к Discogs без type= (ищет всё),
+        результаты разделяются по типу. 1 токен вместо 2."""
+        params = {"q": query, "per_page": per_page}
+
+        ck = search_cache_key({"suggest": True, **params})
+        cached = await cache.get("suggest", ck)
+        if cached is not None:
+            return cached
+
+        data = await self._get(
+            f"{self.BASE_URL}/database/search",
+            params=params,
+            priority=Priority.SEARCH,
+        )
+
+        artists = []
+        masters = []
+        for item in data.get("results", []):
+            item_type = item.get("type")
+            if item_type == "artist":
+                artists.append({
+                    "artist_id": str(item.get("id", "")),
+                    "name": item.get("title", ""),
+                    "thumb": item.get("thumb"),
+                })
+            elif item_type == "master":
+                title = item.get("title", "")
+                artist_name, album_title = ("Unknown", title)
+                if " - " in title:
+                    parts = title.split(" - ", 1)
+                    artist_name, album_title = parts[0], parts[1]
+                masters.append({
+                    "master_id": str(item.get("id", "")),
+                    "title": album_title,
+                    "artist": artist_name,
+                    "year": int(item["year"]) if item.get("year") else None,
+                    "thumb": item.get("thumb"),
+                })
+
+        result = {"artists": artists[:3], "masters": masters[:5]}
+        await cache.set("suggest", ck, result, TTL_SEARCH)
+        return result
 
     # ------------------------------------------------------------------
     # Поиск (кэшируется на 10 мин)
@@ -779,7 +828,7 @@ class DiscogsService:
         Discogs возвращает format как строку вида '12", Album' или 'CD, Single' и т.д.
         """
         if not format_str:
-            return None
+            return "album"
         fmt = format_str.lower()
         if "single" in fmt:
             return "single"
@@ -796,62 +845,88 @@ class DiscogsService:
         per_page: int = 100,
         load_all: bool = False,
     ) -> MasterSearchResponse:
-        """Получение master releases артиста (альбомы, синглы, EP).
-        При load_all=True загружает все страницы последовательно (max 10 страниц).
-        Результат кэшируется в Redis."""
-        ck = f"{artist_id}:all" if load_all else f"{artist_id}:p{page}:pp{per_page}"
+        """Получение master releases артиста через Discogs Search API.
+        Search API возвращает cover_image (полноразмерный стабильный URL) и format[]
+        для корректной фильтрации по типу (альбом/сингл/EP).
+        Результат кэшируется в Redis на 1 день."""
+        ck = f"{artist_id}:search:p{page}"
         cached = await cache.get("artist_masters", ck)
         if cached is not None:
             return MasterSearchResponse(**cached)
 
+        # Получаем имя артиста из кэша или через API
+        artist_data = await cache.get("artist", artist_id)
+        if artist_data:
+            artist_name = artist_data.get("name", "")
+        else:
+            try:
+                artist_obj = await self.get_artist(artist_id)
+                artist_name = artist_obj.name
+            except Exception:
+                artist_name = ""
+
+        if not artist_name:
+            return MasterSearchResponse(results=[], total=0, page=page, per_page=per_page)
+
+        # Убираем disambig-суффикс Discogs вида " (2)"
+        clean_name = re.sub(r'\s*\(\d+\)\s*$', '', artist_name).strip()
+
+        data = await self._get(
+            f"{self.BASE_URL}/database/search",
+            params={"type": "master", "artist": clean_name, "page": page, "per_page": per_page},
+            priority=Priority.BATCH,
+        )
+
         all_results: list[MasterSearchResult] = []
-        current_page = page
-        total_items = 0
-        max_pages = 10 if load_all else 1
+        seen_ids: set[str] = set()
 
-        for _ in range(max_pages):
-            params = {
-                "page": current_page,
-                "per_page": per_page,
-                "sort": "year",
-                "sort_order": "asc",
-            }
+        for item in data.get("results", []):
+            item_id = str(item.get("id", ""))
+            if not item_id or item_id in seen_ids:
+                continue
+            seen_ids.add(item_id)
 
-            data = await self._get(f"{self.BASE_URL}/artists/{artist_id}/releases", params=params, priority=Priority.BATCH)
+            raw_title = item.get("title", "")
+            album_title = raw_title.split(" - ", 1)[-1] if " - " in raw_title else raw_title
 
-            for item in data.get("releases", []):
-                if item.get("type") != "master" or item.get("role") != "Main":
-                    continue
+            formats = item.get("format", [])
+            format_str = ", ".join(formats) if formats else None
+            release_type = self._guess_release_type(format_str)
 
-                thumb = item.get("thumb")
-                release_type = self._guess_release_type(item.get("format"))
+            cover_image = item.get("cover_image")
+            thumb = item.get("thumb")
+            # cover_image от Search API — полноразмерный стабильный i.discogs.com URL
+            final_cover = cover_image if (cover_image and "api-img.discogs.com" not in cover_image) else self._thumb_to_cover(thumb)
 
-                all_results.append(MasterSearchResult(
-                    master_id=str(item.get("id", "")),
-                    title=item.get("title", ""),
-                    artist=item.get("artist", "Unknown"),
-                    year=int(item["year"]) if item.get("year") else None,
-                    main_release_id=str(item.get("main_release", "")),
-                    cover_image_url=self._thumb_to_cover(thumb),
-                    thumb_image_url=thumb if thumb else None,
-                    release_type=release_type,
-                ))
+            try:
+                year = int(item["year"]) if item.get("year") else None
+            except (ValueError, TypeError):
+                year = None
 
-            pagination = data.get("pagination", {})
-            total_items = pagination.get("items", len(all_results))
-            total_pages = pagination.get("pages", 1)
+            all_results.append(MasterSearchResult(
+                master_id=item_id,
+                title=album_title,
+                artist=artist_name,
+                year=year,
+                main_release_id=item_id,
+                cover_image_url=final_cover,
+                thumb_image_url=thumb,
+                release_type=release_type,
+            ))
 
-            if not load_all or current_page >= total_pages:
-                break
-
-            current_page += 1
-            await asyncio.sleep(1.0)  # Rate limit: 60 req/min
+        pagination = data.get("pagination", {})
+        total_items = pagination.get("items", len(all_results))
+        total_pages = pagination.get("pages", 1)
+        has_more = page < total_pages
+        next_cursor = page + 1 if has_more else None
 
         response = MasterSearchResponse(
             results=all_results,
             total=total_items,
-            page=1 if load_all else page,
-            per_page=total_items if load_all else per_page,
+            page=page,
+            per_page=per_page,
+            has_more=has_more,
+            next_cursor=next_cursor,
         )
         await cache.set("artist_masters", ck, response.model_dump(), TTL_ARTIST_MASTERS)
         return response

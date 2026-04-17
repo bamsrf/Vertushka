@@ -34,9 +34,16 @@ class UserLogin(BaseModel):
 
 class UserUpdate(BaseModel):
     """Схема для обновления пользователя"""
+    username: str | None = Field(None, min_length=3, max_length=50, pattern=r'^[a-z0-9_]+$')
     display_name: str | None = Field(None, max_length=100)
     bio: str | None = Field(None, max_length=500)
     avatar_url: str | None = None
+
+
+class UsernameCheckResponse(BaseModel):
+    """Ответ проверки доступности username"""
+    available: bool
+    reason: str | None = None  # "taken" | "invalid" | "too_short"
 
 
 class UserResponse(BaseModel):
@@ -74,4 +81,25 @@ class UserWithStats(UserPublicResponse):
     following_count: int = 0
     collection_count: int = 0
     is_following: bool = False  # Подписан ли текущий пользователь
+
+
+class NotificationSettingsResponse(BaseModel):
+    """Настройки уведомлений"""
+    model_config = ConfigDict(from_attributes=True)
+
+    notify_new_follower: bool = True
+    notify_gift_booked: bool = True
+    notify_app_updates: bool = True
+
+
+class NotificationSettingsUpdate(BaseModel):
+    """Обновление настроек уведомлений"""
+    notify_new_follower: bool | None = None
+    notify_gift_booked: bool | None = None
+    notify_app_updates: bool | None = None
+
+
+class PushTokenUpdate(BaseModel):
+    """Сохранение push token"""
+    push_token: str = Field(..., max_length=255)
 

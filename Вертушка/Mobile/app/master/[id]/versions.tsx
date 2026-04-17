@@ -8,7 +8,6 @@ import {
   StyleSheet,
   FlatList,
   ActivityIndicator,
-  Alert,
   ScrollView,
   TouchableOpacity,
 } from 'react-native';
@@ -18,6 +17,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Header } from '../../../components/Header';
 import { VersionCard } from '../../../components/VersionCard';
 import { api } from '../../../lib/api';
+import { toast } from '../../../lib/toast';
 import { MasterVersion } from '../../../lib/types';
 import { Colors, Typography, Spacing, BorderRadius } from '../../../constants/theme';
 
@@ -67,7 +67,7 @@ export default function VersionsScreen() {
       setHasMore(existingLength + response.results.length < response.total);
     } catch (err) {
       console.error('Error loading versions:', err);
-      Alert.alert('Ошибка', 'Не удалось загрузить версии');
+      toast.error('Не удалось загрузить версии');
     } finally {
       setIsLoading(false);
     }

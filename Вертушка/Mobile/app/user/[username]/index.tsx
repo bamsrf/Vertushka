@@ -9,7 +9,6 @@ import {
   ScrollView,
   TouchableOpacity,
   ActivityIndicator,
-  Alert,
   FlatList,
   Modal,
   TextInput,
@@ -23,7 +22,7 @@ import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { api } from '../../../lib/api';
+import { api, resolveMediaUrl } from '../../../lib/api';
 import { useAuthStore, useFollowStore } from '../../../lib/store';
 import {
   UserWithStats,
@@ -35,6 +34,7 @@ import {
 import { RecordCard } from '../../../components/RecordCard';
 import { SegmentedControl } from '../../../components/ui';
 import { Colors, Typography, Spacing, BorderRadius, Shadows } from '../../../constants/theme';
+import { toast } from '../../../lib/toast';
 
 type ProfileTab = 'collection' | 'wishlist';
 
@@ -80,7 +80,7 @@ export default function UserProfileScreen() {
       const data = await api.getUserByUsername(username);
       setProfile(data);
     } catch {
-      Alert.alert('Ошибка', 'Пользователь не найден');
+      toast.error('Пользователь не найден');
       router.back();
     } finally {
       setIsLoading(false);
@@ -157,7 +157,7 @@ export default function UserProfileScreen() {
       }
     } catch (error: any) {
       const msg = error?.response?.data?.detail || 'Не удалось выполнить действие';
-      Alert.alert('Ошибка', msg);
+      toast.error('Ошибка', msg);
     } finally {
       setIsFollowLoading(false);
     }
@@ -174,7 +174,7 @@ export default function UserProfileScreen() {
 
   const handleBookGift = useCallback(async () => {
     if (!bookingItem || !bookingName.trim() || !bookingEmail.trim()) {
-      Alert.alert('Ошибка', 'Заполните имя и email');
+      toast.error('Заполните имя и email');
       return;
     }
 
@@ -186,7 +186,7 @@ export default function UserProfileScreen() {
         gifter_email: bookingEmail.trim(),
         gifter_message: bookingMessage.trim() || undefined,
       });
-      Alert.alert('Забронировано!', 'Подарок забронирован анонимно. Владелец не узнает кто дарит.');
+      toast.success('Забронировано!', 'Подарок забронирован анонимно. Владелец не узнает кто дарит.');
       setBookingItem(null);
       setBookingName('');
       setBookingEmail('');
@@ -194,7 +194,7 @@ export default function UserProfileScreen() {
       loadWishlist();
     } catch (error: any) {
       const msg = error?.response?.data?.detail || 'Не удалось забронировать';
-      Alert.alert('Ошибка', msg);
+      toast.error('Ошибка', msg);
     } finally {
       setIsBooking(false);
     }
@@ -216,7 +216,7 @@ export default function UserProfileScreen() {
       <View style={styles.profileSection}>
         <View style={styles.avatarContainer}>
           {profile.avatar_url ? (
-            <Image source={profile.avatar_url} style={styles.avatar} cachePolicy="disk" />
+            <Image source={resolveMediaUrl(profile.avatar_url)} style={styles.avatar} cachePolicy="disk" />
           ) : (
             <View style={styles.avatarPlaceholder}>
               <Ionicons name="person" size={40} color={Colors.background} />

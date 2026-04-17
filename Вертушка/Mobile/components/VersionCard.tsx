@@ -19,7 +19,7 @@ interface VersionCardProps {
 }
 
 export function VersionCard({ version, onPress }: VersionCardProps) {
-  const imageUrl = version.thumb_image_url;
+  const imageUrl = version.cover_image_url || version.thumb_image_url;
 
   return (
     <TouchableOpacity

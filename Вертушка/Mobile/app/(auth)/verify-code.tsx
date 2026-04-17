@@ -9,10 +9,10 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
-  Alert,
   TextInput,
   TouchableOpacity,
 } from 'react-native';
+import { toast } from '../../lib/toast';
 import { router, useLocalSearchParams } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -81,7 +81,7 @@ export default function VerifyCodeScreen() {
   const handleVerify = async () => {
     const fullCode = code.join('');
     if (fullCode.length !== CODE_LENGTH) {
-      Alert.alert('Ошибка', 'Введите 6-значный код');
+      toast.error('Введите 6-значный код');
       return;
     }
 
@@ -93,10 +93,7 @@ export default function VerifyCodeScreen() {
         params: { resetToken },
       });
     } catch (err: any) {
-      Alert.alert(
-        'Ошибка',
-        err.response?.data?.detail || 'Неверный или просроченный код'
-      );
+      toast.error('Ошибка', err.response?.data?.detail || 'Неверный или просроченный код');
     } finally {
       setIsLoading(false);
     }
@@ -110,12 +107,9 @@ export default function VerifyCodeScreen() {
       setResendTimer(RESEND_COOLDOWN);
       setCode(Array(CODE_LENGTH).fill(''));
       inputRefs.current[0]?.focus();
-      Alert.alert('Готово', 'Новый код отправлен на почту');
+      toast.success('Новый код отправлен на почту');
     } catch (err: any) {
-      Alert.alert(
-        'Ошибка',
-        err.response?.data?.detail || 'Не удалось отправить код'
-      );
+      toast.error('Ошибка', err.response?.data?.detail || 'Не удалось отправить код');
     }
   };
 

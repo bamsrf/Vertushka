@@ -9,7 +9,6 @@ import {
   ScrollView,
   TouchableOpacity,
   TextInput,
-  Alert,
   ActivityIndicator,
   Animated,
   Pressable,
@@ -21,6 +20,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuthStore, useProfileStore } from '../../lib/store';
 import api from '../../lib/api';
+import { toast } from '../../lib/toast';
 import { Colors, Typography, Spacing, BorderRadius } from '../../constants/theme';
 
 const TRACK_W = 52;
@@ -123,14 +123,22 @@ const vinylStyles = StyleSheet.create({
   },
 });
 
+const USERNAME_REGEX = /^[a-z0-9_]{3,50}$/;
+const DEBOUNCE_MS = 300;
+
+type UsernameStatus = 'idle' | 'checking' | 'available' | 'taken' | 'invalid' | 'too_short';
+
 export default function EditProfileScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { user, setUser } = useAuthStore();
   const { settings, fetchSettings, updateSettings } = useProfileStore();
   const [displayName, setDisplayName] = useState(user?.display_name ?? '');
+  const [username, setUsername] = useState(user?.username ?? '');
+  const [usernameStatus, setUsernameStatus] = useState<UsernameStatus>('idle');
   const [isSaving, setIsSaving] = useState(false);
   const [hasChanges, setHasChanges] = useState(false);
+  const usernameTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     fetchSettings();
@@ -138,29 +146,77 @@ export default function EditProfileScreen() {
 
   useEffect(() => {
     const nameChanged = displayName !== (user?.display_name ?? '');
-    setHasChanges(nameChanged);
-  }, [displayName, user?.display_name]);
+    const usernameChanged = username !== (user?.username ?? '');
+    setHasChanges(nameChanged || usernameChanged);
+  }, [displayName, username, user?.display_name, user?.username]);
+
+  const checkUsername = useCallback((value: string) => {
+    if (usernameTimerRef.current) clearTimeout(usernameTimerRef.current);
+
+    if (value === user?.username) {
+      setUsernameStatus('idle');
+      return;
+    }
+    if (value.length < 3) {
+      setUsernameStatus('too_short');
+      return;
+    }
+    if (!USERNAME_REGEX.test(value)) {
+      setUsernameStatus('invalid');
+      return;
+    }
+
+    setUsernameStatus('checking');
+    usernameTimerRef.current = setTimeout(async () => {
+      try {
+        const result = await api.checkUsername(value);
+        if (result.available) {
+          setUsernameStatus('available');
+        } else {
+          setUsernameStatus(result.reason as UsernameStatus);
+        }
+      } catch {
+        setUsernameStatus('idle');
+      }
+    }, DEBOUNCE_MS);
+  }, [user?.username]);
+
+  const handleUsernameChange = useCallback((text: string) => {
+    const normalized = text.toLowerCase().replace(/[^a-z0-9_]/g, '');
+    setUsername(normalized);
+    checkUsername(normalized);
+  }, [checkUsername]);
+
+  const canSave = hasChanges && usernameStatus !== 'checking' && usernameStatus !== 'taken' && usernameStatus !== 'invalid' && usernameStatus !== 'too_short';
 
   const handleSave = useCallback(async () => {
-    if (!hasChanges) return;
+    if (!canSave) return;
     setIsSaving(true);
     try {
-      const updated = await api.updateMe({ display_name: displayName || undefined });
+      const payload: { display_name?: string; username?: string } = {};
+      if (displayName !== (user?.display_name ?? '')) {
+        payload.display_name = displayName || undefined;
+      }
+      if (username !== (user?.username ?? '')) {
+        payload.username = username;
+      }
+      const updated = await api.updateMe(payload);
       setUser(updated);
       setHasChanges(false);
-      Alert.alert('Сохранено', 'Профиль обновлён');
+      setUsernameStatus('idle');
+      toast.success('Профиль обновлён');
     } catch {
-      Alert.alert('Ошибка', 'Не удалось сохранить изменения');
+      toast.error('Не удалось сохранить изменения');
     } finally {
       setIsSaving(false);
     }
-  }, [displayName, hasChanges, setUser]);
+  }, [displayName, username, canSave, setUser, user?.display_name, user?.username]);
 
   const handleTogglePrivate = useCallback(async (value: boolean) => {
     try {
       await updateSettings({ is_private_profile: value });
     } catch {
-      Alert.alert('Ошибка', 'Не удалось сохранить настройку');
+      toast.error('Не удалось сохранить настройку');
     }
   }, [updateSettings]);
 
@@ -175,14 +231,14 @@ export default function EditProfileScreen() {
         <TouchableOpacity
           onPress={handleSave}
           style={styles.saveButton}
-          disabled={!hasChanges || isSaving}
+          disabled={!canSave || isSaving}
         >
           {isSaving ? (
             <ActivityIndicator size="small" color={Colors.royalBlue} />
           ) : (
             <Text style={[
               styles.saveButtonText,
-              (!hasChanges) && styles.saveButtonTextDisabled,
+              (!canSave) && styles.saveButtonTextDisabled,
             ]}>
               Сохранить
             </Text>
@@ -215,6 +271,48 @@ export default function EditProfileScreen() {
           </View>
           <Text style={styles.hint}>
             Это имя будет отображаться на вашем профиле
+          </Text>
+
+          {/* Юзернейм */}
+          <Text style={[styles.sectionTitle, { marginTop: Spacing.xl }]}>Юзернейм</Text>
+          <View style={[
+            styles.inputContainer,
+            usernameStatus === 'available' && styles.inputValid,
+            (usernameStatus === 'taken' || usernameStatus === 'invalid' || usernameStatus === 'too_short') && styles.inputError,
+          ]}>
+            <View style={styles.usernameInputRow}>
+              <Text style={styles.usernamePrefix}>@</Text>
+              <TextInput
+                style={[styles.input, { flex: 1, paddingLeft: 0 }]}
+                value={username}
+                onChangeText={handleUsernameChange}
+                placeholder="username"
+                placeholderTextColor={Colors.textMuted}
+                maxLength={50}
+                autoCapitalize="none"
+                autoCorrect={false}
+                returnKeyType="done"
+              />
+              {usernameStatus === 'checking' && (
+                <ActivityIndicator size="small" color={Colors.royalBlue} />
+              )}
+              {usernameStatus === 'available' && (
+                <Ionicons name="checkmark-circle" size={20} color={Colors.success} />
+              )}
+              {(usernameStatus === 'taken' || usernameStatus === 'invalid' || usernameStatus === 'too_short') && (
+                <Ionicons name="close-circle" size={20} color={Colors.error} />
+              )}
+            </View>
+          </View>
+          <Text style={[
+            styles.hint,
+            (usernameStatus === 'taken' || usernameStatus === 'invalid' || usernameStatus === 'too_short') && styles.hintError,
+          ]}>
+            {usernameStatus === 'taken' && 'Этот юзернейм уже занят'}
+            {usernameStatus === 'invalid' && 'Только строчные латинские буквы, цифры и _'}
+            {usernameStatus === 'too_short' && 'Минимум 3 символа'}
+            {usernameStatus === 'available' && 'Юзернейм свободен!'}
+            {(usernameStatus === 'idle' || usernameStatus === 'checking') && 'Латинские буквы, цифры и подчёркивание (3–50 символов)'}
           </Text>
 
           {/* Приватность */}
@@ -301,6 +399,25 @@ const styles = StyleSheet.create({
     ...Typography.caption,
     color: Colors.textSecondary,
     marginTop: Spacing.xs,
+  },
+  hintError: {
+    color: Colors.error,
+  },
+  inputValid: {
+    borderColor: Colors.success,
+  },
+  inputError: {
+    borderColor: Colors.error,
+  },
+  usernameInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: Spacing.md,
+  },
+  usernamePrefix: {
+    ...Typography.body,
+    color: Colors.textSecondary,
+    marginRight: 2,
   },
   section: {
     backgroundColor: Colors.background,

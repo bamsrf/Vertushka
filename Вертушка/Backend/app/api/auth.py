@@ -23,8 +23,9 @@ from app.models.wishlist import Wishlist
 from app.models.collection import Collection
 from app.schemas.user import UserCreate, UserLogin, UserResponse
 from app.schemas.auth import (
-    Token, RefreshToken, AppleSignIn, GoogleSignIn,
+    Token, RefreshToken, AppleSignIn,
     ForgotPasswordRequest, VerifyResetCodeRequest, ResetPasswordRequest,
+    RestoreAccountRequest,
 )
 from app.services.email import send_reset_code_email
 from app.utils.security import (
@@ -202,11 +203,13 @@ async def register(
     db.add(collection)
     
     await db.commit()
-    
+
+    logger.info("user_registered", extra={"user_id": str(user.id), "email": user.email, "username": user.username})
+
     # Создание токенов
     access_token = create_access_token(user.id)
     refresh_token = create_refresh_token(user.id)
-    
+
     return Token(
         access_token=access_token,
         refresh_token=refresh_token
@@ -249,15 +252,43 @@ async def login(
             detail="Неверный логин или пароль"
         )
     
+    # Проверка soft delete: аккаунт удалён, но в окне восстановления
+    if not user.is_active and user.deleted_at is not None:
+        if user.scheduled_purge_at and user.scheduled_purge_at > datetime.utcnow():
+            settings = get_settings()
+            restore_token = jose_jwt.encode(
+                {
+                    "sub": str(user.id),
+                    "type": "restore",
+                    "exp": datetime.now(timezone.utc) + timedelta(minutes=30),
+                },
+                settings.jwt_secret_key,
+                algorithm=settings.jwt_algorithm,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="account_deleted",
+                headers={
+                    "X-Restore-Token": restore_token,
+                    "X-Purge-At": user.scheduled_purge_at.isoformat(),
+                },
+            )
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Аккаунт удалён"
+        )
+
     if not user.is_active:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Аккаунт деактивирован"
         )
-    
+
     # Обновление времени последнего входа
     user.last_login_at = datetime.utcnow()
     await db.commit()
+
+    logger.info("user_login", extra={"user_id": str(user.id), "email": user.email})
 
     access_token = create_access_token(user.id)
     refresh_token = create_refresh_token(user.id)
@@ -379,27 +410,14 @@ async def apple_sign_in(
     user.last_login_at = datetime.utcnow()
     await db.commit()
 
+    logger.info("apple_sign_in", extra={"user_id": str(user.id), "email": user.email})
+
     access_token = create_access_token(user.id)
     refresh_token = create_refresh_token(user.id)
 
     return Token(
         access_token=access_token,
         refresh_token=refresh_token
-    )
-
-
-@router.post("/google", response_model=Token)
-async def google_sign_in(
-    data: GoogleSignIn,
-    db: AsyncSession = Depends(get_db)
-):
-    """Вход через Google Sign In"""
-    # TODO: Верификация id_token через Google
-    # Пока заглушка для структуры
-    
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="Google Sign In ещё не реализован"
     )
 
 
@@ -533,7 +551,55 @@ async def reset_password(
     user.last_login_at = datetime.utcnow()
     await db.commit()
 
+    logger.info("password_reset", extra={"user_id": str(user.id), "email": user.email})
+
     # Сразу выдаём токены для автологина
+    access_token = create_access_token(user.id)
+    refresh_token = create_refresh_token(user.id)
+
+    return Token(
+        access_token=access_token,
+        refresh_token=refresh_token
+    )
+
+
+@router.post("/restore", response_model=Token)
+async def restore_account(
+    data: RestoreAccountRequest,
+    db: AsyncSession = Depends(get_db)
+):
+    """Восстановление удалённого аккаунта по restore_token"""
+    payload = verify_token_type(data.restore_token, "restore")
+
+    if not payload:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Недействительный или просроченный токен восстановления"
+        )
+
+    user_id = UUID(payload["sub"])
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Пользователь не найден"
+        )
+
+    if user.deleted_at is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Аккаунт не удалён"
+        )
+
+    # Восстанавливаем аккаунт
+    user.is_active = True
+    user.deleted_at = None
+    user.scheduled_purge_at = None
+    user.last_login_at = datetime.utcnow()
+    await db.commit()
+
     access_token = create_access_token(user.id)
     refresh_token = create_refresh_token(user.id)
 

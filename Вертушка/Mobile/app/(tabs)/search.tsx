@@ -22,10 +22,12 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { AnimatedGradientText } from '../../components/AnimatedGradientText';
 import { RecordGrid } from '../../components/RecordGrid';
-import { useSearchStore, useCollectionStore, useUserSearchStore, useAuthStore } from '../../lib/store';
-import { api } from '../../lib/api';
+import { useSearchStore, useCollectionStore, useUserSearchStore, useAuthStore, useSuggestStore } from '../../lib/store';
+import { analytics } from '../../lib/analytics';
+import { api, resolveMediaUrl } from '../../lib/api';
 import { MasterSearchResult, ReleaseSearchResult, ArtistSearchResult, UserWithStats } from '../../lib/types';
 import { Colors, Typography, Spacing, BorderRadius, Gradients } from '../../constants/theme';
+import { toast } from '../../lib/toast';
 
 function getFormatDisplayInfo(format?: string): { label: string; verb: string } {
   if (!format) return { label: 'Винил', verb: 'добавлен' };
@@ -124,15 +126,24 @@ export default function SearchScreen() {
     isLoading,
     hasMore,
     searchHistory,
+    correctedQuery,
     search,
     loadMore,
     clearResults,
     setFilters,
     clearFilters,
     loadHistory,
+    addToHistory,
     removeFromHistory,
     clearHistory,
   } = useSearchStore();
+
+  const [showAllArtists, setShowAllArtists] = useState(false);
+  const [topArtistImgError, setTopArtistImgError] = useState(false);
+  const [secondaryImgErrors, setSecondaryImgErrors] = useState<Set<string>>(new Set());
+
+  const { suggestions, fetchSuggestions, clear: clearSuggestions } = useSuggestStore();
+  const suggestTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const { addToCollection, addToWishlist, collectionItems } = useCollectionStore();
 
@@ -202,10 +213,10 @@ export default function SearchScreen() {
     }
   }, [overlayOpacity, slideAnim, tempFilters, setFilters, searchInput, search]);
 
-  // Загружаем историю при монтировании
+  // Загружаем историю при монтировании и при смене пользователя
   useEffect(() => {
     loadHistory();
-  }, [loadHistory]);
+  }, [loadHistory, user?.id]);
 
   const handleSearch = useCallback(async () => {
     const trimmed = searchInput.trim();
@@ -215,7 +226,14 @@ export default function SearchScreen() {
     if (now - lastSearchTime.current < 500) return;
     lastSearchTime.current = now;
 
+    clearSuggestions();
+    if (suggestTimer.current) clearTimeout(suggestTimer.current);
+    setShowAllArtists(false);
+    setTopArtistImgError(false);
+    setSecondaryImgErrors(new Set());
+
     try {
+      analytics.search(trimmed, 0);
       if (trimmed.startsWith('@')) {
         // Режим поиска пользователей — ищем без @
         const userQuery = trimmed.slice(1).trim();
@@ -234,7 +252,7 @@ export default function SearchScreen() {
           const message = error?.response?.status === 503
             ? 'Сервис временно недоступен. Попробуйте позже.'
             : error?.message || 'Ошибка при поиске';
-          Alert.alert('Ошибка', message);
+          toast.error('Ошибка', message);
         }
         return;
       }
@@ -242,18 +260,21 @@ export default function SearchScreen() {
       const message = error?.response?.status === 503
         ? 'Сервис временно недоступен. Попробуйте позже.'
         : error?.message || 'Ошибка при поиске';
-      Alert.alert('Ошибка', message);
+      toast.error('Ошибка', message);
     }
-  }, [searchInput, search, searchUsers, clearResults]);
+  }, [searchInput, search, searchUsers, clearResults, clearSuggestions]);
 
   const handleClear = useCallback(() => {
     setSearchInput('');
     clearResults();
     clearUserResults();
     clearFilters();
+    clearSuggestions();
+    if (suggestTimer.current) clearTimeout(suggestTimer.current);
     setTempFilters({});
     setSelectedDecade(undefined);
-  }, [clearResults, clearFilters]);
+    setShowAllArtists(false);
+  }, [clearResults, clearFilters, clearSuggestions]);
 
   // Проверка активных фильтров
   const hasActiveFilters = !!(filters.format || filters.country || filters.year);
@@ -279,11 +300,22 @@ export default function SearchScreen() {
       clearFilters();
     }
     setSearchInput(text);
-  }, [searchInput, filters.format, filters.country, filters.year, clearFilters, clearResults, clearUserResults]);
+
+    // Автодополнение с debounce 400ms
+    if (suggestTimer.current) clearTimeout(suggestTimer.current);
+    if (text.length >= 2 && !text.startsWith('@')) {
+      suggestTimer.current = setTimeout(() => fetchSuggestions(text), 400);
+    } else {
+      clearSuggestions();
+    }
+  }, [searchInput, filters.format, filters.country, filters.year, clearFilters, clearResults, clearUserResults, fetchSuggestions, clearSuggestions]);
 
   const handleHistoryItemPress = useCallback(async (historyQuery: string) => {
     setShowHistory(false);
     setSearchInput(historyQuery);
+    setShowAllArtists(false);
+    setTopArtistImgError(false);
+    setSecondaryImgErrors(new Set());
     try {
       if (historyQuery.startsWith('@')) {
         const userQuery = historyQuery.slice(1).trim();
@@ -301,7 +333,7 @@ export default function SearchScreen() {
           const message = error?.response?.status === 503
             ? 'Сервис временно недоступен. Попробуйте позже.'
             : error?.message || 'Ошибка при поиске';
-          Alert.alert('Ошибка', message);
+          toast.error('Ошибка', message);
         }
         return;
       }
@@ -309,7 +341,7 @@ export default function SearchScreen() {
       const message = error?.response?.status === 503
         ? 'Сервис временно недоступен. Попробуйте позже.'
         : error?.message || 'Ошибка при поиске';
-      Alert.alert('Ошибка', message);
+      toast.error('Ошибка', message);
     }
   }, [search, searchUsers, clearResults]);
 
@@ -335,7 +367,15 @@ export default function SearchScreen() {
   const handleRecordPress = (record: MasterSearchResult | ReleaseSearchResult) => {
     // Если это MasterSearchResult - переходим на страницу мастера
     if ('master_id' in record) {
-      router.push(`/master/${record.master_id}`);
+      router.push({
+        pathname: `/master/${record.master_id}`,
+        params: {
+          title: record.title,
+          artist: record.artist,
+          year: record.year?.toString() || '',
+          cover: record.cover_image_url || '',
+        },
+      });
     } else if ('release_id' in record) {
       // Если это ReleaseSearchResult - переходим на страницу релиза
       router.push(`/record/${record.release_id}`);
@@ -354,10 +394,10 @@ export default function SearchScreen() {
         await addToCollection(discogsId);
         const format = 'format' in record ? record.format : undefined;
         const fmt = getFormatDisplayInfo(format);
-        Alert.alert('Готово!', `"${record.title}" ${fmt.verb} в коллекцию`);
+        toast.success('Готово!', `"${record.title}" ${fmt.verb} в коллекцию`);
       } catch (error: any) {
         const message = error?.response?.data?.detail || error?.message || 'Не удалось добавить в коллекцию';
-        Alert.alert('Ошибка', message);
+        toast.error('Ошибка', message);
       }
     };
 
@@ -381,10 +421,10 @@ export default function SearchScreen() {
       await addToWishlist(discogsId);
       const format = 'format' in record ? record.format : undefined;
       const fmt = getFormatDisplayInfo(format);
-      Alert.alert('Готово!', `"${record.title}" ${fmt.verb} в список желаний`);
+      toast.success('Готово!', `"${record.title}" ${fmt.verb} в список желаний`);
     } catch (error: any) {
       const message = error?.response?.data?.detail || error?.message || 'Не удалось добавить в список желаний';
-      Alert.alert('Ошибка', message);
+      toast.error('Ошибка', message);
     }
   };
 
@@ -403,11 +443,11 @@ export default function SearchScreen() {
       if (response.results.length > 0) {
         router.push(`/artist/${response.results[0].artist_id}`);
       } else {
-        Alert.alert('Не найдено', `Артист "${artistName}" не найден`);
+        toast.info('Не найдено', `Артист "${artistName}" не найден`);
       }
     } catch (error) {
       console.error('Error searching artist:', error);
-      Alert.alert('Ошибка', 'Не удалось найти артиста');
+      toast.error('Ошибка', 'Не удалось найти артиста');
     }
   }, [router]);
 
@@ -429,8 +469,7 @@ export default function SearchScreen() {
   // isFocused намеренно не используем — список должен оставаться интерактивным после потери фокуса
   const shouldShowHistory = showHistory && searchInput === '' && results.length === 0 && artistResults.length === 0 && searchHistory.length > 0;
 
-  // Показываем только самого релевантного артиста (первого в списке)
-  const topArtist = artistResults.length > 0 ? artistResults[0] : null;
+  const visibleArtists = showAllArtists ? artistResults : artistResults.slice(0, 3);
 
   const SearchHistory = shouldShowHistory ? (
     <View style={styles.historyContainer}>
@@ -584,7 +623,7 @@ export default function SearchScreen() {
         <AnimatedGradientText style={Typography.heroTitle}>Поиск</AnimatedGradientText>
         <TouchableOpacity style={styles.profileButton} onPress={handleProfilePress}>
           {user?.avatar_url ? (
-            <Image source={user.avatar_url} style={styles.avatar} cachePolicy="disk" />
+            <Image source={resolveMediaUrl(user.avatar_url)} style={styles.avatar} cachePolicy="disk" />
           ) : (
             <LinearGradient
               colors={[Colors.royalBlue, Colors.periwinkle]}
@@ -629,6 +668,70 @@ export default function SearchScreen() {
         )}
       </View>
 
+      {/* Dropdown с автодополнением */}
+      {suggestions && (suggestions.artists.length > 0 || suggestions.masters.length > 0) && (
+        <View style={styles.suggestDropdown}>
+          {suggestions.artists.map((artist) => (
+            <TouchableOpacity
+              key={artist.artist_id}
+              style={styles.suggestItem}
+              onPress={() => {
+                clearSuggestions();
+                addToHistory(artist.name);
+                router.push(`/artist/${artist.artist_id}`);
+              }}
+              activeOpacity={0.7}
+            >
+              {artist.thumb ? (
+                <Image source={artist.thumb} style={styles.suggestThumb} contentFit="cover" cachePolicy="disk" />
+              ) : (
+                <View style={[styles.suggestThumb, styles.suggestThumbPlaceholder]}>
+                  <Ionicons name="person-outline" size={16} color={Colors.textMuted} />
+                </View>
+              )}
+              <View style={styles.suggestInfo}>
+                <Text style={styles.suggestName} numberOfLines={1}>{artist.name}</Text>
+                <Text style={styles.suggestType}>Артист</Text>
+              </View>
+              <Ionicons name="arrow-forward-outline" size={16} color={Colors.textMuted} />
+            </TouchableOpacity>
+          ))}
+          {suggestions.masters.map((master) => (
+            <TouchableOpacity
+              key={master.master_id}
+              style={styles.suggestItem}
+              onPress={() => {
+                clearSuggestions();
+                addToHistory(`${master.artist} ${master.title}`.trim());
+                router.push({
+                  pathname: `/master/${master.master_id}`,
+                  params: {
+                    title: master.title,
+                    artist: master.artist,
+                    year: master.year?.toString() || '',
+                    cover: master.cover_image_url || '',
+                  },
+                });
+              }}
+              activeOpacity={0.7}
+            >
+              {master.thumb ? (
+                <Image source={master.thumb} style={styles.suggestThumb} contentFit="cover" cachePolicy="disk" />
+              ) : (
+                <View style={[styles.suggestThumb, styles.suggestThumbPlaceholder]}>
+                  <Ionicons name="disc-outline" size={16} color={Colors.textMuted} />
+                </View>
+              )}
+              <View style={styles.suggestInfo}>
+                <Text style={styles.suggestName} numberOfLines={1}>{master.title}</Text>
+                <Text style={styles.suggestType} numberOfLines={1}>{master.artist}{master.year ? ` · ${master.year}` : ''}</Text>
+              </View>
+              <Ionicons name="arrow-forward-outline" size={16} color={Colors.textMuted} />
+            </TouchableOpacity>
+          ))}
+        </View>
+      )}
+
       {SearchHistory}
     </View>
   );
@@ -646,7 +749,7 @@ export default function SearchScreen() {
         <View style={styles.userImageContainer}>
           {u.avatar_url ? (
             <Image
-              source={u.avatar_url}
+              source={resolveMediaUrl(u.avatar_url)}
               style={styles.topArtistImage}
               contentFit="cover"
               cachePolicy="disk"
@@ -708,40 +811,97 @@ export default function SearchScreen() {
     <View>
       {SearchHeader}
 
-      {topArtist && (
-        <TouchableOpacity
-          onPress={() => handleArtistPress(topArtist)}
-          activeOpacity={0.8}
-        >
-          <LinearGradient
-            colors={Gradients.blue as [string, string]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.topArtistCard}
+      {correctedQuery && (
+        <View style={styles.correctionBanner}>
+          <Text style={styles.correctionBannerText}>
+            Показаны результаты для:{' '}
+            <Text style={styles.correctionBannerBold}>{correctedQuery}</Text>
+          </Text>
+        </View>
+      )}
+
+      {artistResults.length > 0 && (
+        <View>
+          {/* Первый артист — крупная gradient-карточка */}
+          <TouchableOpacity
+            onPress={() => handleArtistPress(artistResults[0])}
+            activeOpacity={0.8}
           >
-            <View style={styles.topArtistImageContainer}>
-              {(topArtist.cover_image_url || topArtist.thumb_image_url) ? (
-                <Image
-                  source={topArtist.cover_image_url || topArtist.thumb_image_url}
-                  style={styles.topArtistImage}
-                  contentFit="cover"
-                  cachePolicy="disk"
-                />
-              ) : (
-                <View style={styles.topArtistPlaceholder}>
-                  <Ionicons name="person-outline" size={32} color="rgba(255,255,255,0.7)" />
-                </View>
-              )}
-            </View>
-            <View style={styles.topArtistInfo}>
-              <Text style={styles.topArtistLabel}>Артист</Text>
-              <Text style={styles.topArtistName} numberOfLines={1}>{topArtist.name}</Text>
-            </View>
-            <View style={styles.artistArrowBg}>
-              <Ionicons name="chevron-forward" size={20} color="#FFFFFF" />
-            </View>
-          </LinearGradient>
-        </TouchableOpacity>
+            <LinearGradient
+              colors={Gradients.blue as [string, string]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.topArtistCard}
+            >
+              <View style={styles.topArtistImageContainer}>
+                {!topArtistImgError && (artistResults[0].cover_image_url || artistResults[0].thumb_image_url) ? (
+                  <Image
+                    source={artistResults[0].cover_image_url || artistResults[0].thumb_image_url}
+                    style={styles.topArtistImage}
+                    contentFit="cover"
+                    cachePolicy="disk"
+                    onError={() => setTopArtistImgError(true)}
+                  />
+                ) : (
+                  <View style={styles.topArtistPlaceholder}>
+                    <Ionicons name="person-outline" size={32} color="rgba(255,255,255,0.7)" />
+                  </View>
+                )}
+              </View>
+              <View style={styles.topArtistInfo}>
+                <Text style={styles.topArtistLabel}>Артист</Text>
+                <Text style={styles.topArtistName} numberOfLines={1}>{artistResults[0].name}</Text>
+              </View>
+              <View style={styles.artistArrowBg}>
+                <Ionicons name="chevron-forward" size={20} color="#FFFFFF" />
+              </View>
+            </LinearGradient>
+          </TouchableOpacity>
+
+          {/* Остальные артисты — компактный список */}
+          {visibleArtists.slice(1).map((artist) => (
+            <TouchableOpacity
+              key={artist.artist_id}
+              style={styles.secondaryArtistCard}
+              onPress={() => handleArtistPress(artist)}
+              activeOpacity={0.8}
+            >
+              <View style={styles.topArtistImageContainer}>
+                {!secondaryImgErrors.has(artist.artist_id) && (artist.cover_image_url || artist.thumb_image_url) ? (
+                  <Image
+                    source={artist.cover_image_url || artist.thumb_image_url}
+                    style={styles.topArtistImage}
+                    contentFit="cover"
+                    cachePolicy="disk"
+                    onError={() => setSecondaryImgErrors(prev => new Set([...prev, artist.artist_id]))}
+                  />
+                ) : (
+                  <View style={[styles.topArtistPlaceholder, styles.secondaryArtistPlaceholder]}>
+                    <Ionicons name="person-outline" size={24} color={Colors.textMuted} />
+                  </View>
+                )}
+              </View>
+              <View style={styles.topArtistInfo}>
+                <Text style={styles.secondaryArtistLabel}>Артист</Text>
+                <Text style={styles.secondaryArtistName} numberOfLines={1}>{artist.name}</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color={Colors.textMuted} />
+            </TouchableOpacity>
+          ))}
+
+          {/* Кнопка "Ещё X артистов" */}
+          {!showAllArtists && artistResults.length > 3 && (
+            <TouchableOpacity
+              style={styles.showMoreArtistsButton}
+              onPress={() => setShowAllArtists(true)}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.showMoreArtistsText}>
+                Ещё {artistResults.length - 3} артистов
+              </Text>
+            </TouchableOpacity>
+          )}
+        </View>
       )}
 
       {/* Пользователи */}
@@ -1059,6 +1219,94 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.2)',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  suggestDropdown: {
+    marginTop: Spacing.sm,
+    backgroundColor: Colors.surface,
+    borderRadius: BorderRadius.md,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  suggestItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    gap: Spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+  },
+  suggestThumb: {
+    width: 36,
+    height: 36,
+    borderRadius: BorderRadius.sm,
+  },
+  suggestThumbPlaceholder: {
+    backgroundColor: Colors.background,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  suggestInfo: {
+    flex: 1,
+    minWidth: 0,
+  },
+  suggestName: {
+    ...Typography.bodyBold,
+    color: Colors.text,
+    fontSize: 14,
+  },
+  suggestType: {
+    ...Typography.caption,
+    color: Colors.textMuted,
+  },
+  correctionBanner: {
+    backgroundColor: Colors.surface,
+    borderRadius: BorderRadius.md,
+    padding: Spacing.md,
+    marginBottom: Spacing.md,
+    borderLeftWidth: 3,
+    borderLeftColor: Colors.royalBlue,
+  },
+  correctionBannerText: {
+    ...Typography.body,
+    color: Colors.textSecondary,
+  },
+  correctionBannerBold: {
+    fontWeight: '700',
+    color: Colors.text,
+  },
+  secondaryArtistCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.surface,
+    borderRadius: BorderRadius.lg,
+    padding: Spacing.md,
+    marginBottom: Spacing.sm,
+  },
+  secondaryArtistPlaceholder: {
+    backgroundColor: Colors.surface,
+  },
+  secondaryArtistLabel: {
+    ...Typography.caption,
+    color: Colors.textMuted,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  secondaryArtistName: {
+    ...Typography.bodyBold,
+    color: Colors.text,
+    marginTop: 2,
+  },
+  showMoreArtistsButton: {
+    alignItems: 'center',
+    paddingVertical: Spacing.sm,
+    marginBottom: Spacing.md,
+  },
+  showMoreArtistsText: {
+    ...Typography.body,
+    color: Colors.royalBlue,
+    fontWeight: '600',
   },
   userCard: {
     flexDirection: 'row',

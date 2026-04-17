@@ -26,7 +26,7 @@ TTL_ARTIST_MASTERS = 86400    # 1 день
 TTL_SEARCH = 600              # 10 минут — выдача может обновляться
 TTL_PRICE_STATS = 6 * 3600    # 6 часов — цены меняются
 TTL_MASTER_VERSIONS = 3 * 86400  # 3 дня
-TTL_MASTER_INFO = 86400       # 1 день
+TTL_MASTER_INFO = 7 * 86400   # 7 дней — обложки почти не меняются
 
 
 class RedisCache:

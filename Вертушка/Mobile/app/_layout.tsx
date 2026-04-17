@@ -1,12 +1,14 @@
 /**
  * Root Layout - проверка авторизации и роутинг
  */
-import { useEffect } from 'react';
-import { Stack } from 'expo-router';
+import { useEffect, useRef } from 'react';
+import { Stack, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import * as SplashScreen from 'expo-splash-screen';
+import * as Notifications from 'expo-notifications';
+import Constants from 'expo-constants';
 import {
   useFonts,
   Inter_400Regular,
@@ -16,13 +18,47 @@ import {
   Inter_800ExtraBold,
 } from '@expo-google-fonts/inter';
 import { useAuthStore, useOnboardingStore } from '../lib/store';
+
+// Sentry загружается только если пакет установлен (не в Expo Go)
+type SentryStub = { init: (c: object) => void; wrap: <T>(c: T) => T };
+let Sentry: SentryStub = { init: () => {}, wrap: (c) => c };
+try {
+  Sentry = require('@sentry/react-native');
+} catch {
+  // Expo Go — Sentry недоступен, используем заглушку
+}
 import { Colors } from '../constants/theme';
+import { OfflineBanner } from '../components/OfflineBanner';
+import Toast from 'react-native-toast-message';
+
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: false,
+    shouldShowBanner: true,
+    shouldShowList: true,
+  }),
+});
+
+const sentryDsn = Constants.expoConfig?.extra?.sentryDsn as string | undefined;
+if (sentryDsn) {
+  Sentry.init({
+    dsn: sentryDsn,
+    environment: __DEV__ ? 'development' : 'production',
+    tracesSampleRate: 0.2,
+    attachScreenshot: false,
+  });
+}
 
 SplashScreen.preventAutoHideAsync();
 
-export default function RootLayout() {
+function RootLayout() {
   const { checkAuth, isLoading } = useAuthStore();
   const { checkOnboarding, isReady: onboardingReady } = useOnboardingStore();
+  const router = useRouter();
+  const notificationListener = useRef<Notifications.EventSubscription | null>(null);
+  const responseListener = useRef<Notifications.EventSubscription | null>(null);
 
   const [fontsLoaded] = useFonts({
     Inter_400Regular,
@@ -35,6 +71,28 @@ export default function RootLayout() {
   useEffect(() => {
     checkAuth();
     checkOnboarding();
+  }, []);
+
+  useEffect(() => {
+    // Foreground: уведомление пришло пока приложение открыто
+    notificationListener.current = Notifications.addNotificationReceivedListener(() => {
+      // Обработка выполняется через setNotificationHandler выше
+    });
+
+    // Tap: пользователь нажал на уведомление
+    responseListener.current = Notifications.addNotificationResponseReceivedListener((response) => {
+      const data = response.notification.request.content.data as Record<string, unknown>;
+      if (data?.recordId) {
+        router.push(`/record/${data.recordId}`);
+      } else if (data?.username) {
+        router.push(`/user/${data.username}`);
+      }
+    });
+
+    return () => {
+      notificationListener.current?.remove();
+      responseListener.current?.remove();
+    };
   }, []);
 
   useEffect(() => {
@@ -51,6 +109,7 @@ export default function RootLayout() {
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
         <StatusBar style="dark" />
+        <OfflineBanner />
         <Stack
           screenOptions={{
             headerShown: false,
@@ -75,8 +134,13 @@ export default function RootLayout() {
           <Stack.Screen name="settings/share-profile" />
           <Stack.Screen name="user/[username]/index" />
           <Stack.Screen name="collection/value" />
+          <Stack.Screen name="settings/notifications" />
+          <Stack.Screen name="social/list" />
         </Stack>
+        <Toast />
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );
 }
+
+export default Sentry.wrap(RootLayout);

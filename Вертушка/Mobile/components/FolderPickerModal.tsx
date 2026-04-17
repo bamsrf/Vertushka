@@ -15,6 +15,7 @@ import {
   Alert,
   ActivityIndicator,
 } from 'react-native';
+import { toast } from '../lib/toast';
 import { Ionicons } from '@expo/vector-icons';
 import { useCollectionStore } from '../lib/store';
 import { api } from '../lib/api';
@@ -98,7 +99,7 @@ export function FolderPickerModal({
           onSelectFolder(folder.id);
         } catch {
           setIsCreating(false);
-          Alert.alert('Ошибка', 'Не удалось создать папку');
+          toast.error('Не удалось создать папку');
         }
       },
       'plain-text',

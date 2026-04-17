@@ -94,6 +94,27 @@ export interface RecordSearchResponse {
   per_page: number;
 }
 
+// ==================== Suggest (автодополнение) ====================
+
+export interface SuggestArtist {
+  artist_id: string;
+  name: string;
+  thumb?: string;
+}
+
+export interface SuggestMaster {
+  master_id: string;
+  title: string;
+  artist: string;
+  year?: number;
+  thumb?: string;
+}
+
+export interface SuggestResponse {
+  artists: SuggestArtist[];
+  masters: SuggestMaster[];
+}
+
 // ==================== Cover Scan ====================
 
 export type ScanMode = 'barcode' | 'cover';
@@ -141,6 +162,7 @@ export interface MasterVersion {
   format?: string;
   major_formats?: string[];
   thumb_image_url?: string;
+  cover_image_url?: string;
 }
 
 export interface MasterSearchResponse {
@@ -148,6 +170,8 @@ export interface MasterSearchResponse {
   total: number;
   page: number;
   per_page: number;
+  has_more?: boolean;
+  next_cursor?: number | null;
 }
 
 export interface MasterVersionsResponse {
@@ -426,6 +450,14 @@ export interface GiftGivenItem {
   completed_at?: string;
   record: PublicProfileRecord;
   for_user: GiftRecipientInfo;
+}
+
+// ==================== Notifications ====================
+
+export interface NotificationSettings {
+  notify_new_follower: boolean;
+  notify_gift_booked: boolean;
+  notify_app_updates: boolean;
 }
 
 // ==================== Social ====================

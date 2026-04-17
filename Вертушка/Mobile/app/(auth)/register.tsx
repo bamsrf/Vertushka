@@ -9,8 +9,8 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
-  Alert,
 } from 'react-native';
+import { toast } from '../../lib/toast';
 import { Link } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -73,10 +73,7 @@ export default function RegisterScreen() {
     try {
       await register(email, username, password);
     } catch (error: any) {
-      Alert.alert(
-        'Ошибка регистрации',
-        error.response?.data?.detail || 'Не удалось создать аккаунт'
-      );
+      toast.error('Ошибка регистрации', error.response?.data?.detail || 'Не удалось создать аккаунт');
     }
   };
 

@@ -12,6 +12,7 @@ import {
   FlatList,
   ActivityIndicator,
 } from 'react-native';
+import { toast } from '../../lib/toast';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -20,6 +21,7 @@ import * as ImageManipulator from 'expo-image-manipulator';
 import { Button, SegmentedControl } from '../../components/ui';
 import { RecordCard } from '../../components/RecordCard';
 import { useScannerStore, useCollectionStore } from '../../lib/store';
+import { analytics } from '../../lib/analytics';
 import { RecordSearchResult, ScanMode } from '../../lib/types';
 import { Colors, Typography, Spacing, BorderRadius, Shadows } from '../../constants/theme';
 
@@ -59,13 +61,12 @@ export default function ScannerScreen() {
 
     try {
       await searchByBarcode(data);
+      analytics.scanBarcode(true);
       setShowResults(true);
     } catch (error) {
-      Alert.alert(
-        'Не найдено',
-        'Винил с таким штрихкодом не найден в базе Discogs',
-        [{ text: 'OK', onPress: () => setIsScanning(true) }]
-      );
+      analytics.scanBarcode(false);
+      toast.info('Не найдено', 'Винил с таким штрихкодом не найден в базе Discogs');
+      setIsScanning(true);
     }
   };
 
@@ -88,10 +89,12 @@ export default function ScannerScreen() {
       if (!manipulated.base64) return;
 
       await searchByCover(manipulated.base64);
+      analytics.scanCover(true);
       setShowResults(true);
     } catch (error: any) {
+      analytics.scanCover(false);
       const message = error?.response?.data?.detail || 'Не удалось распознать обложку. Попробуйте сфотографировать ещё раз.';
-      Alert.alert('Не распознано', message, [{ text: 'OK' }]);
+      toast.error('Не распознано', message);
     }
   };
 
@@ -142,11 +145,12 @@ export default function ScannerScreen() {
     const doAdd = async () => {
       try {
         await addToCollection(record.discogs_id);
+        analytics.addToCollection(record.discogs_id);
         const fmt = getFormatDisplayInfo(record.format_type);
-        Alert.alert('Готово!', `"${record.title}" ${fmt.verb} в коллекцию`);
+        toast.success(`"${record.title}" ${fmt.verb} в коллекцию`);
         handleCloseResults();
       } catch (error) {
-        Alert.alert('Ошибка', 'Не удалось добавить в коллекцию');
+        toast.error('Не удалось добавить в коллекцию');
       }
     };
 
@@ -167,11 +171,12 @@ export default function ScannerScreen() {
   const handleAddToWishlist = async (record: RecordSearchResult) => {
     try {
       await addToWishlist(record.discogs_id);
+      analytics.addToWishlist(record.discogs_id);
       const fmt = getFormatDisplayInfo(record.format_type);
-      Alert.alert('Готово!', `"${record.title}" ${fmt.verb} в список желаний`);
+      toast.success(`"${record.title}" ${fmt.verb} в список желаний`);
       handleCloseResults();
     } catch (error) {
-      Alert.alert('Ошибка', 'Не удалось добавить в список желаний');
+      toast.error('Не удалось добавить в список желаний');
     }
   };
 
@@ -390,16 +395,16 @@ const styles = StyleSheet.create({
   },
   scannerFrame: {
     position: 'absolute',
-    top: '30%',
+    top: '38%',
     left: '15%',
     right: '15%',
     aspectRatio: 1.5,
   },
   scannerFrameSquare: {
     aspectRatio: 1,
-    left: '18%',
-    right: '18%',
-    top: '28%',
+    left: '10%',
+    right: '10%',
+    top: '34%',
   },
   corner: {
     position: 'absolute',
@@ -437,7 +442,7 @@ const styles = StyleSheet.create({
   },
   shutterContainer: {
     position: 'absolute',
-    bottom: '12%',
+    bottom: '14%',
     left: 0,
     right: 0,
     alignItems: 'center',

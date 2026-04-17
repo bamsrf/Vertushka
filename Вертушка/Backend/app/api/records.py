@@ -332,6 +332,25 @@ async def scan_cover(
     )
 
 
+@router.get("/suggest")
+async def suggest(
+    q: str = Query(..., min_length=2, max_length=100),
+    limit: int = Query(8, ge=1, le=15),
+):
+    """
+    Автодополнение: один запрос к Discogs, результаты разделяются по типу.
+    Возвращает artists (до 3) и masters (до 5).
+    """
+    discogs = DiscogsService()
+    try:
+        return await discogs.suggest(query=q, per_page=limit)
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Ошибка автодополнения: {str(e)}"
+        )
+
+
 @router.get("/{record_id}", response_model=RecordResponse)
 async def get_record(
     record_id: UUID,

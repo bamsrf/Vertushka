@@ -2,7 +2,7 @@
  * Zustand Store для Вертушка
  */
 import { create } from 'zustand';
-import { Alert } from 'react-native';
+import { toast } from './toast';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { api } from './api';
 import {
@@ -26,6 +26,7 @@ import {
   UserPublic,
   FeedItem,
   ScanMode,
+  SuggestResponse,
 } from './types';
 
 const getSearchHistoryKey = () => {
@@ -150,6 +151,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   logout: async () => {
     await api.logout();
     set({ user: null, isAuthenticated: false });
+    useSearchStore.getState().clearHistory();
   },
 
   checkAuth: async () => {
@@ -185,6 +187,7 @@ interface SearchState {
   hasMore: boolean;
   hasMoreArtists: boolean;
   searchHistory: string[];
+  correctedQuery: string | null;
 
   // Actions
   setQuery: (query: string) => void;
@@ -212,6 +215,7 @@ export const useSearchStore = create<SearchState>((set, get) => ({
   hasMore: false,
   hasMoreArtists: false,
   searchHistory: [],
+  correctedQuery: null,
 
   setQuery: (query) => set({ query }),
 
@@ -243,6 +247,7 @@ export const useSearchStore = create<SearchState>((set, get) => ({
           artistResults: cached.artistResults,
           totalArtistResults: cached.totalArtistResults,
           hasMoreArtists: cached.hasMoreArtists,
+          correctedQuery: cached.correctedQuery ?? null,
           isLoading: false,
         });
         await get().addToHistory(query.trim());
@@ -254,8 +259,23 @@ export const useSearchStore = create<SearchState>((set, get) => ({
         hasFilters
           ? api.searchReleases(query, filters, 1)
           : api.searchMasters(query, 1),
-        api.searchArtists(query, 1, 10),
+        api.searchArtists(query, 1, 15),
       ]);
+
+      // Определяем, было ли исправление запроса (fuzzy match Discogs)
+      let correctedQuery: string | null = null;
+      const topName = artistsResponse.results[0]?.name;
+      if (topName) {
+        const queryLower = query.toLowerCase().trim();
+        const nameLower = topName.toLowerCase().trim();
+        if (
+          !nameLower.includes(queryLower) &&
+          !queryLower.includes(nameLower) &&
+          queryLower !== nameLower
+        ) {
+          correctedQuery = topName;
+        }
+      }
 
       const searchResult = {
         results: releasesResponse.results,
@@ -264,6 +284,7 @@ export const useSearchStore = create<SearchState>((set, get) => ({
         artistResults: artistsResponse.results,
         totalArtistResults: artistsResponse.total,
         hasMoreArtists: artistsResponse.results.length < artistsResponse.total,
+        correctedQuery,
       };
 
       useCacheStore.getState().setSearch(cacheKey, searchResult);
@@ -317,6 +338,7 @@ export const useSearchStore = create<SearchState>((set, get) => ({
     totalArtistResults: 0,
     hasMore: false,
     hasMoreArtists: false,
+    correctedQuery: null,
   }),
 
   loadHistory: async () => {
@@ -381,6 +403,9 @@ interface CollectionState {
   defaultCollection: Collection | null;
   folders: Collection[];
   collectionItems: CollectionItem[];
+  collectionPage: number;
+  collectionHasMore: boolean;
+  isLoadingMore: boolean;
   wishlistItems: WishlistItem[];
   isLoading: boolean;
   stats: CollectionStats | null;
@@ -391,6 +416,7 @@ interface CollectionState {
   setActiveTab: (tab: CollectionTab) => void;
   fetchCollections: () => Promise<void>;
   fetchCollectionItems: () => Promise<void>;
+  loadMoreCollectionItems: () => Promise<void>;
   fetchWishlistItems: () => Promise<void>;
   fetchStats: () => Promise<void>;
   setSortBy: (sort: 'added_at' | 'price_desc' | 'price_asc') => void;
@@ -413,6 +439,9 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
   defaultCollection: null,
   folders: [],
   collectionItems: [],
+  collectionPage: 1,
+  collectionHasMore: false,
+  isLoadingMore: false,
   wishlistItems: [],
   isLoading: false,
   stats: null,
@@ -441,10 +470,30 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
 
     set({ isLoading: true });
     try {
-      const items = await api.getCollectionItems(defaultCollection.id, sortBy);
-      set({ collectionItems: items, isLoading: false });
+      const { items, hasMore } = await api.getCollectionItems(defaultCollection.id, sortBy, 1);
+      set({ collectionItems: items, collectionPage: 1, collectionHasMore: hasMore, isLoading: false });
     } catch (error) {
       set({ isLoading: false });
+      throw error;
+    }
+  },
+
+  loadMoreCollectionItems: async () => {
+    const { defaultCollection, sortBy, collectionPage, collectionHasMore, isLoadingMore, collectionItems } = get();
+    if (!defaultCollection || !collectionHasMore || isLoadingMore) return;
+
+    set({ isLoadingMore: true });
+    try {
+      const nextPage = collectionPage + 1;
+      const { items, hasMore } = await api.getCollectionItems(defaultCollection.id, sortBy, nextPage);
+      set({
+        collectionItems: [...collectionItems, ...items],
+        collectionPage: nextPage,
+        collectionHasMore: hasMore,
+        isLoadingMore: false,
+      });
+    } catch (error) {
+      set({ isLoadingMore: false });
       throw error;
     }
   },
@@ -545,7 +594,7 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
             }
           } catch (error) {
             console.error(`Failed to remove from folder "${folder.name}":`, error);
-            Alert.alert('Ошибка', `Не удалось удалить из папки "${folder.name}"`);
+            toast.error(`Не удалось удалить из папки "${folder.name}"`);
           }
         })
       );
@@ -826,6 +875,7 @@ interface SearchCacheEntry {
   totalArtistResults: number;
   hasMore: boolean;
   hasMoreArtists: boolean;
+  correctedQuery?: string | null;
 }
 
 interface CacheStore {
@@ -919,6 +969,42 @@ export const useCacheStore = create<CacheStore>((set, get) => ({
   })),
 
   invalidateAll: () => set({ releases: {}, artists: {}, artistMasters: {}, masters: {}, searches: {} }),
+}));
+
+// ==================== Suggest Store ====================
+
+interface SuggestState {
+  suggestions: SuggestResponse | null;
+  isLoading: boolean;
+  query: string;
+  fetchSuggestions: (q: string) => Promise<void>;
+  clear: () => void;
+}
+
+export const useSuggestStore = create<SuggestState>((set, get) => ({
+  suggestions: null,
+  isLoading: false,
+  query: '',
+
+  fetchSuggestions: async (q) => {
+    if (q.length < 2 || q.startsWith('@')) {
+      set({ suggestions: null, query: q });
+      return;
+    }
+    if (q === get().query && get().suggestions) return;
+
+    set({ isLoading: true, query: q });
+    try {
+      const data = await api.suggest(q);
+      if (q === get().query) {
+        set({ suggestions: data, isLoading: false });
+      }
+    } catch {
+      set({ isLoading: false });
+    }
+  },
+
+  clear: () => set({ suggestions: null, query: '' }),
 }));
 
 export const useFollowStore = create<FollowState>((set, get) => ({

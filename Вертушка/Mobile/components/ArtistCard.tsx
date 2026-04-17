@@ -1,7 +1,7 @@
 /**
  * Карточка артиста
  */
-import React from 'react';
+import React, { memo } from 'react';
 import {
   View,
   Text,
@@ -22,7 +22,7 @@ interface ArtistCardProps {
   onPress?: () => void;
 }
 
-export function ArtistCard({ artist, onPress }: ArtistCardProps) {
+function ArtistCardComponent({ artist, onPress }: ArtistCardProps) {
   // Приоритет: cover_image_url для высокого качества, fallback на thumb
   const imageUrl = artist.cover_image_url || artist.thumb_image_url;
 
@@ -100,4 +100,5 @@ const styles = StyleSheet.create({
   },
 });
 
+export const ArtistCard = memo(ArtistCardComponent);
 export default ArtistCard;

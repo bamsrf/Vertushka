@@ -28,7 +28,9 @@
       },
       "package": "com.vertushka.app",
       "permissions": [
-        "CAMERA"
+        "CAMERA",
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO"
       ],
       "edgeToEdgeEnabled": true
     },
@@ -53,7 +55,20 @@
     },
     "extra": {
       "privacyPolicyUrl": "https://vinyl-vertushka.ru/privacy",
-      "termsOfServiceUrl": "https://vinyl-vertushka.ru/terms"
+      "termsOfServiceUrl": "https://vinyl-vertushka.ru/terms",
+      "devApiUrl": "http://192.168.1.71:8000/api",
+      "sentryDsn": "",
+      "router": {},
+      "eas": {
+        "projectId": "a603ba4b-61d4-4179-9384-e5f3ed4e4bca"
+      }
+    },
+    "owner": "bamsrf",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/a603ba4b-61d4-4179-9384-e5f3ed4e4bca"
     }
   }
 }

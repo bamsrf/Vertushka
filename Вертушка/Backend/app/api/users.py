@@ -1,9 +1,13 @@
 """
 API для работы с пользователями и социальными функциями
 """
+import logging
+from datetime import datetime, timedelta
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+logger = logging.getLogger(__name__)
+
+from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File
 from sqlalchemy import select, func, literal
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -14,12 +18,40 @@ from app.models.follow import Follow
 from app.models.collection import Collection, CollectionItem
 from app.models.wishlist import Wishlist, WishlistItem
 from app.api.auth import get_current_user, get_current_user_optional
-from app.schemas.user import UserResponse, UserUpdate, UserPublicResponse, UserWithStats
+from app.schemas.user import (
+    UserResponse, UserUpdate, UserPublicResponse, UserWithStats, UsernameCheckResponse,
+    NotificationSettingsResponse, NotificationSettingsUpdate, PushTokenUpdate,
+)
 from app.schemas.collection import CollectionWithItems, CollectionItemResponse
 from app.schemas.wishlist import WishlistPublicResponse, WishlistPublicItemResponse
 from app.schemas.record import RecordBrief
 
 router = APIRouter()
+
+
+@router.get("/check-username/{username}", response_model=UsernameCheckResponse)
+async def check_username(
+    username: str,
+    db: AsyncSession = Depends(get_db)
+):
+    """Проверка доступности username (без авторизации)"""
+    import re
+
+    if len(username) < 3:
+        return UsernameCheckResponse(available=False, reason="too_short")
+
+    if not re.match(r'^[a-z0-9_]{3,50}$', username):
+        return UsernameCheckResponse(available=False, reason="invalid")
+
+    result = await db.execute(
+        select(User).where(func.lower(User.username) == username.lower())
+    )
+    existing = result.scalar_one_or_none()
+
+    if existing:
+        return UsernameCheckResponse(available=False, reason="taken")
+
+    return UsernameCheckResponse(available=True)
 
 
 @router.get("/search", response_model=list[UserWithStats])
@@ -271,6 +303,21 @@ async def update_current_user(
     db: AsyncSession = Depends(get_db)
 ):
     """Обновление профиля текущего пользователя"""
+    if data.username is not None and data.username != current_user.username:
+        # Проверяем уникальность
+        result = await db.execute(
+            select(User).where(
+                func.lower(User.username) == data.username.lower(),
+                User.id != current_user.id
+            )
+        )
+        if result.scalar_one_or_none():
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Username уже занят"
+            )
+        current_user.username = data.username
+
     if data.display_name is not None:
         current_user.display_name = data.display_name
     if data.bio is not None:
@@ -278,6 +325,154 @@ async def update_current_user(
     if data.avatar_url is not None:
         current_user.avatar_url = data.avatar_url
 
+    await db.commit()
+    await db.refresh(current_user)
+
+    return current_user
+
+
+@router.delete("/me", status_code=status.HTTP_200_OK)
+async def delete_my_account(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Soft delete аккаунта текущего пользователя (30 дней на восстановление)"""
+    current_user.is_active = False
+    current_user.deleted_at = datetime.utcnow()
+    current_user.scheduled_purge_at = datetime.utcnow() + timedelta(days=30)
+    await db.commit()
+
+    logger.info("account_deleted", extra={"user_id": str(current_user.id), "email": current_user.email})
+
+    return {
+        "message": "Аккаунт помечен на удаление. В течение 30 дней вы можете восстановить его, войдя снова.",
+        "scheduled_purge_at": current_user.scheduled_purge_at.isoformat()
+    }
+
+
+@router.put("/me/push-token")
+async def update_push_token(
+    data: PushTokenUpdate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Сохранение Expo push token"""
+    current_user.push_token = data.push_token
+    await db.commit()
+    return {"status": "ok"}
+
+
+@router.get("/me/notification-settings", response_model=NotificationSettingsResponse)
+async def get_notification_settings(
+    current_user: User = Depends(get_current_user),
+):
+    """Текущие настройки уведомлений"""
+    return NotificationSettingsResponse(
+        notify_new_follower=current_user.notify_new_follower,
+        notify_gift_booked=current_user.notify_gift_booked,
+        notify_app_updates=current_user.notify_app_updates,
+    )
+
+
+@router.put("/me/notification-settings", response_model=NotificationSettingsResponse)
+async def update_notification_settings(
+    data: NotificationSettingsUpdate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Обновление настроек уведомлений"""
+    if data.notify_new_follower is not None:
+        current_user.notify_new_follower = data.notify_new_follower
+    if data.notify_gift_booked is not None:
+        current_user.notify_gift_booked = data.notify_gift_booked
+    if data.notify_app_updates is not None:
+        current_user.notify_app_updates = data.notify_app_updates
+
+    await db.commit()
+    await db.refresh(current_user)
+
+    return NotificationSettingsResponse(
+        notify_new_follower=current_user.notify_new_follower,
+        notify_gift_booked=current_user.notify_gift_booked,
+        notify_app_updates=current_user.notify_app_updates,
+    )
+
+
+@router.post("/me/avatar", response_model=UserResponse)
+async def upload_avatar(
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Загрузка аватарки пользователя"""
+    import os
+    from pathlib import Path
+    from PIL import Image as PILImage
+    import io
+
+    if file.content_type not in ("image/jpeg", "image/png"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Только JPEG и PNG"
+        )
+
+    contents = await file.read()
+    if len(contents) > 5 * 1024 * 1024:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Максимальный размер файла — 5 МБ"
+        )
+
+    # Проверка magic bytes (защита от переименованных исполняемых файлов)
+    MAGIC_BYTES = {
+        "image/jpeg": b"\xff\xd8\xff",
+        "image/png": b"\x89PNG",
+    }
+    expected_magic = MAGIC_BYTES.get(file.content_type, b"")
+    if not contents[:len(expected_magic)] == expected_magic:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Файл не является допустимым изображением"
+        )
+
+    img = PILImage.open(io.BytesIO(contents))
+    img = img.convert("RGB")
+
+    # Crop to square (center)
+    w, h = img.size
+    side = min(w, h)
+    left = (w - side) // 2
+    top = (h - side) // 2
+    img = img.crop((left, top, left + side, top + side))
+    img = img.resize((400, 400), PILImage.LANCZOS)
+
+    avatars_dir = Path("uploads/avatars")
+    avatars_dir.mkdir(parents=True, exist_ok=True)
+
+    filename = f"{current_user.id}.jpg"
+    filepath = avatars_dir / filename
+    img.save(filepath, "JPEG", quality=85)
+
+    current_user.avatar_url = f"/uploads/avatars/{filename}"
+    await db.commit()
+    await db.refresh(current_user)
+
+    return current_user
+
+
+@router.delete("/me/avatar", response_model=UserResponse)
+async def delete_avatar(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Удаление аватарки пользователя"""
+    from pathlib import Path
+
+    filepath = Path(f"uploads/avatars/{current_user.id}.jpg")
+    if filepath.exists():
+        filepath.unlink()
+
+    current_user.avatar_url = None
     await db.commit()
     await db.refresh(current_user)
 

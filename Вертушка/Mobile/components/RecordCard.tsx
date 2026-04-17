@@ -2,7 +2,7 @@
  * Карточка пластинки — Editorial Gradient Edition
  * Два варианта: compact (overlay) и expanded (card с инфо)
  */
-import React, { useRef } from 'react';
+import React, { memo, useRef } from 'react';
 import {
   View,
   Text,
@@ -48,6 +48,18 @@ const FORMAT_TRANSLATIONS: Record<string, string> = {
   'Box Set': 'Бокс-сет',
 };
 
+function getFormatBadgeInfo(format?: string): { label: string; bg: string } | null {
+  if (!format) return null;
+  const f = format.toLowerCase();
+  if (f.includes('vinyl') || f === 'lp') return { label: 'Vinyl', bg: 'rgba(59, 75, 245, 0.55)' };
+  if (f.includes('cd')) return { label: 'CD', bg: 'rgba(0, 0, 0, 0.45)' };
+  if (f.includes('cassette')) return { label: 'Cassette', bg: 'rgba(0, 0, 0, 0.45)' };
+  if (f.includes('box set')) return { label: 'Box Set', bg: 'rgba(0, 0, 0, 0.45)' };
+  if (f.includes('dvd')) return { label: 'DVD', bg: 'rgba(0, 0, 0, 0.45)' };
+  if (f.includes('blu-ray')) return { label: 'Blu-ray', bg: 'rgba(0, 0, 0, 0.45)' };
+  return { label: format, bg: 'rgba(0, 0, 0, 0.45)' };
+}
+
 function getShortFormat(format: string | undefined): string | undefined {
   if (!format) return undefined;
 
@@ -77,7 +89,7 @@ function getShortFormat(format: string | undefined): string | undefined {
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
-export function RecordCard({
+function RecordCardComponent({
   record,
   onPress,
   onArtistPress,
@@ -130,6 +142,11 @@ export function RecordCard({
   };
 
   if (variant === 'compact') {
+    const formatValue = 'format_type' in record ? record.format_type
+      : 'format' in record ? (record.format as string)
+      : undefined;
+    const formatBadge = getFormatBadgeInfo(formatValue);
+
     return (
       <AnimatedPressable
         style={[
@@ -165,6 +182,13 @@ export function RecordCard({
         {record.year != null && record.year !== 0 && (
           <View style={styles.yearBadge}>
             <Text style={styles.yearBadgeText}>{record.year}</Text>
+          </View>
+        )}
+
+        {/* Формат badge в левом верхнем углу */}
+        {formatBadge && (
+          <View style={[styles.formatBadge, { backgroundColor: formatBadge.bg }]}>
+            <Text style={styles.formatBadgeText}>{formatBadge.label}</Text>
           </View>
         )}
 
@@ -441,6 +465,20 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter_600SemiBold',
     color: '#FFFFFF',
   },
+  formatBadge: {
+    position: 'absolute',
+    top: 8,
+    left: 8,
+    borderRadius: 8,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    zIndex: 2,
+  },
+  formatBadgeText: {
+    fontSize: 11,
+    fontFamily: 'Inter_600SemiBold',
+    color: '#FFFFFF',
+  },
 
   // ===== EXPANDED (card) =====
   expandedContainer: {
@@ -629,4 +667,5 @@ const styles = StyleSheet.create({
   },
 });
 
+export const RecordCard = memo(RecordCardComponent);
 export default RecordCard;

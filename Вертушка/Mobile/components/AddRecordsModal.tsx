@@ -11,8 +11,8 @@ import {
   TouchableOpacity,
   FlatList,
   ActivityIndicator,
-  Alert,
 } from 'react-native';
+import { toast } from '../lib/toast';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -56,7 +56,7 @@ export function AddRecordsModal({
       setSelectedIds(new Set());
       onClose();
     } catch {
-      Alert.alert('Ошибка', 'Не удалось добавить пластинки');
+      toast.error('Не удалось добавить пластинки');
     } finally {
       setIsAdding(false);
     }

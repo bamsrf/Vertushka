@@ -15,8 +15,8 @@ engine = create_async_engine(
     echo=settings.debug,  # Логирование SQL запросов в режиме отладки
     future=True,
     pool_pre_ping=True,
-    pool_size=10,
-    max_overflow=20,
+    pool_size=5,   # × 4 воркера = 20 базовых соединений
+    max_overflow=10,  # × 4 воркера = 60 макс (в рамках max_connections=100)
 )
 
 # Фабрика сессий

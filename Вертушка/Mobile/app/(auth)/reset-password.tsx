@@ -9,8 +9,8 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
-  Alert,
 } from 'react-native';
+import { toast } from '../../lib/toast';
 import { router, useLocalSearchParams } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -64,10 +64,7 @@ export default function ResetPasswordScreen() {
       // Переход на главный экран
       router.replace('/(tabs)');
     } catch (err: any) {
-      Alert.alert(
-        'Ошибка',
-        err.response?.data?.detail || 'Не удалось сбросить пароль'
-      );
+      toast.error('Ошибка', err.response?.data?.detail || 'Не удалось сбросить пароль');
     } finally {
       setIsLoading(false);
     }

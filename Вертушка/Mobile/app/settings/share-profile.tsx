@@ -8,7 +8,6 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  Alert,
   ActivityIndicator,
   Animated,
   Pressable,
@@ -17,6 +16,7 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useProfileStore, useCollectionStore } from '../../lib/store';
+import { toast } from '../../lib/toast';
 import { Colors, Typography, Spacing, BorderRadius } from '../../constants/theme';
 import { CollectionItem } from '../../lib/types';
 import { RecordCard } from '../../components/RecordCard';
@@ -169,7 +169,7 @@ export default function ShareProfileScreen() {
     try {
       await updateSettings({ [key]: value });
     } catch {
-      Alert.alert('Ошибка', 'Не удалось сохранить настройку');
+      toast.error('Не удалось сохранить настройку');
     }
   }, [updateSettings]);
 
@@ -181,7 +181,7 @@ export default function ShareProfileScreen() {
       } else if (next.size < 4) {
         next.add(itemId);
       } else {
-        Alert.alert('Максимум 4', 'Можно выбрать не более 4 избранных пластинок');
+        toast.info('Можно выбрать не более 4 избранных пластинок');
       }
       return next;
     });
@@ -191,9 +191,9 @@ export default function ShareProfileScreen() {
     try {
       await updateHighlights(Array.from(selectedHighlights));
       setSelectingHighlights(false);
-      Alert.alert('Сохранено', 'Избранные пластинки обновлены');
+      toast.success('Избранные пластинки обновлены');
     } catch {
-      Alert.alert('Ошибка', 'Не удалось сохранить');
+      toast.error('Не удалось сохранить');
     }
   }, [selectedHighlights, updateHighlights]);
 

@@ -13,6 +13,7 @@ import {
   ActionSheetIOS,
   Platform,
   ActivityIndicator,
+  Linking,
 } from 'react-native';
 import { Image } from 'expo-image';
 import ReanimatedSwipeable from 'react-native-gesture-handler/ReanimatedSwipeable';
@@ -24,12 +25,14 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useAuthStore, useCollectionStore, useOnboardingStore } from '../lib/store';
+import { useAuthStore, useCollectionStore, useOnboardingStore, useFollowStore } from '../lib/store';
 import { CollectionTab, GiftGivenItem } from '../lib/types';
 import { Button } from '../components/ui';
 import { AnimatedGradientText } from '../components/AnimatedGradientText';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { api } from '../lib/api';
+import * as ImagePicker from 'expo-image-picker';
+import { api, resolveMediaUrl } from '../lib/api';
+import { toast } from '../lib/toast';
 import { Colors, Typography, Spacing, BorderRadius, Shadows } from '../constants/theme';
 
 function SwipeDeleteAction({ drag, onPress }: { drag: SharedValue<number>; onPress: () => void }) {
@@ -49,9 +52,10 @@ function SwipeDeleteAction({ drag, onPress }: { drag: SharedValue<number>; onPre
 export default function ProfileScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { user, logout } = useAuthStore();
+  const { user, logout, setUser } = useAuthStore();
   const { collectionItems, wishlistItems, setActiveTab } = useCollectionStore();
   const onboarding = useOnboardingStore();
+  const { followers, following, fetchFollowers, fetchFollowing } = useFollowStore();
 
   const handleClose = () => {
     router.back();
@@ -85,6 +89,87 @@ export default function ProfileScreen() {
   const [exporting, setExporting] = useState(false);
   const [givenGifts, setGivenGifts] = useState<GiftGivenItem[]>([]);
   const [giftsLoading, setGiftsLoading] = useState(true);
+  const [avatarUploading, setAvatarUploading] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  const pickImage = useCallback(async (source: 'library' | 'camera') => {
+    const launcher = source === 'library'
+      ? ImagePicker.launchImageLibraryAsync
+      : ImagePicker.launchCameraAsync;
+
+    const result = await launcher({
+      mediaTypes: ['images'],
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.8,
+    });
+
+    if (result.canceled || !result.assets?.[0]) return;
+
+    setAvatarUploading(true);
+    try {
+      const { avatar_url } = await api.uploadAvatar(result.assets[0].uri);
+      setUser({ ...user!, avatar_url });
+    } catch {
+      toast.error('Не удалось загрузить аватарку');
+    } finally {
+      setAvatarUploading(false);
+    }
+  }, [user, setUser]);
+
+  const handleAvatarPress = useCallback(() => {
+    const hasAvatar = !!user?.avatar_url;
+    const options = hasAvatar
+      ? ['Выбрать из галереи', 'Сделать фото', 'Удалить аватарку', 'Отмена']
+      : ['Выбрать из галереи', 'Сделать фото', 'Отмена'];
+    const cancelIndex = options.length - 1;
+    const destructiveIndex = hasAvatar ? 2 : undefined;
+
+    if (Platform.OS === 'ios') {
+      ActionSheetIOS.showActionSheetWithOptions(
+        { options, cancelButtonIndex: cancelIndex, destructiveButtonIndex: destructiveIndex },
+        async (index) => {
+          if (index === 0) pickImage('library');
+          else if (index === 1) pickImage('camera');
+          else if (hasAvatar && index === 2) {
+            setAvatarUploading(true);
+            try {
+              await api.deleteAvatar();
+              setUser({ ...user!, avatar_url: undefined as any });
+            } catch {
+              toast.error('Не удалось удалить аватарку');
+            } finally {
+              setAvatarUploading(false);
+            }
+          }
+        },
+      );
+    } else {
+      const buttons: any[] = [
+        { text: 'Выбрать из галереи', onPress: () => pickImage('library') },
+        { text: 'Сделать фото', onPress: () => pickImage('camera') },
+      ];
+      if (hasAvatar) {
+        buttons.push({
+          text: 'Удалить аватарку',
+          style: 'destructive',
+          onPress: async () => {
+            setAvatarUploading(true);
+            try {
+              await api.deleteAvatar();
+              setUser({ ...user!, avatar_url: undefined as any });
+            } catch {
+              toast.error('Не удалось удалить аватарку');
+            } finally {
+              setAvatarUploading(false);
+            }
+          },
+        });
+      }
+      buttons.push({ text: 'Отмена', style: 'cancel' });
+      Alert.alert('Аватарка', undefined, buttons);
+    }
+  }, [user, setUser, pickImage]);
 
   const loadGivenGifts = useCallback(async () => {
     try {
@@ -99,7 +184,9 @@ export default function ProfileScreen() {
 
   useEffect(() => {
     loadGivenGifts();
-  }, [loadGivenGifts]);
+    fetchFollowers();
+    fetchFollowing();
+  }, [loadGivenGifts, fetchFollowers, fetchFollowing]);
 
   const handleCancelGift = useCallback((gift: GiftGivenItem) => {
     Alert.alert(
@@ -115,13 +202,26 @@ export default function ProfileScreen() {
               await api.cancelGiftBooking(gift.id, gift.cancel_token);
               setGivenGifts(prev => prev.filter(g => g.id !== gift.id));
             } catch {
-              Alert.alert('Ошибка', 'Не удалось отменить бронирование');
+              toast.error('Не удалось отменить бронирование');
             }
           },
         },
       ]
     );
   }, []);
+
+  const handleDeleteAccount = useCallback(async () => {
+    setDeleting(true);
+    try {
+      await api.deleteMyAccount();
+      await logout();
+      router.replace('/(auth)/login');
+    } catch {
+      toast.error('Не удалось удалить аккаунт');
+    } finally {
+      setDeleting(false);
+    }
+  }, [logout, router]);
 
   const profileUrl = user ? `https://vinyl-vertushka.ru/@${user.username}` : '';
 
@@ -163,7 +263,7 @@ export default function ProfileScreen() {
         UTI: 'public.comma-separated-values-text',
       });
     } catch {
-      Alert.alert('Ошибка', 'Не удалось экспортировать данные');
+      toast.error('Не удалось экспортировать данные');
     } finally {
       setExporting(false);
     }
@@ -195,13 +295,25 @@ export default function ProfileScreen() {
       label: 'В коллекции',
       value: collectionItems.length,
       icon: 'disc-outline' as const,
-      tab: 'collection' as CollectionTab,
+      onPress: () => handleStatPress('collection'),
     },
     {
-      label: 'В списке желаний',
+      label: 'В вишлисте',
       value: wishlistItems.length,
       icon: 'heart-outline' as const,
-      tab: 'wishlist' as CollectionTab,
+      onPress: () => handleStatPress('wishlist'),
+    },
+    {
+      label: 'Подписки',
+      value: following.length,
+      icon: 'people-outline' as const,
+      onPress: () => router.push('/social/list?tab=following' as any),
+    },
+    {
+      label: 'Подписчики',
+      value: followers.length,
+      icon: 'person-add-outline' as const,
+      onPress: () => router.push('/social/list?tab=followers' as any),
     },
   ];
 
@@ -221,9 +333,9 @@ export default function ProfileScreen() {
       >
         {/* Аватар и имя */}
         <View style={styles.profileSection}>
-          <View style={styles.avatarContainer}>
+          <TouchableOpacity style={styles.avatarContainer} onPress={handleAvatarPress} activeOpacity={0.7}>
             {user?.avatar_url ? (
-              <Image source={user.avatar_url} style={styles.avatar} cachePolicy="disk" />
+              <Image source={resolveMediaUrl(user.avatar_url)} style={styles.avatar} cachePolicy="disk" />
             ) : (
               <LinearGradient
                 colors={[Colors.royalBlue, Colors.periwinkle]}
@@ -232,7 +344,16 @@ export default function ProfileScreen() {
                 <Ionicons name="disc" size={48} color={Colors.background} />
               </LinearGradient>
             )}
-          </View>
+            {avatarUploading ? (
+              <View style={styles.avatarEditBadge}>
+                <ActivityIndicator size="small" color={Colors.background} />
+              </View>
+            ) : (
+              <View style={styles.avatarEditBadge}>
+                <Ionicons name="pencil" size={14} color={Colors.background} />
+              </View>
+            )}
+          </TouchableOpacity>
 
           <Text style={styles.displayName}>
             {user?.display_name || user?.username || 'Пользователь'}
@@ -240,16 +361,16 @@ export default function ProfileScreen() {
           <Text style={styles.email}>{user?.email}</Text>
         </View>
 
-        {/* Статистика */}
-        <View style={styles.statsContainer}>
+        {/* Статистика 2×2 */}
+        <View style={styles.statsGrid}>
           {stats.map((stat, index) => (
             <TouchableOpacity
               key={index}
               style={[styles.statCard, Shadows.lg]}
-              onPress={() => handleStatPress(stat.tab)}
+              onPress={stat.onPress}
               activeOpacity={0.7}
             >
-              <Ionicons name={stat.icon} size={24} color={Colors.royalBlue} />
+              <Ionicons name={stat.icon} size={22} color={Colors.royalBlue} />
               <Text style={styles.statValue}>{stat.value}</Text>
               <Text style={styles.statLabel}>{stat.label}</Text>
             </TouchableOpacity>
@@ -341,7 +462,7 @@ export default function ProfileScreen() {
                     </Text>
                     <View style={styles.giftCardRecipient}>
                       {gift.for_user.avatar_url ? (
-                        <Image source={gift.for_user.avatar_url} style={styles.giftCardAvatar} cachePolicy="disk" />
+                        <Image source={resolveMediaUrl(gift.for_user.avatar_url)} style={styles.giftCardAvatar} cachePolicy="disk" />
                       ) : (
                         <View style={[styles.giftCardAvatar, styles.giftCardAvatarPlaceholder]}>
                           <Ionicons name="person" size={8} color={Colors.background} />
@@ -409,9 +530,21 @@ export default function ProfileScreen() {
             <Ionicons name="chevron-forward" size={20} color={Colors.textMuted} />
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.settingsItem}>
+          <TouchableOpacity
+            style={styles.settingsItem}
+            onPress={() => router.push('/settings/notifications')}
+          >
             <Ionicons name="notifications-outline" size={24} color={Colors.royalBlue} />
             <Text style={styles.settingsItemText}>Уведомления</Text>
+            <Ionicons name="chevron-forward" size={20} color={Colors.textMuted} />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.settingsItem}
+            onPress={() => Linking.openURL('https://timestripe.com/boards/sX8B5Keg/')}
+          >
+            <Ionicons name="map-outline" size={24} color={Colors.royalBlue} />
+            <Text style={styles.settingsItemText}>Планы Вертушки</Text>
             <Ionicons name="chevron-forward" size={20} color={Colors.textMuted} />
           </TouchableOpacity>
 
@@ -445,9 +578,38 @@ export default function ProfileScreen() {
           />
         </View>
 
+        {/* Опасная зона */}
+        <View style={styles.dangerSection}>
+          <Text style={styles.dangerTitle}>Опасная зона</Text>
+          <Text style={styles.dangerDisclaimer}>
+            Аккаунт и все данные будут безвозвратно удалены через 30 дней
+          </Text>
+          <TouchableOpacity
+            style={styles.dangerButton}
+            onPress={() => {
+              Alert.alert(
+                'Удалить аккаунт?',
+                'Ваш аккаунт, коллекция, вишлист и все данные будут удалены. В течение 30 дней можно восстановить аккаунт, войдя снова.',
+                [
+                  { text: 'Отмена', style: 'cancel' },
+                  {
+                    text: 'Удалить',
+                    style: 'destructive',
+                    onPress: handleDeleteAccount,
+                  },
+                ]
+              );
+            }}
+          >
+            <Ionicons name="trash-outline" size={20} color={Colors.background} />
+            <Text style={styles.dangerButtonText}>Удалить аккаунт</Text>
+          </TouchableOpacity>
+        </View>
+
         {/* Версия */}
         <Text style={styles.version}>Вертушка v1.0.0</Text>
       </ScrollView>
+
     </View>
   );
 }
@@ -477,6 +639,19 @@ const styles = StyleSheet.create({
   avatarContainer: {
     marginBottom: Spacing.md,
   },
+  avatarEditBadge: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: Colors.royalBlue,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: Colors.background,
+  },
   avatar: {
     width: 100,
     height: 100,
@@ -498,24 +673,26 @@ const styles = StyleSheet.create({
     ...Typography.body,
     color: Colors.textSecondary,
   },
-  statsContainer: {
+  statsGrid: {
     flexDirection: 'row',
-    gap: Spacing.md,
+    flexWrap: 'wrap',
+    gap: Spacing.sm,
     marginBottom: Spacing.xl,
   },
   statCard: {
-    flex: 1,
+    width: '48%' as any,
+    flexGrow: 1,
     backgroundColor: Colors.background,
     borderRadius: BorderRadius.lg,
     padding: Spacing.md,
     alignItems: 'center',
   },
   statValue: {
-    fontSize: 36,
+    fontSize: 28,
     fontFamily: 'Inter_800ExtraBold',
-    lineHeight: 42,
+    lineHeight: 34,
     color: Colors.deepNavy,
-    marginTop: Spacing.sm,
+    marginTop: Spacing.xs,
   },
   statLabel: {
     ...Typography.caption,
@@ -738,5 +915,112 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.error,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  // Danger Zone
+  dangerSection: {
+    marginBottom: Spacing.xl,
+    padding: Spacing.lg,
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1,
+    borderColor: Colors.error + '30',
+    backgroundColor: Colors.error + '06',
+  },
+  dangerTitle: {
+    ...Typography.h4,
+    color: Colors.error,
+    marginBottom: Spacing.xs,
+  },
+  dangerDisclaimer: {
+    ...Typography.caption,
+    color: Colors.textSecondary,
+    marginBottom: Spacing.md,
+    lineHeight: 18,
+  },
+  dangerButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.sm,
+    backgroundColor: Colors.error,
+    borderRadius: BorderRadius.md,
+    paddingVertical: Spacing.sm + 2,
+    paddingHorizontal: Spacing.lg,
+  },
+  dangerButtonText: {
+    ...Typography.buttonSmall,
+    color: Colors.background,
+    fontFamily: 'Inter_600SemiBold',
+  },
+  // Delete Modal
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: Spacing.lg,
+  },
+  modalContent: {
+    backgroundColor: Colors.background,
+    borderRadius: BorderRadius.xl,
+    padding: Spacing.xl,
+    width: '100%',
+    maxWidth: 360,
+  },
+  modalTitle: {
+    ...Typography.h3,
+    color: Colors.error,
+    marginBottom: Spacing.md,
+  },
+  modalText: {
+    ...Typography.body,
+    color: Colors.textSecondary,
+    lineHeight: 22,
+    marginBottom: Spacing.lg,
+  },
+  modalHint: {
+    ...Typography.caption,
+    color: Colors.textMuted,
+    marginBottom: Spacing.sm,
+  },
+  modalInput: {
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: BorderRadius.md,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm + 2,
+    ...Typography.body,
+    color: Colors.text,
+    marginBottom: Spacing.lg,
+  },
+  modalActions: {
+    flexDirection: 'row',
+    gap: Spacing.md,
+  },
+  modalCancelButton: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: Spacing.sm + 2,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  modalCancelText: {
+    ...Typography.buttonSmall,
+    color: Colors.textSecondary,
+  },
+  modalDeleteButton: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: Spacing.sm + 2,
+    borderRadius: BorderRadius.md,
+    backgroundColor: Colors.error,
+  },
+  modalDeleteButtonDisabled: {
+    opacity: 0.4,
+  },
+  modalDeleteText: {
+    ...Typography.buttonSmall,
+    color: Colors.background,
+    fontFamily: 'Inter_600SemiBold',
   },
 });

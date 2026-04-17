@@ -11,6 +11,7 @@ import {
   Alert,
   TouchableOpacity,
 } from 'react-native';
+import { toast } from '../../lib/toast';
 import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -161,10 +162,10 @@ export default function RecordDetailScreen() {
           fetchCollectionItems(),
           fetchWishlistItems(),
         ]);
-        Alert.alert('Готово!', 'Винил перенесён в коллекцию');
+        toast.success('Винил перенесён в коллекцию');
       } catch (error: any) {
         const message = error?.response?.data?.detail || error?.message || 'Не удалось перенести в коллекцию';
-        Alert.alert('Ошибка', message);
+        toast.error('Ошибка', message);
       }
       return;
     }
@@ -172,7 +173,7 @@ export default function RecordDetailScreen() {
     // Иначе просто добавляем в коллекцию
     const discogsId = String(record.discogs_id || id);
     if (!discogsId) {
-      Alert.alert('Ошибка', 'Не найден идентификатор пластинки');
+      toast.error('Не найден идентификатор пластинки');
       return;
     }
 
@@ -180,10 +181,10 @@ export default function RecordDetailScreen() {
       await addToCollection(discogsId);
       // addToCollection уже обновляет оба списка
       const fmt = getFormatDisplayInfo(record?.format_type);
-      Alert.alert('Готово!', `${fmt.label} ${fmt.verb} в коллекцию`);
+      toast.success(`${fmt.label} ${fmt.verb} в коллекцию`);
     } catch (error: any) {
       const message = error?.response?.data?.detail || error?.message || 'Не удалось добавить в коллекцию';
-      Alert.alert('Ошибка', message);
+      toast.error('Ошибка', message);
     }
   };
 
@@ -193,17 +194,17 @@ export default function RecordDetailScreen() {
     const discogsId = String(record.discogs_id || id);
 
     if (!discogsId) {
-      Alert.alert('Ошибка', 'Не найден идентификатор пластинки');
+      toast.error('Не найден идентификатор пластинки');
       return;
     }
 
     try {
       await addToWishlist(discogsId);
       const fmt = getFormatDisplayInfo(record?.format_type);
-      Alert.alert('Готово!', `${fmt.label} ${fmt.verb} в список желаний`);
+      toast.success(`${fmt.label} ${fmt.verb} в список желаний`);
     } catch (error: any) {
       const message = error?.response?.data?.detail || error?.message || 'Не удалось добавить в список желаний';
-      Alert.alert('Ошибка', message);
+      toast.error('Ошибка', message);
     }
   };
 
@@ -222,9 +223,9 @@ export default function RecordDetailScreen() {
           onPress: async () => {
             try {
               await removeFromCollection(status.collectionItemId!);
-              Alert.alert('Готово!', 'Винил удалён из коллекции');
+              toast.success('Винил удалён из коллекции');
             } catch (error: any) {
-              Alert.alert('Ошибка', 'Не удалось удалить из коллекции');
+              toast.error('Не удалось удалить из коллекции');
             }
           },
         },
@@ -247,9 +248,9 @@ export default function RecordDetailScreen() {
           onPress: async () => {
             try {
               await removeFromWishlist(status.wishlistItemId!);
-              Alert.alert('Готово!', 'Винил удалён из списка желаний');
+              toast.success('Винил удалён из списка желаний');
             } catch (error: any) {
-              Alert.alert('Ошибка', 'Не удалось удалить из списка');
+              toast.error('Не удалось удалить из списка');
             }
           },
         },
@@ -272,10 +273,10 @@ export default function RecordDetailScreen() {
             try {
               await api.removeFromCollection(folderId, folderItemId);
               await fetchCollections();
-              Alert.alert('Готово!', 'Винил убран из папки');
+              toast.success('Винил убран из папки');
               router.back();
             } catch {
-              Alert.alert('Ошибка', 'Не удалось убрать из папки');
+              toast.error('Не удалось убрать из папки');
             }
           },
         },
@@ -293,15 +294,15 @@ export default function RecordDetailScreen() {
       );
       if (alreadyInFolder) {
         setShowFolderPicker(false);
-        Alert.alert('Уже есть', 'Эта пластинка уже в этой папке');
+        toast.info('Уже есть', 'Эта пластинка уже в этой папке');
         return;
       }
       await addItemsToFolder(folderId, [status.collectionItemId]);
       setShowFolderPicker(false);
       const fmt = getFormatDisplayInfo(record?.format_type);
-      Alert.alert('Готово!', `${fmt.label} ${fmt.verb} в папку`);
+      toast.success(`${fmt.label} ${fmt.verb} в папку`);
     } catch {
-      Alert.alert('Ошибка', 'Не удалось добавить в папку');
+      toast.error('Не удалось добавить в папку');
     }
   };
 

@@ -1,12 +1,12 @@
 /**
  * Экран детальной информации об артисте
  */
-import { useEffect, useState, useRef, useMemo } from 'react';
+import { useEffect, useState, useRef, useMemo, useCallback, memo } from 'react';
 import {
   View,
   Text,
   StyleSheet,
-  ScrollView,
+  FlatList,
   ActivityIndicator,
   TouchableOpacity,
   Animated,
@@ -33,12 +33,13 @@ const FILTERS: { key: ReleaseFilter; label: string }[] = [
 ];
 
 const SORT_OPTIONS: { key: SortMode; label: string }[] = [
-  { key: 'year_desc', label: 'Сначала новые' },
   { key: 'year_asc', label: 'Сначала старые' },
+  { key: 'year_desc', label: 'Сначала новые' },
   { key: 'title', label: 'По названию' },
 ];
 
 const matchesFilter = (master: MasterSearchResult, filter: ReleaseFilter): boolean => {
+  if (!master.release_type) return filter === 'album';
   return master.release_type === filter;
 };
 
@@ -108,6 +109,17 @@ function FilterChip({ label, isActive, onPress }: FilterChipProps) {
   );
 }
 
+const MasterRecordCard = memo(function MasterRecordCard({
+  item,
+  onPress,
+}: {
+  item: MasterSearchResult;
+  onPress: (master: MasterSearchResult) => void;
+}) {
+  const handlePress = useCallback(() => onPress(item), [item, onPress]);
+  return <RecordCard record={item} onPress={handlePress} />;
+});
+
 export default function ArtistDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
@@ -123,13 +135,15 @@ export default function ArtistDetailScreen() {
   const [activeFilter, setActiveFilter] = useState<ReleaseFilter | null>(null);
   const [sortMode, setSortMode] = useState<SortMode>('year_asc');
   const [showSortMenu, setShowSortMenu] = useState(false);
-  const [mastersPage, setMastersPage] = useState(1);
-  const [hasMoreMasters, setHasMoreMasters] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
+  const [nextCursor, setNextCursor] = useState<number | null>(null);
+  const autoLoadAttemptsRef = useRef(0);
+  const loadIdRef = useRef(0);
 
   useEffect(() => {
     if (id) {
       loadArtist();
-      loadMasters(1);
+      loadMasters(true);
     }
   }, [id]);
 
@@ -158,49 +172,70 @@ export default function ArtistDetailScreen() {
     }
   };
 
-  const loadMasters = async (page: number) => {
-    if (!id || isLoadingMasters) return;
+  const loadMasters = async (reset: boolean = false) => {
+    if (!id) return;
+    // Блокируем только подгрузку следующей страницы, reset-загрузки проходят всегда
+    if (!reset && isLoadingMasters) return;
 
-    if (page === 1) {
-      const cached = cache.getArtistMasters(id);
-      if (cached) {
-        setMasters(cached.results);
-        setHasMoreMasters(cached.results.length < cached.total);
-        setMastersPage(1);
-        return;
-      }
-    }
+    const cursor = reset ? 1 : nextCursor;
+    if (!cursor) return;
 
+    const currentLoadId = ++loadIdRef.current;
     setIsLoadingMasters(true);
 
     try {
       setError(null);
-      const data = await api.getArtistMasters(id, page, 20);
-      if (page === 1) {
-        cache.setArtistMasters(id, data);
+      // Всегда грузим asc с сервера; клиент сортирует через filteredMasters useMemo
+      const data = await api.getArtistMasters(id, 'asc', cursor, 100);
+
+      // Игнорируем устаревший ответ (пользователь сменил сортировку/фильтр)
+      if (loadIdRef.current !== currentLoadId) return;
+
+      if (reset) {
         setMasters(data.results);
       } else {
-        setMasters((prev) => [...prev, ...data.results]);
+        setMasters((prev) => {
+          const existingIds = new Set(prev.map(m => m.master_id));
+          const newMasters = data.results.filter(m => !existingIds.has(m.master_id));
+          return [...prev, ...newMasters];
+        });
       }
-      setMastersPage(page);
-      setHasMoreMasters(masters.length + data.results.length < data.total);
+      setHasMore(data.has_more ?? false);
+      setNextCursor(data.next_cursor ?? null);
     } catch (err) {
+      if (loadIdRef.current !== currentLoadId) return;
       console.error('Ошибка загрузки релизов:', err);
       setError('Не удалось загрузить релизы артиста');
     } finally {
-      setIsLoadingMasters(false);
+      if (loadIdRef.current === currentLoadId) {
+        setIsLoadingMasters(false);
+      }
     }
   };
 
-  const loadMoreMasters = () => {
-    if (hasMoreMasters && !isLoadingMasters) {
-      loadMasters(mastersPage + 1);
-    }
+  const handleSortChange = (newMode: SortMode) => {
+    // Все режимы сортировки обрабатываются клиентски через filteredMasters useMemo
+    setSortMode(newMode);
+    setShowSortMenu(false);
   };
 
-  const handleMasterPress = (master: MasterSearchResult) => {
-    router.push(`/master/${master.master_id}`);
-  };
+  const handleLoadMore = useCallback(() => {
+    if (hasMore && !isLoadingMasters) {
+      loadMasters();
+    }
+  }, [hasMore, isLoadingMasters]);
+
+  const handleMasterPress = useCallback((master: MasterSearchResult) => {
+    router.push({
+      pathname: `/master/${master.master_id}`,
+      params: {
+        title: master.title,
+        artist: master.artist,
+        year: master.year?.toString() || '',
+        cover: master.cover_image_url || '',
+      },
+    });
+  }, []);
 
   const handleFilterPress = (filter: ReleaseFilter) => {
     setActiveFilter(activeFilter === filter ? null : filter);
@@ -211,15 +246,167 @@ export default function ArtistDetailScreen() {
       ? masters.filter((m) => matchesFilter(m, activeFilter))
       : [...masters];
 
+    const yearSort = (a: MasterSearchResult, b: MasterSearchResult, desc: boolean) => {
+      const ay = a.year ?? null;
+      const by = b.year ?? null;
+      if (ay === null && by === null) return 0;
+      if (ay === null) return 1;  // без года — в конец
+      if (by === null) return -1;
+      return desc ? by - ay : ay - by;
+    };
+
     switch (sortMode) {
-      case 'year_asc':
-        return filtered.sort((a, b) => (a.year || 0) - (b.year || 0));
       case 'year_desc':
-        return filtered.sort((a, b) => (b.year || 0) - (a.year || 0));
+        return filtered.sort((a, b) => yearSort(a, b, true));
+      case 'year_asc':
+        return filtered.sort((a, b) => yearSort(a, b, false));
       case 'title':
         return filtered.sort((a, b) => a.title.localeCompare(b.title, 'ru'));
     }
   }, [masters, activeFilter, sortMode]);
+
+  // Авто-подгрузка: если после фильтрации мало результатов, но ещё есть данные на сервере
+  useEffect(() => {
+    if (
+      activeFilter &&
+      filteredMasters.length < 6 &&
+      hasMore &&
+      !isLoadingMasters &&
+      autoLoadAttemptsRef.current < 3
+    ) {
+      autoLoadAttemptsRef.current += 1;
+      loadMasters();
+    }
+  }, [activeFilter, filteredMasters.length, hasMore, isLoadingMasters]);
+
+  // Сброс счётчика авто-подгрузки при смене фильтра
+  useEffect(() => {
+    autoLoadAttemptsRef.current = 0;
+  }, [activeFilter]);
+
+  // Используем первое изображение в полном разрешении
+  const imageUrl = artist?.images && artist.images.length > 0 ? artist.images[0] : undefined;
+
+  const renderItem = useCallback(({ item }: { item: MasterSearchResult }) => (
+    <MasterRecordCard item={item} onPress={handleMasterPress} />
+  ), [handleMasterPress]);
+
+  const keyExtractor = useCallback((item: MasterSearchResult) => item.master_id, []);
+
+  const listHeader = useMemo(() => (
+    <>
+      {/* Изображение артиста */}
+      <View style={styles.imageContainer}>
+        {imageUrl ? (
+          <Image
+            source={imageUrl}
+            style={styles.image}
+            contentFit="cover"
+            cachePolicy="disk"
+          />
+        ) : (
+          <View style={styles.placeholderImage}>
+            <Ionicons name="person-outline" size={100} color={Colors.textMuted} />
+          </View>
+        )}
+      </View>
+
+      {/* Информация об артисте */}
+      <View style={styles.infoSection}>
+        <Text style={styles.artistName}>{artist?.name ?? ''}</Text>
+      </View>
+
+      {/* Релизы артиста */}
+      <View style={styles.releasesSection}>
+        <Text style={styles.sectionTitle}>Релизы</Text>
+
+        {/* Фильтры + сортировка */}
+        <View style={styles.filtersRow}>
+          {FILTERS.map((f) => (
+            <FilterChip
+              key={f.key}
+              label={f.label}
+              isActive={activeFilter === f.key}
+              onPress={() => handleFilterPress(f.key)}
+            />
+          ))}
+          <View style={{ marginLeft: 'auto' }}>
+            <TouchableOpacity
+              style={styles.sortButton}
+              onPress={() => setShowSortMenu(!showSortMenu)}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="swap-vertical-outline" size={18} color={Colors.royalBlue} />
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* Меню сортировки */}
+        {showSortMenu && (
+          <View style={styles.sortMenu}>
+            {SORT_OPTIONS.map((option) => (
+              <TouchableOpacity
+                key={option.key}
+                style={[styles.sortOption, sortMode === option.key && styles.sortOptionActive]}
+                onPress={() => handleSortChange(option.key)}
+              >
+                <Text style={[styles.sortOptionText, sortMode === option.key && styles.sortOptionTextActive]}>
+                  {option.label}
+                </Text>
+                {sortMode === option.key && (
+                  <Ionicons name="checkmark" size={16} color={Colors.royalBlue} />
+                )}
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
+      </View>
+    </>
+  ), [imageUrl, artist?.name, activeFilter, showSortMenu, sortMode]);
+
+  const listFooter = useMemo(() => {
+    if (!hasMore && !isLoadingMasters) return null;
+    return (
+      <View style={styles.loadMoreContainer}>
+        {isLoadingMasters ? (
+          <>
+            <ActivityIndicator size="small" color={Colors.royalBlue} />
+            <Text style={styles.loadMoreText}>Загрузка релизов...</Text>
+          </>
+        ) : (
+          <TouchableOpacity style={styles.loadMoreButton} onPress={handleLoadMore} activeOpacity={0.7}>
+            <Text style={styles.loadMoreButtonText}>Загрузить ещё</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+    );
+  }, [isLoadingMasters, hasMore, handleLoadMore]);
+
+  const listEmpty = useMemo(() => {
+    if (isLoadingMasters) return null;
+    return (
+      <View style={styles.emptyContainer}>
+        <Ionicons
+          name={error ? 'cloud-offline-outline' : 'musical-notes-outline'}
+          size={48}
+          color={error ? Colors.error : Colors.textMuted}
+        />
+        <Text style={styles.emptyText}>
+          {error || (activeFilter ? 'Нет релизов в этой категории' : 'Релизы не найдены')}
+        </Text>
+        {error && (
+          <TouchableOpacity
+            style={styles.retryButton}
+            onPress={() => { setError(null); loadMasters(masters.length === 0); }}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="refresh" size={18} color={Colors.royalBlue} />
+            <Text style={styles.retryText}>Повторить</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+    );
+  }, [isLoadingMasters, error, activeFilter, masters.length]);
 
   if (isLoading) {
     return (
@@ -245,134 +432,30 @@ export default function ArtistDetailScreen() {
     );
   }
 
-  // Используем первое изображение в полном разрешении
-  const imageUrl = artist.images && artist.images.length > 0 ? artist.images[0] : undefined;
-
   return (
     <View style={styles.container}>
       <Header title="Артист" showBack />
 
-      <ScrollView
-        style={styles.scrollView}
+      <FlatList
+        data={filteredMasters}
+        keyExtractor={keyExtractor}
+        renderItem={renderItem}
+        numColumns={2}
+        columnWrapperStyle={styles.columnWrapper}
+        ListHeaderComponent={listHeader}
+        ListFooterComponent={listFooter}
+        ListEmptyComponent={listEmpty}
+        onEndReached={handleLoadMore}
+        onEndReachedThreshold={0.5}
         contentContainerStyle={[
           styles.scrollContent,
           { paddingBottom: insets.bottom + Spacing.xl },
         ]}
         showsVerticalScrollIndicator={false}
-      >
-        {/* Изображение артиста */}
-        <View style={styles.imageContainer}>
-          {imageUrl ? (
-            <Image
-              source={imageUrl}
-              style={styles.image}
-              contentFit="cover"
-              cachePolicy="disk"
-            />
-          ) : (
-            <View style={styles.placeholderImage}>
-              <Ionicons name="person-outline" size={100} color={Colors.textMuted} />
-            </View>
-          )}
-        </View>
-
-        {/* Информация об артисте */}
-        <View style={styles.infoSection}>
-          <Text style={styles.artistName}>{artist.name}</Text>
-        </View>
-
-        {/* Релизы артиста */}
-        <View style={styles.releasesSection}>
-          <Text style={styles.sectionTitle}>Релизы</Text>
-
-          {/* Фильтры + сортировка */}
-          <View style={styles.filtersRow}>
-            {FILTERS.map((f) => (
-              <FilterChip
-                key={f.key}
-                label={f.label}
-                isActive={activeFilter === f.key}
-                onPress={() => handleFilterPress(f.key)}
-              />
-            ))}
-            <View style={{ marginLeft: 'auto' }}>
-              <TouchableOpacity
-                style={styles.sortButton}
-                onPress={() => setShowSortMenu(!showSortMenu)}
-                activeOpacity={0.7}
-              >
-                <Ionicons name="swap-vertical-outline" size={18} color={Colors.royalBlue} />
-              </TouchableOpacity>
-            </View>
-          </View>
-
-          {/* Меню сортировки */}
-          {showSortMenu && (
-            <View style={styles.sortMenu}>
-              {SORT_OPTIONS.map((option) => (
-                <TouchableOpacity
-                  key={option.key}
-                  style={[styles.sortOption, sortMode === option.key && styles.sortOptionActive]}
-                  onPress={() => { setSortMode(option.key); setShowSortMenu(false); }}
-                >
-                  <Text style={[styles.sortOptionText, sortMode === option.key && styles.sortOptionTextActive]}>
-                    {option.label}
-                  </Text>
-                  {sortMode === option.key && (
-                    <Ionicons name="checkmark" size={16} color={Colors.royalBlue} />
-                  )}
-                </TouchableOpacity>
-              ))}
-            </View>
-          )}
-
-          <View style={styles.releasesGrid}>
-            {filteredMasters.map((master) => (
-              <RecordCard
-                key={master.master_id}
-                record={master}
-                onPress={() => handleMasterPress(master)}
-              />
-            ))}
-          </View>
-
-          {isLoadingMasters && (
-            <View style={styles.loadMoreContainer}>
-              <ActivityIndicator size="small" color={Colors.royalBlue} />
-              <Text style={styles.loadMoreText}>Загрузка релизов...</Text>
-            </View>
-          )}
-
-          {hasMoreMasters && !isLoadingMasters && !activeFilter && (
-            <TouchableOpacity style={styles.loadMoreButton} onPress={loadMoreMasters} activeOpacity={0.7}>
-              <Text style={styles.loadMoreButtonText}>Загрузить ещё</Text>
-            </TouchableOpacity>
-          )}
-
-          {filteredMasters.length === 0 && !isLoadingMasters && (
-            <View style={styles.emptyContainer}>
-              <Ionicons
-                name={error ? 'cloud-offline-outline' : 'musical-notes-outline'}
-                size={48}
-                color={error ? Colors.error : Colors.textMuted}
-              />
-              <Text style={styles.emptyText}>
-                {error || (activeFilter ? 'Нет релизов в этой категории' : 'Релизы не найдены')}
-              </Text>
-              {error && (
-                <TouchableOpacity
-                  style={styles.retryButton}
-                  onPress={() => { setError(null); loadMasters(1); }}
-                  activeOpacity={0.7}
-                >
-                  <Ionicons name="refresh" size={18} color={Colors.royalBlue} />
-                  <Text style={styles.retryText}>Повторить</Text>
-                </TouchableOpacity>
-              )}
-            </View>
-          )}
-        </View>
-      </ScrollView>
+        removeClippedSubviews={true}
+        maxToRenderPerBatch={10}
+        windowSize={5}
+      />
     </View>
   );
 }
@@ -381,9 +464,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: Colors.background,
-  },
-  scrollView: {
-    flex: 1,
   },
   scrollContent: {
     paddingBottom: Spacing.xl,
@@ -508,10 +588,9 @@ const styles = StyleSheet.create({
     color: Colors.royalBlue,
     fontFamily: 'Inter_600SemiBold',
   },
-  releasesGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
+  columnWrapper: {
     justifyContent: 'space-between',
+    paddingHorizontal: Spacing.md,
     gap: Spacing.md,
   },
   loadMoreContainer: {

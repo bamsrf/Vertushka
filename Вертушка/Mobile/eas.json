@@ -12,12 +12,15 @@
       }
     },
     "preview": {
-      "distribution": "internal",
+      "distribution": "store",
+      "channel": "preview",
       "ios": {
         "simulator": false
       }
     },
     "production": {
+      "distribution": "store",
+      "channel": "production",
       "autoIncrement": true
     }
   },

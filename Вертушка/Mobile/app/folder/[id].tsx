@@ -23,6 +23,7 @@ import { api } from '../../lib/api';
 import { useCollectionStore } from '../../lib/store';
 import { Collection, CollectionItem } from '../../lib/types';
 import { Colors, Typography, Spacing, BorderRadius } from '../../constants/theme';
+import { toast } from '../../lib/toast';
 
 export default function FolderScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -50,7 +51,7 @@ export default function FolderScreen() {
       setFolder(collection);
       setItems(collection.items || []);
     } catch {
-      Alert.alert('Ошибка', 'Не удалось загрузить папку');
+      toast.error('Не удалось загрузить папку');
     } finally {
       setIsLoading(false);
     }
@@ -90,7 +91,7 @@ export default function FolderScreen() {
           await renameFolder(folder.id, name.trim());
           setFolder({ ...folder, name: name.trim() });
         } catch {
-          Alert.alert('Ошибка', 'Не удалось переименовать папку');
+          toast.error('Не удалось переименовать папку');
         }
       },
       'plain-text',
@@ -113,7 +114,7 @@ export default function FolderScreen() {
               await deleteFolder(folder.id);
               router.back();
             } catch {
-              Alert.alert('Ошибка', 'Не удалось удалить папку');
+              toast.error('Не удалось удалить папку');
             }
           },
         },
@@ -138,7 +139,7 @@ export default function FolderScreen() {
               setFolder(prev => prev ? { ...prev, items_count: prev.items_count - 1 } : prev);
               await fetchCollections();
             } catch {
-              Alert.alert('Ошибка', 'Не удалось убрать из папки');
+              toast.error('Не удалось убрать из папки');
             }
           },
         },
@@ -193,7 +194,7 @@ export default function FolderScreen() {
               setIsSelectionMode(false);
               await fetchCollections();
             } catch {
-              Alert.alert('Ошибка', 'Не удалось убрать пластинки');
+              toast.error('Не удалось убрать пластинки');
             }
           },
         },
@@ -226,7 +227,7 @@ export default function FolderScreen() {
       await loadFolder();
       await fetchCollections();
     } catch {
-      Alert.alert('Ошибка', 'Не удалось переместить пластинки');
+      toast.error('Не удалось переместить пластинки');
     }
   };
 

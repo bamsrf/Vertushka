@@ -3,6 +3,7 @@
  */
 import axios, { AxiosInstance, AxiosError } from 'axios';
 import * as SecureStore from 'expo-secure-store';
+import Constants from 'expo-constants';
 import {
   AuthTokens,
   LoginRequest,
@@ -33,13 +34,25 @@ import {
   GiftBookingResponse,
   GiftGivenItem,
   CoverScanResponse,
+  NotificationSettings,
+  SuggestResponse,
 } from './types';
 
 // API сервер
-// Для локальной разработки с бэкендом на localhost:
+// Dev URL берётся из app.json extra.devApiUrl — меняй там, не здесь
 const API_BASE_URL = __DEV__
-  ? 'http://192.168.1.66:8000/api'  // Локальный IP для разработки (работает на симуляторе и физическом устройстве)
-  : 'https://api.vinyl-vertushka.ru/api'; // Продакшен сервер
+  ? (Constants.expoConfig?.extra?.devApiUrl ?? 'http://localhost:8000/api')
+  : 'https://api.vinyl-vertushka.ru/api';
+
+// Базовый URL сервера (без /api) для резолва относительных путей (аватарки и т.д.)
+const SERVER_BASE_URL = API_BASE_URL.replace(/\/api$/, '');
+
+/** Превращает относительный путь (/uploads/...) в полный URL */
+export function resolveMediaUrl(path: string | undefined | null): string | undefined {
+  if (!path) return undefined;
+  if (path.startsWith('http')) return path;
+  return `${SERVER_BASE_URL}${path}`;
+}
 
 const TOKEN_KEY = 'auth_token';
 const REFRESH_TOKEN_KEY = 'refresh_token';
@@ -261,8 +274,58 @@ class ApiClient {
     return response.data;
   }
 
-  async updateMe(data: { display_name?: string; bio?: string }): Promise<User> {
+  async updateMe(data: { username?: string; display_name?: string; bio?: string }): Promise<User> {
     const response = await this.client.put<User>('/users/me', data);
+    return response.data;
+  }
+
+  async checkUsername(username: string): Promise<{ available: boolean; reason?: string }> {
+    const response = await this.client.get<{ available: boolean; reason?: string }>(
+      `/users/check-username/${encodeURIComponent(username)}`
+    );
+    return response.data;
+  }
+
+  // ==================== Avatar ====================
+
+  async uploadAvatar(uri: string): Promise<{ avatar_url: string }> {
+    const formData = new FormData();
+    formData.append('file', {
+      uri,
+      name: 'avatar.jpg',
+      type: 'image/jpeg',
+    } as any);
+
+    const response = await this.client.post<User>('/users/me/avatar', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    return { avatar_url: response.data.avatar_url || '' };
+  }
+
+  async deleteAvatar(): Promise<void> {
+    await this.client.delete('/users/me/avatar');
+  }
+
+  // ==================== Account Deletion ====================
+
+  async deleteMyAccount(): Promise<{ message: string; scheduled_purge_at: string }> {
+    const response = await this.client.delete<{ message: string; scheduled_purge_at: string }>('/users/me');
+    return response.data;
+  }
+
+  // ==================== Notifications ====================
+
+  async savePushToken(token: string): Promise<void> {
+    await this.client.put('/users/me/push-token', { push_token: token });
+  }
+
+  async getNotificationSettings(): Promise<NotificationSettings> {
+    const response = await this.client.get<NotificationSettings>('/users/me/notification-settings');
+    return response.data;
+  }
+
+  async updateNotificationSettings(data: Partial<NotificationSettings>): Promise<NotificationSettings> {
+    const response = await this.client.put<NotificationSettings>('/users/me/notification-settings', data);
     return response.data;
   }
 
@@ -366,6 +429,12 @@ class ApiClient {
 
   // ==================== Artists ====================
 
+  async suggest(query: string, limit = 8): Promise<SuggestResponse> {
+    return this.deduplicatedGet<SuggestResponse>('/records/suggest', {
+      params: { q: query, limit },
+    });
+  }
+
   async searchArtists(
     query: string,
     page = 1,
@@ -399,10 +468,13 @@ class ApiClient {
 
   async getArtistMasters(
     artistId: string,
-    page = 1,
-    perPage = 20,
+    sortOrder: 'asc' | 'desc' = 'asc',
+    cursor: number = 1,
+    perPage: number = 20,
   ): Promise<MasterSearchResponse> {
-    return this.deduplicatedGet<MasterSearchResponse>(`/records/artists/${artistId}/masters`, { params: { per_page: perPage, page } });
+    return this.deduplicatedGet<MasterSearchResponse>(`/records/artists/${artistId}/masters`, {
+      params: { sort_order: sortOrder, cursor, per_page: perPage },
+    });
   }
 
   // ==================== Collections ====================
@@ -424,13 +496,15 @@ class ApiClient {
 
   async getCollectionItems(
     collectionId: string,
-    sortBy: string = 'added_at'
-  ): Promise<CollectionItem[]> {
-    // Бэкенд возвращает коллекцию с items внутри через GET /collections/{id}
+    sortBy: string = 'added_at',
+    page: number = 1,
+    perPage: number = 30
+  ): Promise<{ items: CollectionItem[]; hasMore: boolean }> {
     const response = await this.client.get<Collection>(`/collections/${collectionId}`, {
-      params: { sort_by: sortBy },
+      params: { sort_by: sortBy, page, per_page: perPage },
     });
-    return response.data.items || [];
+    const items = response.data.items || [];
+    return { items, hasMore: items.length === perPage };
   }
 
   async getCollectionStats(collectionId: string): Promise<CollectionStats> {

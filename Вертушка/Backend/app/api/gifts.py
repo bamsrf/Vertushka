@@ -1,8 +1,11 @@
 """
 API для работы с подарками (бронирование из вишлиста)
 """
+import logging
 from datetime import datetime, timedelta
 from uuid import UUID
+
+logger = logging.getLogger(__name__)
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import or_, select
@@ -93,6 +96,16 @@ async def book_gift(
     db.add(booking)
     await db.commit()
     await db.refresh(booking)
+
+    logger.info(
+        "gift_booked",
+        extra={
+            "booking_id": str(booking.id),
+            "wishlist_item_id": str(booking.wishlist_item_id),
+            "gifter_email": booking.gifter_email,
+            "gifter_name": booking.gifter_name,
+        }
+    )
 
     # Отправляем уведомление владельцу вишлиста (анонимно)
     try:

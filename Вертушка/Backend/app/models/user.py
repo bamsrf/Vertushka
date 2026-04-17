@@ -94,6 +94,40 @@ class User(Base):
         server_default="0"
     )
 
+    # Нотификации
+    push_token: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True
+    )
+    notify_new_follower: Mapped[bool] = mapped_column(
+        Boolean,
+        default=True,
+        nullable=False,
+        server_default="true"
+    )
+    notify_gift_booked: Mapped[bool] = mapped_column(
+        Boolean,
+        default=True,
+        nullable=False,
+        server_default="true"
+    )
+    notify_app_updates: Mapped[bool] = mapped_column(
+        Boolean,
+        default=True,
+        nullable=False,
+        server_default="true"
+    )
+
+    # Soft delete
+    deleted_at: Mapped[datetime | None] = mapped_column(
+        DateTime,
+        nullable=True
+    )
+    scheduled_purge_at: Mapped[datetime | None] = mapped_column(
+        DateTime,
+        nullable=True
+    )
+
     # Временные метки
     created_at: Mapped[datetime] = mapped_column(
         DateTime,

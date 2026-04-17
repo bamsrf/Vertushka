@@ -1,8 +1,11 @@
 """
 Главный файл приложения Вертушка API
 """
+import asyncio
 import logging
 import sys
+import uuid
+from contextvars import ContextVar
 from contextlib import asynccontextmanager
 
 import sentry_sdk
@@ -22,14 +25,25 @@ from app.database import init_db, close_db, async_session_maker
 from app.services.cache import cache
 from app.services.rate_limiter import discogs_limiter
 
+# --- Request ID context var ---
+_request_id_ctx: ContextVar[str] = ContextVar("request_id", default="-")
+
+
+class _RequestIdFilter(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        record.request_id = _request_id_ctx.get()  # type: ignore[attr-defined]
+        return True
+
+
 # --- Structured logging (JSON) ---
 _log_handler = logging.StreamHandler(sys.stdout)
 _log_handler.setFormatter(
     jsonlogger.JsonFormatter(
-        fmt="%(asctime)s %(levelname)s %(name)s %(message)s",
+        fmt="%(asctime)s %(levelname)s %(name)s %(message)s %(request_id)s",
         rename_fields={"asctime": "timestamp", "levelname": "level"},
     )
 )
+_log_handler.addFilter(_RequestIdFilter())
 logging.root.handlers = [_log_handler]
 logging.root.setLevel(logging.INFO)
 
@@ -74,25 +88,28 @@ async def lifespan(app: FastAPI):
     discogs_limiter.start()
     print("✅ Discogs rate limiter запущен")
 
-    # APScheduler
-    try:
-        from apscheduler.schedulers.asyncio import AsyncIOScheduler
-        from app.tasks.booking_tasks import send_booking_reminders, auto_extend_expired_bookings
-        from app.tasks.discogs_tasks import cleanup_search_cache, enrich_records_artist_data, update_prices_batch
+    # APScheduler — запускается только в scheduler-контейнере (IS_SCHEDULER=true)
+    import os
+    if os.environ.get("IS_SCHEDULER", "false").lower() == "true":
+        try:
+            from apscheduler.schedulers.asyncio import AsyncIOScheduler
+            from app.tasks.booking_tasks import send_booking_reminders, auto_extend_expired_bookings
+            from app.tasks.discogs_tasks import cleanup_search_cache, enrich_records_artist_data, update_prices_batch
 
-        scheduler = AsyncIOScheduler()
-        scheduler.add_job(send_booking_reminders, 'cron', hour=10, minute=0, id='booking_reminders')
-        scheduler.add_job(auto_extend_expired_bookings, 'interval', hours=1, id='booking_auto_extend')
-        # Discogs задачи
-        scheduler.add_job(cleanup_search_cache, 'interval', hours=1, id='search_cache_cleanup')
-        scheduler.add_job(enrich_records_artist_data, 'cron', hour=5, minute=0, id='enrich_artist_data')
-        scheduler.add_job(update_prices_batch, 'cron', hour=4, minute=0, id='update_prices_batch')
-        scheduler.start()
-        print("✅ Планировщик задач запущен")
-    except ImportError:
-        logger.warning("APScheduler не установлен, фоновые задачи отключены")
-    except Exception as e:
-        logger.error(f"Ошибка запуска планировщика: {e}")
+            scheduler = AsyncIOScheduler()
+            scheduler.add_job(send_booking_reminders, 'cron', hour=10, minute=0, id='booking_reminders')
+            scheduler.add_job(auto_extend_expired_bookings, 'interval', hours=1, id='booking_auto_extend')
+            scheduler.add_job(cleanup_search_cache, 'interval', hours=1, id='search_cache_cleanup')
+            scheduler.add_job(enrich_records_artist_data, 'cron', hour=5, minute=0, id='enrich_artist_data')
+            scheduler.add_job(update_prices_batch, 'cron', hour=4, minute=0, id='update_prices_batch')
+            scheduler.start()
+            print("✅ Планировщик задач запущен")
+        except ImportError:
+            logger.warning("APScheduler не установлен, фоновые задачи отключены")
+        except Exception as e:
+            logger.error(f"Ошибка запуска планировщика: {e}")
+    else:
+        print("ℹ️ Планировщик задач отключён на этом воркере (IS_SCHEDULER != true)")
 
     yield
 
@@ -132,6 +149,29 @@ app.add_middleware(
 )
 
 
+# Request timeout middleware
+# Discogs enrichment (artist/masters, per_page=20) может занять до 60с на холодном кэше
+REQUEST_TIMEOUT_SECONDS = 90
+
+@app.middleware("http")
+async def timeout_middleware(request: Request, call_next):
+    try:
+        return await asyncio.wait_for(call_next(request), timeout=REQUEST_TIMEOUT_SECONDS)
+    except asyncio.TimeoutError:
+        logger.warning("Request timeout: %s %s", request.method, request.url.path)
+        return JSONResponse(status_code=504, content={"detail": "Request timeout"})
+
+
+# X-Request-ID middleware — трассировка запросов в логах
+@app.middleware("http")
+async def request_id_middleware(request: Request, call_next):
+    request_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())
+    _request_id_ctx.set(request_id)
+    response = await call_next(request)
+    response.headers["X-Request-ID"] = request_id
+    return response
+
+
 # Глобальный exception handler — не возвращаем стектрейсы клиенту
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
@@ -142,6 +182,7 @@ async def global_exception_handler(request: Request, exc: Exception):
     )
 
 # Статические файлы и шаблоны
+app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 app.mount("/static", StaticFiles(directory="app/web/static"), name="static")
 templates = Jinja2Templates(directory="app/web/templates")
 

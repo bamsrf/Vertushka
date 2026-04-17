@@ -9,8 +9,8 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
-  Alert,
 } from 'react-native';
+import { toast } from '../../lib/toast';
 import { router } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -50,10 +50,7 @@ export default function ForgotPasswordScreen() {
         params: { email: email.trim().toLowerCase() },
       });
     } catch (err: any) {
-      Alert.alert(
-        'Ошибка',
-        err.response?.data?.detail || 'Не удалось отправить код'
-      );
+      toast.error('Ошибка', err.response?.data?.detail || 'Не удалось отправить код');
     } finally {
       setIsLoading(false);
     }
