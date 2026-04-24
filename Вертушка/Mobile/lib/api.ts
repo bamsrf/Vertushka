@@ -485,7 +485,7 @@ class ApiClient {
     perPage: number = 20,
   ): Promise<MasterSearchResponse> {
     return this.deduplicatedGet<MasterSearchResponse>(`/records/artists/${artistId}/masters`, {
-      params: { sort_order: sortOrder, cursor, per_page: perPage },
+      params: { sort_order: sortOrder, page: cursor, per_page: perPage },
     });
   }
 
