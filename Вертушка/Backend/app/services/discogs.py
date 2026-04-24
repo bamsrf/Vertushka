@@ -153,7 +153,7 @@ class DiscogsService:
     async def suggest(self, query: str, per_page: int = 8) -> dict:
         """Автодополнение: один запрос к Discogs без type= (ищет всё),
         результаты разделяются по типу. 1 токен вместо 2."""
-        query = _transliterate(query) or query
+        # query передаётся в Discogs как есть (кириллица включительно) — тест без транслитерации
         params = {"q": query, "per_page": per_page}
 
         ck = search_cache_key({"suggest": True, **params})
@@ -209,7 +209,7 @@ class DiscogsService:
         per_page: int = 20
     ) -> RecordSearchResponse:
         """Поиск пластинок в Discogs."""
-        query = _transliterate(query) or query
+        # query передаётся в Discogs как есть (кириллица включительно) — тест без транслитерации
         params = {
             "q": query,
             "type": "release",
@@ -438,7 +438,7 @@ class DiscogsService:
         per_page: int = 20
     ) -> MasterSearchResponse:
         """Поиск мастер-релизов в Discogs."""
-        query = _transliterate(query) or query
+        # query передаётся в Discogs как есть (кириллица включительно) — тест без транслитерации
         params = {
             "q": query,
             "type": "master",
@@ -502,7 +502,7 @@ class DiscogsService:
         per_page: int = 20
     ) -> ReleaseSearchResponse:
         """Поиск конкретных релизов с фильтрами в Discogs."""
-        query = _transliterate(query) or query
+        # query передаётся в Discogs как есть (кириллица включительно) — тест без транслитерации
         params = {
             "q": query,
             "type": "release",
@@ -681,7 +681,7 @@ class DiscogsService:
         per_page: int = 20
     ) -> ArtistSearchResponse:
         """Поиск артистов в Discogs."""
-        query = _transliterate(query) or query
+        # query передаётся в Discogs как есть (кириллица включительно) — тест без транслитерации
         params = {
             "q": query,
             "type": "artist",
