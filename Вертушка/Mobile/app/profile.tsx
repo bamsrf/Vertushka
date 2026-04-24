@@ -90,7 +90,6 @@ export default function ProfileScreen() {
   const [givenGifts, setGivenGifts] = useState<GiftGivenItem[]>([]);
   const [giftsLoading, setGiftsLoading] = useState(true);
   const [avatarUploading, setAvatarUploading] = useState(false);
-  const [deleting, setDeleting] = useState(false);
 
   const pickImage = useCallback(async (source: 'library' | 'camera') => {
     const launcher = source === 'library'
@@ -109,7 +108,7 @@ export default function ProfileScreen() {
     setAvatarUploading(true);
     try {
       const { avatar_url } = await api.uploadAvatar(result.assets[0].uri);
-      setUser({ ...user!, avatar_url });
+      setUser({ ...user!, avatar_url: `${avatar_url}?t=${Date.now()}` });
     } catch {
       toast.error('Не удалось загрузить аватарку');
     } finally {
@@ -211,15 +210,12 @@ export default function ProfileScreen() {
   }, []);
 
   const handleDeleteAccount = useCallback(async () => {
-    setDeleting(true);
     try {
       await api.deleteMyAccount();
       await logout();
       router.replace('/(auth)/login');
     } catch {
       toast.error('Не удалось удалить аккаунт');
-    } finally {
-      setDeleting(false);
     }
   }, [logout, router]);
 
@@ -355,9 +351,10 @@ export default function ProfileScreen() {
             )}
           </TouchableOpacity>
 
-          <Text style={styles.displayName}>
-            {user?.display_name || user?.username || 'Пользователь'}
-          </Text>
+          <Text style={styles.username}>@{user?.username ?? 'username'}</Text>
+          {user?.display_name ? (
+            <Text style={styles.displayName}>{user.display_name}</Text>
+          ) : null}
           <Text style={styles.email}>{user?.email}</Text>
         </View>
 
@@ -509,15 +506,6 @@ export default function ProfileScreen() {
 
           <TouchableOpacity
             style={styles.settingsItem}
-            onPress={() => router.push('/settings/share-profile')}
-          >
-            <Ionicons name="globe-outline" size={24} color={Colors.royalBlue} />
-            <Text style={styles.settingsItemText}>Настройки профиля</Text>
-            <Ionicons name="chevron-forward" size={20} color={Colors.textMuted} />
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.settingsItem}
             onPress={handleExportPress}
             disabled={exporting}
           >
@@ -664,14 +652,22 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  displayName: {
+  username: {
     ...Typography.h2,
     color: Colors.deepNavy,
-    marginBottom: Spacing.xs,
+    marginBottom: 2,
+    textAlign: 'center',
   },
-  email: {
+  displayName: {
     ...Typography.body,
     color: Colors.textSecondary,
+    marginBottom: Spacing.xs,
+    textAlign: 'center',
+  },
+  email: {
+    ...Typography.caption,
+    color: Colors.textMuted,
+    textAlign: 'center',
   },
   statsGrid: {
     flexDirection: 'row',

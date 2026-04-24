@@ -132,7 +132,7 @@ export default function EditProfileScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { user, setUser } = useAuthStore();
-  const { settings, fetchSettings, updateSettings } = useProfileStore();
+  const { settings, fetchSettings, updateSettings, isSaving: isToggleSaving } = useProfileStore();
   const [displayName, setDisplayName] = useState(user?.display_name ?? '');
   const [username, setUsername] = useState(user?.username ?? '');
   const [usernameStatus, setUsernameStatus] = useState<UsernameStatus>('idle');
@@ -212,9 +212,9 @@ export default function EditProfileScreen() {
     }
   }, [displayName, username, canSave, setUser, user?.display_name, user?.username]);
 
-  const handleTogglePrivate = useCallback(async (value: boolean) => {
+  const handleToggle = useCallback(async (key: string, value: boolean) => {
     try {
-      await updateSettings({ is_private_profile: value });
+      await updateSettings({ [key]: value });
     } catch {
       toast.error('Не удалось сохранить настройку');
     }
@@ -318,7 +318,7 @@ export default function EditProfileScreen() {
           {/* Приватность */}
           <Text style={[styles.sectionTitle, { marginTop: Spacing.xl }]}>Приватность</Text>
           <View style={styles.section}>
-            <View style={styles.settingRow}>
+            <View style={[styles.settingRow, styles.settingRowLast]}>
               <View style={styles.settingInfo}>
                 <Text style={styles.settingLabel}>Приватный профиль</Text>
                 <Text style={styles.settingDescription}>
@@ -327,7 +327,39 @@ export default function EditProfileScreen() {
               </View>
               <VinylToggle
                 value={settings?.is_private_profile ?? false}
-                onValueChange={handleTogglePrivate}
+                onValueChange={(val) => handleToggle('is_private_profile', val)}
+                disabled={isToggleSaving}
+              />
+            </View>
+          </View>
+
+          {/* Публичный профиль */}
+          <Text style={[styles.sectionTitle, { marginTop: Spacing.xl }]}>Публичный профиль</Text>
+          <View style={styles.section}>
+            <View style={styles.settingRow}>
+              <View style={styles.settingInfo}>
+                <Text style={styles.settingLabel}>Активировать профиль</Text>
+                <Text style={styles.settingDescription}>
+                  Ваш профиль будет доступен по ссылке
+                </Text>
+              </View>
+              <VinylToggle
+                value={settings?.is_active ?? false}
+                onValueChange={(val) => handleToggle('is_active', val)}
+                disabled={isToggleSaving}
+              />
+            </View>
+            <View style={[styles.settingRow, styles.settingRowLast]}>
+              <View style={styles.settingInfo}>
+                <Text style={styles.settingLabel}>Общая стоимость коллекции</Text>
+                <Text style={styles.settingDescription}>
+                  Видна посетителям профиля
+                </Text>
+              </View>
+              <VinylToggle
+                value={settings?.show_collection_value ?? false}
+                onValueChange={(val) => handleToggle('show_collection_value', val)}
+                disabled={isToggleSaving}
               />
             </View>
           </View>
@@ -432,6 +464,11 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingVertical: Spacing.md,
     paddingHorizontal: Spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.divider,
+  },
+  settingRowLast: {
+    borderBottomWidth: 0,
   },
   settingInfo: {
     flex: 1,
