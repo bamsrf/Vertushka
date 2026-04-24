@@ -469,12 +469,20 @@ export default function SearchScreen() {
   // isFocused намеренно не используем — список должен оставаться интерактивным после потери фокуса
   const shouldShowHistory = showHistory && searchInput === '' && results.length === 0 && artistResults.length === 0 && searchHistory.length > 0;
 
-  const dedupedArtists = artistResults.filter((artist, index, arr) => {
+  const dedupedArtists = artistResults.reduce<ArtistSearchResult[]>((acc, artist) => {
     const baseName = artist.name.replace(/\s*\(\d+\)$/, '').toLowerCase().trim();
-    return arr.findIndex(a =>
-      a.name.replace(/\s*\(\d+\)$/, '').toLowerCase().trim() === baseName
-    ) === index;
-  });
+    const hasSuffix = /\s*\(\d+\)$/.test(artist.name);
+    const existingIdx = acc.findIndex(
+      a => a.name.replace(/\s*\(\d+\)$/, '').toLowerCase().trim() === baseName
+    );
+    if (existingIdx === -1) {
+      acc.push(artist);
+    } else if (!hasSuffix) {
+      // Prefer the canonical variant without disambig suffix
+      acc[existingIdx] = artist;
+    }
+    return acc;
+  }, []);
 
   const visibleArtists = showAllArtists ? dedupedArtists : dedupedArtists.slice(0, 3);
 

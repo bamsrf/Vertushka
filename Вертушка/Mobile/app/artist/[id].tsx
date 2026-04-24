@@ -313,7 +313,7 @@ export default function ArtistDetailScreen() {
 
       {/* Информация об артисте */}
       <View style={styles.infoSection}>
-        <Text style={styles.artistName}>{artist?.name ?? ''}</Text>
+        <Text style={styles.artistName}>{artist?.name.replace(/\s*\(\d+\)$/, '') ?? ''}</Text>
       </View>
 
       {/* Релизы артиста */}
@@ -384,16 +384,22 @@ export default function ArtistDetailScreen() {
 
   const listEmpty = useMemo(() => {
     if (isLoadingMasters) return null;
+    const isEmptyProfile = !error && !activeFilter && masters.length === 0 && !hasMore;
     return (
       <View style={styles.emptyContainer}>
         <Ionicons
-          name={error ? 'cloud-offline-outline' : 'musical-notes-outline'}
+          name={error ? 'cloud-offline-outline' : isEmptyProfile ? 'person-remove-outline' : 'musical-notes-outline'}
           size={48}
           color={error ? Colors.error : Colors.textMuted}
         />
         <Text style={styles.emptyText}>
-          {error || (activeFilter ? 'Нет релизов в этой категории' : 'Релизы не найдены')}
+          {error || (activeFilter ? 'Нет релизов в этой категории' : isEmptyProfile ? 'Релизы не найдены' : 'Релизы не найдены')}
         </Text>
+        {isEmptyProfile && (
+          <Text style={styles.emptySubText}>
+            Возможно, это псевдоним артиста без отдельных релизов
+          </Text>
+        )}
         {error && (
           <TouchableOpacity
             style={styles.retryButton}
@@ -406,7 +412,7 @@ export default function ArtistDetailScreen() {
         )}
       </View>
     );
-  }, [isLoadingMasters, error, activeFilter, masters.length]);
+  }, [isLoadingMasters, error, activeFilter, masters.length, hasMore]);
 
   if (isLoading) {
     return (
@@ -619,6 +625,13 @@ const styles = StyleSheet.create({
     color: Colors.textMuted,
     marginTop: Spacing.sm,
     textAlign: 'center',
+  },
+  emptySubText: {
+    ...Typography.bodySmall,
+    color: Colors.textMuted,
+    marginTop: Spacing.xs,
+    textAlign: 'center',
+    paddingHorizontal: Spacing.xl,
   },
   retryButton: {
     flexDirection: 'row',

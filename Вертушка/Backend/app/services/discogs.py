@@ -44,6 +44,33 @@ logger = logging.getLogger(__name__)
 
 settings = get_settings()
 
+_CYRILLIC_RE = re.compile(r'[а-яёА-ЯЁ]')
+
+_TRANSLIT: dict[str, str] = {
+    'а': 'a',  'б': 'b',  'в': 'v',  'г': 'g',  'д': 'd',
+    'е': 'e',  'ё': 'yo', 'ж': 'zh', 'з': 'z',  'и': 'i',
+    'й': 'y',  'к': 'k',  'л': 'l',  'м': 'm',  'н': 'n',
+    'о': 'o',  'п': 'p',  'р': 'r',  'с': 's',  'т': 't',
+    'у': 'u',  'ф': 'f',  'х': 'kh', 'ц': 'ts', 'ч': 'ch',
+    'ш': 'sh', 'щ': 'sch','ъ': '',   'ы': 'y',  'ь': '',
+    'э': 'e',  'ю': 'yu', 'я': 'ya',
+}
+
+
+def _transliterate(text: str) -> str | None:
+    """Транслитерирует кириллицу → латиницу. Возвращает None если кириллицы нет."""
+    if not _CYRILLIC_RE.search(text):
+        return None
+    result = []
+    for ch in text:
+        lo = ch.lower()
+        if lo in _TRANSLIT:
+            t = _TRANSLIT[lo]
+            result.append(t.upper() if ch.isupper() and t else t)
+        else:
+            result.append(ch)
+    return ''.join(result)
+
 
 class DiscogsService:
     """Сервис для работы с Discogs API"""
@@ -126,6 +153,7 @@ class DiscogsService:
     async def suggest(self, query: str, per_page: int = 8) -> dict:
         """Автодополнение: один запрос к Discogs без type= (ищет всё),
         результаты разделяются по типу. 1 токен вместо 2."""
+        query = _transliterate(query) or query
         params = {"q": query, "per_page": per_page}
 
         ck = search_cache_key({"suggest": True, **params})
@@ -181,6 +209,7 @@ class DiscogsService:
         per_page: int = 20
     ) -> RecordSearchResponse:
         """Поиск пластинок в Discogs."""
+        query = _transliterate(query) or query
         params = {
             "q": query,
             "type": "release",
@@ -409,6 +438,7 @@ class DiscogsService:
         per_page: int = 20
     ) -> MasterSearchResponse:
         """Поиск мастер-релизов в Discogs."""
+        query = _transliterate(query) or query
         params = {
             "q": query,
             "type": "master",
@@ -472,6 +502,7 @@ class DiscogsService:
         per_page: int = 20
     ) -> ReleaseSearchResponse:
         """Поиск конкретных релизов с фильтрами в Discogs."""
+        query = _transliterate(query) or query
         params = {
             "q": query,
             "type": "release",
@@ -595,7 +626,7 @@ class DiscogsService:
         per_page: int = 50
     ) -> MasterVersionsResponse:
         """Получение всех версий (изданий) мастер-релиза. Кэшируется в Redis."""
-        ck = f"{master_id}:p{page}:pp{per_page}"
+        ck = f"v2:{master_id}:p{page}:pp{per_page}"
         cached = await cache.get("master_versions", ck)
         if cached is not None:
             return MasterVersionsResponse(**cached)
@@ -625,6 +656,7 @@ class DiscogsService:
                 format=format_info if format_info else None,
                 major_formats=major_formats if major_formats else [],
                 thumb_image_url=item.get("thumb"),
+                cover_image_url=self._thumb_to_cover(item.get("thumb")),
             ))
 
         pagination = data.get("pagination", {})
@@ -649,6 +681,7 @@ class DiscogsService:
         per_page: int = 20
     ) -> ArtistSearchResponse:
         """Поиск артистов в Discogs."""
+        query = _transliterate(query) or query
         params = {
             "q": query,
             "type": "artist",
@@ -670,12 +703,22 @@ class DiscogsService:
 
         results = []
         for item in data.get("results", []):
+            thumb = item.get("thumb")
+            if not thumb:
+                continue
             results.append(ArtistSearchResult(
                 artist_id=str(item.get("id", "")),
                 name=item.get("title", "Unknown"),
                 cover_image_url=item.get("cover_image"),
-                thumb_image_url=item.get("thumb"),
+                thumb_image_url=thumb,
             ))
+
+        # Фильтруем артистов, у которых уже известно что релизов нет (псевдонимы)
+        if results:
+            empty_flags = await asyncio.gather(
+                *[cache.get("artist_empty", r.artist_id) for r in results]
+            )
+            results = [r for r, is_empty in zip(results, empty_flags) if not is_empty]
 
         pagination = data.get("pagination", {})
 
@@ -845,32 +888,54 @@ class DiscogsService:
         per_page: int = 100,
         load_all: bool = False,
     ) -> MasterSearchResponse:
-        """Получение master releases артиста через Discogs Search API.
-        Search API возвращает cover_image (полноразмерный стабильный URL) и format[]
-        для корректной фильтрации по типу (альбом/сингл/EP).
+        """Получение master releases артиста.
+
+        Использует два источника:
+        1. /artists/{id}/releases — точный список master ID для этого артиста
+           (без смешения с однофамильцами: Jimmy Justice, Mac Miller (2) и т.д.)
+        2. Search API — обложки и format[] в полном качестве (логика обложек не меняется)
+
         Результат кэшируется в Redis на 1 день."""
-        ck = f"{artist_id}:search:p{page}"
+        ck = f"{artist_id}:v4:p{page}"
         cached = await cache.get("artist_masters", ck)
         if cached is not None:
             return MasterSearchResponse(**cached)
 
         # Получаем имя артиста из кэша или через API
+        artist_name = ""
         artist_data = await cache.get("artist", artist_id)
         if artist_data:
             artist_name = artist_data.get("name", "")
-        else:
+        if not artist_name:
             try:
                 artist_obj = await self.get_artist(artist_id)
                 artist_name = artist_obj.name
             except Exception:
-                artist_name = ""
+                pass
 
         if not artist_name:
             return MasterSearchResponse(results=[], total=0, page=page, per_page=per_page)
 
-        # Убираем disambig-суффикс Discogs вида " (2)"
-        clean_name = re.sub(r'\s*\(\d+\)\s*$', '', artist_name).strip()
+        # --- Шаг 1: получаем точный список master ID для этого артиста ---
+        # /artists/{id}/releases возвращает ТОЛЬКО релизы конкретного артиста,
+        # без смешения с другими (по artist_id, не по тексту имени).
+        # Первая страница (100 релизов) покрывает большинство коллекций.
+        try:
+            ar_data = await self._get(
+                f"{self.BASE_URL}/artists/{artist_id}/releases",
+                params={"page": 1, "per_page": 100},
+                priority=Priority.BATCH,
+            )
+            valid_master_ids: set[str] = {
+                str(item["id"])
+                for item in ar_data.get("releases", [])
+                if item.get("type") == "master" and item.get("id")
+            }
+        except Exception:
+            valid_master_ids = set()
 
+        # --- Шаг 2: Search API — обложки и format[] (логика из оригинала не меняется) ---
+        clean_name = re.sub(r'\s*\(\d+\)\s*$', '', artist_name).strip()
         data = await self._get(
             f"{self.BASE_URL}/database/search",
             params={"type": "master", "artist": clean_name, "page": page, "per_page": per_page},
@@ -883,6 +948,10 @@ class DiscogsService:
         for item in data.get("results", []):
             item_id = str(item.get("id", ""))
             if not item_id or item_id in seen_ids:
+                continue
+            # Фильтруем: оставляем только мастера, принадлежащие именно этому артисту.
+            # Если valid_master_ids пуст (ошибка при загрузке) — показываем всё как раньше.
+            if valid_master_ids and item_id not in valid_master_ids:
                 continue
             seen_ids.add(item_id)
 
@@ -919,6 +988,10 @@ class DiscogsService:
         total_pages = pagination.get("pages", 1)
         has_more = page < total_pages
         next_cursor = page + 1 if has_more else None
+
+        # Если первая страница вернула 0 результатов — профиль пустой (псевдоним без релизов)
+        if page == 1 and not all_results:
+            await cache.set("artist_empty", artist_id, True, 7 * 86400)
 
         response = MasterSearchResponse(
             results=all_results,
