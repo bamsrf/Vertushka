@@ -865,7 +865,7 @@ export default function SearchScreen() {
               </View>
               <View style={styles.topArtistInfo}>
                 <Text style={styles.topArtistLabel}>Артист</Text>
-                <Text style={styles.topArtistName} numberOfLines={1}>{dedupedArtists[0].name}</Text>
+                <Text style={styles.topArtistName} numberOfLines={1}>{dedupedArtists[0].name.replace(/\s*\(\d+\)$/, '')}</Text>
               </View>
               <View style={styles.artistArrowBg}>
                 <Ionicons name="chevron-forward" size={20} color="#FFFFFF" />
@@ -898,7 +898,7 @@ export default function SearchScreen() {
               </View>
               <View style={styles.topArtistInfo}>
                 <Text style={styles.secondaryArtistLabel}>Артист</Text>
-                <Text style={styles.secondaryArtistName} numberOfLines={1}>{artist.name}</Text>
+                <Text style={styles.secondaryArtistName} numberOfLines={1}>{artist.name.replace(/\s*\(\d+\)$/, '')}</Text>
               </View>
               <Ionicons name="chevron-forward" size={20} color={Colors.textMuted} />
             </TouchableOpacity>
