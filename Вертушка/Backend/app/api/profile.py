@@ -284,6 +284,16 @@ async def update_highlights(
     )
 
 
+
+@router.get("/public/new-releases", response_model=list[PublicProfileRecord])
+async def get_new_releases(
+    limit: int = 12,
+    db: AsyncSession = Depends(get_db)
+):
+    """Глобальный рейл новинок по спросу в вишлистах."""
+    return await _get_new_releases(db, limit=min(limit, 24))
+
+
 @router.get("/public/{username}", response_model=PublicProfileResponse)
 async def get_public_profile(
     username: str,
@@ -327,12 +337,3 @@ async def get_recent_additions(
     if not user:
         raise HTTPException(status_code=404, detail="Пользователь не найден")
     return await _get_recent_additions(user.id, db, limit=min(limit, 30))
-
-
-@router.get("/public/new-releases", response_model=list[PublicProfileRecord])
-async def get_new_releases(
-    limit: int = 12,
-    db: AsyncSession = Depends(get_db)
-):
-    """Глобальный рейл новинок по спросу в вишлистах."""
-    return await _get_new_releases(db, limit=min(limit, 24))

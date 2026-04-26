@@ -3,5 +3,20 @@
     "allow": [
       "Bash(open:*)"
     ]
+  },
+  "hooks": {
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/vladislavrumancev/Desktop/Cursor/.claude/hooks/lint-changed.sh",
+            "timeout": 30,
+            "statusMessage": "Linting changed files..."
+          }
+        ]
+      }
+    ]
   }
 }
