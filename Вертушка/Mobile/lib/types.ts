@@ -368,6 +368,7 @@ export interface PublicProfileRecord {
   cover_url?: string;
   estimated_price_median?: number;
   price_currency: string;
+  is_booked?: boolean;
 }
 
 export interface PublicProfile {
@@ -379,6 +380,8 @@ export interface PublicProfile {
   collection_count: number;
   wishlist_count: number;
   collection_value?: number;
+  collection_value_rub?: number;
+  monthly_value_delta_rub?: number | null;
   followers_count: number;
   show_collection: boolean;
   show_wishlist: boolean;
@@ -387,6 +390,8 @@ export interface PublicProfile {
   show_record_format: boolean;
   show_record_prices: boolean;
   highlights: PublicProfileRecord[];
+  recent_additions: PublicProfileRecord[];
+  new_releases: PublicProfileRecord[];
 }
 
 export interface UserWithStats {

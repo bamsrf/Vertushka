@@ -264,7 +264,7 @@ export default function EditProfileScreen() {
               onChangeText={setDisplayName}
               placeholder="Ваше имя"
               placeholderTextColor={Colors.textMuted}
-              maxLength={100}
+              maxLength={20}
               autoCapitalize="words"
               returnKeyType="done"
             />
