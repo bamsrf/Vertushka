@@ -54,9 +54,11 @@ async def send_booking_reminders():
             logger.error(f"Ошибка в send_booking_reminders: {e}")
 
 
-async def auto_extend_expired_bookings():
+async def auto_release_expired_bookings():
     """
-    Автопродление истёкших броней на 30 дней (если не отменены).
+    Автоматическое освобождение истёкших броней.
+    BOOKED + expires_at < now() → CANCELLED, cancellation_reason='expired',
+    wishlist_item_id обнуляется (бронь больше не блокирует пластинку).
     Запускается каждый час.
     """
     async with async_session_maker() as db:
@@ -75,12 +77,14 @@ async def auto_extend_expired_bookings():
             bookings = result.scalars().all()
 
             for booking in bookings:
-                booking.expires_at = now + timedelta(days=30)
-                booking.reminder_sent_at = None  # Сбрасываем для нового напоминания
-                logger.info(f"Автопродление: booking_id={booking.id}, new_expires={booking.expires_at}")
+                booking.status = GiftStatus.CANCELLED
+                booking.cancelled_at = now
+                booking.cancellation_reason = "expired"
+                booking.wishlist_item_id = None
+                logger.info(f"Авто-release брони: booking_id={booking.id}")
 
             await db.commit()
-            logger.info(f"Автопродлено {len(bookings)} бронирований")
+            logger.info(f"Авто-освобождено {len(bookings)} бронирований")
         except Exception as e:
             await db.rollback()
-            logger.error(f"Ошибка в auto_extend_expired_bookings: {e}")
+            logger.error(f"Ошибка в auto_release_expired_bookings: {e}")

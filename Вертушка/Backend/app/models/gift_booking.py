@@ -96,6 +96,10 @@ class GiftBooking(Base):
         DateTime,
         nullable=True
     )
+    cancellation_reason: Mapped[str | None] = mapped_column(
+        String(50),
+        nullable=True
+    )
 
     # Срок бронирования
     expires_at: Mapped[datetime | None] = mapped_column(

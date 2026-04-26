@@ -10,6 +10,7 @@ from app.models.follow import Follow
 from app.models.profile_share import ProfileShare
 from app.models.search_cache import SearchCache
 from app.models.user_photo import UserRecordPhoto
+from app.models.collection_value_snapshot import CollectionValueSnapshot
 
 __all__ = [
     "User",
@@ -23,5 +24,6 @@ __all__ = [
     "ProfileShare",
     "SearchCache",
     "UserRecordPhoto",
+    "CollectionValueSnapshot",
 ]
 

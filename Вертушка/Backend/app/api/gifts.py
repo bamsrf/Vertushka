@@ -351,13 +351,14 @@ async def get_received_bookings(
     )
     bookings = result.scalars().all()
     
+    # Анонимность: владелец видит только статус, без имени/email/телефона дарителя
     return [GiftBookingOwnerResponse(
         id=b.id,
         wishlist_item_id=b.wishlist_item_id,
-        gifter_name=b.gifter_name,
-        gifter_email=b.gifter_email,
-        gifter_phone=b.gifter_phone,
-        gifter_message=b.gifter_message,
+        gifter_name="",
+        gifter_email="",
+        gifter_phone=None,
+        gifter_message=None,
         status=b.status,
         booked_at=b.booked_at,
         completed_at=b.completed_at,
@@ -372,7 +373,7 @@ async def get_received_bookings(
             estimated_price_median=b.wishlist_item.record.estimated_price_median,
             price_currency=b.wishlist_item.record.price_currency
         )
-    ) for b in bookings]
+    ) for b in bookings if b.wishlist_item is not None]
 
 
 @router.put("/me/received/{booking_id}/complete")

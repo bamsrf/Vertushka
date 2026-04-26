@@ -19,6 +19,9 @@ from app.models.wishlist import Wishlist, WishlistItem
 from app.models.follow import Follow
 from app.models.profile_share import ProfileShare
 from app.models.gift_booking import GiftBooking
+from app.api.profile import get_public_profile_payload, _get_recent_additions, _get_new_releases
+from app.services.exchange import get_usd_rub_rate
+from app.services.valuation import get_monthly_delta
 
 logger = logging.getLogger(__name__)
 
@@ -87,6 +90,8 @@ async def public_profile_page(
 
     # Стоимость коллекции
     collection_value = None
+    collection_value_rub = None
+    monthly_delta = None
     if profile.show_collection_value:
         value_result = await db.scalar(
             select(func.sum(Record.estimated_price_median))
@@ -95,6 +100,14 @@ async def public_profile_page(
             .where(Collection.user_id == user.id)
         )
         collection_value = round(float(value_result), 2) if value_result else 0.0
+        rate = await get_usd_rub_rate()
+        collection_value_rub = round(collection_value * rate, 2)
+        delta = await get_monthly_delta(user.id, db)
+        monthly_delta = float(delta) if delta is not None else None
+
+    # Рейлы
+    recent_additions = await _get_recent_additions(user.id, db, limit=10) if profile.show_collection else []
+    new_releases = await _get_new_releases(db, limit=12)
 
     # === Избранные пластинки ===
     highlights = []
@@ -154,6 +167,10 @@ async def public_profile_page(
         "wishlist_count": wishlist_count,
         "followers_count": followers_count,
         "collection_value": collection_value,
+        "collection_value_rub": collection_value_rub,
+        "monthly_delta": monthly_delta,
+        "recent_additions": recent_additions,
+        "new_releases": new_releases,
         "highlights": highlights,
         "collection_items": collection_items,
         "wishlist_items": wishlist_items,

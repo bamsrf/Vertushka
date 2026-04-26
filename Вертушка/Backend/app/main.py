@@ -93,8 +93,9 @@ async def lifespan(app: FastAPI):
     if os.environ.get("IS_SCHEDULER", "false").lower() == "true":
         try:
             from apscheduler.schedulers.asyncio import AsyncIOScheduler
-            from app.tasks.booking_tasks import send_booking_reminders, auto_extend_expired_bookings
+            from app.tasks.booking_tasks import send_booking_reminders, auto_release_expired_bookings
             from app.tasks.discogs_tasks import cleanup_search_cache, enrich_records_artist_data, update_prices_batch
+            from app.tasks.valuation_tasks import record_daily_snapshots
             from app.services.cover_storage import CoverStorageService
 
             async def cleanup_covers():
@@ -106,10 +107,11 @@ async def lifespan(app: FastAPI):
 
             scheduler = AsyncIOScheduler()
             scheduler.add_job(send_booking_reminders, 'cron', hour=10, minute=0, id='booking_reminders')
-            scheduler.add_job(auto_extend_expired_bookings, 'interval', hours=1, id='booking_auto_extend')
+            scheduler.add_job(auto_release_expired_bookings, 'interval', hours=1, id='booking_auto_release')
             scheduler.add_job(cleanup_search_cache, 'interval', hours=1, id='search_cache_cleanup')
             scheduler.add_job(enrich_records_artist_data, 'cron', hour=5, minute=0, id='enrich_artist_data')
             scheduler.add_job(update_prices_batch, 'cron', hour=4, minute=0, id='update_prices_batch')
+            scheduler.add_job(record_daily_snapshots, 'cron', hour=5, minute=0, id='value_snapshots')
             scheduler.add_job(cleanup_covers, 'cron', hour=3, minute=0, id='covers_lru_cleanup')
             scheduler.start()
             print("✅ Планировщик задач запущен")

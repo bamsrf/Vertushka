@@ -56,6 +56,7 @@ class PublicProfileRecord(BaseModel):
     thumb_image_url: str | None = None
     estimated_price_median: float | None = None
     price_currency: str = "USD"
+    is_booked: bool = False
 
 
 class PublicProfileResponse(BaseModel):
@@ -70,6 +71,8 @@ class PublicProfileResponse(BaseModel):
     collection_count: int = 0
     wishlist_count: int = 0
     collection_value: float | None = None
+    collection_value_rub: float | None = None
+    monthly_value_delta_rub: float | None = None
     followers_count: int = 0
 
     # Настройки отображения
@@ -82,3 +85,7 @@ class PublicProfileResponse(BaseModel):
 
     # Избранные пластинки
     highlights: list[PublicProfileRecord] = []
+
+    # Рейлы для главного экрана
+    recent_additions: list[PublicProfileRecord] = []
+    new_releases: list[PublicProfileRecord] = []
