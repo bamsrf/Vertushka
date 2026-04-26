@@ -66,6 +66,27 @@ async def _get_recent_additions(user_id: UUID, db: AsyncSession, limit: int = 10
     return [_record_to_public(item.record) for item in items if item.record]
 
 
+async def _get_full_collection(user_id: UUID, db: AsyncSession, limit: int = 200) -> list[PublicProfileRecord]:
+    """Полная коллекция пользователя с дедупом по record_id (по последнему added_at)."""
+    result = await db.execute(
+        select(CollectionItem)
+        .join(Collection)
+        .where(Collection.user_id == user_id)
+        .options(selectinload(CollectionItem.record))
+        .order_by(CollectionItem.added_at.desc())
+        .limit(limit)
+    )
+    items = result.scalars().all()
+    seen: set[UUID] = set()
+    out: list[PublicProfileRecord] = []
+    for item in items:
+        if not item.record or item.record.id in seen:
+            continue
+        seen.add(item.record.id)
+        out.append(_record_to_public(item.record))
+    return out
+
+
 async def _get_new_releases(db: AsyncSession, limit: int = 12) -> list[PublicProfileRecord]:
     """Глобальный рейл свежих релизов: year >= current_year - 1, отсортирован по спросу в вишлистах."""
     now = time.time()
@@ -134,6 +155,7 @@ async def get_public_profile_payload(user: User, profile: ProfileShare, db: Asyn
                 highlights.append(_record_to_public(rec))
 
     recent_additions = await _get_recent_additions(user.id, db, limit=10) if profile.show_collection else []
+    collection_full = await _get_full_collection(user.id, db, limit=200) if profile.show_collection else []
     new_releases = await _get_new_releases(db, limit=12)
 
     return PublicProfileResponse(
@@ -155,6 +177,7 @@ async def get_public_profile_payload(user: User, profile: ProfileShare, db: Asyn
         show_record_format=profile.show_record_format,
         show_record_prices=profile.show_record_prices,
         highlights=highlights,
+        collection=collection_full,
         recent_additions=recent_additions,
         new_releases=new_releases,
     )

@@ -390,6 +390,7 @@ export interface PublicProfile {
   show_record_format: boolean;
   show_record_prices: boolean;
   highlights: PublicProfileRecord[];
+  collection: PublicProfileRecord[];
   recent_additions: PublicProfileRecord[];
   new_releases: PublicProfileRecord[];
 }

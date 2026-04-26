@@ -86,6 +86,9 @@ class PublicProfileResponse(BaseModel):
     # Избранные пластинки
     highlights: list[PublicProfileRecord] = []
 
+    # Полная коллекция (для грида)
+    collection: list[PublicProfileRecord] = []
+
     # Рейлы для главного экрана
     recent_additions: list[PublicProfileRecord] = []
     new_releases: list[PublicProfileRecord] = []

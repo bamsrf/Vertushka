@@ -1,5 +1,5 @@
 /**
- * Публичный профиль другого пользователя — light premium редизайн.
+ * Публичный профиль другого пользователя — light premium редизайн (PR-5).
  * Палитра: ivory base + cobalt action (см. Design/Vertuska_publicPRofile/).
  */
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
@@ -39,6 +39,8 @@ import {
 import { toast } from '../../../lib/toast';
 
 type ProfileTab = 'collection' | 'wishlist';
+type ViewMode = 'grid' | 'list';
+type FormatFilter = 'all' | 'LP' | 'EP' | '7"';
 
 const PP = {
   ivory: '#F4EEE6',
@@ -59,28 +61,44 @@ const PP = {
 };
 
 const SCREEN_W = Dimensions.get('window').width;
-const GRID_GAP = 14;
+const GRID_GAP = 12;
 const GRID_PADDING = 20;
-const GRID_COLS = 2;
-const CARD_W = (SCREEN_W - GRID_PADDING * 2 - GRID_GAP) / GRID_COLS;
+const GRID_COLS = 3;
+const CARD_W = Math.floor((SCREEN_W - GRID_PADDING * 2 - GRID_GAP * (GRID_COLS - 1)) / GRID_COLS);
+const RAIL_COVER = 108;
 
 function formatRub(value: number) {
   return Math.round(value).toLocaleString('ru-RU').replace(/,/g, ' ');
 }
 
+function priceLabel(record: PublicProfileRecord): string | null {
+  if (!record.estimated_price_median) return null;
+  return `~$${Math.round(record.estimated_price_median)}`;
+}
+
+/* ---------------- VINYL with curved label ---------------- */
 function Vinyl({ size = 150 }: { size?: number }) {
   const rot = useRef(new Animated.Value(0)).current;
   useEffect(() => {
-    Animated.loop(
+    const anim = Animated.loop(
       Animated.timing(rot, {
         toValue: 1,
         duration: 14000,
         easing: Easing.linear,
         useNativeDriver: true,
       })
-    ).start();
+    );
+    anim.start();
+    return () => anim.stop();
   }, [rot]);
   const spin = rot.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
+
+  // Криволинейный лейбл по окружности
+  const labelText = 'ВЕРТУШКА · ПРОФИЛЬ · ВЕРТУШКА · ';
+  const chars = labelText.split('');
+  const radius = size * 0.46;
+  const center = size / 2;
+
   return (
     <Animated.View
       style={{
@@ -96,6 +114,53 @@ function Vinyl({ size = 150 }: { size?: number }) {
         elevation: 14,
       }}
     >
+      {/* Виниловые «канавки» */}
+      <View
+        style={{
+          position: 'absolute',
+          inset: 6,
+          borderRadius: size / 2,
+          borderWidth: 1,
+          borderColor: 'rgba(255,255,255,0.05)',
+        } as any}
+      />
+      <View
+        style={{
+          position: 'absolute',
+          left: 14, right: 14, top: 14, bottom: 14,
+          borderRadius: size / 2,
+          borderWidth: 1,
+          borderColor: 'rgba(255,255,255,0.04)',
+        }}
+      />
+
+      {/* Лейбл по окружности */}
+      {chars.map((ch, i) => {
+        const angle = (i / chars.length) * 360;
+        const rad = (angle - 90) * (Math.PI / 180);
+        const x = center + radius * Math.cos(rad) - 4;
+        const y = center + radius * Math.sin(rad) - 6;
+        return (
+          <Text
+            key={i}
+            style={{
+              position: 'absolute',
+              left: x,
+              top: y,
+              width: 8,
+              fontSize: 7,
+              color: 'rgba(255,255,255,0.55)',
+              fontFamily: Platform.select({ ios: 'Menlo', android: 'monospace' }),
+              textAlign: 'center',
+              transform: [{ rotate: `${angle}deg` }],
+            }}
+          >
+            {ch}
+          </Text>
+        );
+      })}
+
+      {/* Центральный лейбл-наклейка */}
       <View
         style={{
           position: 'absolute',
@@ -127,6 +192,7 @@ function Vinyl({ size = 150 }: { size?: number }) {
   );
 }
 
+/* ---------------- SEGMENTED ---------------- */
 function Segmented({
   value,
   onChange,
@@ -205,6 +271,7 @@ function Segmented({
   );
 }
 
+/* ---------------- RESERVED BADGE ---------------- */
 function ReservedBadge() {
   const pulse = useRef(new Animated.Value(0)).current;
   useEffect(() => {
@@ -234,7 +301,8 @@ function ReservedBadge() {
   );
 }
 
-function Rail({
+/* ---------------- AUTO-SCROLL RAIL ---------------- */
+function AutoRail({
   title,
   subtitle,
   items,
@@ -249,7 +317,46 @@ function Rail({
   onPick?: (r: PublicProfileRecord) => void;
   titleColor: string;
 }) {
+  const scrollRef = useRef<ScrollView>(null);
+  const scrollX = useRef(new Animated.Value(0)).current;
+  const [contentW, setContentW] = useState(0);
+  const halfWidth = contentW / 2;
+
+  useEffect(() => {
+    if (!halfWidth || !scrollRef.current) return;
+    let raf: number | null = null;
+    const id = scrollX.addListener(({ value }) => {
+      if (value >= halfWidth) {
+        scrollRef.current?.scrollTo({ x: value - halfWidth, animated: false });
+      }
+    });
+    const anim = Animated.loop(
+      Animated.timing(scrollX, {
+        toValue: halfWidth,
+        duration: 30000,
+        easing: Easing.linear,
+        useNativeDriver: false,
+      })
+    );
+    anim.start();
+    const tick = () => {
+      // @ts-ignore
+      const v = scrollX.__getValue?.() ?? 0;
+      scrollRef.current?.scrollTo({ x: v, animated: false });
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => {
+      anim.stop();
+      scrollX.removeListener(id);
+      if (raf != null) cancelAnimationFrame(raf);
+    };
+  }, [halfWidth, scrollX]);
+
   if (!items.length) return null;
+  // Дублирование для бесконечной прокрутки
+  const doubled = [...items, ...items];
+
   return (
     <View>
       <View style={styles.railHead}>
@@ -257,28 +364,31 @@ function Rail({
         <Text style={styles.railSub}>{subtitle}</Text>
       </View>
       <ScrollView
+        ref={scrollRef}
         horizontal
         showsHorizontalScrollIndicator={false}
+        scrollEnabled
         contentContainerStyle={{ paddingHorizontal: GRID_PADDING, gap: 12 }}
+        onContentSizeChange={(w) => setContentW(w)}
       >
-        {items.map((r) => (
+        {doubled.map((r, i) => (
           <TouchableOpacity
-            key={r.id}
+            key={`${r.id}-${i}`}
             activeOpacity={0.85}
             onPress={() => onPick?.(r)}
-            style={{ width: 108 }}
+            style={{ width: RAIL_COVER }}
           >
             <View style={styles.railCover}>
               {r.cover_image_url ? (
                 <Image
                   source={resolveMediaUrl(r.cover_image_url)}
-                  style={{ width: 108, height: 108 }}
+                  style={{ width: RAIL_COVER, height: RAIL_COVER }}
                   cachePolicy="disk"
                 />
               ) : (
                 <LinearGradient
                   colors={[PP.lavender, PP.periwinkle]}
-                  style={{ width: 108, height: 108 }}
+                  style={{ width: RAIL_COVER, height: RAIL_COVER }}
                 />
               )}
             </View>
@@ -307,26 +417,68 @@ function Rail({
   );
 }
 
-function BookingExplainer() {
-  const steps = [
-    { icon: '🔒', text: 'Анонимно — владелец видит только метку «Забронировано»' },
-    { icon: '🎁', text: 'Бронь действует 60 дней с момента подтверждения' },
-    { icon: '⏰', text: 'Напомним за 7 дней до истечения срока' },
-    { icon: '📅', text: 'Если не вручили — бронь автоматически освободится' },
-  ];
+/* ---------------- VIEW TOGGLE + FORMAT FILTER ---------------- */
+function ViewToggle({ value, onChange }: { value: ViewMode; onChange: (v: ViewMode) => void }) {
   return (
-    <View style={styles.explainer}>
-      <Text style={styles.explainerTitle}>Как работает бронирование</Text>
-      {steps.map((s, i) => (
-        <View key={i} style={styles.explainerRow}>
-          <Text style={styles.explainerIcon}>{s.icon}</Text>
-          <Text style={styles.explainerText}>{s.text}</Text>
-        </View>
-      ))}
+    <View style={styles.viewToggle}>
+      {(['grid', 'list'] as ViewMode[]).map((m) => {
+        const active = m === value;
+        return (
+          <TouchableOpacity
+            key={m}
+            onPress={() => onChange(m)}
+            style={[styles.viewToggleBtn, active && styles.viewToggleBtnActive]}
+          >
+            <Ionicons
+              name={m === 'grid' ? 'grid-outline' : 'list-outline'}
+              size={15}
+              color={active ? PP.cobalt : PP.mute}
+            />
+          </TouchableOpacity>
+        );
+      })}
     </View>
   );
 }
 
+function FormatChips({
+  value,
+  onChange,
+}: {
+  value: FormatFilter;
+  onChange: (v: FormatFilter) => void;
+}) {
+  const opts: { id: FormatFilter; label: string }[] = [
+    { id: 'all', label: 'Все' },
+    { id: 'LP', label: 'LP' },
+    { id: 'EP', label: 'EP' },
+    { id: '7"', label: '7"' },
+  ];
+  return (
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      contentContainerStyle={{ gap: 6 }}
+    >
+      {opts.map((o) => {
+        const active = o.id === value;
+        return (
+          <TouchableOpacity
+            key={o.id}
+            onPress={() => onChange(o.id)}
+            style={[styles.formatChip, active && styles.formatChipActive]}
+          >
+            <Text style={[styles.formatChipTxt, active && styles.formatChipTxtActive]}>
+              {o.label}
+            </Text>
+          </TouchableOpacity>
+        );
+      })}
+    </ScrollView>
+  );
+}
+
+/* ---------------- CARDS ---------------- */
 function RecordCardLight({
   record,
   reserved,
@@ -336,6 +488,7 @@ function RecordCardLight({
   reserved?: boolean;
   onPress?: () => void;
 }) {
+  const price = priceLabel(record);
   return (
     <TouchableOpacity activeOpacity={0.85} onPress={onPress} style={{ width: CARD_W }}>
       <View style={styles.cardCover}>
@@ -352,25 +505,66 @@ function RecordCardLight({
           />
         )}
       </View>
-      <View style={{ paddingTop: 10, paddingHorizontal: 2 }}>
+      <View style={{ paddingTop: 8, paddingHorizontal: 1 }}>
         <Text numberOfLines={1} style={styles.cardArtist}>
           {record.artist}
         </Text>
         <Text numberOfLines={1} style={styles.cardTitle}>
           {record.title}
         </Text>
-        <View style={styles.cardBottom}>
+        {price ? <Text style={styles.cardPrice}>{price}</Text> : null}
+        {(record.year || record.format_type) ? (
           <Text style={styles.cardInfo} numberOfLines={1}>
             {record.year || ''}
             {record.format_type ? ` · ${record.format_type}` : ''}
           </Text>
-          {reserved ? <ReservedBadge /> : null}
-        </View>
+        ) : null}
+        {reserved ? <View style={{ marginTop: 6 }}><ReservedBadge /></View> : null}
       </View>
     </TouchableOpacity>
   );
 }
 
+function RecordRowLight({
+  record,
+  reserved,
+  onPress,
+}: {
+  record: PublicProfileRecord;
+  reserved?: boolean;
+  onPress?: () => void;
+}) {
+  const price = priceLabel(record);
+  return (
+    <TouchableOpacity activeOpacity={0.85} onPress={onPress} style={styles.row}>
+      <View style={styles.rowCover}>
+        {record.cover_image_url ? (
+          <Image
+            source={resolveMediaUrl(record.cover_image_url)}
+            style={{ width: 64, height: 64 }}
+            cachePolicy="disk"
+          />
+        ) : (
+          <LinearGradient colors={[PP.lavender, PP.sky]} style={{ width: 64, height: 64 }} />
+        )}
+      </View>
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <Text numberOfLines={1} style={styles.cardArtist}>{record.artist}</Text>
+        <Text numberOfLines={1} style={[styles.cardTitle, { fontSize: 14 }]}>{record.title}</Text>
+        <Text style={styles.cardInfo} numberOfLines={1}>
+          {record.year || ''}
+          {record.format_type ? ` · ${record.format_type}` : ''}
+        </Text>
+      </View>
+      <View style={{ alignItems: 'flex-end', gap: 4 }}>
+        {price ? <Text style={styles.cardPrice}>{price}</Text> : null}
+        {reserved ? <ReservedBadge /> : null}
+      </View>
+    </TouchableOpacity>
+  );
+}
+
+/* ---------------- SCREEN ---------------- */
 export default function UserProfileScreen() {
   const { username } = useLocalSearchParams<{ username: string }>();
   const router = useRouter();
@@ -381,24 +575,23 @@ export default function UserProfileScreen() {
   const [pubProfile, setPubProfile] = useState<PublicProfile | null>(null);
   const [wishlist, setWishlist] = useState<WishlistPublicResponse | null>(null);
   const [following, setFollowing] = useState(false);
-  const [followersCount, setFollowersCount] = useState(0);
+  const [, setFollowersCount] = useState(0);
   const [profileUserId, setProfileUserId] = useState<string | null>(null);
 
   const [activeTab, setActiveTab] = useState<ProfileTab>('collection');
+  const [viewMode, setViewMode] = useState<ViewMode>('grid');
+  const [formatFilter, setFormatFilter] = useState<FormatFilter>('all');
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isFollowLoading, setIsFollowLoading] = useState(false);
 
-  // Booking modal state
   const [bookingItem, setBookingItem] = useState<WishlistPublicItem | null>(null);
   const [bookingName, setBookingName] = useState('');
   const [bookingEmail, setBookingEmail] = useState('');
   const [bookingMessage, setBookingMessage] = useState('');
   const [isBooking, setIsBooking] = useState(false);
 
-  // Background tween value (0 — collection, 1 — wishlist)
   const bgAnim = useRef(new Animated.Value(0)).current;
-  // Counter
   const counterAnim = useRef(new Animated.Value(0)).current;
   const [displayValue, setDisplayValue] = useState(0);
 
@@ -435,14 +628,10 @@ export default function UserProfileScreen() {
     }
   }, [username]);
 
-  useEffect(() => {
-    load();
-  }, [load]);
+  useEffect(() => { load(); }, [load]);
 
   useEffect(() => {
-    if (pubProfile && activeTab === 'wishlist' && !wishlist) {
-      loadWishlist();
-    }
+    if (pubProfile && activeTab === 'wishlist' && !wishlist) loadWishlist();
   }, [pubProfile, activeTab, wishlist, loadWishlist]);
 
   useEffect(() => {
@@ -498,9 +687,7 @@ export default function UserProfileScreen() {
 
   const handleShare = useCallback(async () => {
     try {
-      await Share.share({
-        message: `https://vinyl-vertushka.ru/@${username}`,
-      });
+      await Share.share({ message: `https://vinyl-vertushka.ru/@${username}` });
     } catch {}
   }, [username]);
 
@@ -534,13 +721,33 @@ export default function UserProfileScreen() {
   const monthlyDelta = pubProfile?.monthly_value_delta_rub;
 
   const wishlistItems = wishlist?.items || [];
-  const recordsForGrid: PublicProfileRecord[] =
-    activeTab === 'collection'
-      ? pubProfile?.recent_additions || []
-      : wishlistItems.map((it) => ({ ...it.record, is_booked: it.is_booked }));
 
-  // Collection grid: используем recent_additions как fallback (полная коллекция отдельно не грузится)
-  const gridData = activeTab === 'collection' ? pubProfile?.recent_additions || [] : recordsForGrid;
+  // M4: грид коллекции — полная коллекция, не recent_additions
+  const baseCollection: PublicProfileRecord[] = pubProfile?.collection ?? [];
+  const baseWishlist: PublicProfileRecord[] = wishlistItems.map((it) => ({
+    ...it.record,
+    is_booked: it.is_booked,
+  }));
+
+  const applyFilter = useCallback(
+    (records: PublicProfileRecord[]) => {
+      if (formatFilter === 'all') return records;
+      return records.filter((r) => {
+        if (!r.format_type) return false;
+        const f = r.format_type.toLowerCase();
+        if (formatFilter === 'LP') return f.includes('lp') || f.includes('album');
+        if (formatFilter === 'EP') return f.includes('ep');
+        if (formatFilter === '7"') return f.includes('7"') || f.includes("7''") || f.startsWith('7');
+        return true;
+      });
+    },
+    [formatFilter]
+  );
+
+  const gridData = useMemo(
+    () => applyFilter(activeTab === 'collection' ? baseCollection : baseWishlist),
+    [applyFilter, activeTab, baseCollection, baseWishlist]
+  );
 
   const collectionBgOpacity = bgAnim.interpolate({ inputRange: [0, 1], outputRange: [1, 0] });
   const wishlistBgOpacity = bgAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 1] });
@@ -557,39 +764,90 @@ export default function UserProfileScreen() {
 
   const initials = pubProfile.username.slice(0, 2).toLowerCase();
 
+  const renderGrid = () => {
+    if (gridData.length === 0) {
+      return (
+        <Text style={styles.empty}>
+          {activeTab === 'collection' ? 'Коллекция пуста' : 'Вишлист пуст'}
+        </Text>
+      );
+    }
+    if (viewMode === 'list') {
+      return (
+        <View style={styles.list}>
+          {gridData.map((r, idx) => {
+            const isWishlist = activeTab === 'wishlist';
+            const item = isWishlist ? wishlistItems.find((w) => w.record.id === r.id) : null;
+            const reserved = isWishlist ? !!r.is_booked : false;
+            return (
+              <RecordRowLight
+                key={r.id + idx}
+                record={r}
+                reserved={reserved}
+                onPress={() => {
+                  if (isWishlist && item && !reserved && !isOwn) setBookingItem(item);
+                  else router.push(`/record/${r.id}`);
+                }}
+              />
+            );
+          })}
+        </View>
+      );
+    }
+    return (
+      <View style={styles.grid}>
+        {gridData.map((r, idx) => {
+          const isWishlist = activeTab === 'wishlist';
+          const item = isWishlist ? wishlistItems.find((w) => w.record.id === r.id) : null;
+          const reserved = isWishlist ? !!r.is_booked : false;
+          return (
+            <RecordCardLight
+              key={r.id + idx}
+              record={r}
+              reserved={reserved}
+              onPress={() => {
+                if (isWishlist && item && !reserved && !isOwn) setBookingItem(item);
+                else router.push(`/record/${r.id}`);
+              }}
+            />
+          );
+        })}
+      </View>
+    );
+  };
+
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
       {/* Background layers */}
       <View style={StyleSheet.absoluteFill}>
-        <LinearGradient
-          colors={[PP.ivory, PP.ivorySoft, PP.ivoryDeep]}
-          style={StyleSheet.absoluteFill}
-        />
-        <Animated.View style={[StyleSheet.absoluteFill, { opacity: collectionBgOpacity }]}>
+        <LinearGradient colors={[PP.ivory, PP.ivorySoft, PP.ivoryDeep]} style={StyleSheet.absoluteFill} />
+        <Animated.View
+          pointerEvents="none"
+          style={[StyleSheet.absoluteFill, { opacity: collectionBgOpacity }]}
+        >
           <LinearGradient
             colors={['rgba(154,168,255,0.42)', 'transparent']}
-            start={{ x: 0.85, y: 0 }}
-            end={{ x: 0.4, y: 0.5 }}
+            start={{ x: 0.85, y: 0 }} end={{ x: 0.4, y: 0.5 }}
             style={StyleSheet.absoluteFill}
           />
           <LinearGradient
             colors={['rgba(189,212,255,0.26)', 'transparent']}
-            start={{ x: 0.05, y: 0 }}
-            end={{ x: 0.5, y: 0.5 }}
+            start={{ x: 0.05, y: 0 }} end={{ x: 0.5, y: 0.5 }}
             style={StyleSheet.absoluteFill}
           />
         </Animated.View>
-        <Animated.View style={[StyleSheet.absoluteFill, { opacity: wishlistBgOpacity }]}>
+        <Animated.View
+          pointerEvents="none"
+          style={[StyleSheet.absoluteFill, { opacity: wishlistBgOpacity }]}
+        >
           <LinearGradient
             colors={['rgba(201,184,255,0.42)', 'transparent']}
-            start={{ x: 0.85, y: 0 }}
-            end={{ x: 0.4, y: 0.5 }}
+            start={{ x: 0.85, y: 0 }} end={{ x: 0.4, y: 0.5 }}
             style={StyleSheet.absoluteFill}
           />
           <LinearGradient
             colors={['rgba(246,199,208,0.30)', 'transparent']}
-            start={{ x: 0.05, y: 0 }}
-            end={{ x: 0.5, y: 0.5 }}
+            start={{ x: 0.05, y: 0 }} end={{ x: 0.5, y: 0.5 }}
             style={StyleSheet.absoluteFill}
           />
         </Animated.View>
@@ -597,30 +855,28 @@ export default function UserProfileScreen() {
 
       {/* Top bar */}
       <View style={styles.topbar}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+        <TouchableOpacity onPress={() => router.back()} style={styles.iconBtn}>
           <Ionicons name="chevron-back" size={22} color={PP.ink} />
         </TouchableOpacity>
         <Text style={styles.brand}>ВЕРТУШКА · ПРОФИЛЬ</Text>
-        <TouchableOpacity onPress={handleShare} style={styles.shareBtn}>
+        <TouchableOpacity onPress={handleShare} style={styles.iconBtn}>
           <Ionicons name="share-outline" size={18} color={PP.ink} />
         </TouchableOpacity>
       </View>
 
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: 120 }}
+        contentContainerStyle={{ paddingBottom: 140 }}
         refreshControl={
           <RefreshControl refreshing={isRefreshing} onRefresh={handleRefresh} tintColor={PP.cobalt} />
         }
       >
-        {/* HERO */}
+        {/* HERO — vinyl сверху по центру, текст под ним */}
         <View style={styles.hero}>
-          <View style={{ flex: 1, minWidth: 0 }}>
+          <Vinyl size={150} />
+          <View style={styles.heroText}>
             <View style={styles.userRow}>
-              <LinearGradient
-                colors={[PP.blush, PP.lavender, PP.periwinkle, PP.sky]}
-                style={styles.avatarRing}
-              >
+              <LinearGradient colors={[PP.blush, PP.lavender, PP.periwinkle, PP.sky]} style={styles.avatarRing}>
                 <View style={styles.avatarInner}>
                   {pubProfile.avatar_url ? (
                     <Image
@@ -633,20 +889,16 @@ export default function UserProfileScreen() {
                   )}
                 </View>
               </LinearGradient>
-              <View style={{ flex: 1, minWidth: 0 }}>
-                <Text style={styles.username} numberOfLines={1}>
-                  @{pubProfile.username}
-                </Text>
+              <View style={{ alignItems: 'center', minWidth: 0 }}>
+                <Text style={styles.username} numberOfLines={1}>@{pubProfile.username}</Text>
                 {pubProfile.custom_title ? (
-                  <Text style={styles.customTitle} numberOfLines={1}>
-                    {pubProfile.custom_title}
-                  </Text>
+                  <Text style={styles.customTitle} numberOfLines={1}>{pubProfile.custom_title}</Text>
                 ) : null}
               </View>
             </View>
 
             {collectionValueRub != null ? (
-              <View style={{ marginTop: 6 }}>
+              <View style={{ alignItems: 'center', marginTop: 4 }}>
                 <Text style={styles.statLabel}>Стоимость коллекции</Text>
                 <Text style={styles.statValue}>
                   {formatRub(displayValue)} <Text style={styles.currency}>₽</Text>
@@ -655,48 +907,19 @@ export default function UserProfileScreen() {
                   <View style={styles.deltaPill}>
                     <Ionicons
                       name={monthlyDelta >= 0 ? 'arrow-up' : 'arrow-down'}
-                      size={11}
-                      color={PP.cobalt}
+                      size={11} color={PP.cobalt}
                     />
                     <Text style={styles.deltaText}>
-                      {monthlyDelta >= 0 ? '+' : ''}
-                      {formatRub(monthlyDelta)} ₽ за месяц
+                      {monthlyDelta >= 0 ? '+' : ''}{formatRub(monthlyDelta)} ₽ за месяц
                     </Text>
                   </View>
                 ) : null}
               </View>
-            ) : (
-              <View style={{ marginTop: 4 }}>
-                <Text style={styles.statLabel}>Коллекция</Text>
-                <Text style={styles.statValue}>
-                  {pubProfile.collection_count}{' '}
-                  <Text style={styles.currency}>пластинок</Text>
-                </Text>
-              </View>
-            )}
-          </View>
-
-          <Vinyl size={140} />
-        </View>
-
-        {/* Stats row + follow */}
-        <View style={styles.statsRow}>
-          <View style={styles.statItem}>
-            <Text style={styles.statNum}>{pubProfile.collection_count}</Text>
-            <Text style={styles.statLbl}>Пластинок</Text>
-          </View>
-          {pubProfile.show_wishlist ? (
-            <View style={styles.statItem}>
-              <Text style={styles.statNum}>{pubProfile.wishlist_count}</Text>
-              <Text style={styles.statLbl}>В вишлисте</Text>
-            </View>
-          ) : null}
-          <View style={styles.statItem}>
-            <Text style={styles.statNum}>{followersCount || pubProfile.followers_count}</Text>
-            <Text style={styles.statLbl}>Подписчиков</Text>
+            ) : null}
           </View>
         </View>
 
+        {/* Follow button */}
         {!isOwn && profileUserId ? (
           <TouchableOpacity
             style={[styles.followBtn, following && styles.followBtnActive]}
@@ -709,8 +932,7 @@ export default function UserProfileScreen() {
               <>
                 <Ionicons
                   name={following ? 'checkmark' : 'person-add-outline'}
-                  size={16}
-                  color={following ? PP.cobalt : '#fff'}
+                  size={16} color={following ? PP.cobalt : '#fff'}
                 />
                 <Text style={[styles.followTxt, following && styles.followTxtActive]}>
                   {following ? 'Подписаны' : 'Подписаться'}
@@ -720,10 +942,10 @@ export default function UserProfileScreen() {
           </TouchableOpacity>
         ) : null}
 
-        {/* Rails area */}
+        {/* Rails */}
         <View style={{ marginTop: 22 }}>
           {activeTab === 'collection' ? (
-            <Rail
+            <AutoRail
               title="Недавно добавленные"
               subtitle="Свежее в коллекции"
               titleColor={PP.cobalt}
@@ -731,24 +953,28 @@ export default function UserProfileScreen() {
               onPick={(r) => router.push(`/record/${r.id}`)}
             />
           ) : (
-            <View>
-              <BookingExplainer />
-              <View style={{ marginTop: 16 }}>
-                <Rail
-                  title="Новинки"
-                  subtitle="Свежие релизы"
-                  titleColor={PP.slate}
-                  items={pubProfile.new_releases}
-                  showYear
-                  onPick={(r) => router.push(`/record/${r.id}`)}
-                />
-              </View>
-            </View>
+            <AutoRail
+              title="Новинки"
+              subtitle="Свежие релизы"
+              titleColor={PP.slate}
+              items={pubProfile.new_releases}
+              showYear
+              onPick={(r) => router.push(`/record/${r.id}`)}
+            />
           )}
         </View>
 
-        {/* Segmented */}
-        <View style={{ paddingHorizontal: GRID_PADDING, marginTop: 22 }}>
+        {/* Booking 1-line hint (только в вишлисте) */}
+        {activeTab === 'wishlist' ? (
+          <View style={styles.bookingHint}>
+            <Text style={styles.bookingHintTxt}>
+              🔒 Бронь анонимна · 🎁 60 дней · ⏰ напоминание за 7
+            </Text>
+          </View>
+        ) : null}
+
+        {/* Segmented — по центру */}
+        <View style={styles.segmentedWrap}>
           <Segmented
             value={activeTab}
             onChange={setActiveTab}
@@ -759,37 +985,36 @@ export default function UserProfileScreen() {
           />
         </View>
 
-        {/* Grid */}
-        <View style={styles.grid}>
-          {gridData.length === 0 ? (
-            <Text style={styles.empty}>
-              {activeTab === 'collection' ? 'Коллекция пуста' : 'Вишлист пуст'}
-            </Text>
-          ) : (
-            gridData.map((r, idx) => {
-              const isWishlist = activeTab === 'wishlist';
-              const item = isWishlist ? wishlistItems[idx] : null;
-              const reserved = isWishlist ? !!item?.is_booked : false;
-              return (
-                <RecordCardLight
-                  key={r.id + idx}
-                  record={r}
-                  reserved={reserved}
-                  onPress={() => {
-                    if (isWishlist && item && !reserved && !isOwn) {
-                      setBookingItem(item);
-                    } else {
-                      router.push(`/record/${r.id}`);
-                    }
-                  }}
-                />
-              );
-            })
-          )}
+        {/* Toolbar: ViewToggle + FormatFilter */}
+        <View style={styles.toolbar}>
+          <View style={{ flex: 1, marginRight: 10 }}>
+            <FormatChips value={formatFilter} onChange={setFormatFilter} />
+          </View>
+          <ViewToggle value={viewMode} onChange={setViewMode} />
         </View>
+
+        {/* Grid / List */}
+        {renderGrid()}
 
         <Text style={styles.brandFooter}>VINYL-VERTUSHKA.RU</Text>
       </ScrollView>
+
+      {/* Sticky CTA */}
+      <View pointerEvents="box-none" style={[styles.ctaWrap, { paddingBottom: insets.bottom + 12 }]}>
+        <LinearGradient
+          pointerEvents="none"
+          colors={['rgba(244,238,230,0)', 'rgba(244,238,230,0.85)', 'rgba(244,238,230,1)']}
+          style={styles.ctaFade}
+        />
+        <TouchableOpacity
+          activeOpacity={0.9}
+          style={styles.cta}
+          onPress={() => router.push('/profile')}
+        >
+          <Ionicons name="add-circle-outline" size={18} color="#fff" />
+          <Text style={styles.ctaTxt}>Создать свой профиль</Text>
+        </TouchableOpacity>
+      </View>
 
       {/* Booking modal */}
       <Modal
@@ -886,49 +1111,40 @@ const styles = StyleSheet.create({
     letterSpacing: 1.5,
     color: PP.slate,
   },
-  backBtn: {
-    width: 36, height: 36, borderRadius: 18,
-    alignItems: 'center', justifyContent: 'center',
-    backgroundColor: PP.whiteSoft,
-    borderWidth: 1, borderColor: PP.hairline,
-  },
-  shareBtn: {
+  iconBtn: {
     width: 36, height: 36, borderRadius: 18,
     alignItems: 'center', justifyContent: 'center',
     backgroundColor: PP.whiteSoft,
     borderWidth: 1, borderColor: PP.hairline,
   },
 
+  /* HERO — vertical, centered */
   hero: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
+    alignItems: 'center',
     paddingHorizontal: GRID_PADDING,
     paddingTop: 8,
-    paddingBottom: 20,
-    gap: 12,
+    paddingBottom: 12,
   },
-  userRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 18 },
-  avatarRing: {
-    width: 50, height: 50, borderRadius: 25, padding: 2,
-  },
+  heroText: { alignItems: 'center', marginTop: 18 },
+  userRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  avatarRing: { width: 50, height: 50, borderRadius: 25, padding: 2 },
   avatarInner: {
     flex: 1, borderRadius: 50, backgroundColor: PP.pearl,
     alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
   },
   avatarInitials: { color: PP.cobalt, fontWeight: '600', fontSize: 16 },
-  username: { fontSize: 20, fontWeight: '700', color: PP.ink, letterSpacing: -0.3 },
+  username: { fontSize: 22, fontWeight: '700', color: PP.ink, letterSpacing: -0.3 },
   customTitle: { fontSize: 12, color: PP.slate, marginTop: 2 },
 
   statLabel: {
     fontSize: 10, color: PP.slate, textTransform: 'uppercase', letterSpacing: 0.8,
-    fontWeight: '500', marginTop: 4,
+    fontWeight: '500', marginTop: 14,
   },
   statValue: {
     fontSize: 32, fontWeight: '700', color: PP.ink, marginTop: 6, letterSpacing: -0.5,
   },
   currency: { fontSize: 18, color: PP.slate, fontWeight: '500' },
   deltaPill: {
-    alignSelf: 'flex-start',
     flexDirection: 'row', alignItems: 'center', gap: 6,
     marginTop: 10, paddingHorizontal: 10, paddingVertical: 5,
     borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.55)',
@@ -936,20 +1152,9 @@ const styles = StyleSheet.create({
   },
   deltaText: { fontSize: 11, color: PP.cobalt, fontWeight: '500' },
 
-  statsRow: {
-    flexDirection: 'row',
-    paddingHorizontal: GRID_PADDING,
-    gap: 24,
-    marginTop: 4,
-    marginBottom: 14,
-  },
-  statItem: {},
-  statNum: { fontSize: 17, fontWeight: '700', color: PP.ink },
-  statLbl: { fontSize: 11, color: PP.slate, marginTop: 2, textTransform: 'uppercase', letterSpacing: 0.5 },
-
   followBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-    marginHorizontal: GRID_PADDING, marginTop: 4, marginBottom: 4,
+    marginHorizontal: GRID_PADDING, marginTop: 14, marginBottom: 4,
     backgroundColor: PP.cobalt, borderRadius: 14, paddingVertical: 12,
   },
   followBtnActive: {
@@ -958,7 +1163,7 @@ const styles = StyleSheet.create({
   followTxt: { color: '#fff', fontWeight: '600', fontSize: 14 },
   followTxtActive: { color: PP.cobalt },
 
-  // Rails
+  /* Rails */
   railHead: {
     flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between',
     paddingHorizontal: GRID_PADDING, marginBottom: 12,
@@ -969,7 +1174,7 @@ const styles = StyleSheet.create({
   },
   railSub: { fontSize: 11, color: PP.mute },
   railCover: {
-    width: 108, height: 108, borderRadius: 13, overflow: 'hidden',
+    width: RAIL_COVER, height: RAIL_COVER, borderRadius: 13, overflow: 'hidden',
     backgroundColor: PP.lavender,
     shadowColor: PP.ink, shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.18, shadowRadius: 14,
   },
@@ -980,9 +1185,26 @@ const styles = StyleSheet.create({
   railTitleSmall: { fontSize: 11.5, fontWeight: '600', color: PP.ink, marginTop: 2 },
   railYear: { fontSize: 11, color: PP.periwinkle, marginTop: 2 },
 
-  // Segmented
+  /* Booking hint */
+  bookingHint: {
+    marginHorizontal: GRID_PADDING,
+    marginTop: 14,
+    paddingHorizontal: 14, paddingVertical: 10,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255,255,255,0.55)',
+    borderWidth: 1, borderColor: PP.hairline,
+    alignItems: 'center',
+  },
+  bookingHintTxt: { fontSize: 12, color: PP.slate, fontWeight: '500' },
+
+  /* Segmented */
+  segmentedWrap: {
+    alignItems: 'center',
+    marginTop: 20,
+    paddingHorizontal: GRID_PADDING,
+  },
   segmented: {
-    alignSelf: 'flex-start',
+    alignSelf: 'center',
     flexDirection: 'row',
     backgroundColor: 'rgba(255,255,255,0.55)',
     borderRadius: 999,
@@ -1010,54 +1232,89 @@ const styles = StyleSheet.create({
   segmentedCountTxt: { fontSize: 11, color: PP.mute, fontWeight: '600' },
   segmentedCountTxtActive: { color: PP.cobalt },
 
-  // Explainer
-  explainer: {
-    marginHorizontal: GRID_PADDING,
-    borderRadius: 18,
-    backgroundColor: 'rgba(255,255,255,0.6)',
-    borderWidth: 1, borderColor: 'rgba(255,255,255,0.85)',
-    padding: 16,
+  /* Toolbar */
+  toolbar: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: GRID_PADDING,
+    marginTop: 16,
   },
-  explainerTitle: { fontSize: 13, fontWeight: '600', color: PP.ink, marginBottom: 10 },
-  explainerRow: { flexDirection: 'row', gap: 10, alignItems: 'flex-start', paddingVertical: 4 },
-  explainerIcon: { fontSize: 14, lineHeight: 18 },
-  explainerText: { flex: 1, fontSize: 12, color: PP.slate, lineHeight: 18 },
+  formatChip: {
+    paddingHorizontal: 12, paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.55)',
+    borderWidth: 1, borderColor: PP.hairline,
+  },
+  formatChipActive: {
+    backgroundColor: '#fff',
+    borderColor: 'rgba(58,75,224,0.30)',
+  },
+  formatChipTxt: { fontSize: 12, color: PP.slate, fontWeight: '500' },
+  formatChipTxtActive: { color: PP.cobalt, fontWeight: '700' },
 
-  // Grid + cards
+  viewToggle: {
+    flexDirection: 'row',
+    backgroundColor: 'rgba(255,255,255,0.55)',
+    borderRadius: 10,
+    borderWidth: 1, borderColor: PP.hairline,
+    padding: 2, gap: 2,
+  },
+  viewToggleBtn: {
+    width: 30, height: 28, borderRadius: 8,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  viewToggleBtnActive: { backgroundColor: '#fff', borderWidth: 1, borderColor: 'rgba(58,75,224,0.20)' },
+
+  /* Grid */
   grid: {
     flexDirection: 'row', flexWrap: 'wrap',
     paddingHorizontal: GRID_PADDING,
-    paddingTop: 18, paddingBottom: 8,
+    paddingTop: 16, paddingBottom: 8,
     gap: GRID_GAP,
-    rowGap: 22,
+    rowGap: 18,
   },
   cardCover: {
-    width: '100%', aspectRatio: 1, borderRadius: 14, overflow: 'hidden',
+    width: '100%', aspectRatio: 1, borderRadius: 12, overflow: 'hidden',
     backgroundColor: PP.lavender,
-    shadowColor: PP.ink, shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.22, shadowRadius: 16,
+    shadowColor: PP.ink, shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.18, shadowRadius: 12,
   },
   cardArtist: {
     fontFamily: Platform.select({ ios: 'Menlo', android: 'monospace' }),
-    fontSize: 9.5, letterSpacing: 0.6, color: PP.cobalt, fontWeight: '600',
+    fontSize: 9, letterSpacing: 0.6, color: PP.cobalt, fontWeight: '600',
   },
   cardTitle: {
-    fontSize: 13.5, fontWeight: '700', color: PP.ink, marginTop: 4, letterSpacing: -0.2,
+    fontSize: 12, fontWeight: '700', color: PP.ink, marginTop: 3, letterSpacing: -0.2,
   },
-  cardBottom: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    marginTop: 6, gap: 6,
-  },
-  cardInfo: { fontSize: 11, color: PP.mute, flexShrink: 1 },
+  cardPrice: { fontSize: 11, color: PP.cobalt, fontWeight: '600', marginTop: 2 },
+  cardInfo: { fontSize: 10.5, color: PP.mute, marginTop: 2 },
 
-  // Reserved badge
+  /* List */
+  list: {
+    paddingHorizontal: GRID_PADDING,
+    paddingTop: 16, paddingBottom: 8,
+    gap: 10,
+  },
+  row: {
+    flexDirection: 'row', alignItems: 'center',
+    gap: 12,
+    padding: 8, borderRadius: 14,
+    backgroundColor: 'rgba(255,255,255,0.45)',
+    borderWidth: 1, borderColor: PP.hairline,
+  },
+  rowCover: {
+    width: 64, height: 64, borderRadius: 10, overflow: 'hidden',
+    backgroundColor: PP.lavender,
+  },
+
+  /* Reserved badge */
   reservedBadge: {
     flexDirection: 'row', alignItems: 'center', gap: 5,
-    paddingHorizontal: 8, paddingVertical: 3, borderRadius: 999,
+    paddingHorizontal: 7, paddingVertical: 3, borderRadius: 999,
     backgroundColor: 'rgba(201,184,255,0.55)',
     borderWidth: 1, borderColor: 'rgba(154,168,255,0.55)',
+    alignSelf: 'flex-start',
   },
   reservedDot: { width: 5, height: 5, borderRadius: 3, backgroundColor: PP.cobalt },
-  reservedText: { fontSize: 9.5, color: PP.cobalt, fontWeight: '700', letterSpacing: 0.4 },
+  reservedText: { fontSize: 9, color: PP.cobalt, fontWeight: '700', letterSpacing: 0.4 },
 
   empty: {
     width: '100%', textAlign: 'center', color: PP.mute, fontSize: 14, paddingVertical: 60,
@@ -1069,7 +1326,26 @@ const styles = StyleSheet.create({
     letterSpacing: 1.4, marginTop: 24,
   },
 
-  // Modal
+  /* Sticky CTA */
+  ctaWrap: {
+    position: 'absolute', left: 0, right: 0, bottom: 0,
+    alignItems: 'center',
+    paddingTop: 36, paddingHorizontal: GRID_PADDING,
+  },
+  ctaFade: {
+    position: 'absolute', left: 0, right: 0, top: 0, bottom: 0,
+  },
+  cta: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: PP.cobalt,
+    paddingHorizontal: 22, paddingVertical: 13,
+    borderRadius: 999,
+    shadowColor: PP.cobalt, shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.45, shadowRadius: 18,
+    elevation: 8,
+  },
+  ctaTxt: { color: '#fff', fontWeight: '700', fontSize: 14, letterSpacing: 0.2 },
+
+  /* Modal */
   modalOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(27,29,38,0.32)' },
   modalContent: {
     backgroundColor: PP.pearl, borderTopLeftRadius: 28, borderTopRightRadius: 28,
