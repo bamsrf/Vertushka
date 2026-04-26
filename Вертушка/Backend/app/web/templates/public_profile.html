@@ -105,18 +105,24 @@
         /* HERO */
         .hero {
             display: flex;
-            flex-direction: column;
+            flex-direction: row;
             align-items: center;
-            text-align: center;
-            gap: 20px;
+            justify-content: space-between;
+            text-align: left;
+            gap: 32px;
             padding: 8px 4px 28px;
         }
-        .hero-text { width: 100%; max-width: 560px; display: flex; flex-direction: column; align-items: center; }
+        .hero-text { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; }
         .user-row {
-            display: flex; align-items: center; gap: 12px; margin-bottom: 18px; justify-content: center;
+            display: flex; align-items: center; gap: 12px; margin-bottom: 18px;
         }
-        .stats-row { justify-content: center; }
-        .bio { text-align: center; }
+        @media (max-width: 720px) {
+            .hero { flex-direction: column; align-items: center; text-align: center; gap: 20px; }
+            .hero-text { align-items: center; max-width: 560px; }
+            .user-row { justify-content: center; }
+            .stats-row { justify-content: center; }
+            .bio { text-align: center; }
+        }
         .avatar-ring {
             width: 52px; height: 52px; border-radius: 50%;
             background: conic-gradient(from 140deg, #F6C7D0, #C9B8FF, #9AA8FF, #BDD4FF, #F7D4B8, #F6C7D0);
@@ -178,8 +184,9 @@
             box-shadow: 0 24px 50px -28px rgba(27, 29, 38, 0.45);
             will-change: transform;
         }
-        @media (prefers-reduced-motion: no-preference) {
-            .vinyl { animation: spin 14s linear infinite; }
+        .vinyl { animation: spin 14s linear infinite; }
+        @media (prefers-reduced-motion: reduce) {
+            .vinyl { animation: none; }
         }
         .vinyl::before {
             content: ''; position: absolute; inset: 30%; border-radius: 50%;
@@ -194,7 +201,7 @@
 
         /* SEGMENTED */
         .segmented {
-            position: relative; display: inline-flex;
+            position: relative; display: flex; width: 100%;
             background: rgba(255, 255, 255, 0.55);
             border: 1px solid var(--hairline);
             border-radius: 999px; padding: 4px;
@@ -211,12 +218,12 @@
             z-index: 0;
         }
         .segmented button {
-            position: relative; z-index: 1;
+            position: relative; z-index: 1; flex: 1;
             background: transparent; border: none; cursor: pointer;
-            padding: 9px 18px; border-radius: 999px;
-            font-family: inherit; font-size: 13px; font-weight: 500;
+            padding: 11px 18px; border-radius: 999px;
+            font-family: inherit; font-size: 14px; font-weight: 500;
             color: var(--slate);
-            display: inline-flex; align-items: center; gap: 8px;
+            display: inline-flex; align-items: center; justify-content: center; gap: 8px;
             transition: color 220ms ease;
         }
         .segmented button.active { color: var(--ink); font-weight: 600; }
@@ -485,7 +492,6 @@
         </div>
 
         <section class="hero">
-            <div class="vinyl-wrap"><div class="vinyl"></div></div>
             <div class="hero-text">
                 <div class="user-row">
                     <div class="avatar-ring">
@@ -538,6 +544,7 @@
                     </div>
                 </div>
             </div>
+            <div class="vinyl-wrap"><div class="vinyl"></div></div>
         </section>
 
         {% if profile.show_collection or profile.show_wishlist %}

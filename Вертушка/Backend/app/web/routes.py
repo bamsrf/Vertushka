@@ -94,7 +94,7 @@ async def public_profile_page(
     monthly_delta = None
     if profile.show_collection_value:
         value_result = await db.scalar(
-            select(func.sum(Record.estimated_price_median))
+            select(func.sum(func.coalesce(Record.estimated_price_min, Record.estimated_price_median)))
             .join(CollectionItem, CollectionItem.record_id == Record.id)
             .join(Collection)
             .where(Collection.user_id == user.id)
@@ -120,7 +120,7 @@ async def public_profile_page(
             if record:
                 highlights.append(record)
 
-    # === Коллекция ===
+    # === Коллекция (с дедупом по record_id) ===
     collection_items = []
     if profile.show_collection:
         result = await db.execute(
@@ -129,9 +129,16 @@ async def public_profile_page(
             .where(Collection.user_id == user.id)
             .options(selectinload(CollectionItem.record))
             .order_by(CollectionItem.added_at.desc())
-            .limit(100)
+            .limit(200)
         )
-        collection_items = result.scalars().all()
+        seen_record_ids: set = set()
+        for item in result.scalars().all():
+            if not item.record or item.record.id in seen_record_ids:
+                continue
+            seen_record_ids.add(item.record.id)
+            collection_items.append(item)
+            if len(collection_items) >= 100:
+                break
 
     # === Вишлист ===
     wishlist_items = []

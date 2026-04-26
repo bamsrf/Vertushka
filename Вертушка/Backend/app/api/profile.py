@@ -47,7 +47,7 @@ def _record_to_public(record: Record, is_booked: bool = False) -> PublicProfileR
         format_type=record.format_type,
         cover_image_url=record.cover_image_url,
         thumb_image_url=record.thumb_image_url,
-        estimated_price_median=float(record.estimated_price_median) if record.estimated_price_median else None,
+        estimated_price_median=float(record.estimated_price_median or record.estimated_price_min) if (record.estimated_price_median or record.estimated_price_min) else None,
         price_currency=record.price_currency,
         is_booked=is_booked,
     )
@@ -60,10 +60,19 @@ async def _get_recent_additions(user_id: UUID, db: AsyncSession, limit: int = 10
         .where(Collection.user_id == user_id)
         .options(selectinload(CollectionItem.record))
         .order_by(CollectionItem.added_at.desc())
-        .limit(limit)
+        .limit(limit * 3)
     )
     items = result.scalars().all()
-    return [_record_to_public(item.record) for item in items if item.record]
+    seen: set[UUID] = set()
+    out: list[PublicProfileRecord] = []
+    for item in items:
+        if not item.record or item.record.id in seen:
+            continue
+        seen.add(item.record.id)
+        out.append(_record_to_public(item.record))
+        if len(out) >= limit:
+            break
+    return out
 
 
 async def _get_full_collection(user_id: UUID, db: AsyncSession, limit: int = 200) -> list[PublicProfileRecord]:
@@ -135,7 +144,7 @@ async def get_public_profile_payload(user: User, profile: ProfileShare, db: Asyn
     monthly_delta = None
     if profile.show_collection_value:
         value_result = await db.scalar(
-            select(func.sum(Record.estimated_price_median))
+            select(func.sum(func.coalesce(Record.estimated_price_min, Record.estimated_price_median)))
             .join(CollectionItem, CollectionItem.record_id == Record.id)
             .join(Collection)
             .where(Collection.user_id == user.id)
