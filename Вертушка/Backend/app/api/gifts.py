@@ -133,16 +133,7 @@ async def book_gift(
         status=booking.status,
         cancel_token=booking.cancel_token,
         booked_at=booking.booked_at,
-        record=RecordBrief(
-            id=item.record.id,
-            title=item.record.title,
-            artist=item.record.artist,
-            year=item.record.year,
-            cover_image_url=item.record.cover_image_url,
-            thumb_image_url=item.record.thumb_image_url,
-            estimated_price_median=item.record.estimated_price_median,
-            price_currency=item.record.price_currency
-        )
+        record=RecordBrief.model_validate(item.record),
     )
 
 
@@ -178,16 +169,7 @@ async def get_booking(
         status=booking.status,
         cancel_token="",  # Не показываем токен при просмотре
         booked_at=booking.booked_at,
-        record=RecordBrief(
-            id=booking.wishlist_item.record.id,
-            title=booking.wishlist_item.record.title,
-            artist=booking.wishlist_item.record.artist,
-            year=booking.wishlist_item.record.year,
-            cover_image_url=booking.wishlist_item.record.cover_image_url,
-            thumb_image_url=booking.wishlist_item.record.thumb_image_url,
-            estimated_price_median=booking.wishlist_item.record.estimated_price_median,
-            price_currency=booking.wishlist_item.record.price_currency
-        )
+        record=RecordBrief.model_validate(booking.wishlist_item.record),
     )
 
 
@@ -305,16 +287,7 @@ async def get_given_bookings(
         cancel_token=b.cancel_token,
         booked_at=b.booked_at,
         completed_at=b.completed_at,
-        record=RecordBrief(
-            id=b.wishlist_item.record.id,
-            title=b.wishlist_item.record.title,
-            artist=b.wishlist_item.record.artist,
-            year=b.wishlist_item.record.year,
-            cover_image_url=b.wishlist_item.record.cover_image_url,
-            thumb_image_url=b.wishlist_item.record.thumb_image_url,
-            estimated_price_median=b.wishlist_item.record.estimated_price_median,
-            price_currency=b.wishlist_item.record.price_currency
-        ),
+        record=RecordBrief.model_validate(b.wishlist_item.record),
         for_user=GiftRecipientInfo(
             username=b.wishlist_item.wishlist.user.username,
             display_name=b.wishlist_item.wishlist.user.display_name,
@@ -363,16 +336,7 @@ async def get_received_bookings(
         booked_at=b.booked_at,
         completed_at=b.completed_at,
         cancelled_at=b.cancelled_at,
-        record=RecordBrief(
-            id=b.wishlist_item.record.id,
-            title=b.wishlist_item.record.title,
-            artist=b.wishlist_item.record.artist,
-            year=b.wishlist_item.record.year,
-            cover_image_url=b.wishlist_item.record.cover_image_url,
-            thumb_image_url=b.wishlist_item.record.thumb_image_url,
-            estimated_price_median=b.wishlist_item.record.estimated_price_median,
-            price_currency=b.wishlist_item.record.price_currency
-        )
+        record=RecordBrief.model_validate(b.wishlist_item.record),
     ) for b in bookings if b.wishlist_item is not None]
 
 
