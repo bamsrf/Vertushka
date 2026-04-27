@@ -393,9 +393,9 @@
         /* RECORD PREVIEW */
         .record-preview-overlay {
             position: fixed; inset: 0; z-index: 90;
-            background: linear-gradient(180deg, rgba(239,236,230,0.45), rgba(239,236,230,0.7));
-            backdrop-filter: blur(16px) saturate(130%);
-            -webkit-backdrop-filter: blur(16px) saturate(130%);
+            background: rgba(239,236,230,0.55);
+            backdrop-filter: blur(18px) saturate(140%);
+            -webkit-backdrop-filter: blur(18px) saturate(140%);
             display: none; align-items: flex-end; justify-content: center;
             animation: fadeIn 260ms ease-out;
         }
@@ -403,43 +403,70 @@
         @media (min-width: 640px) { .record-preview-overlay { align-items: center; } }
         .record-preview-sheet {
             width: 100%; max-width: 480px;
-            background: linear-gradient(180deg, rgba(255,255,255,0.97), rgba(247,244,238,0.95));
+            background: linear-gradient(180deg, rgba(255,255,255,0.98), rgba(247,244,238,0.96));
             border-top-left-radius: 28px; border-top-right-radius: 28px;
             border: 1px solid rgba(255,255,255,0.9);
-            box-shadow: 0 -20px 60px -20px rgba(58,75,224,0.25), 0 1px 0 rgba(255,255,255,0.9) inset;
-            overflow: hidden;
+            box-shadow: 0 -20px 60px -20px rgba(58,75,224,0.2), 0 1px 0 rgba(255,255,255,0.9) inset;
             animation: slideUp 380ms cubic-bezier(.22,.7,.18,1);
         }
         @media (min-width: 640px) { .record-preview-sheet { border-radius: 28px; } }
-        .rp-cover-wrap {
-            width: 100%; aspect-ratio: 1; max-height: 260px; overflow: hidden;
-            background: linear-gradient(135deg, var(--lavender), var(--periwinkle));
-            display: flex; align-items: center; justify-content: center;
+        .rp-handle {
+            width: 36px; height: 4px; border-radius: 2px;
+            background: rgba(27,29,38,0.15); margin: 12px auto 0;
         }
-        .rp-cover-wrap img { width: 100%; height: 100%; object-fit: cover; display: block; }
-        .rp-body { padding: 20px 24px 28px; }
+        .rp-header {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 14px 20px 0;
+        }
+        .rp-header-label {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--slate);
+        }
+        .rp-close {
+            width: 30px; height: 30px; border-radius: 50%;
+            background: rgba(27,29,38,0.07); border: none; cursor: pointer;
+            display: grid; place-items: center; color: var(--slate); transition: background 200ms;
+        }
+        .rp-close:hover { background: rgba(27,29,38,0.13); }
+        .rp-cover-wrap { display: flex; justify-content: center; padding: 20px 28px 0; }
+        .rp-cover-img {
+            width: 100%; aspect-ratio: 1; border-radius: 18px; object-fit: cover; display: block;
+            background: linear-gradient(135deg, var(--lavender), var(--periwinkle));
+            box-shadow: 0 16px 48px -12px rgba(27,29,38,0.28), 0 4px 12px -4px rgba(27,29,38,0.1);
+        }
+        .rp-body { padding: 18px 24px 28px; }
         .rp-artist {
             font-family: 'JetBrains Mono', monospace;
-            font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase;
-            color: var(--cobalt); font-weight: 500; margin-bottom: 4px;
+            font-size: 10.5px; letter-spacing: 0.12em; text-transform: uppercase;
+            color: var(--cobalt); font-weight: 500; margin-bottom: 5px;
             overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
         }
         .rp-title {
-            font-size: 19px; font-weight: 600; letter-spacing: -0.02em;
-            color: var(--ink); line-height: 1.25; margin-bottom: 14px;
+            font-size: 22px; font-weight: 600; letter-spacing: -0.025em;
+            color: var(--ink); line-height: 1.2; margin-bottom: 18px;
         }
-        .rp-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 16px; }
-        .rchip {
-            font-size: 11px; font-weight: 500; padding: 4px 10px; border-radius: 999px;
+        .rp-info-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 20px; }
+        .rp-info-card {
+            background: rgba(255,255,255,0.75); border: 1px solid var(--hairline);
+            border-radius: 14px; padding: 11px 14px;
+            box-shadow: 0 1px 0 rgba(255,255,255,0.9) inset;
         }
-        .rchip-y { background: rgba(58,75,224,0.1); color: var(--cobalt); }
-        .rchip-n { background: rgba(27,29,38,0.06); color: var(--slate); }
-        .rp-price {
-            font-size: 22px; font-weight: 600; letter-spacing: -0.02em;
-            color: var(--ink); margin-bottom: 20px; display: flex; align-items: baseline; gap: 6px;
+        .rp-info-lbl {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 9px; letter-spacing: 0.1em; text-transform: uppercase;
+            color: var(--mute); margin-bottom: 5px;
         }
-        .rp-price .rpc { font-size: 13px; color: var(--slate); font-weight: 500; }
-        .rp-actions { display: flex; gap: 10px; }
+        .rp-info-val { font-size: 15px; font-weight: 600; letter-spacing: -0.01em; color: var(--ink); }
+        .rp-info-val.cobalt { color: var(--cobalt); }
+        .rp-discogs {
+            display: block; text-align: center; margin-bottom: 14px;
+            font-size: 12px; color: var(--cobalt); text-decoration: none; font-weight: 500;
+        }
+        .rp-discogs:hover { text-decoration: underline; }
+        .rp-footer {
+            text-align: center; font-family: 'JetBrains Mono', monospace;
+            font-size: 9.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--mute);
+        }
 
         /* CTA */
         .cta-wrap {
@@ -685,6 +712,7 @@
                     data-country="{{ (item.record.country or '')|e }}"
                     data-cover="{{ item.record.cover_image_url or '' }}"
                     data-price="{{ item.record.estimated_price_median|int if item.record.estimated_price_median else '' }}"
+                    data-catalog="{{ (item.record.catalog_number or '')|e }}"
                     data-discogs="{{ item.record.discogs_id or '' }}"
                     onclick="openRecordPreview(this)">
                     <div class="card-cover">
@@ -768,19 +796,22 @@
     <!-- RECORD PREVIEW MODAL -->
     <div class="record-preview-overlay" id="recordPreviewModal">
         <div class="record-preview-sheet" role="dialog" aria-modal="true">
+            <div class="rp-handle"></div>
+            <div class="rp-header">
+                <span class="rp-header-label" id="rpHeaderLabel"></span>
+                <button class="rp-close" onclick="closeRecordPreview()" aria-label="Закрыть">
+                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                        <path d="M1 1l10 10M11 1L1 11" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+                    </svg>
+                </button>
+            </div>
             <div class="rp-cover-wrap">
-                <img id="rpCover" src="" alt="">
+                <img id="rpCover" class="rp-cover-img" src="" alt="">
             </div>
             <div class="rp-body">
                 <div class="rp-artist" id="rpArtist"></div>
                 <div class="rp-title" id="rpTitle"></div>
-                <div class="rp-chips" id="rpChips"></div>
-                <div class="rp-price" id="rpPrice"></div>
-                <div class="rp-actions">
-                    <a id="rpDiscogs" class="btn-ghost" target="_blank" rel="noopener"
-                       style="flex:1; text-align:center; text-decoration:none; display:none">Discogs ↗</a>
-                    <button class="btn-ghost" onclick="closeRecordPreview()" style="flex:1">Закрыть</button>
-                </div>
+                <a id="rpDiscogs" class="rp-discogs" target="_blank" rel="noopener" style="display:none">Открыть на Discogs ↗</a>
             </div>
         </div>
     </div>
@@ -967,37 +998,37 @@
         })();
 
         // Record preview modal
+        function esc(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;'); }
         function openRecordPreview(card) {
             var d = card.dataset;
-            var cover = document.getElementById('rpCover');
-            if (d.cover) { cover.src = d.cover; cover.style.display = 'block'; }
-            else { cover.src = ''; cover.style.display = 'none'; }
+            // Cover — прозрачный 1x1 px как плейсхолдер (CSS-градиент покрывает фон)
+            var BLANK = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+            document.getElementById('rpCover').src = d.cover || BLANK;
+
+            // Заголовок: каталог · формат
+            var hparts = [];
+            if (d.catalog) hparts.push(d.catalog);
+            if (d.format)  hparts.push(d.format);
+            document.getElementById('rpHeaderLabel').textContent = hparts.join(' · ');
 
             document.getElementById('rpArtist').textContent = d.artist || '';
-            document.getElementById('rpTitle').textContent = d.title || '';
+            document.getElementById('rpTitle').textContent  = d.title  || '';
 
-            var chips = [];
-            if (d.year)    chips.push([d.year, 'y']);
-            if (d.format)  chips.push([d.format, 'n']);
-            if (d.label)   chips.push([d.label, 'n']);
-            if (d.country) chips.push([d.country, 'n']);
-            if (d.genre)   chips.push([d.genre, 'n']);
-            document.getElementById('rpChips').innerHTML = chips.map(function(c) {
-                return '<span class="rchip rchip-' + c[1] + '">' + c[0].replace(/&/g,'&amp;').replace(/</g,'&lt;') + '</span>';
+            // Инфо-карточки: ГОД / ФОРМАТ / ЦЕНА
+            var cards = [];
+            if (d.year)   cards.push(['ГОД',    d.year,        '']);
+            if (d.format) cards.push(['ФОРМАТ',  d.format,      '']);
+            if (d.price)  cards.push(['ЦЕНА',    '~$' + d.price, 'cobalt']);
+            document.getElementById('rpInfoRow').innerHTML = cards.map(function(c) {
+                return '<div class="rp-info-card"><div class="rp-info-lbl">' + c[0] + '</div>' +
+                       '<div class="rp-info-val ' + c[2] + '">' + esc(c[1]) + '</div></div>';
             }).join('');
 
-            var priceEl = document.getElementById('rpPrice');
-            if (d.price) {
-                priceEl.innerHTML = '~$' + d.price + ' <span class="rpc">USD</span>';
-                priceEl.style.display = '';
-            } else { priceEl.style.display = 'none'; }
-
             var discogsEl = document.getElementById('rpDiscogs');
-            if (d.discogs) {
-                discogsEl.href = 'https://www.discogs.com/release/' + d.discogs;
-                discogsEl.style.display = '';
-            } else { discogsEl.style.display = 'none'; }
+            if (d.discogs) { discogsEl.href = 'https://www.discogs.com/release/' + d.discogs; discogsEl.style.display = ''; }
+            else { discogsEl.style.display = 'none'; }
 
+            document.getElementById('rpFooter').textContent = 'В коллекции @{{ user.username }}';
             document.getElementById('recordPreviewModal').classList.add('active');
         }
         function closeRecordPreview() {
