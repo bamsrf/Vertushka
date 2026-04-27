@@ -390,6 +390,57 @@
             color: var(--mute); font-size: 14px;
         }
 
+        /* RECORD PREVIEW */
+        .record-preview-overlay {
+            position: fixed; inset: 0; z-index: 90;
+            background: linear-gradient(180deg, rgba(239,236,230,0.45), rgba(239,236,230,0.7));
+            backdrop-filter: blur(16px) saturate(130%);
+            -webkit-backdrop-filter: blur(16px) saturate(130%);
+            display: none; align-items: flex-end; justify-content: center;
+            animation: fadeIn 260ms ease-out;
+        }
+        .record-preview-overlay.active { display: flex; }
+        @media (min-width: 640px) { .record-preview-overlay { align-items: center; } }
+        .record-preview-sheet {
+            width: 100%; max-width: 480px;
+            background: linear-gradient(180deg, rgba(255,255,255,0.97), rgba(247,244,238,0.95));
+            border-top-left-radius: 28px; border-top-right-radius: 28px;
+            border: 1px solid rgba(255,255,255,0.9);
+            box-shadow: 0 -20px 60px -20px rgba(58,75,224,0.25), 0 1px 0 rgba(255,255,255,0.9) inset;
+            overflow: hidden;
+            animation: slideUp 380ms cubic-bezier(.22,.7,.18,1);
+        }
+        @media (min-width: 640px) { .record-preview-sheet { border-radius: 28px; } }
+        .rp-cover-wrap {
+            width: 100%; aspect-ratio: 1; max-height: 260px; overflow: hidden;
+            background: linear-gradient(135deg, var(--lavender), var(--periwinkle));
+            display: flex; align-items: center; justify-content: center;
+        }
+        .rp-cover-wrap img { width: 100%; height: 100%; object-fit: cover; display: block; }
+        .rp-body { padding: 20px 24px 28px; }
+        .rp-artist {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase;
+            color: var(--cobalt); font-weight: 500; margin-bottom: 4px;
+            overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        }
+        .rp-title {
+            font-size: 19px; font-weight: 600; letter-spacing: -0.02em;
+            color: var(--ink); line-height: 1.25; margin-bottom: 14px;
+        }
+        .rp-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 16px; }
+        .rchip {
+            font-size: 11px; font-weight: 500; padding: 4px 10px; border-radius: 999px;
+        }
+        .rchip-y { background: rgba(58,75,224,0.1); color: var(--cobalt); }
+        .rchip-n { background: rgba(27,29,38,0.06); color: var(--slate); }
+        .rp-price {
+            font-size: 22px; font-weight: 600; letter-spacing: -0.02em;
+            color: var(--ink); margin-bottom: 20px; display: flex; align-items: baseline; gap: 6px;
+        }
+        .rp-price .rpc { font-size: 13px; color: var(--slate); font-weight: 500; }
+        .rp-actions { display: flex; gap: 10px; }
+
         /* CTA */
         .cta-wrap {
             display: flex; justify-content: center; padding: 36px 4px 12px;
@@ -624,7 +675,18 @@
             {% if collection_items %}
             <div class="grid">
                 {% for item in collection_items %}
-                <div class="card">
+                <div class="card"
+                    data-artist="{{ item.record.artist|e }}"
+                    data-title="{{ item.record.title|e }}"
+                    data-year="{{ item.record.year or '' }}"
+                    data-label="{{ (item.record.label or '')|e }}"
+                    data-format="{{ (item.record.format_type or '')|e }}"
+                    data-genre="{{ (item.record.genre or '')|e }}"
+                    data-country="{{ (item.record.country or '')|e }}"
+                    data-cover="{{ item.record.cover_image_url or '' }}"
+                    data-price="{{ item.record.estimated_price_median|int if item.record.estimated_price_median else '' }}"
+                    data-discogs="{{ item.record.discogs_id or '' }}"
+                    onclick="openRecordPreview(this)">
                     <div class="card-cover">
                         {% if item.record.cover_image_url %}<img src="{{ item.record.cover_image_url }}" alt="{{ item.record.title }}" loading="lazy">{% endif %}
                     </div>
@@ -701,6 +763,26 @@
             </a>
         </div>
         <div class="footer-line">VINYL-VERTUSHKA.RU</div>
+    </div>
+
+    <!-- RECORD PREVIEW MODAL -->
+    <div class="record-preview-overlay" id="recordPreviewModal">
+        <div class="record-preview-sheet" role="dialog" aria-modal="true">
+            <div class="rp-cover-wrap">
+                <img id="rpCover" src="" alt="">
+            </div>
+            <div class="rp-body">
+                <div class="rp-artist" id="rpArtist"></div>
+                <div class="rp-title" id="rpTitle"></div>
+                <div class="rp-chips" id="rpChips"></div>
+                <div class="rp-price" id="rpPrice"></div>
+                <div class="rp-actions">
+                    <a id="rpDiscogs" class="btn-ghost" target="_blank" rel="noopener"
+                       style="flex:1; text-align:center; text-decoration:none; display:none">Discogs ↗</a>
+                    <button class="btn-ghost" onclick="closeRecordPreview()" style="flex:1">Закрыть</button>
+                </div>
+            </div>
+        </div>
     </div>
 
     <!-- BOOKING MODAL -->
@@ -883,6 +965,50 @@
                 }
             });
         })();
+
+        // Record preview modal
+        function openRecordPreview(card) {
+            var d = card.dataset;
+            var cover = document.getElementById('rpCover');
+            if (d.cover) { cover.src = d.cover; cover.style.display = 'block'; }
+            else { cover.src = ''; cover.style.display = 'none'; }
+
+            document.getElementById('rpArtist').textContent = d.artist || '';
+            document.getElementById('rpTitle').textContent = d.title || '';
+
+            var chips = [];
+            if (d.year)    chips.push([d.year, 'y']);
+            if (d.format)  chips.push([d.format, 'n']);
+            if (d.label)   chips.push([d.label, 'n']);
+            if (d.country) chips.push([d.country, 'n']);
+            if (d.genre)   chips.push([d.genre, 'n']);
+            document.getElementById('rpChips').innerHTML = chips.map(function(c) {
+                return '<span class="rchip rchip-' + c[1] + '">' + c[0].replace(/&/g,'&amp;').replace(/</g,'&lt;') + '</span>';
+            }).join('');
+
+            var priceEl = document.getElementById('rpPrice');
+            if (d.price) {
+                priceEl.innerHTML = '~$' + d.price + ' <span class="rpc">USD</span>';
+                priceEl.style.display = '';
+            } else { priceEl.style.display = 'none'; }
+
+            var discogsEl = document.getElementById('rpDiscogs');
+            if (d.discogs) {
+                discogsEl.href = 'https://www.discogs.com/release/' + d.discogs;
+                discogsEl.style.display = '';
+            } else { discogsEl.style.display = 'none'; }
+
+            document.getElementById('recordPreviewModal').classList.add('active');
+        }
+        function closeRecordPreview() {
+            document.getElementById('recordPreviewModal').classList.remove('active');
+        }
+        document.getElementById('recordPreviewModal').addEventListener('click', function(e) {
+            if (e.target === this) closeRecordPreview();
+        });
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') closeRecordPreview();
+        });
 
         // Booking modal
         var modal = document.getElementById('bookingModal');
