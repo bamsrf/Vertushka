@@ -187,8 +187,8 @@ async def public_profile_page(
         "active_tab": tab if tab in ("collection", "wishlist") else "collection",
         "og_description": og_description,
         "base_url": BASE_URL,
-        "usd_rub_rate": Decimal(str(usd_rub_rate)),
-        "ru_vinyl_markup": Decimal(str(settings.ru_vinyl_markup)),
+        "usd_rub_rate": float(usd_rub_rate),
+        "ru_vinyl_markup": float(settings.ru_vinyl_markup),
         "local_countries": {'Russia', 'USSR', 'Россия', 'СССР'},
     })
 
