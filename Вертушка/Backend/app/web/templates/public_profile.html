@@ -298,6 +298,15 @@
             font-size: 11px; color: var(--periwinkle); margin-top: 2px; font-variant-numeric: tabular-nums;
         }
 
+        /* Auto-scroll infinite rail */
+        .rail-infinite { overflow: hidden; }
+        .rail-infinite .rail-track {
+            display: flex; gap: 14px;
+            padding: 4px 4px 8px;
+            width: max-content;
+            will-change: transform;
+        }
+
         /* BOOKING EXPLAINER */
         .booking-explainer {
             margin: 18px 4px 6px;
@@ -552,21 +561,23 @@
         {% if profile.show_collection or profile.show_wishlist %}
         <div class="rail-area">
             <div class="rail-slot rail-collection {% if active_tab != 'collection' %}hidden{% endif %}" data-rail="collection">
-                {% if recent_additions %}
+                {% if top_expensive %}
                 <div class="rail-head">
-                    <span class="rail-title cobalt">Недавно добавленные</span>
-                    <span class="rail-sub">Свежее в коллекции</span>
+                    <span class="rail-title cobalt">Витрина</span>
+                    <span class="rail-sub">Самые дорогие</span>
                 </div>
-                <div class="rail">
-                    {% for r in recent_additions %}
-                    <div class="rail-card" data-record-id="{{ r.id }}">
-                        <div class="rail-cover">
-                            {% if r.cover_image_url %}<img src="{{ r.cover_image_url }}" alt="{{ r.title }}" loading="lazy">{% endif %}
+                <div class="rail rail-infinite" id="rail-expensive">
+                    <div class="rail-track">
+                        {% for r in top_expensive %}
+                        <div class="rail-card" data-record-id="{{ r.id }}">
+                            <div class="rail-cover">
+                                {% if r.cover_image_url %}<img src="{{ r.cover_image_url }}" alt="{{ r.title }}" loading="lazy">{% endif %}
+                            </div>
+                            <div class="rail-meta-artist">{{ r.artist }}</div>
+                            <div class="rail-meta-title">{{ r.title }}</div>
                         </div>
-                        <div class="rail-meta-artist">{{ r.artist }}</div>
-                        <div class="rail-meta-title">{{ r.title }}</div>
+                        {% endfor %}
                     </div>
-                    {% endfor %}
                 </div>
                 {% endif %}
             </div>
@@ -823,6 +834,39 @@
                 requestAnimationFrame(function() { placePill(active); });
                 window.addEventListener('resize', function() { placePill(seg.querySelector('button.active') || btns[0]); });
             }
+        })();
+
+        // Infinite auto-scroll для витрины дорогих пластинок (rAF — работает в Safari)
+        (function() {
+            var rail = document.getElementById('rail-expensive');
+            if (!rail) return;
+            var track = rail.querySelector('.rail-track');
+            if (!track) return;
+            var cards = Array.from(track.querySelectorAll('.rail-card'));
+            if (cards.length < 2) return;
+            cards.forEach(function(card) {
+                var clone = card.cloneNode(true);
+                clone.setAttribute('aria-hidden', 'true');
+                track.appendChild(clone);
+            });
+            var cardStep = 116 + 14;
+            var loopWidth = cards.length * cardStep;
+            var speed = 45; // px/s
+            var pos = 0;
+            var paused = false;
+            var last = null;
+            rail.addEventListener('mouseenter', function() { paused = true; });
+            rail.addEventListener('mouseleave', function() { paused = false; });
+            function tick(ts) {
+                if (last !== null && !paused) {
+                    pos += speed * (ts - last) / 1000;
+                    if (pos >= loopWidth) pos -= loopWidth;
+                    track.style.transform = 'translateX(-' + pos + 'px)';
+                }
+                last = ts;
+                requestAnimationFrame(tick);
+            }
+            requestAnimationFrame(tick);
         })();
 
         // Share

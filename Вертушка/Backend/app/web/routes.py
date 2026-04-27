@@ -19,7 +19,7 @@ from app.models.wishlist import Wishlist, WishlistItem
 from app.models.follow import Follow
 from app.models.profile_share import ProfileShare
 from app.models.gift_booking import GiftBooking
-from app.api.profile import get_public_profile_payload, _get_recent_additions, _get_new_releases
+from app.api.profile import get_public_profile_payload, _get_top_expensive, _get_new_releases
 from app.services.exchange import get_usd_rub_rate
 from app.services.valuation import get_monthly_delta
 
@@ -106,7 +106,7 @@ async def public_profile_page(
         monthly_delta = float(delta) if delta is not None else None
 
     # Рейлы
-    recent_additions = await _get_recent_additions(user.id, db, limit=10) if profile.show_collection else []
+    top_expensive = await _get_top_expensive(user.id, db, limit=12) if profile.show_collection else []
     new_releases = await _get_new_releases(db, limit=12)
 
     # === Избранные пластинки ===
@@ -176,7 +176,7 @@ async def public_profile_page(
         "collection_value": collection_value,
         "collection_value_rub": collection_value_rub,
         "monthly_delta": monthly_delta,
-        "recent_additions": recent_additions,
+        "top_expensive": top_expensive,
         "new_releases": new_releases,
         "highlights": highlights,
         "collection_items": collection_items,

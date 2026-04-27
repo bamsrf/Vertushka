@@ -53,26 +53,28 @@ def _record_to_public(record: Record, is_booked: bool = False) -> PublicProfileR
     )
 
 
-async def _get_recent_additions(user_id: UUID, db: AsyncSession, limit: int = 10) -> list[PublicProfileRecord]:
+async def _get_top_expensive(user_id: UUID, db: AsyncSession, limit: int = 12) -> list[PublicProfileRecord]:
+    """Самые дорогие пластинки коллекции, отсортированные по цене убыванию."""
     result = await db.execute(
         select(CollectionItem)
         .join(Collection)
         .where(Collection.user_id == user_id)
         .options(selectinload(CollectionItem.record))
-        .order_by(CollectionItem.added_at.desc())
-        .limit(limit * 3)
+        .limit(300)
     )
     items = result.scalars().all()
     seen: set[UUID] = set()
-    out: list[PublicProfileRecord] = []
+    records: list[Record] = []
     for item in items:
         if not item.record or item.record.id in seen:
             continue
         seen.add(item.record.id)
-        out.append(_record_to_public(item.record))
-        if len(out) >= limit:
-            break
-    return out
+        records.append(item.record)
+    records.sort(
+        key=lambda r: float(r.estimated_price_median or r.estimated_price_min or 0),
+        reverse=True
+    )
+    return [_record_to_public(r) for r in records[:limit]]
 
 
 async def _get_full_collection(user_id: UUID, db: AsyncSession, limit: int = 200) -> list[PublicProfileRecord]:
@@ -163,7 +165,7 @@ async def get_public_profile_payload(user: User, profile: ProfileShare, db: Asyn
             if rec:
                 highlights.append(_record_to_public(rec))
 
-    recent_additions = await _get_recent_additions(user.id, db, limit=10) if profile.show_collection else []
+    top_expensive = await _get_top_expensive(user.id, db, limit=12) if profile.show_collection else []
     collection_full = await _get_full_collection(user.id, db, limit=200) if profile.show_collection else []
     new_releases = await _get_new_releases(db, limit=12)
 
@@ -187,7 +189,7 @@ async def get_public_profile_payload(user: User, profile: ProfileShare, db: Asyn
         show_record_prices=profile.show_record_prices,
         highlights=highlights,
         collection=collection_full,
-        recent_additions=recent_additions,
+        top_expensive=top_expensive,
         new_releases=new_releases,
     )
 
@@ -358,14 +360,14 @@ async def get_public_profile(
     return await get_public_profile_payload(user, profile, db)
 
 
-@router.get("/public/{username}/recent-additions", response_model=list[PublicProfileRecord])
-async def get_recent_additions(
+@router.get("/public/{username}/top-expensive", response_model=list[PublicProfileRecord])
+async def get_top_expensive(
     username: str,
-    limit: int = 10,
+    limit: int = 12,
     db: AsyncSession = Depends(get_db)
 ):
-    """Последние добавленные пластинки в коллекцию пользователя."""
+    """Самые дорогие пластинки коллекции пользователя."""
     user = await db.scalar(select(User).where(User.username == username, User.is_active == True))
     if not user:
         raise HTTPException(status_code=404, detail="Пользователь не найден")
-    return await _get_recent_additions(user.id, db, limit=min(limit, 30))
+    return await _get_top_expensive(user.id, db, limit=min(limit, 30))

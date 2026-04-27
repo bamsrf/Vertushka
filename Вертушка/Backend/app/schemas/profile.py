@@ -90,5 +90,5 @@ class PublicProfileResponse(BaseModel):
     collection: list[PublicProfileRecord] = []
 
     # Рейлы для главного экрана
-    recent_additions: list[PublicProfileRecord] = []
+    top_expensive: list[PublicProfileRecord] = []
     new_releases: list[PublicProfileRecord] = []
