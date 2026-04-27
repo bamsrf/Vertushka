@@ -871,10 +871,9 @@ export default function UserProfileScreen() {
           <RefreshControl refreshing={isRefreshing} onRefresh={handleRefresh} tintColor={PP.cobalt} />
         }
       >
-        {/* HERO — vinyl сверху по центру, текст под ним */}
+        {/* HERO — left: avatar + username + price, right: vinyl */}
         <View style={styles.hero}>
-          <Vinyl size={150} />
-          <View style={styles.heroText}>
+          <View style={styles.heroLeft}>
             <View style={styles.userRow}>
               <LinearGradient colors={[PP.blush, PP.lavender, PP.periwinkle, PP.sky]} style={styles.avatarRing}>
                 <View style={styles.avatarInner}>
@@ -889,7 +888,7 @@ export default function UserProfileScreen() {
                   )}
                 </View>
               </LinearGradient>
-              <View style={{ alignItems: 'center', minWidth: 0 }}>
+              <View style={{ minWidth: 0 }}>
                 <Text style={styles.username} numberOfLines={1}>@{pubProfile.username}</Text>
                 {pubProfile.custom_title ? (
                   <Text style={styles.customTitle} numberOfLines={1}>{pubProfile.custom_title}</Text>
@@ -898,7 +897,7 @@ export default function UserProfileScreen() {
             </View>
 
             {collectionValueRub != null ? (
-              <View style={{ alignItems: 'center', marginTop: 4 }}>
+              <View style={{ marginTop: 16 }}>
                 <Text style={styles.statLabel}>Стоимость коллекции</Text>
                 <Text style={styles.statValue}>
                   {formatRub(displayValue)} <Text style={styles.currency}>₽</Text>
@@ -916,6 +915,10 @@ export default function UserProfileScreen() {
                 ) : null}
               </View>
             ) : null}
+          </View>
+
+          <View style={styles.heroRight}>
+            <Vinyl size={160} />
           </View>
         </View>
 
@@ -1118,14 +1121,16 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: PP.hairline,
   },
 
-  /* HERO — vertical, centered */
+  /* HERO — horizontal: left content + right vinyl */
   hero: {
+    flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: GRID_PADDING,
     paddingTop: 8,
     paddingBottom: 12,
   },
-  heroText: { alignItems: 'center', marginTop: 18 },
+  heroLeft: { flex: 1, paddingRight: 12 },
+  heroRight: { alignItems: 'flex-end' },
   userRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   avatarRing: { width: 50, height: 50, borderRadius: 25, padding: 2 },
   avatarInner: {
@@ -1138,7 +1143,7 @@ const styles = StyleSheet.create({
 
   statLabel: {
     fontSize: 10, color: PP.slate, textTransform: 'uppercase', letterSpacing: 0.8,
-    fontWeight: '500', marginTop: 14,
+    fontWeight: '500',
   },
   statValue: {
     fontSize: 32, fontWeight: '700', color: PP.ink, marginTop: 6, letterSpacing: -0.5,
