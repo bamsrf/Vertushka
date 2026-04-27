@@ -718,7 +718,7 @@
                     data-genre="{{ (item.record.genre or '')|e }}"
                     data-country="{{ (item.record.country or '')|e }}"
                     data-cover="{{ item.record.cover_image_url or '' }}"
-                    data-price="{{ ((item.record.estimated_price_median or item.record.estimated_price_min) * usd_rub_rate)|int if (item.record.estimated_price_median or item.record.estimated_price_min) else '' }}"
+                    data-price="{{ ((item.record.estimated_price_median or item.record.estimated_price_min)|float * usd_rub_rate * (1.0 if item.record.country in local_countries else ru_vinyl_markup))|int if (item.record.estimated_price_median or item.record.estimated_price_min) else '' }}"
                     data-catalog="{{ (item.record.catalog_number or '')|e }}"
                     data-discogs="{{ item.record.discogs_id or '' }}"
                     onclick="openRecordPreview(this)">
@@ -735,7 +735,7 @@
                             </span>
                             {% set _cprice = item.record.estimated_price_median or item.record.estimated_price_min %}
                             {% if _cprice %}
-                            <span class="card-price tnum">~{{ (_cprice * usd_rub_rate)|int }} ₽</span>
+                            <span class="card-price tnum">~{{ (_cprice|float * usd_rub_rate * (1.0 if item.record.country in local_countries else ru_vinyl_markup))|int }} ₽</span>
                             {% endif %}
                         </div>
                     </div>
@@ -771,7 +771,7 @@
                     data-year="{{ item.record.year or '' }}"
                     data-format="{{ (item.record.format_type or '')|e }}"
                     data-cover="{{ item.record.cover_image_url or '' }}"
-                    data-price="{{ ((item.record.estimated_price_median or item.record.estimated_price_min) * usd_rub_rate)|int if (item.record.estimated_price_median or item.record.estimated_price_min) else '' }}"
+                    data-price="{{ ((item.record.estimated_price_median or item.record.estimated_price_min)|float * usd_rub_rate * (1.0 if item.record.country in local_countries else ru_vinyl_markup))|int if (item.record.estimated_price_median or item.record.estimated_price_min) else '' }}"
                     data-catalog="{{ (item.record.catalog_number or '')|e }}"
                     data-discogs="{{ item.record.discogs_id or '' }}"
                     onclick="openBookingModal(this)"
@@ -790,7 +790,7 @@
                             {% if is_booked %}
                             <span class="reserved-badge"><span class="reserved-dot"></span>Забронировано</span>
                             {% elif item.record.estimated_price_median or item.record.estimated_price_min %}
-                            <span class="card-price tnum">~{{ ((item.record.estimated_price_median or item.record.estimated_price_min) * usd_rub_rate)|int }} ₽</span>
+                            <span class="card-price tnum">~{{ ((item.record.estimated_price_median or item.record.estimated_price_min)|float * usd_rub_rate * (1.0 if item.record.country in local_countries else ru_vinyl_markup))|int }} ₽</span>
                             {% endif %}
                         </div>
                     </div>

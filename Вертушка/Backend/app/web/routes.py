@@ -188,6 +188,8 @@ async def public_profile_page(
         "og_description": og_description,
         "base_url": BASE_URL,
         "usd_rub_rate": Decimal(str(usd_rub_rate)),
+        "ru_vinyl_markup": Decimal(str(settings.ru_vinyl_markup)),
+        "local_countries": {'Russia', 'USSR', 'Россия', 'СССР'},
     })
 
 
