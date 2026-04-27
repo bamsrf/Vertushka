@@ -3,6 +3,7 @@ Web-маршруты для публичных страниц (HTML, не API)
 """
 import logging
 from decimal import Decimal
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, StreamingResponse
@@ -19,7 +20,7 @@ from app.models.collection import Collection, CollectionItem
 from app.models.wishlist import Wishlist, WishlistItem
 from app.models.follow import Follow
 from app.models.profile_share import ProfileShare
-from app.models.gift_booking import GiftBooking
+from app.models.gift_booking import GiftBooking, GiftStatus
 from app.api.profile import get_public_profile_payload, _get_top_expensive, _get_new_releases
 from app.services.exchange import get_usd_rub_rate
 from app.services.valuation import get_monthly_delta
@@ -270,3 +271,51 @@ async def profile_og_image(
     except Exception as e:
         logger.error(f"OG image generation failed: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@router.get("/cancel/{booking_id}", response_class=HTMLResponse)
+async def cancel_booking_page(
+    request: Request,
+    booking_id: UUID,
+    token: str = "",
+    db: AsyncSession = Depends(get_db)
+):
+    """Страница подтверждения отмены бронирования."""
+    result = await db.execute(
+        select(GiftBooking)
+        .where(GiftBooking.id == booking_id)
+        .options(
+            selectinload(GiftBooking.wishlist_item)
+            .selectinload(WishlistItem.record)
+        )
+    )
+    booking = result.scalar_one_or_none()
+
+    if not booking:
+        return templates.TemplateResponse("cancel_booking.html", {
+            "request": request, "page_status": "not_found",
+            "booking": None, "token": "",
+        })
+
+    if booking.cancel_token != token:
+        return templates.TemplateResponse("cancel_booking.html", {
+            "request": request, "page_status": "invalid_token",
+            "booking": None, "token": "",
+        })
+
+    if booking.status == GiftStatus.CANCELLED:
+        return templates.TemplateResponse("cancel_booking.html", {
+            "request": request, "page_status": "already_cancelled",
+            "booking": booking, "token": token,
+        })
+
+    if booking.status == GiftStatus.COMPLETED:
+        return templates.TemplateResponse("cancel_booking.html", {
+            "request": request, "page_status": "completed",
+            "booking": booking, "token": token,
+        })
+
+    return templates.TemplateResponse("cancel_booking.html", {
+        "request": request, "page_status": "confirm",
+        "booking": booking, "token": token,
+    })

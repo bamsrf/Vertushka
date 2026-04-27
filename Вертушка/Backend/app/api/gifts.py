@@ -107,7 +107,23 @@ async def book_gift(
         }
     )
 
-    # Отправляем уведомление владельцу вишлиста (анонимно)
+    CANCEL_BASE = "https://vinyl-vertushka.ru"
+    cancel_url = f"{CANCEL_BASE}/cancel/{booking.id}?token={booking.cancel_token}"
+
+    # Подтверждение дарителю
+    try:
+        from app.services.notifications import send_booking_confirmation_to_gifter
+        await send_booking_confirmation_to_gifter(
+            gifter_email=booking.gifter_email,
+            gifter_name=booking.gifter_name,
+            record_title=item.record.title,
+            record_artist=item.record.artist,
+            cancel_url=cancel_url,
+        )
+    except Exception:
+        pass
+
+    # Уведомление владельцу вишлиста (анонимно)
     try:
         from app.services.notifications import send_booking_notification_to_owner
         owner_result = await db.execute(
@@ -121,7 +137,7 @@ async def book_gift(
                 record_title=item.record.title,
             )
     except Exception:
-        pass  # Не блокируем основной flow
+        pass
     
     return GiftBookingResponse(
         id=booking.id,

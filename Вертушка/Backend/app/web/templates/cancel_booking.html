@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Отмена бронирования — Вертушка</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --ivory: #F4EEE6;
+            --cobalt: #3A4BE0;
+            --cobalt-bright: #4E5BFF;
+            --ink: #1B1D26;
+            --slate: #6B7080;
+            --mute: #9096A6;
+            --hairline: rgba(27,29,38,0.08);
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        html, body {
+            min-height: 100%;
+            background:
+                radial-gradient(700px 420px at 80% -4%, rgba(154,168,255,0.35), transparent 55%),
+                radial-gradient(500px 350px at 6% 8%, rgba(189,212,255,0.22), transparent 60%),
+                linear-gradient(180deg, #F4EEE6 0%, #F0EBE2 100%);
+            font-family: 'Inter Tight', -apple-system, sans-serif;
+            color: var(--ink);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 32px 16px;
+        }
+
+        .card {
+            background: rgba(255,255,255,0.7);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid var(--hairline);
+            border-radius: 20px;
+            padding: 36px 32px;
+            width: 100%;
+            max-width: 440px;
+            box-shadow: 0 8px 40px rgba(27,29,38,0.08);
+        }
+
+        .logo {
+            font-size: 15px;
+            font-weight: 700;
+            letter-spacing: -0.2px;
+            color: var(--ink);
+            margin-bottom: 28px;
+            opacity: 0.5;
+        }
+
+        .icon {
+            width: 52px;
+            height: 52px;
+            border-radius: 14px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 26px;
+            margin-bottom: 20px;
+        }
+        .icon-warn  { background: rgba(246,199,208,0.5); }
+        .icon-ok    { background: rgba(154,168,255,0.25); }
+        .icon-err   { background: rgba(246,199,208,0.5); }
+
+        h1 {
+            font-size: 22px;
+            font-weight: 700;
+            letter-spacing: -0.4px;
+            margin-bottom: 10px;
+        }
+        p {
+            color: var(--slate);
+            font-size: 15px;
+            line-height: 1.6;
+            margin-bottom: 0;
+        }
+
+        .record-row {
+            background: rgba(27,29,38,0.04);
+            border-radius: 12px;
+            padding: 14px 16px;
+            margin: 20px 0;
+        }
+        .record-artist {
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            color: var(--mute);
+            margin-bottom: 3px;
+        }
+        .record-title {
+            font-size: 16px;
+            font-weight: 600;
+        }
+
+        .actions {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            margin-top: 28px;
+        }
+
+        .btn-danger {
+            background: #E03A3A;
+            color: #fff;
+            border: none;
+            border-radius: 12px;
+            padding: 14px 24px;
+            font-family: inherit;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: opacity 0.15s;
+        }
+        .btn-danger:hover { opacity: 0.88; }
+        .btn-danger:disabled { opacity: 0.5; cursor: default; }
+
+        .btn-ghost {
+            background: transparent;
+            color: var(--slate);
+            border: 1px solid var(--hairline);
+            border-radius: 12px;
+            padding: 13px 24px;
+            font-family: inherit;
+            font-size: 15px;
+            font-weight: 500;
+            cursor: pointer;
+            text-align: center;
+            text-decoration: none;
+            display: block;
+            transition: background 0.15s;
+        }
+        .btn-ghost:hover { background: rgba(27,29,38,0.04); }
+
+        #result { display: none; }
+        #result.show { display: block; }
+    </style>
+</head>
+<body>
+<div class="card">
+    <div class="logo">Вертушка</div>
+
+    {% if page_status == "confirm" %}
+    <div id="confirmView">
+        <div class="icon icon-warn">🎁</div>
+        <h1>Отменить бронь?</h1>
+        {% if booking and booking.wishlist_item and booking.wishlist_item.record %}
+        <div class="record-row">
+            <div class="record-artist">{{ booking.wishlist_item.record.artist }}</div>
+            <div class="record-title">{{ booking.wishlist_item.record.title }}</div>
+        </div>
+        {% endif %}
+        <p>После отмены пластинка снова станет доступна другим дарителям. Это действие нельзя отменить.</p>
+        <div class="actions">
+            <button class="btn-danger" id="cancelBtn" onclick="doCancel()">Да, отменить бронь</button>
+            <a class="btn-ghost" href="javascript:history.back()">Назад</a>
+        </div>
+    </div>
+    <div id="result">
+        <div class="icon icon-ok" id="resultIcon">✅</div>
+        <h1 id="resultTitle"></h1>
+        <p id="resultText"></p>
+    </div>
+
+    <script>
+    async function doCancel() {
+        var btn = document.getElementById('cancelBtn');
+        btn.disabled = true;
+        btn.textContent = 'Отменяем...';
+        try {
+            var res = await fetch('/api/gifts/{{ booking.id }}/cancel?cancel_token={{ token }}', {
+                method: 'PUT'
+            });
+            document.getElementById('confirmView').style.display = 'none';
+            var resultEl = document.getElementById('result');
+            resultEl.classList.add('show');
+            if (res.ok) {
+                document.getElementById('resultIcon').textContent = '✅';
+                document.getElementById('resultTitle').textContent = 'Бронь отменена';
+                document.getElementById('resultText').textContent = 'Пластинка снова доступна в вишлисте.';
+            } else {
+                var err = await res.json().catch(function(){ return {}; });
+                document.getElementById('resultIcon').textContent = '❌';
+                document.getElementById('resultIcon').className = 'icon icon-err';
+                document.getElementById('resultTitle').textContent = 'Не удалось отменить';
+                document.getElementById('resultText').textContent = err.detail || 'Попробуйте ещё раз.';
+            }
+        } catch (e) {
+            btn.disabled = false;
+            btn.textContent = 'Да, отменить бронь';
+            alert('Ошибка соединения, попробуйте ещё раз.');
+        }
+    }
+    </script>
+
+    {% elif page_status == "already_cancelled" %}
+    <div class="icon icon-ok">✅</div>
+    <h1>Бронь уже отменена</h1>
+    {% if booking and booking.wishlist_item and booking.wishlist_item.record %}
+    <div class="record-row">
+        <div class="record-artist">{{ booking.wishlist_item.record.artist }}</div>
+        <div class="record-title">{{ booking.wishlist_item.record.title }}</div>
+    </div>
+    {% endif %}
+    <p>Эта бронь была отменена ранее. Пластинка уже доступна другим.</p>
+
+    {% elif page_status == "completed" %}
+    <div class="icon icon-ok">🎉</div>
+    <h1>Подарок уже вручён</h1>
+    {% if booking and booking.wishlist_item and booking.wishlist_item.record %}
+    <div class="record-row">
+        <div class="record-artist">{{ booking.wishlist_item.record.artist }}</div>
+        <div class="record-title">{{ booking.wishlist_item.record.title }}</div>
+    </div>
+    {% endif %}
+    <p>Этот подарок уже был получен — отменить его нельзя.</p>
+
+    {% elif page_status == "invalid_token" %}
+    <div class="icon icon-err">🔒</div>
+    <h1>Ссылка недействительна</h1>
+    <p>Токен отмены не совпадает. Используйте ссылку из письма-подтверждения.</p>
+
+    {% else %}
+    <div class="icon icon-err">🔍</div>
+    <h1>Бронирование не найдено</h1>
+    <p>Возможно, оно было удалено или ссылка устарела.</p>
+    {% endif %}
+</div>
+</body>
+</html>

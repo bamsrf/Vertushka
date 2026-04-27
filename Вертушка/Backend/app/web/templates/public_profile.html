@@ -469,6 +469,31 @@
             background: rgba(255,255,255,0.55); border: 1px solid var(--hairline);
             border-radius: 12px;
         }
+        .bs-check {
+            width: 48px; height: 48px; border-radius: 14px;
+            background: rgba(154,168,255,0.22); display: flex;
+            align-items: center; justify-content: center;
+            font-size: 24px; margin: 4px 0 16px;
+        }
+        .bs-message { font-size: 20px; font-weight: 700; letter-spacing: -0.3px; margin-bottom: 6px; }
+        .bs-sub { font-size: 13px; color: var(--slate); line-height: 1.55; margin-bottom: 20px; }
+        .bs-cancel-row {
+            background: rgba(255,255,255,0.55); border: 1px solid var(--hairline);
+            border-radius: 12px; padding: 12px 14px; margin-bottom: 20px;
+        }
+        .bs-cancel-lbl { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.8px; color: var(--mute); margin-bottom: 6px; }
+        .bs-cancel-link-wrap { display: flex; align-items: center; gap: 8px; }
+        .bs-cancel-link {
+            flex: 1; font-size: 12px; color: var(--cobalt); word-break: break-all;
+            text-decoration: none; font-family: 'JetBrains Mono', monospace;
+        }
+        .bs-cancel-link:hover { text-decoration: underline; }
+        .bs-copy-btn {
+            flex-shrink: 0; background: transparent; border: 1px solid var(--hairline);
+            border-radius: 8px; padding: 5px 10px; font-size: 11px; font-weight: 500;
+            color: var(--slate); cursor: pointer; font-family: inherit; transition: background 0.15s;
+        }
+        .bs-copy-btn:hover { background: rgba(27,29,38,0.06); }
         .rp-footer {
             text-align: center; font-family: 'JetBrains Mono', monospace;
             font-size: 9.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--mute);
@@ -876,6 +901,39 @@
         </div>
     </div>
 
+    <!-- BOOKING SUCCESS SHEET -->
+    <div class="modal-overlay" id="bookingSuccessModal">
+        <div class="record-preview-sheet booking-sheet" role="dialog" aria-modal="true">
+            <div class="rp-handle"></div>
+            <div class="rp-header">
+                <span class="rp-header-label">Забронировано</span>
+                <button class="rp-close" onclick="closeBookingSuccess()" aria-label="Закрыть">
+                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                        <path d="M1 1l10 10M11 1L1 11" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+                    </svg>
+                </button>
+            </div>
+            <div class="rp-cover-wrap">
+                <img id="bsCover" class="rp-cover-img" src="" alt="">
+            </div>
+            <div class="rp-body">
+                <div class="rp-artist" id="bsArtist"></div>
+                <div class="rp-title" id="bsTitle"></div>
+                <div class="bs-check">🎁</div>
+                <div class="bs-message">Подарок забронирован!</div>
+                <div class="bs-sub">Подтверждение отправлено на email. Бронь действует 60 дней.</div>
+                <div class="bs-cancel-row">
+                    <div class="bs-cancel-lbl">Ссылка для отмены</div>
+                    <div class="bs-cancel-link-wrap">
+                        <a id="bsCancelLink" class="bs-cancel-link" href="#" target="_blank" rel="noopener"></a>
+                        <button class="bs-copy-btn" onclick="copyCancel()">Скопировать</button>
+                    </div>
+                </div>
+                <button class="btn-primary" style="width:100%" onclick="closeBookingSuccess()">Закрыть</button>
+            </div>
+        </div>
+    </div>
+
     <script>
         // Background crossfade — rAF on html canvas, works on all browsers incl. Safari iOS
         var animBg = (function() {
@@ -1110,21 +1168,56 @@
             if (e.target === bookingModal) closeBookingModal();
         });
 
+        // Booking success sheet
+        var bookingSuccessModal = document.getElementById('bookingSuccessModal');
+        var _bsReloadOnClose = false;
+
+        function openBookingSuccess(bookingData, cover, artist, title) {
+            var BLANK = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+            document.getElementById('bsCover').src = cover || BLANK;
+            document.getElementById('bsArtist').textContent = artist || '';
+            document.getElementById('bsTitle').textContent  = title  || '';
+            var cancelUrl = 'https://vinyl-vertushka.ru/cancel/' + bookingData.id + '?token=' + bookingData.cancel_token;
+            var linkEl = document.getElementById('bsCancelLink');
+            linkEl.href = cancelUrl;
+            linkEl.textContent = cancelUrl;
+            _bsReloadOnClose = true;
+            bookingSuccessModal.classList.add('active');
+        }
+        function closeBookingSuccess() {
+            bookingSuccessModal.classList.remove('active');
+            if (_bsReloadOnClose) { _bsReloadOnClose = false; location.reload(); }
+        }
+        function copyCancel() {
+            var url = document.getElementById('bsCancelLink').href;
+            navigator.clipboard && navigator.clipboard.writeText(url).then(function() {
+                var btn = event.target;
+                btn.textContent = 'Скопировано!';
+                setTimeout(function(){ btn.textContent = 'Скопировать'; }, 2000);
+            });
+        }
+        bookingSuccessModal && bookingSuccessModal.addEventListener('click', function(e) {
+            if (e.target === bookingSuccessModal) closeBookingSuccess();
+        });
+
         bookingForm && bookingForm.addEventListener('submit', async function(e) {
             e.preventDefault();
-            var data = Object.fromEntries(new FormData(bookingForm).entries());
+            var formData = Object.fromEntries(new FormData(bookingForm).entries());
             var btn = bookingForm.querySelector('button[type=submit]');
+            var cover  = document.getElementById('bmCover').src;
+            var artist = document.getElementById('bmArtist').textContent;
+            var title  = document.getElementById('bmTitle').textContent;
             btn.disabled = true;
             try {
                 var res = await fetch('/api/gifts/book', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(data),
+                    body: JSON.stringify(formData),
                 });
                 if (res.ok) {
-                    alert('Готово! Подарок забронирован на 60 дней. Подтверждение на email.');
+                    var data = await res.json();
                     closeBookingModal();
-                    location.reload();
+                    openBookingSuccess(data, cover, artist, title);
                 } else {
                     var err = await res.json();
                     alert('Ошибка: ' + (err.detail || 'не удалось забронировать'));
