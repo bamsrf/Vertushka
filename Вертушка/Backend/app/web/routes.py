@@ -88,6 +88,9 @@ async def public_profile_page(
         select(func.count(Follow.id)).where(Follow.following_id == user.id)
     ) or 0
 
+    # Курс USD→RUB (кэшируется, дёшево)
+    usd_rub_rate = await get_usd_rub_rate()
+
     # Стоимость коллекции
     collection_value = None
     collection_value_rub = None
@@ -100,8 +103,7 @@ async def public_profile_page(
             .where(Collection.user_id == user.id)
         )
         collection_value = round(float(value_result), 2) if value_result else 0.0
-        rate = await get_usd_rub_rate()
-        collection_value_rub = round(collection_value * rate, 2)
+        collection_value_rub = round(collection_value * usd_rub_rate, 2)
         delta = await get_monthly_delta(user.id, db)
         monthly_delta = float(delta) if delta is not None else None
 
@@ -184,6 +186,7 @@ async def public_profile_page(
         "active_tab": tab if tab in ("collection", "wishlist") else "collection",
         "og_description": og_description,
         "base_url": BASE_URL,
+        "usd_rub_rate": usd_rub_rate,
     })
 
 

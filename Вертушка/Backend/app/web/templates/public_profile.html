@@ -718,7 +718,7 @@
                     data-genre="{{ (item.record.genre or '')|e }}"
                     data-country="{{ (item.record.country or '')|e }}"
                     data-cover="{{ item.record.cover_image_url or '' }}"
-                    data-price="{{ (item.record.estimated_price_median or item.record.estimated_price_min)|int if (item.record.estimated_price_median or item.record.estimated_price_min) else '' }}"
+                    data-price="{{ ((item.record.estimated_price_median or item.record.estimated_price_min) * usd_rub_rate)|int if (item.record.estimated_price_median or item.record.estimated_price_min) else '' }}"
                     data-catalog="{{ (item.record.catalog_number or '')|e }}"
                     data-discogs="{{ item.record.discogs_id or '' }}"
                     onclick="openRecordPreview(this)">
@@ -735,7 +735,7 @@
                             </span>
                             {% set _cprice = item.record.estimated_price_median or item.record.estimated_price_min %}
                             {% if _cprice %}
-                            <span class="card-price tnum">~${{ _cprice|int }}</span>
+                            <span class="card-price tnum">~{{ (_cprice * usd_rub_rate)|int }} ₽</span>
                             {% endif %}
                         </div>
                     </div>
@@ -771,7 +771,7 @@
                     data-year="{{ item.record.year or '' }}"
                     data-format="{{ (item.record.format_type or '')|e }}"
                     data-cover="{{ item.record.cover_image_url or '' }}"
-                    data-price="{{ (item.record.estimated_price_median or item.record.estimated_price_min)|int if (item.record.estimated_price_median or item.record.estimated_price_min) else '' }}"
+                    data-price="{{ ((item.record.estimated_price_median or item.record.estimated_price_min) * usd_rub_rate)|int if (item.record.estimated_price_median or item.record.estimated_price_min) else '' }}"
                     data-catalog="{{ (item.record.catalog_number or '')|e }}"
                     data-discogs="{{ item.record.discogs_id or '' }}"
                     onclick="openBookingModal(this)"
@@ -790,7 +790,7 @@
                             {% if is_booked %}
                             <span class="reserved-badge"><span class="reserved-dot"></span>Забронировано</span>
                             {% elif item.record.estimated_price_median or item.record.estimated_price_min %}
-                            <span class="card-price tnum">~${{ (item.record.estimated_price_median or item.record.estimated_price_min)|int }}</span>
+                            <span class="card-price tnum">~{{ ((item.record.estimated_price_median or item.record.estimated_price_min) * usd_rub_rate)|int }} ₽</span>
                             {% endif %}
                         </div>
                     </div>
@@ -1049,7 +1049,7 @@
             var rpInfoCards = [];
             if (d.year)   rpInfoCards.push(['ГОД',   d.year,         '']);
             if (d.format) rpInfoCards.push(['ФОРМАТ', d.format,       '']);
-            if (d.price)  rpInfoCards.push(['ЦЕНА',   '~$' + d.price, 'cobalt']);
+            if (d.price)  rpInfoCards.push(['ЦЕНА',   '~' + d.price + ' ₽', 'cobalt']);
             var rpInfoRow = document.getElementById('rpInfoRow');
             rpInfoRow.innerHTML = rpInfoCards.map(function(c) {
                 return '<div class="rp-info-card"><div class="rp-info-lbl">' + c[0] + '</div>' +
@@ -1089,7 +1089,7 @@
             var bmCards = [];
             if (d.year)   bmCards.push(['ГОД',         d.year,                        '']);
             if (d.format) bmCards.push(['ФОРМАТ',       d.format,                      '']);
-            bmCards.push(['ПРИМ. ЦЕНА', d.price ? '~$' + d.price : '—', d.price ? 'cobalt' : '']);
+            bmCards.push(['ПРИМ. ЦЕНА', d.price ? '~' + d.price + ' ₽' : '—', d.price ? 'cobalt' : '']);
             var bmInfoRow = document.getElementById('bmInfoRow');
             bmInfoRow.innerHTML = bmCards.map(function(c) {
                 return '<div class="rp-info-card"><div class="rp-info-lbl">' + c[0] + '</div>' +
