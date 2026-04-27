@@ -718,7 +718,7 @@
                     data-genre="{{ (item.record.genre or '')|e }}"
                     data-country="{{ (item.record.country or '')|e }}"
                     data-cover="{{ item.record.cover_image_url or '' }}"
-                    data-price="{{ item.record.estimated_price_median|int if item.record.estimated_price_median else '' }}"
+                    data-price="{{ (item.record.estimated_price_median or item.record.estimated_price_min)|int if (item.record.estimated_price_median or item.record.estimated_price_min) else '' }}"
                     data-catalog="{{ (item.record.catalog_number or '')|e }}"
                     data-discogs="{{ item.record.discogs_id or '' }}"
                     onclick="openRecordPreview(this)">
@@ -733,8 +733,9 @@
                                 {% if profile.show_record_year and item.record.year %}{{ item.record.year }}{% endif %}
                                 {% if profile.show_record_format and item.record.format_type %} · {{ item.record.format_type }}{% endif %}
                             </span>
-                            {% if item.record.estimated_price_median %}
-                            <span class="card-price tnum">~${{ item.record.estimated_price_median|int }}</span>
+                            {% set _cprice = item.record.estimated_price_median or item.record.estimated_price_min %}
+                            {% if _cprice %}
+                            <span class="card-price tnum">~${{ _cprice|int }}</span>
                             {% endif %}
                         </div>
                     </div>
@@ -770,7 +771,7 @@
                     data-year="{{ item.record.year or '' }}"
                     data-format="{{ (item.record.format_type or '')|e }}"
                     data-cover="{{ item.record.cover_image_url or '' }}"
-                    data-price="{{ item.record.estimated_price_median|int if item.record.estimated_price_median else '' }}"
+                    data-price="{{ (item.record.estimated_price_median or item.record.estimated_price_min)|int if (item.record.estimated_price_median or item.record.estimated_price_min) else '' }}"
                     data-catalog="{{ (item.record.catalog_number or '')|e }}"
                     data-discogs="{{ item.record.discogs_id or '' }}"
                     onclick="openBookingModal(this)"
@@ -788,8 +789,8 @@
                             </span>
                             {% if is_booked %}
                             <span class="reserved-badge"><span class="reserved-dot"></span>Забронировано</span>
-                            {% elif item.record.estimated_price_median %}
-                            <span class="card-price tnum">~${{ item.record.estimated_price_median|int }}</span>
+                            {% elif item.record.estimated_price_median or item.record.estimated_price_min %}
+                            <span class="card-price tnum">~${{ (item.record.estimated_price_median or item.record.estimated_price_min)|int }}</span>
                             {% endif %}
                         </div>
                     </div>
