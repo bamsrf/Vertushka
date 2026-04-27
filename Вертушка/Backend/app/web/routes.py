@@ -2,6 +2,7 @@
 Web-маршруты для публичных страниц (HTML, не API)
 """
 import logging
+from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, StreamingResponse
@@ -186,7 +187,7 @@ async def public_profile_page(
         "active_tab": tab if tab in ("collection", "wishlist") else "collection",
         "og_description": og_description,
         "base_url": BASE_URL,
-        "usd_rub_rate": usd_rub_rate,
+        "usd_rub_rate": Decimal(str(usd_rub_rate)),
     })
 
 
