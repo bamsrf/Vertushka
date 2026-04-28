@@ -330,6 +330,51 @@
         }
         .booking-explainer .step .icon { font-size: 15px; flex-shrink: 0; line-height: 1.2; }
 
+        /* TOOLBAR — format chips + view toggle (только над коллекцией) */
+        .toolbar { padding: 6px 0 4px; margin-top: 4px; }
+        .format-chips {
+            display: flex; gap: 6px; overflow-x: auto;
+            padding: 0 4px 2px; scrollbar-width: none;
+        }
+        .format-chips::-webkit-scrollbar { display: none; }
+        .format-chip {
+            flex-shrink: 0;
+            padding: 0 14px; height: 34px; border-radius: 999px;
+            background: rgba(255,255,255,0.6);
+            border: 1px solid rgba(27,29,38,0.06);
+            font-family: inherit; font-size: 12px; font-weight: 500;
+            color: #3A3E4D; cursor: pointer;
+            transition: all 220ms;
+            white-space: nowrap;
+        }
+        .format-chip.active {
+            background: linear-gradient(180deg, #fff, #F2F0FF);
+            border: 1px solid rgba(58,75,224,0.2);
+            color: var(--cobalt); font-weight: 600;
+            box-shadow: 0 4px 12px -6px rgba(58,75,224,0.3);
+        }
+        .view-row {
+            padding: 12px 4px 0;
+            display: flex; justify-content: flex-end; gap: 6px;
+        }
+        .icon-btn {
+            width: 40px; height: 40px; border-radius: 14px;
+            background: rgba(255,255,255,0.6);
+            border: 1px solid rgba(255,255,255,0.85);
+            box-shadow: 0 1px 0 rgba(255,255,255,0.7) inset, 0 2px 6px -3px rgba(27,29,38,0.08);
+            display: grid; place-items: center; cursor: pointer;
+            transition: all 220ms; padding: 0;
+            color: #3A3E4D;
+        }
+        .icon-btn.active {
+            background: linear-gradient(180deg, #fff, #F2F0FF);
+            box-shadow:
+                0 1px 0 rgba(255,255,255,0.9) inset,
+                0 4px 12px -6px rgba(58,75,224,0.35),
+                0 0 0 1px rgba(58,75,224,0.06);
+            color: var(--cobalt);
+        }
+
         /* GRID */
         .grid {
             display: grid; gap: 22px 16px;
@@ -338,6 +383,30 @@
         }
         @media (max-width: 1023px) { .grid { grid-template-columns: repeat(2, 1fr); } }
         @media (max-width: 480px) { .grid { grid-template-columns: repeat(2, 1fr); gap: 18px 12px; } }
+
+        /* LIST view — превращаем грид в вертикальный список с горизонтальными карточками */
+        .grid.list-mode {
+            display: flex; flex-direction: column; gap: 10px;
+            grid-template-columns: none;
+        }
+        .grid.list-mode .card {
+            display: flex; flex-direction: row; align-items: center;
+            gap: 14px; padding: 10px;
+            border-radius: 18px;
+            background: rgba(255,255,255,0.55);
+            border: 1px solid rgba(255,255,255,0.85);
+            box-shadow: 0 1px 0 rgba(255,255,255,0.8) inset, 0 4px 14px -10px rgba(27,29,38,0.18);
+            backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+        }
+        .grid.list-mode .card:hover { transform: none; }
+        .grid.list-mode .card-cover {
+            width: 76px; height: 76px; aspect-ratio: 1/1; border-radius: 10px;
+            flex-shrink: 0;
+        }
+        .grid.list-mode .card-meta { flex: 1; min-width: 0; padding: 0; }
+        .grid.list-mode .card-bottom { margin-top: 6px; }
+
+        .card.hidden-by-filter { display: none !important; }
 
         .card { cursor: pointer; min-width: 0; overflow: hidden; transition: transform 280ms cubic-bezier(.22, .7, .18, 1); }
         .card:hover { transform: translateY(-3px); }
@@ -752,7 +821,33 @@
         {% if profile.show_collection %}
         <section class="tab-pane" id="pane-collection" {% if active_tab != 'collection' %}hidden{% endif %}>
             {% if collection_items %}
-            <div class="grid">
+            <div class="toolbar" id="collectionToolbar">
+                <div class="format-chips" role="tablist" aria-label="Фильтр по форматам">
+                    <button type="button" class="format-chip active" data-fmt="all">Все форматы</button>
+                    <button type="button" class="format-chip" data-fmt="vinyl">Винил</button>
+                    <button type="button" class="format-chip" data-fmt="cd">CD</button>
+                    <button type="button" class="format-chip" data-fmt="tape">Кассета</button>
+                    <button type="button" class="format-chip" data-fmt="box">Бокс-сет</button>
+                </div>
+                <div class="view-row">
+                    <button type="button" class="icon-btn active" data-view="grid" title="Сетка" aria-label="Сетка">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                            <rect x="4" y="4" width="7" height="7" rx="1.2"/>
+                            <rect x="13" y="4" width="7" height="7" rx="1.2"/>
+                            <rect x="4" y="13" width="7" height="7" rx="1.2"/>
+                            <rect x="13" y="13" width="7" height="7" rx="1.2"/>
+                        </svg>
+                    </button>
+                    <button type="button" class="icon-btn" data-view="list" title="Список" aria-label="Список">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                            <line x1="4" y1="6" x2="20" y2="6"/>
+                            <line x1="4" y1="12" x2="20" y2="12"/>
+                            <line x1="4" y1="18" x2="20" y2="18"/>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+            <div class="grid" id="collectionGrid">
                 {% for item in collection_items %}
                 <div class="card"
                     data-artist="{{ item.record.artist|e }}"
@@ -1300,6 +1395,89 @@
                 btn.disabled = false;
             }
         });
+
+        // Format filter + view toggle (только над коллекцией)
+        (function() {
+            var grid = document.getElementById('collectionGrid');
+            var toolbar = document.getElementById('collectionToolbar');
+            if (!grid || !toolbar) return;
+
+            // Маппинг человекочитаемого формата Discogs → группу чипа
+            function classifyFormat(raw) {
+                var s = (raw || '').toLowerCase();
+                if (!s) return 'other';
+                // Box-сеты — проверяем первыми, т.к. они могут содержать "vinyl" в строке
+                if (s.indexOf('box') !== -1) return 'box';
+                if (s.indexOf('cassette') !== -1 || s === 'tape' || s.indexOf('кассет') !== -1) return 'tape';
+                if (s.indexOf('cd') !== -1 || s.indexOf('cdr') !== -1) return 'cd';
+                // Винил: vinyl, lp, ep, 7", 10", 12", сингл
+                if (s.indexOf('vinyl') !== -1 || s.indexOf('lp') !== -1 || s.indexOf('ep') !== -1
+                    || s.indexOf('7"') !== -1 || s.indexOf('10"') !== -1 || s.indexOf('12"') !== -1
+                    || s.indexOf('винил') !== -1) return 'vinyl';
+                return 'other';
+            }
+
+            var cards = Array.from(grid.querySelectorAll('.card'));
+            // Заранее проставляем data-fmt-group, чтобы фильтрация была дешёвая
+            cards.forEach(function(c) {
+                c.dataset.fmtGroup = classifyFormat(c.dataset.format);
+            });
+
+            var emptyEl = null;
+            function ensureEmpty() {
+                if (emptyEl) return emptyEl;
+                emptyEl = document.createElement('div');
+                emptyEl.className = 'empty empty-filter';
+                emptyEl.textContent = 'Нет пластинок этого формата';
+                emptyEl.style.display = 'none';
+                grid.parentNode.insertBefore(emptyEl, grid.nextSibling);
+                return emptyEl;
+            }
+
+            var currentFmt = 'all';
+
+            function applyFilter() {
+                var visible = 0;
+                cards.forEach(function(c) {
+                    var match = (currentFmt === 'all') || (c.dataset.fmtGroup === currentFmt);
+                    c.classList.toggle('hidden-by-filter', !match);
+                    if (match) visible++;
+                });
+                var ee = ensureEmpty();
+                ee.style.display = visible === 0 ? '' : 'none';
+                grid.style.display = visible === 0 ? 'none' : '';
+            }
+
+            // Чипы
+            toolbar.querySelectorAll('.format-chip').forEach(function(chip) {
+                chip.addEventListener('click', function() {
+                    toolbar.querySelectorAll('.format-chip').forEach(function(c) { c.classList.remove('active'); });
+                    chip.classList.add('active');
+                    currentFmt = chip.dataset.fmt || 'all';
+                    applyFilter();
+                });
+            });
+
+            // View toggle
+            toolbar.querySelectorAll('.icon-btn[data-view]').forEach(function(btn) {
+                btn.addEventListener('click', function() {
+                    toolbar.querySelectorAll('.icon-btn[data-view]').forEach(function(b) { b.classList.remove('active'); });
+                    btn.classList.add('active');
+                    var mode = btn.dataset.view;
+                    grid.classList.toggle('list-mode', mode === 'list');
+                    try { localStorage.setItem('vert.profileView', mode); } catch (e) {}
+                });
+            });
+
+            // Восстановим вью из localStorage
+            try {
+                var saved = localStorage.getItem('vert.profileView');
+                if (saved === 'list') {
+                    var listBtn = toolbar.querySelector('.icon-btn[data-view="list"]');
+                    if (listBtn) listBtn.click();
+                }
+            } catch (e) {}
+        })();
     </script>
 </body>
 </html>
