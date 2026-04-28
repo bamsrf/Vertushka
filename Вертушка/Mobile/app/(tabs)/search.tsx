@@ -226,7 +226,7 @@ export default function SearchScreen() {
   const [historyExpanded, setHistoryExpanded] = useState(false);
   useEffect(() => {
     let cancelled = false;
-    api.getNewReleases(12)
+    api.getNewReleases(24)
       .then((items) => { if (!cancelled) setNewReleases(items); })
       .catch(() => { /* silent: блок просто не появится */ });
     return () => { cancelled = true; };
