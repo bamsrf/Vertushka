@@ -375,6 +375,7 @@ async def get_record(
     discogs_data = record.discogs_data or {}
     response.artist_id = discogs_data.get("artist_id")
     response.artist_thumb_image_url = discogs_data.get("artist_thumb_image_url")
+    response.vinyl_color_raw = discogs_data.get("vinyl_color_raw")
     return await _enrich_response_with_rub(response)
 
 
@@ -405,6 +406,7 @@ async def get_record_by_discogs_id(
         response = RecordResponse.model_validate(record)
         response.artist_id = discogs_data.get("artist_id")
         response.artist_thumb_image_url = discogs_data.get("artist_thumb_image_url")
+        response.vinyl_color_raw = discogs_data.get("vinyl_color_raw")
         return await _enrich_response_with_rub(response)
 
     # Запрос в Discogs
@@ -443,6 +445,7 @@ async def get_record_by_discogs_id(
         response = RecordResponse.model_validate(record)
         response.artist_id = record_data.get("artist_id")
         response.artist_thumb_image_url = record_data.get("artist_thumb_image_url")
+        response.vinyl_color_raw = record_data.get("vinyl_color_raw")
         return await _enrich_response_with_rub(response)
 
     except Exception as e:

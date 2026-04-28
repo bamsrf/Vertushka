@@ -360,6 +360,7 @@ class DiscogsService:
         formats = data.get("formats", [])
         format_type = formats[0].get("name") if formats else None
         format_desc = ", ".join(formats[0].get("descriptions", [])) if formats else None
+        vinyl_color_raw = formats[0].get("text") if formats else None
 
         # Извлекаем штрихкоды
         identifiers = data.get("identifiers", [])
@@ -414,6 +415,7 @@ class DiscogsService:
             "style": style,
             "format": format_type,
             "format_description": format_desc,
+            "vinyl_color_raw": vinyl_color_raw,
             "barcode": barcode,
             "cover_image": cover_image,
             "thumb_image": thumb_image,

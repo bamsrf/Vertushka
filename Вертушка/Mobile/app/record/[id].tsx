@@ -26,6 +26,9 @@ import { api } from '../../lib/api';
 import { useCollectionStore } from '../../lib/store';
 import { VinylRecord, CollectionItem } from '../../lib/types';
 import { Colors, Typography, Spacing, BorderRadius, Gradients } from '../../constants/theme';
+import { VinylColorTag } from '../../components/VinylColorTag';
+import { VinylSpinner } from '../../components/VinylSpinner';
+import { parseVinylColor } from '../../lib/vinylColor';
 
 function getFormatDisplayInfo(format?: string): { label: string; verb: string } {
   if (!format) return { label: 'Винил', verb: 'добавлен' };
@@ -435,6 +438,7 @@ export default function RecordDetailScreen() {
                 <Text style={styles.metaText}>{record.country}</Text>
               </View>
             ) : null}
+            <VinylColorTag vinylColorRaw={record.vinyl_color_raw} />
           </View>
         </View>
 
@@ -456,6 +460,24 @@ export default function RecordDetailScreen() {
             )}
           </Card>
         )}
+
+        {/* Цвет винила */}
+        {(() => {
+          const colorConfig = parseVinylColor(record.vinyl_color_raw);
+          if (!colorConfig.isColored) return null;
+          return (
+            <View style={styles.vinylSpinnerContainer}>
+              <VinylSpinner
+                colorConfig={colorConfig}
+                labelName={record.label ?? undefined}
+                size={220}
+              />
+              <Text style={styles.vinylDisclaimer}>
+                Это визуальный прототип — реальный цвет может отличаться
+              </Text>
+            </View>
+          );
+        })()}
 
         {/* Жанр */}
         {(record.genre || record.style) && (
@@ -844,5 +866,17 @@ const styles = StyleSheet.create({
   removeButtonText: {
     ...Typography.button,
     color: Colors.text,
+  },
+  vinylSpinnerContainer: {
+    alignItems: 'center',
+    paddingVertical: Spacing.lg,
+    marginHorizontal: Spacing.md,
+    marginBottom: Spacing.md,
+  },
+  vinylDisclaimer: {
+    ...Typography.caption,
+    color: Colors.textMuted,
+    textAlign: 'center',
+    marginTop: Spacing.sm,
   },
 });

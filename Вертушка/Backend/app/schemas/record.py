@@ -53,6 +53,7 @@ class RecordResponse(BaseModel):
     style: str | None
     format_type: str | None
     format_description: str | None
+    vinyl_color_raw: str | None = None
     barcode: str | None
     estimated_price_min: float | None
     estimated_price_max: float | None

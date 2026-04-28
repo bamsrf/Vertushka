@@ -66,6 +66,7 @@ function RootLayout() {
     Inter_600SemiBold,
     Inter_700Bold,
     Inter_800ExtraBold,
+    'RubikMonoOne-Regular': require('../assets/fonts/RubikMonoOne-Regular.ttf'),
   });
 
   useEffect(() => {

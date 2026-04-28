@@ -50,6 +50,7 @@ export interface VinylRecord {
   style?: string;
   format_type?: string;
   format_description?: string;
+  vinyl_color_raw?: string;
   barcode?: string;
   estimated_price_min?: number;
   estimated_price_max?: number;
