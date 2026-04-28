@@ -111,7 +111,7 @@ async def public_profile_page(
 
     # Рейлы
     top_expensive = await _get_top_expensive(user.id, db, limit=12) if profile.show_collection else []
-    new_releases = await _get_new_releases(db, limit=12, user_id=user.id)
+    new_releases = await _get_new_releases(db, limit=24, user_id=user.id)
 
     # === Избранные пластинки ===
     highlights = []

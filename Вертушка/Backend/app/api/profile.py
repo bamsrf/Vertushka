@@ -254,7 +254,7 @@ async def get_public_profile_payload(user: User, profile: ProfileShare, db: Asyn
 
     top_expensive = await _get_top_expensive(user.id, db, limit=12) if profile.show_collection else []
     collection_full = await _get_full_collection(user.id, db, limit=200) if profile.show_collection else []
-    new_releases = await _get_new_releases(db, limit=12, user_id=user.id)
+    new_releases = await _get_new_releases(db, limit=24, user_id=user.id)
 
     return PublicProfileResponse(
         username=user.username,
