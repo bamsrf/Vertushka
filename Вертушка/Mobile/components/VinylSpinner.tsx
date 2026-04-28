@@ -198,21 +198,21 @@ export function VinylSpinner({ colorConfig, size = 220, labelName }: VinylSpinne
     transform: [{ rotate: `${rotation.value}deg` }],
   }));
 
-  const podSize = size + 40;
-
   return (
     <View
-      style={[
-        styles.pod,
-        {
-          width: podSize,
-          height: podSize,
-          borderRadius: podSize / 2,
-          shadowColor: primaryColor,
-        },
-      ]}
+      style={{
+        width: size,
+        height: size,
+        borderRadius: size / 2,
+        shadowColor: primaryColor,
+        shadowOffset: { width: 0, height: 0 },
+        shadowOpacity: 0.45,
+        shadowRadius: 28,
+        elevation: 14,
+      }}
     >
-      <Animated.View style={[{ width: size, height: size }, animatedStyle]}>
+      {/* Вращается: диск + бороздки + лейбл */}
+      <Animated.View style={[StyleSheet.absoluteFillObject, animatedStyle]}>
         {/* Основной SVG — диск + бороздки + лейбл */}
         <Svg
           width={size}
@@ -342,64 +342,51 @@ export function VinylSpinner({ colorConfig, size = 220, labelName }: VinylSpinne
           <Circle cx={cx} cy={cy} r={labelInnerR} fill="#000" />
         </Svg>
 
-        {/* Оверлей бликов — отдельный SVG поверх (не вращается вместе с дыркой) */}
-        <Svg
-          width={size}
-          height={size}
-          viewBox={`0 0 ${size} ${size}`}
-          style={{ position: 'absolute' }}
-          pointerEvents="none"
-        >
-          <Defs>
-            <RadialGradient id={`sp1-${uid}`} cx="50%" cy="50%" r="50%">
-              <Stop offset="0%" stopColor="#fff" stopOpacity={specStr} />
-              <Stop offset="55%" stopColor="#fff" stopOpacity={specStr * 0.45} />
-              <Stop offset="100%" stopColor="#fff" stopOpacity={0} />
-            </RadialGradient>
-            <RadialGradient id={`sp2-${uid}`} cx="50%" cy="50%" r="50%">
-              <Stop offset="0%" stopColor="#fff" stopOpacity={specStr * 0.55} />
-              <Stop offset="100%" stopColor="#fff" stopOpacity={0} />
-            </RadialGradient>
-            <ClipPath id={`spc-${uid}`}>
-              <Circle cx={cx} cy={cy} r={edgeR} />
-            </ClipPath>
-          </Defs>
-          <G clipPath={`url(#spc-${uid})`}>
-            {/* Главный блик — верх-лево */}
-            <Ellipse
-              cx={cx - (size / 2) * 0.18}
-              cy={cy - (size / 2) * 0.32}
-              rx={75 * scale}
-              ry={45 * scale}
-              fill={`url(#sp1-${uid})`}
-              rotation={-35}
-              origin={`${cx - (size / 2) * 0.18},${cy - (size / 2) * 0.32}`}
-            />
-            {/* Второй блик — низ-право */}
-            <Ellipse
-              cx={cx + (size / 2) * 0.22}
-              cy={cy + (size / 2) * 0.28}
-              rx={55 * scale}
-              ry={32 * scale}
-              fill={`url(#sp2-${uid})`}
-              rotation={-35}
-              origin={`${cx + (size / 2) * 0.22},${cy + (size / 2) * 0.28}`}
-            />
-          </G>
-        </Svg>
       </Animated.View>
+
+      {/* Статичный блик — НЕ вращается, всегда верх-лево */}
+      <Svg
+        width={size}
+        height={size}
+        viewBox={`0 0 ${size} ${size}`}
+        style={StyleSheet.absoluteFillObject}
+        pointerEvents="none"
+      >
+        <Defs>
+          <RadialGradient id={`sp1-${uid}`} cx="50%" cy="50%" r="50%">
+            <Stop offset="0%" stopColor="#fff" stopOpacity={specStr} />
+            <Stop offset="55%" stopColor="#fff" stopOpacity={specStr * 0.45} />
+            <Stop offset="100%" stopColor="#fff" stopOpacity={0} />
+          </RadialGradient>
+          <RadialGradient id={`sp2-${uid}`} cx="50%" cy="50%" r="50%">
+            <Stop offset="0%" stopColor="#fff" stopOpacity={specStr * 0.55} />
+            <Stop offset="100%" stopColor="#fff" stopOpacity={0} />
+          </RadialGradient>
+          <ClipPath id={`spc-${uid}`}>
+            <Circle cx={cx} cy={cy} r={edgeR} />
+          </ClipPath>
+        </Defs>
+        <G clipPath={`url(#spc-${uid})`}>
+          <Ellipse
+            cx={cx - (size / 2) * 0.18}
+            cy={cy - (size / 2) * 0.32}
+            rx={75 * scale}
+            ry={45 * scale}
+            fill={`url(#sp1-${uid})`}
+            rotation={-35}
+            origin={`${cx - (size / 2) * 0.18},${cy - (size / 2) * 0.32}`}
+          />
+          <Ellipse
+            cx={cx + (size / 2) * 0.22}
+            cy={cy + (size / 2) * 0.28}
+            rx={55 * scale}
+            ry={32 * scale}
+            fill={`url(#sp2-${uid})`}
+            rotation={-35}
+            origin={`${cx + (size / 2) * 0.22},${cy + (size / 2) * 0.28}`}
+          />
+        </G>
+      </Svg>
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  pod: {
-    backgroundColor: '#12133A',
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.35,
-    shadowRadius: 24,
-    elevation: 16,
-  },
-});
