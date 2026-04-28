@@ -37,6 +37,7 @@ import {
   WishlistPublicResponse,
 } from '../../../lib/types';
 import { toast } from '../../../lib/toast';
+import { AutoRail } from '../../../components/AutoRail';
 
 type ProfileTab = 'collection' | 'wishlist';
 type ViewMode = 'grid' | 'list';
@@ -298,123 +299,6 @@ function ReservedBadge() {
       <View style={styles.reservedDot} />
       <Text style={styles.reservedText}>Забронировано</Text>
     </Animated.View>
-  );
-}
-
-/* ---------------- AUTO-SCROLL RAIL ---------------- */
-function AutoRail({
-  title,
-  subtitle,
-  items,
-  showYear,
-  onPick,
-  titleColor,
-}: {
-  title: string;
-  subtitle: string;
-  items: PublicProfileRecord[];
-  showYear?: boolean;
-  onPick?: (r: PublicProfileRecord) => void;
-  titleColor: string;
-}) {
-  const scrollRef = useRef<ScrollView>(null);
-  const scrollX = useRef(new Animated.Value(0)).current;
-  const [contentW, setContentW] = useState(0);
-  const halfWidth = contentW / 2;
-
-  useEffect(() => {
-    if (!halfWidth || !scrollRef.current) return;
-    let raf: number | null = null;
-    const id = scrollX.addListener(({ value }) => {
-      if (value >= halfWidth) {
-        scrollRef.current?.scrollTo({ x: value - halfWidth, animated: false });
-      }
-    });
-    const anim = Animated.loop(
-      Animated.timing(scrollX, {
-        toValue: halfWidth,
-        duration: 30000,
-        easing: Easing.linear,
-        useNativeDriver: false,
-      })
-    );
-    anim.start();
-    const tick = () => {
-      // @ts-ignore
-      const v = scrollX.__getValue?.() ?? 0;
-      scrollRef.current?.scrollTo({ x: v, animated: false });
-      raf = requestAnimationFrame(tick);
-    };
-    raf = requestAnimationFrame(tick);
-    return () => {
-      anim.stop();
-      scrollX.removeListener(id);
-      if (raf != null) cancelAnimationFrame(raf);
-    };
-  }, [halfWidth, scrollX]);
-
-  if (!items.length) return null;
-  // Дублирование для бесконечной прокрутки
-  const doubled = [...items, ...items];
-
-  return (
-    <View>
-      <View style={styles.railHead}>
-        <Text style={[styles.railTitle, { color: titleColor }]}>{title.toUpperCase()}</Text>
-        <Text style={styles.railSub}>{subtitle}</Text>
-      </View>
-      <ScrollView
-        ref={scrollRef}
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        scrollEnabled
-        contentContainerStyle={{ paddingHorizontal: GRID_PADDING, gap: 12 }}
-        onContentSizeChange={(w) => setContentW(w)}
-      >
-        {doubled.map((r, i) => (
-          <TouchableOpacity
-            key={`${r.id}-${i}`}
-            activeOpacity={0.85}
-            onPress={() => onPick?.(r)}
-            style={{ width: RAIL_COVER }}
-          >
-            <View style={styles.railCover}>
-              {r.cover_image_url ? (
-                <Image
-                  source={resolveMediaUrl(r.cover_image_url)}
-                  style={{ width: RAIL_COVER, height: RAIL_COVER }}
-                  cachePolicy="disk"
-                />
-              ) : (
-                <LinearGradient
-                  colors={[PP.lavender, PP.periwinkle]}
-                  style={{ width: RAIL_COVER, height: RAIL_COVER }}
-                />
-              )}
-            </View>
-            <Text
-              numberOfLines={1}
-              style={[
-                styles.railArtist,
-                { color: titleColor === PP.cobalt ? PP.cobalt : PP.mute },
-              ]}
-            >
-              {r.artist}
-            </Text>
-            <Text numberOfLines={1} style={styles.railTitleSmall}>
-              {r.title}
-            </Text>
-            {showYear && r.year ? (
-              <Text style={styles.railYear}>
-                {r.year}
-                {r.format_type ? ` · ${r.format_type}` : ''}
-                {r.discogs_want ? ` · ♥ ${r.discogs_want}` : ''}
-              </Text>
-            ) : null}
-          </TouchableOpacity>
-        ))}
-      </ScrollView>
-    </View>
   );
 }
 

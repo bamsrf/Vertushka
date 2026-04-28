@@ -22,10 +22,12 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { AnimatedGradientText } from '../../components/AnimatedGradientText';
 import { RecordGrid } from '../../components/RecordGrid';
+import { AutoRail } from '../../components/AutoRail';
+import { Section } from '../../components/Section';
 import { useSearchStore, useCollectionStore, useUserSearchStore, useAuthStore, useSuggestStore } from '../../lib/store';
 import { analytics } from '../../lib/analytics';
 import { api, resolveMediaUrl } from '../../lib/api';
-import { MasterSearchResult, ReleaseSearchResult, ArtistSearchResult, UserWithStats } from '../../lib/types';
+import { MasterSearchResult, ReleaseSearchResult, ArtistSearchResult, UserWithStats, PublicProfileRecord } from '../../lib/types';
 import { Colors, Typography, Spacing, BorderRadius, Gradients } from '../../constants/theme';
 import { toast } from '../../lib/toast';
 
@@ -217,6 +219,20 @@ export default function SearchScreen() {
   useEffect(() => {
     loadHistory();
   }, [loadHistory, user?.id]);
+
+  // Новинки (свежие релизы Discogs) для домашнего экрана Поиска
+  const [newReleases, setNewReleases] = useState<PublicProfileRecord[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    api.getNewReleases(12)
+      .then((items) => { if (!cancelled) setNewReleases(items); })
+      .catch(() => { /* silent: блок просто не появится */ });
+    return () => { cancelled = true; };
+  }, []);
+
+  const handleNewReleasePick = useCallback((r: PublicProfileRecord) => {
+    router.push(`/record/${r.id}`);
+  }, [router]);
 
   const handleSearch = useCallback(async () => {
     const trimmed = searchInput.trim();
@@ -465,9 +481,10 @@ export default function SearchScreen() {
     setSelectedDecade(undefined);
   }, []);
 
-  // Показываем историю когда пользователь взаимодействовал с полем, оно пустое и нет результатов
-  // isFocused намеренно не используем — список должен оставаться интерактивным после потери фокуса
-  const shouldShowHistory = showHistory && searchInput === '' && results.length === 0 && artistResults.length === 0 && searchHistory.length > 0;
+  // Домашний экран Поиска: ввод пустой, результатов нет — рендерим секции (история + новинки)
+  const isHomeView = searchInput === '' && results.length === 0 && artistResults.length === 0;
+  // История появляется только после взаимодействия с полем (showHistory выставляется в onFocus)
+  const shouldShowHistory = isHomeView && showHistory && searchHistory.length > 0;
 
   const dedupedArtists = artistResults.reduce<ArtistSearchResult[]>((acc, artist) => {
     const baseName = artist.name.replace(/\s*\(\d+\)$/, '').toLowerCase().trim();
@@ -486,33 +503,55 @@ export default function SearchScreen() {
 
   const visibleArtists = showAllArtists ? dedupedArtists : dedupedArtists.slice(0, 3);
 
-  const SearchHistory = shouldShowHistory ? (
-    <View style={styles.historyContainer}>
-      <View style={styles.historyHeader}>
-        <Text style={styles.historyTitle}>Вы искали ранее</Text>
-        <TouchableOpacity onPress={handleClearHistory}>
-          <Text style={styles.clearHistoryButton}>Очистить</Text>
-        </TouchableOpacity>
-      </View>
-      {searchHistory.map((item, index) => (
-        <View key={`${item}-${index}`} style={styles.historyItem}>
-          <TouchableOpacity
-            style={styles.historyItemButton}
-            onPress={() => handleHistoryItemPress(item)}
-            activeOpacity={0.7}
-          >
-            <Ionicons name="time-outline" size={18} color={Colors.periwinkle} />
-            <Text style={styles.historyItemText}>{item}</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            onPress={() => handleRemoveHistoryItem(item)}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-            activeOpacity={0.7}
-          >
-            <Ionicons name="close" size={18} color={Colors.textMuted} />
-          </TouchableOpacity>
-        </View>
-      ))}
+  const HomeSections = isHomeView ? (
+    <View style={{ marginTop: 16 }}>
+      {shouldShowHistory && (
+        <Section
+          id="search-history"
+          title="Вы искали ранее"
+          collapsible
+          rightAction={
+            <TouchableOpacity onPress={handleClearHistory}>
+              <Text style={styles.clearHistoryButton}>Очистить</Text>
+            </TouchableOpacity>
+          }
+        >
+          <View style={styles.historyContainer}>
+            {searchHistory.map((item, index) => (
+              <View key={`${item}-${index}`} style={styles.historyItem}>
+                <TouchableOpacity
+                  style={styles.historyItemButton}
+                  onPress={() => handleHistoryItemPress(item)}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="time-outline" size={18} color={Colors.periwinkle} />
+                  <Text style={styles.historyItemText}>{item}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => handleRemoveHistoryItem(item)}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="close" size={18} color={Colors.textMuted} />
+                </TouchableOpacity>
+              </View>
+            ))}
+          </View>
+        </Section>
+      )}
+
+      {newReleases.length > 0 && (
+        <Section id="search-new-releases">
+          <AutoRail
+            title="Новинки"
+            subtitle="Свежие релизы · Discogs"
+            titleColor={Colors.royalBlue}
+            items={newReleases}
+            showYear
+            onPick={handleNewReleasePick}
+          />
+        </Section>
+      )}
     </View>
   ) : null;
 
@@ -747,7 +786,7 @@ export default function SearchScreen() {
         </View>
       )}
 
-      {SearchHistory}
+      {HomeSections}
     </View>
   );
 

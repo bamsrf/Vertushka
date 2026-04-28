@@ -1007,6 +1007,31 @@ export const useSuggestStore = create<SuggestState>((set, get) => ({
   clear: () => set({ suggestions: null, query: '' }),
 }));
 
+// ==================== Sections Store (collapse state) ====================
+
+interface SectionsState {
+  collapsedSections: Record<string, boolean>;
+  toggleSection: (id: string) => void;
+  initSection: (id: string, collapsed: boolean) => void;
+}
+
+export const useSectionsStore = create<SectionsState>((set, get) => ({
+  collapsedSections: {},
+  toggleSection: (id) =>
+    set((state) => ({
+      collapsedSections: {
+        ...state.collapsedSections,
+        [id]: !state.collapsedSections[id],
+      },
+    })),
+  initSection: (id, collapsed) => {
+    if (id in get().collapsedSections) return;
+    set((state) => ({
+      collapsedSections: { ...state.collapsedSections, [id]: collapsed },
+    }));
+  },
+}));
+
 export const useFollowStore = create<FollowState>((set, get) => ({
   following: [],
   followers: [],

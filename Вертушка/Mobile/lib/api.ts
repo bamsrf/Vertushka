@@ -26,6 +26,7 @@ import {
   Artist,
   ProfileShareSettings,
   PublicProfile,
+  PublicProfileRecord,
   UserWithStats,
   UserPublic,
   WishlistPublicResponse,
@@ -614,6 +615,14 @@ class ApiClient {
 
   async getPublicProfile(username: string): Promise<PublicProfile> {
     const response = await this.client.get<PublicProfile>(`/profile/public/${username}`);
+    return response.data;
+  }
+
+  async getNewReleases(limit = 12): Promise<PublicProfileRecord[]> {
+    const response = await this.client.get<PublicProfileRecord[]>(
+      `/profile/public/new-releases`,
+      { params: { limit } }
+    );
     return response.data;
   }
 
