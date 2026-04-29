@@ -21,7 +21,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 
-export type RarityTier = 'first_press' | 'limited' | 'hot';
+export type RarityTier = 'first_press' | 'canon' | 'limited' | 'hot';
 export type RarityContext =
   | 'collection'
   | 'wishlist'
@@ -31,6 +31,7 @@ export type RarityContext =
 
 export interface RarityFlags {
   is_first_press?: boolean | null;
+  is_canon?: boolean | null;
   is_limited?: boolean | null;
   is_hot?: boolean | null;
 }
@@ -53,7 +54,7 @@ export const RARITY_TIERS: Record<RarityTier, TierTokens> = {
   first_press: {
     id: 'first_press',
     label: '1-й пресс',
-    longLabel: 'Канонический первый пресс мастер-релиза',
+    longLabel: 'Оригинальный первый пресс — канон + год оригинала',
     palette: ['#F4D27A', '#B8860B', '#6B4423'],
     auraOuter: 'rgba(184, 134, 11, 0.55)',
     auraInner: 'rgba(244, 210, 122, 0.85)',
@@ -62,6 +63,19 @@ export const RARITY_TIERS: Record<RarityTier, TierTokens> = {
     iconGlow: 'rgba(244, 210, 122, 0.9)',
     textColor: '#8A6314',
     mood: 'shimmer · 8s',
+  },
+  canon: {
+    id: 'canon',
+    label: 'Канон',
+    longLabel: 'Каноническое издание мастер-релиза по версии Discogs',
+    palette: ['#8B95A8', '#5A6B7D', '#2E3844'],
+    auraOuter: 'rgba(90, 107, 125, 0.5)',
+    auraInner: 'rgba(139, 149, 168, 0.75)',
+    edge: ['#8B95A8', '#5A6B7D', '#2E3844'],
+    iconColor: '#6B7C8E',
+    iconGlow: 'rgba(107, 124, 142, 0.85)',
+    textColor: '#3F4E5E',
+    mood: 'border glow · 5s',
   },
   limited: {
     id: 'limited',
@@ -93,8 +107,12 @@ export const RARITY_TIERS: Record<RarityTier, TierTokens> = {
 
 /**
  * Pick the single most important tier for a card given context.
- * `collection` hides `hot` (cult/demand is irrelevant when you already own it).
- * Priority: first_press → limited → hot.
+ * `collection` hides `hot` (demand is irrelevant when you already own it).
+ * Priority: first_press → canon → limited → hot.
+ *
+ * Note: a release flagged is_first_press is also is_canon by definition (strict
+ * first_press requires canonical main_release). We don't double-mark; first_press
+ * wins. Canon is shown standalone for canonical releases that aren't strict 1st presses.
  */
 export function pickRarityTier(
   flags: RarityFlags | null | undefined,
@@ -102,16 +120,21 @@ export function pickRarityTier(
 ): RarityTier | null {
   if (!flags) return null;
   if (flags.is_first_press) return 'first_press';
+  if (flags.is_canon) return 'canon';
   if (flags.is_limited) return 'limited';
   if (flags.is_hot && context !== 'collection') return 'hot';
   return null;
 }
 
-/** Return all applicable tiers (used on the detail screen, no context filtering). */
+/**
+ * Return all applicable tiers (used on the detail screen, no context filtering).
+ * Skips `canon` if `first_press` is set (avoids duplicate signal).
+ */
 export function allRarityTiers(flags: RarityFlags | null | undefined): RarityTier[] {
   if (!flags) return [];
   const tiers: RarityTier[] = [];
   if (flags.is_first_press) tiers.push('first_press');
+  else if (flags.is_canon) tiers.push('canon');
   if (flags.is_limited) tiers.push('limited');
   if (flags.is_hot) tiers.push('hot');
   return tiers;
@@ -402,6 +425,74 @@ function HeatHaze({ radius = 0 }: { radius?: number }) {
   );
 }
 
+/**
+ * Canon: thin double-layered border that pulses on a 5s cycle. RN не
+ * поддерживает CSS inset box-shadow напрямую — эмулируем двумя слоями:
+ * внутренний border (animated) + внешний glow shadow.
+ * Without rotation or sweep — strict, "editorial pick" feeling.
+ */
+function CanonBorderGlow({ radius = 16 }: { radius?: number }) {
+  const tokens = RARITY_TIERS.canon;
+  const t = useSharedValue(0);
+
+  useEffect(() => {
+    t.value = withRepeat(
+      withSequence(
+        withTiming(1, { duration: 2500, easing: Easing.inOut(Easing.ease) }),
+        withTiming(0, { duration: 2500, easing: Easing.inOut(Easing.ease) }),
+      ),
+      -1,
+      false,
+    );
+  }, [t]);
+
+  // Inset border: animated borderWidth and borderColor opacity
+  const innerStyle = useAnimatedStyle(() => {
+    const width = 1.5 + 0.5 * t.value;
+    const alpha = 0.5 + 0.35 * t.value;
+    return {
+      borderWidth: width,
+      borderColor: `rgba(139,149,168,${alpha})`,
+    };
+  });
+
+  // Outer glow: animated shadowRadius + opacity
+  const outerStyle = useAnimatedStyle(() => {
+    const radiusGlow = 16 + 12 * t.value;
+    const opacity = 0.35 + 0.35 * t.value;
+    return {
+      shadowRadius: radiusGlow,
+      shadowOpacity: opacity,
+    };
+  });
+
+  return (
+    <>
+      <Animated.View
+        pointerEvents="none"
+        style={[
+          styles.canonOuterGlow,
+          {
+            borderRadius: radius,
+            shadowColor: tokens.palette[0],
+            shadowOffset: { width: 0, height: 0 },
+            elevation: 8,
+          },
+          outerStyle,
+        ]}
+      />
+      <Animated.View
+        pointerEvents="none"
+        style={[
+          styles.canonInnerBorder,
+          { borderRadius: radius },
+          innerStyle,
+        ]}
+      />
+    </>
+  );
+}
+
 // ─── Public components ───────────────────────────────────────
 
 interface RarityAuraProps {
@@ -431,6 +522,7 @@ export function RarityAura({
     <View style={[{ position: 'relative', borderRadius: radius }, style]}>
       {tier === 'first_press' && <ShimmerAura tier={tier} radius={radius} />}
       {(tier === 'limited' || tier === 'hot') && <PulseAura tier={tier} radius={radius} />}
+      {tier === 'canon' && <CanonBorderGlow radius={radius} />}
       {children}
       {leftEdge && (
         <View
@@ -560,6 +652,22 @@ const styles = StyleSheet.create({
     left: -4,
     right: -4,
     bottom: -4,
+  },
+
+  // Canon: editorial double border
+  canonOuterGlow: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+  },
+  canonInnerBorder: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
   },
 
   // Cover-internal effects

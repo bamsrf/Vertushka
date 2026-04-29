@@ -62,6 +62,7 @@ class PublicProfileRecord(BaseModel):
     discogs_want: int | None = None
     discogs_have: int | None = None
     is_first_press: bool = False
+    is_canon: bool = False
     is_limited: bool = False
     is_hot: bool = False
 

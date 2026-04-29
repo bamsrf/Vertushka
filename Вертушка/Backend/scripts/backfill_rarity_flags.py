@@ -58,6 +58,7 @@ async def _refresh_one(discogs: DiscogsService, record: Record) -> dict | None:
         data = await discogs.get_release(record.discogs_id)
         return {
             "is_first_press": bool(data.get("is_first_press")),
+            "is_canon": bool(data.get("is_canon")),
             "is_limited": bool(data.get("is_limited")),
             "is_hot": bool(data.get("is_hot")),
         }
@@ -90,7 +91,7 @@ async def run(batch_size: int, delay: float, dry_run: bool, limit: int | None) -
 
     processed = 0
     failed = 0
-    counts = {"first_press": 0, "limited": 0, "hot": 0}
+    counts = {"first_press": 0, "canon": 0, "limited": 0, "hot": 0}
 
     offset = 0
     while True:
@@ -121,6 +122,7 @@ async def run(batch_size: int, delay: float, dry_run: bool, limit: int | None) -
                     continue
 
                 record.is_first_press = flags["is_first_press"]
+                record.is_canon = flags["is_canon"]
                 record.is_limited = flags["is_limited"]
                 record.is_hot = flags["is_hot"]
 
@@ -128,6 +130,9 @@ async def run(batch_size: int, delay: float, dry_run: bool, limit: int | None) -
                 if flags["is_first_press"]:
                     tags.append("1ST")
                     counts["first_press"] += 1
+                if flags["is_canon"]:
+                    tags.append("CAN")
+                    counts["canon"] += 1
                 if flags["is_limited"]:
                     tags.append("LIM")
                     counts["limited"] += 1
@@ -148,8 +153,8 @@ async def run(batch_size: int, delay: float, dry_run: bool, limit: int | None) -
 
             await db.commit()
             logger.info(
-                "Батч сохранён. Итого: %d processed · %d 1st · %d lim · %d hot · %d failed",
-                processed, counts["first_press"], counts["limited"], counts["hot"], failed,
+                "Батч сохранён. %d processed · %d 1st · %d canon · %d lim · %d hot · %d failed",
+                processed, counts["first_press"], counts["canon"], counts["limited"], counts["hot"], failed,
             )
 
             if limit and processed >= limit:
@@ -158,8 +163,8 @@ async def run(batch_size: int, delay: float, dry_run: bool, limit: int | None) -
             offset += batch_size
 
     logger.info(
-        "Готово. Всего: %d | 1-й пресс: %d | Лимитка: %d | Популярно: %d | Ошибок: %d",
-        processed, counts["first_press"], counts["limited"], counts["hot"], failed,
+        "Готово. Всего: %d | 1-й пресс: %d | Канон: %d | Лимитка: %d | Популярно: %d | Ошибок: %d",
+        processed, counts["first_press"], counts["canon"], counts["limited"], counts["hot"], failed,
     )
     discogs_limiter.stop()
     await close_db()
