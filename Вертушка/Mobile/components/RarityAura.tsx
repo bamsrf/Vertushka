@@ -564,5 +564,3 @@ const styles = StyleSheet.create({
 });
 
 export type { TierTokens };
-</content>
-</invoke>
