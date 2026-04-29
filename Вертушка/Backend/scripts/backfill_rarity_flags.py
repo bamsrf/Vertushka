@@ -32,6 +32,7 @@ from app.database import async_session_maker, init_db, close_db
 from app.models.record import Record
 from app.services.discogs import DiscogsService
 from app.services.cache import cache
+from app.services.rate_limiter import discogs_limiter
 
 logging.basicConfig(
     level=logging.INFO,
@@ -83,6 +84,8 @@ async def run(batch_size: int, delay: float, dry_run: bool, limit: int | None) -
         await close_db()
         return
 
+    # Лимитер обычно стартует в FastAPI lifespan — в скрипте надо стартануть руками
+    discogs_limiter.start()
     discogs = DiscogsService()
 
     processed = 0
@@ -158,6 +161,7 @@ async def run(batch_size: int, delay: float, dry_run: bool, limit: int | None) -
         "Готово. Всего: %d | 1-й пресс: %d | Лимитка: %d | Популярно: %d | Ошибок: %d",
         processed, counts["first_press"], counts["limited"], counts["hot"], failed,
     )
+    discogs_limiter.stop()
     await close_db()
 
 
