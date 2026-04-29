@@ -339,6 +339,15 @@ class DiscogsService:
         "white label",
     )
 
+    # Токены, по которым релиз явно помечен как оригинальный пресс
+    # (используем как fallback для is_first_press, когда год не совпадает с master.year)
+    FIRST_PRESS_TOKENS = (
+        "first pressing",
+        "first press",
+        "original pressing",
+        "original press",
+    )
+
     @classmethod
     def _compute_rarity_flags(
         cls,
@@ -379,7 +388,23 @@ class DiscogsService:
                 master_versions_count is None  # unknown — don't gate on this
                 or master_versions_count >= 2
             )
-            if year_matches and has_multiple_versions:
+            # Fallback: если год не совпал, но релиз ЯВНО помечен как первопресс
+            # в notes или formats[].descriptions
+            notes_lower = (release_data.get("notes") or "").lower()
+            notes_say_first = any(tok in notes_lower for tok in cls.FIRST_PRESS_TOKENS)
+            formats_say_first = False
+            for fmt in release_data.get("formats") or []:
+                for desc in fmt.get("descriptions") or []:
+                    if not desc:
+                        continue
+                    lower = desc.lower()
+                    if any(tok in lower for tok in cls.FIRST_PRESS_TOKENS) or "original" in lower:
+                        formats_say_first = True
+                        break
+                if formats_say_first:
+                    break
+
+            if has_multiple_versions and (year_matches or notes_say_first or formats_say_first):
                 is_first_press = True
 
         # is_limited: any structural marker in formats[].descriptions
