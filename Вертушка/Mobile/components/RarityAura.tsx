@@ -54,7 +54,7 @@ export const RARITY_TIERS: Record<RarityTier, TierTokens> = {
   first_press: {
     id: 'first_press',
     label: '1-й пресс',
-    longLabel: 'Оригинальный первый пресс — канон + год оригинала',
+    longLabel: 'Оригинальный первый пресс — год совпадает с релизом мастера',
     palette: ['#F4D27A', '#B8860B', '#6B4423'],
     auraOuter: 'rgba(184, 134, 11, 0.55)',
     auraInner: 'rgba(244, 210, 122, 0.85)',
@@ -110,9 +110,11 @@ export const RARITY_TIERS: Record<RarityTier, TierTokens> = {
  * `collection` hides `hot` (demand is irrelevant when you already own it).
  * Priority: first_press → canon → limited → hot.
  *
- * Note: a release flagged is_first_press is also is_canon by definition (strict
- * first_press requires canonical main_release). We don't double-mark; first_press
- * wins. Canon is shown standalone for canonical releases that aren't strict 1st presses.
+ * is_first_press and is_canon are INDEPENDENT signals on the backend:
+ * for the same master, a 1994 release may be first_press (year matches),
+ * while a 2014 reissue is canon (Discogs main_release). They can also coincide
+ * on a single release (e.g. BBNG III 2014 US is both year-matched and canon).
+ * For a card we still show only one badge — first_press wins as it's stronger.
  */
 export function pickRarityTier(
   flags: RarityFlags | null | undefined,
@@ -128,7 +130,9 @@ export function pickRarityTier(
 
 /**
  * Return all applicable tiers (used on the detail screen, no context filtering).
- * Skips `canon` if `first_press` is set (avoids duplicate signal).
+ * Suppresses `canon` when `first_press` is also set on the SAME release — the
+ * stronger first_press signal already implies "this is a meaningful release",
+ * showing canon alongside would be visually redundant.
  */
 export function allRarityTiers(flags: RarityFlags | null | undefined): RarityTier[] {
   if (!flags) return [];

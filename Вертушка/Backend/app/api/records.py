@@ -629,15 +629,18 @@ async def get_master_versions(
         has_multiple = versions_count is None or versions_count >= 2
 
         for v in versions.results:
+            # canon — только тот, что Discogs пометил main_release
             if main_release_id and v.release_id == main_release_id:
                 v.is_canon = True
-                if (
-                    has_multiple
-                    and v.year is not None
-                    and master_year is not None
-                    and int(v.year) == int(master_year)
-                ):
-                    v.is_first_press = True
+            # first_press — независимо от canon: год совпадает с master.year
+            # и у мастера ≥2 версии (для будущих единственных не помечаем)
+            if (
+                has_multiple
+                and v.year is not None
+                and master_year is not None
+                and int(v.year) == int(master_year)
+            ):
+                v.is_first_press = True
             fmt_lower = (v.format or "").lower()
             if any(tok in fmt_lower for tok in DiscogsService.LIMITED_TOKENS):
                 v.is_limited = True

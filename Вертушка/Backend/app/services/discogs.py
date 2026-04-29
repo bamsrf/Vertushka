@@ -359,13 +359,16 @@ class DiscogsService:
 
         See Mobile/components/RarityAura.tsx.
 
-        Two related tiers:
+        Independent semantics:
         - is_canon: release is the master.main_release (community-edited canonical
           version per Discogs editors). May not be the chronologically first press.
-        - is_first_press: strict — canon AND release.year == master.year AND the
-          master has multiple versions. Excludes:
-            * single-version masters (future releases without alternates)
-            * canonical-but-not-original (re-issues that became "default")
+        - is_first_press: this release matches the original year of the master
+          (release.year == master.year) AND the master has multiple versions,
+          OR the release is explicitly marked as first/original in notes/formats.
+
+        Critically these are now INDEPENDENT — for the same master, the canon may
+        be a 2014 reissue (with main_release pointing to it), while a 1994 release
+        of the same master gets is_first_press because it matches master.year.
         """
         release_id = str(release_data.get("id") or "")
         is_canon = bool(
@@ -376,7 +379,7 @@ class DiscogsService:
         )
 
         is_first_press = False
-        if is_canon and master_data is not None:
+        if master_data is not None:
             release_year = release_data.get("year")
             master_year = master_data.year
             year_matches = (
@@ -388,8 +391,7 @@ class DiscogsService:
                 master_versions_count is None  # unknown — don't gate on this
                 or master_versions_count >= 2
             )
-            # Fallback: если год не совпал, но релиз ЯВНО помечен как первопресс
-            # в notes или formats[].descriptions
+            # Fallback: релиз явно помечен как оригинальный пресс
             notes_lower = (release_data.get("notes") or "").lower()
             notes_say_first = any(tok in notes_lower for tok in cls.FIRST_PRESS_TOKENS)
             formats_say_first = False
