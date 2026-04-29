@@ -877,6 +877,7 @@ const styles = StyleSheet.create({
     ...Typography.caption,
     color: Colors.textMuted,
     textAlign: 'center',
-    marginTop: Spacing.sm,
+    marginTop: Spacing.md,
+    paddingHorizontal: Spacing.lg,
   },
 });
