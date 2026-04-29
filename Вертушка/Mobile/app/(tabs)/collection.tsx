@@ -662,6 +662,7 @@ export default function CollectionScreen() {
         data={data}
         cardVariant={viewMode === 'list' ? 'list' : 'expanded'}
         numColumns={viewMode === 'list' ? 1 : 2}
+        rarityContext={activeTab === 'wishlist' ? 'wishlist' : 'collection'}
         onRecordPress={isSelectionMode ? undefined : handleRecordPress}
         onArtistPress={isSelectionMode ? undefined : handleArtistPress}
         onRemove={

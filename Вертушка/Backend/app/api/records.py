@@ -15,6 +15,7 @@ from app.models.user import User
 from app.models.record import Record
 from app.api.auth import get_current_user, get_current_user_optional
 from app.services.exchange import get_usd_rub_rate
+from app.services.pricing import PricingParams, estimate_rub, effective_markup
 from app.config import get_settings
 from app.schemas.record import (
     RecordCreate,
@@ -36,29 +37,45 @@ from app.services.openai_vision import OpenAIVisionService, CoverRecognitionErro
 router = APIRouter()
 
 
-_LOCAL_COUNTRIES = {'Russia', 'USSR', 'Россия', 'СССР'}
-
-
-async def _enrich_response_with_rub(response: RecordResponse) -> RecordResponse:
-    """Добавляет рублёвые цены в ответ на основе USD-цен из Discogs.
-    Для РФ/СССР-изданий наценка импорта не применяется.
-    """
+async def _enrich_response_with_rub(
+    response: RecordResponse,
+    record: Record | None = None,
+) -> RecordResponse:
+    """Добавляет рублёвые цены в ответ через компонентную формулу из pricing.py."""
     base_price = response.estimated_price_median or response.estimated_price_min
     if not base_price:
         return response
     try:
         rate = await get_usd_rub_rate()
-        markup = get_settings().ru_vinyl_markup
-        is_local = response.country and response.country in _LOCAL_COUNTRIES
-        effective_markup = 1.0 if is_local else markup
+        params = PricingParams.from_settings(get_settings())
+        discogs_data = record.discogs_data if record else None
+
+        def _calc(price) -> float | None:
+            if price is None:
+                return None
+            return estimate_rub(
+                float(price),
+                response.country,
+                rate,
+                params,
+                format_type=response.format_type,
+                format_description=response.format_description,
+                discogs_data=discogs_data,
+            )
+
         response.usd_rub_rate = rate
-        response.ru_markup = effective_markup
-        if response.estimated_price_min:
-            response.estimated_price_min_rub = round(float(response.estimated_price_min) * rate * effective_markup, 0)
-        if response.estimated_price_median:
-            response.estimated_price_median_rub = round(float(response.estimated_price_median) * rate * effective_markup, 0)
-        if response.estimated_price_max:
-            response.estimated_price_max_rub = round(float(response.estimated_price_max) * rate * effective_markup, 0)
+        response.ru_markup = effective_markup(
+            float(base_price),
+            response.country,
+            rate,
+            params,
+            format_type=response.format_type,
+            format_description=response.format_description,
+            discogs_data=discogs_data,
+        )
+        response.estimated_price_min_rub = _calc(response.estimated_price_min)
+        response.estimated_price_median_rub = _calc(response.estimated_price_median)
+        response.estimated_price_max_rub = _calc(response.estimated_price_max)
     except Exception:
         logger.exception("Failed to enrich response with RUB prices")
     return response
@@ -175,10 +192,13 @@ async def get_or_create_record_by_discogs_id(
             estimated_price_min=record_data.get("price_min"),
             estimated_price_max=record_data.get("price_max"),
             estimated_price_median=record_data.get("price_median"),
+            is_first_press=bool(record_data.get("is_first_press")),
+            is_limited=bool(record_data.get("is_limited")),
+            is_hot=bool(record_data.get("is_hot")),
             discogs_data=record_data,
             tracklist=record_data.get("tracklist"),
         )
-        
+
         db.add(record)
         await db.commit()
         await db.refresh(record)
@@ -376,7 +396,7 @@ async def get_record(
     response.artist_id = discogs_data.get("artist_id")
     response.artist_thumb_image_url = discogs_data.get("artist_thumb_image_url")
     response.vinyl_color_raw = discogs_data.get("vinyl_color_raw")
-    return await _enrich_response_with_rub(response)
+    return await _enrich_response_with_rub(response, record)
 
 
 @router.get("/discogs/{discogs_id}", response_model=RecordResponse)
@@ -407,7 +427,7 @@ async def get_record_by_discogs_id(
         response.artist_id = discogs_data.get("artist_id")
         response.artist_thumb_image_url = discogs_data.get("artist_thumb_image_url")
         response.vinyl_color_raw = discogs_data.get("vinyl_color_raw")
-        return await _enrich_response_with_rub(response)
+        return await _enrich_response_with_rub(response, record)
 
     # Запрос в Discogs
     discogs = DiscogsService()
@@ -434,6 +454,9 @@ async def get_record_by_discogs_id(
             estimated_price_min=record_data.get("price_min"),
             estimated_price_max=record_data.get("price_max"),
             estimated_price_median=record_data.get("price_median"),
+            is_first_press=bool(record_data.get("is_first_press")),
+            is_limited=bool(record_data.get("is_limited")),
+            is_hot=bool(record_data.get("is_hot")),
             discogs_data=record_data,
             tracklist=record_data.get("tracklist"),
         )
@@ -446,7 +469,7 @@ async def get_record_by_discogs_id(
         response.artist_id = record_data.get("artist_id")
         response.artist_thumb_image_url = record_data.get("artist_thumb_image_url")
         response.vinyl_color_raw = record_data.get("vinyl_color_raw")
-        return await _enrich_response_with_rub(response)
+        return await _enrich_response_with_rub(response, record)
 
     except Exception as e:
         raise HTTPException(

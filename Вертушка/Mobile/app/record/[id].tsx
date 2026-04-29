@@ -29,6 +29,7 @@ import { Colors, Typography, Spacing, BorderRadius, Gradients } from '../../cons
 import { VinylColorTag } from '../../components/VinylColorTag';
 import { VinylSpinner } from '../../components/VinylSpinner';
 import { parseVinylColor } from '../../lib/vinylColor';
+import { TierFeatureBlock, allRarityTiers } from '../../components/RarityAura';
 
 function getFormatDisplayInfo(format?: string): { label: string; verb: string } {
   if (!format) return { label: 'Винил', verb: 'добавлен' };
@@ -490,6 +491,22 @@ export default function RecordDetailScreen() {
           </Card>
         )}
 
+        {/* Особенности (rarity) */}
+        {(() => {
+          const tiers = allRarityTiers(record);
+          if (tiers.length === 0) return null;
+          return (
+            <View style={styles.featuresSection}>
+              <Text style={styles.featuresTitle}>Особенности</Text>
+              <View style={styles.featuresList}>
+                {tiers.map((tier) => (
+                  <TierFeatureBlock key={tier} tier={tier} />
+                ))}
+              </View>
+            </View>
+          );
+        })()}
+
         {/* Цена */}
         {(() => {
           const rubPrice = record.estimated_price_median_rub || record.estimated_price_min_rub;
@@ -531,7 +548,7 @@ export default function RecordDetailScreen() {
                 <Text style={styles.priceNote}>
                   Discogs: ${Number(usdPrice).toFixed(2)}
                   {record.usd_rub_rate ? ` · курс ${Number(record.usd_rub_rate).toFixed(1)} ₽` : ''}
-                  {record.ru_markup ? ` · × ${record.ru_markup}` : ''}
+                  {record.ru_markup ? ` · × ${Number(record.ru_markup).toFixed(2)}` : ''}
                 </Text>
               ) : null}
             </Card>
@@ -879,5 +896,18 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: Spacing.md,
     paddingHorizontal: Spacing.lg,
+  },
+  featuresSection: {
+    marginHorizontal: Spacing.md,
+    marginBottom: Spacing.md,
+  },
+  featuresTitle: {
+    ...Typography.h4,
+    color: Colors.text,
+    marginBottom: Spacing.sm,
+    paddingHorizontal: 4,
+  },
+  featuresList: {
+    gap: Spacing.sm,
   },
 });

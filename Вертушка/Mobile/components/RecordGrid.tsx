@@ -14,6 +14,7 @@ import Animated, { FadeInUp } from 'react-native-reanimated';
 import { RecordCard } from './RecordCard';
 import { RecordSearchResult, VinylRecord, CollectionItem, WishlistItem, MasterSearchResult, ReleaseSearchResult } from '../lib/types';
 import { Colors, Typography, Spacing } from '../constants/theme';
+import { RarityContext } from './RarityAura';
 
 type RecordItem = RecordSearchResult | VinylRecord | CollectionItem | WishlistItem | MasterSearchResult | ReleaseSearchResult;
 
@@ -37,6 +38,8 @@ interface RecordGridProps<T extends RecordItem = RecordItem> {
   onLongPressItem?: (itemId: string) => void;
   cardVariant?: 'compact' | 'expanded' | 'list';
   numColumns?: number;
+  /** Drives rarity tier selection — `collection` hides "Популярно". */
+  rarityContext?: RarityContext;
 }
 
 function RecordGridComponent<T extends RecordItem = RecordItem>({
@@ -59,6 +62,7 @@ function RecordGridComponent<T extends RecordItem = RecordItem>({
   onLongPressItem,
   cardVariant = 'expanded',
   numColumns = 2,
+  rarityContext = 'search',
 }: RecordGridProps<T>) {
   // Извлекаем запись из разных типов
   const getRecord = (item: RecordItem): RecordSearchResult | VinylRecord | MasterSearchResult | ReleaseSearchResult => {
@@ -102,6 +106,7 @@ function RecordGridComponent<T extends RecordItem = RecordItem>({
               : undefined
           }
           isBooked={isBooked}
+          rarityContext={rarityContext}
         />
       </Animated.View>
     );

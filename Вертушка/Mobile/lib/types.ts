@@ -67,6 +67,10 @@ export interface VinylRecord {
   artist_id?: string;
   artist_thumb_image_url?: string;
   tracklist?: Track[];
+  // Rarity flags — see Mobile/components/RarityAura.tsx
+  is_first_press?: boolean;
+  is_limited?: boolean;
+  is_hot?: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -374,6 +378,9 @@ export interface PublicProfileRecord {
   discogs_master_id?: string | null;
   discogs_want?: number | null;
   discogs_have?: number | null;
+  is_first_press?: boolean;
+  is_limited?: boolean;
+  is_hot?: boolean;
 }
 
 export interface PublicProfile {

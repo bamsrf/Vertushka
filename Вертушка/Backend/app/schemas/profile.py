@@ -61,6 +61,9 @@ class PublicProfileRecord(BaseModel):
     discogs_master_id: str | None = None
     discogs_want: int | None = None
     discogs_have: int | None = None
+    is_first_press: bool = False
+    is_limited: bool = False
+    is_hot: bool = False
 
 
 class PublicProfileResponse(BaseModel):

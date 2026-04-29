@@ -323,6 +323,68 @@ class DiscogsService:
     # Релизы (кэшируются на 7 дней)
     # ------------------------------------------------------------------
 
+    # Пороги для is_hot — настраиваются здесь, не требуют миграции
+    HOT_WANT_HAVE_RATIO = 1.5
+    HOT_MIN_HAVE = 100
+
+    # Токены, по которым формат считается «лимиткой» (case-insensitive substring match
+    # against каждого элемента formats[].descriptions из Discogs)
+    LIMITED_TOKENS = (
+        "test pressing",
+        "promo",
+        "promotional",
+        "limited edition",
+        "numbered",
+        "ltd. ed.",
+        "white label",
+    )
+
+    @classmethod
+    def _compute_rarity_flags(
+        cls,
+        release_data: dict[str, Any],
+        master_data: "MasterRelease | None",
+    ) -> dict[str, bool]:
+        """Compute three rarity flags from raw Discogs payloads.
+
+        See Mobile/components/RarityAura.tsx and plans/RARITY_BADGES_PLAN.md.
+        """
+        # is_first_press: master canonicalises one release as the original
+        is_first_press = False
+        if master_data is not None and master_data.main_release_id:
+            release_id = str(release_data.get("id") or "")
+            if release_id and release_id == str(master_data.main_release_id):
+                is_first_press = True
+
+        # is_limited: any structural marker in formats[].descriptions
+        is_limited = False
+        for fmt in release_data.get("formats") or []:
+            for desc in fmt.get("descriptions") or []:
+                if not desc:
+                    continue
+                lower = desc.lower()
+                if any(tok in lower for tok in cls.LIMITED_TOKENS):
+                    is_limited = True
+                    break
+            if is_limited:
+                break
+
+        # is_hot: high want/have ratio with non-trivial owner base
+        is_hot = False
+        community = release_data.get("community") or {}
+        want = community.get("want") or 0
+        have = community.get("have") or 0
+        if have >= cls.HOT_MIN_HAVE and have > 0:
+            ratio = want / have
+            if ratio >= cls.HOT_WANT_HAVE_RATIO:
+                is_hot = True
+
+        return {
+            "is_first_press": is_first_press,
+            "is_limited": is_limited,
+            "is_hot": is_hot,
+        }
+
     async def get_release(self, release_id: str) -> dict[str, Any]:
         """Получение детальной информации о релизе. Кэшируется в Redis."""
         cached = await cache.get("release", release_id)
@@ -400,6 +462,20 @@ class DiscogsService:
         except Exception:
             logger.exception("Failed to get price stats for release %s", release_id)
 
+        # Признаки редкости — нужен мастер для is_first_press;
+        # сам get_master кэшируется на TTL_MASTER, повторный запрос дёшев.
+        master_data = None
+        master_id_raw = data.get("master_id")
+        if master_id_raw:
+            try:
+                master_data = await self.get_master(str(master_id_raw))
+            except Exception:
+                logger.exception(
+                    "Failed to fetch master %s for rarity flags (release %s)",
+                    master_id_raw, release_id,
+                )
+        rarity_flags = self._compute_rarity_flags(data, master_data)
+
         result = {
             "id": str(data.get("id")),
             "master_id": str(data.get("master_id")) if data.get("master_id") else None,
@@ -425,6 +501,7 @@ class DiscogsService:
             "price_median": price_median,
             "notes": data.get("notes"),
             "data_quality": data.get("data_quality"),
+            **rarity_flags,
         }
         await cache.set("release", release_id, result, TTL_RELEASE)
         return result

@@ -71,6 +71,9 @@ class RecordResponse(BaseModel):
     artist_id: str | None = None
     artist_thumb_image_url: str | None = None
     tracklist: list | None
+    is_first_press: bool = False
+    is_limited: bool = False
+    is_hot: bool = False
     created_at: datetime
     updated_at: datetime
 
@@ -100,6 +103,9 @@ class RecordBrief(BaseModel):
     format_type: str | None = None
     estimated_price_median: float | None
     price_currency: str
+    is_first_press: bool = False
+    is_limited: bool = False
+    is_hot: bool = False
 
     @model_validator(mode="after")
     def _populate_cover_url(self) -> "RecordBrief":

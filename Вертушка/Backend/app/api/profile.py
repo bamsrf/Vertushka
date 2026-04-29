@@ -55,6 +55,9 @@ def _record_to_public(
         discogs_master_id=record.discogs_master_id,
         discogs_want=discogs_want,
         discogs_have=discogs_have,
+        is_first_press=bool(record.is_first_press),
+        is_limited=bool(record.is_limited),
+        is_hot=bool(record.is_hot),
     )
 
 

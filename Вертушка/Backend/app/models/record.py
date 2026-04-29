@@ -4,7 +4,7 @@
 import uuid
 from datetime import datetime
 from decimal import Decimal
-from sqlalchemy import String, DateTime, Integer, Text, Numeric
+from sqlalchemy import String, DateTime, Integer, Text, Numeric, Boolean
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 
@@ -109,7 +109,27 @@ class Record(Base):
         default="USD",
         nullable=False
     )
-    
+
+    # Признаки редкости — см. Mobile/components/RarityAura.tsx
+    is_first_press: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        nullable=False,
+        server_default="false",
+    )
+    is_limited: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        nullable=False,
+        server_default="false",
+    )
+    is_hot: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        nullable=False,
+        server_default="false",
+    )
+
     # Изображения
     cover_image_url: Mapped[str | None] = mapped_column(
         Text,

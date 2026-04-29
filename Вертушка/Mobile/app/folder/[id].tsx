@@ -340,6 +340,7 @@ export default function FolderScreen() {
       <RecordGrid
         data={items}
         cardVariant="expanded"
+        rarityContext="collection"
         onRecordPress={isSelectionMode ? undefined : handleRecordPress}
         onRemove={handleRemoveItem}
         showActions={false}

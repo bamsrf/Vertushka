@@ -21,6 +21,7 @@ import Animated, {
 import { Colors, Typography, BorderRadius, Shadows, Spacing, Gradients } from '../constants/theme';
 import { RecordSearchResult, VinylRecord, MasterSearchResult, ReleaseSearchResult, PublicProfileRecord } from '../lib/types';
 import { getCoverUrl } from '../lib/api';
+import { RarityAura, TierCoverEffects, TierLabel, pickRarityTier, RarityContext, RarityFlags } from './RarityAura';
 
 const { width } = Dimensions.get('window');
 const CARD_WIDTH = (width - Spacing.md * 3) / 2;
@@ -40,6 +41,8 @@ interface RecordCardProps {
   onToggleSelection?: () => void;
   onLongPress?: () => void;
   isBooked?: boolean;
+  /** Where this card is rendered — drives rarity tier selection. `collection` hides "hot". */
+  rarityContext?: RarityContext;
 }
 
 const FORMAT_TRANSLATIONS: Record<string, string> = {
@@ -105,10 +108,12 @@ function RecordCardComponent({
   onToggleSelection,
   onLongPress,
   isBooked = false,
+  rarityContext = 'search',
 }: RecordCardProps) {
   const imageUrl = getCoverUrl(record);
   const cardWidth = size === 'large' ? width - Spacing.md * 2 : CARD_WIDTH;
   const imageHeight = size === 'large' ? cardWidth * 0.8 : CARD_WIDTH;
+  const rarityTier = pickRarityTier(record as RarityFlags, rarityContext);
 
   const scale = useSharedValue(1);
   const didLongPress = useRef(false);
@@ -229,11 +234,11 @@ function RecordCardComponent({
         ? getShortFormat(record.format as string)
         : undefined;
 
-    return (
+    const listInner = (
       <AnimatedPressable
         style={[
           styles.listContainer,
-          Shadows.sm,
+          rarityTier ? styles.cardNoMargin : Shadows.sm,
           isSelectionMode && isSelected && styles.containerSelected,
           animatedStyle,
         ]}
@@ -259,6 +264,7 @@ function RecordCardComponent({
               <Ionicons name="disc-outline" size={28} color={Colors.periwinkle} />
             </View>
           )}
+          <TierCoverEffects tier={rarityTier} radius={10} />
           {isBooked && !isSelectionMode && (
             <View style={styles.listBookedBadge}>
               <Ionicons name="gift-outline" size={10} color={Colors.background} />
@@ -291,21 +297,44 @@ function RecordCardComponent({
                 <Text style={styles.metaText} numberOfLines={1}>{formatText}</Text>
               </>
             )}
+            {rarityTier && (
+              <>
+                {((record.year != null && record.year !== 0) || formatText) && (
+                  <Text style={styles.metaDot}>·</Text>
+                )}
+                <TierLabel tier={rarityTier} />
+              </>
+            )}
           </View>
         </View>
 
         <Ionicons name="chevron-forward" size={16} color={Colors.textMuted} style={styles.listChevron} />
       </AnimatedPressable>
     );
+
+    if (!rarityTier) return listInner;
+    return (
+      <RarityAura tier={rarityTier} radius={14} leftEdge style={styles.rarityWrapList}>
+        {listInner}
+      </RarityAura>
+    );
   }
 
   // variant === 'expanded'
-  return (
+  const hasYear = record.year != null && record.year !== 0;
+  const hasCountry = 'country' in record && !!record.country;
+  const formatText = 'format_type' in record && record.format_type
+    ? getShortFormat(record.format_type)
+    : 'format' in record && record.format
+      ? getShortFormat(record.format as string)
+      : undefined;
+
+  const expandedInner = (
     <AnimatedPressable
       style={[
         styles.expandedContainer,
         { width: cardWidth },
-        Shadows.md,
+        rarityTier ? styles.cardNoMargin : Shadows.md,
         isSelectionMode && isSelected && styles.containerSelected,
         animatedStyle,
       ]}
@@ -331,6 +360,7 @@ function RecordCardComponent({
             <Ionicons name="disc-outline" size={48} color={Colors.periwinkle} />
           </View>
         )}
+        <TierCoverEffects tier={rarityTier} radius={0} />
         {isBooked && !isSelectionMode && (
           <LinearGradient
             colors={[Colors.royalBlue, Colors.periwinkle]}
@@ -360,25 +390,23 @@ function RecordCardComponent({
           {record.title}
         </Text>
         <View style={styles.meta}>
-          {record.year != null && record.year !== 0 && (
-            <Text style={styles.metaText}>{record.year}</Text>
-          )}
-          {'country' in record && record.country && (
+          {hasYear && <Text style={styles.metaText}>{record.year}</Text>}
+          {hasCountry && (
             <>
-              {record.year != null && record.year !== 0 && <Text style={styles.metaDot}>·</Text>}
-              <Text style={styles.metaText}>{record.country}</Text>
+              {hasYear && <Text style={styles.metaDot}>·</Text>}
+              <Text style={styles.metaText}>{(record as { country?: string }).country}</Text>
             </>
           )}
-          {'format_type' in record && record.format_type && (
+          {formatText && (
             <>
-              {(record.year != null && record.year !== 0) || ('country' in record && record.country) ? <Text style={styles.metaDot}>·</Text> : null}
-              <Text style={styles.metaText} numberOfLines={1}>{getShortFormat(record.format_type)}</Text>
+              {(hasYear || hasCountry) && <Text style={styles.metaDot}>·</Text>}
+              <Text style={styles.metaText} numberOfLines={1}>{formatText}</Text>
             </>
           )}
-          {'format' in record && record.format && !('format_type' in record) && (
+          {rarityTier && (
             <>
-              {(record.year != null && record.year !== 0) || ('country' in record && record.country) ? <Text style={styles.metaDot}>·</Text> : null}
-              <Text style={styles.metaText} numberOfLines={1}>{getShortFormat(record.format)}</Text>
+              {(hasYear || hasCountry || formatText) && <Text style={styles.metaDot}>·</Text>}
+              <TierLabel tier={rarityTier} />
             </>
           )}
         </View>
@@ -404,6 +432,13 @@ function RecordCardComponent({
         </View>
       )}
     </AnimatedPressable>
+  );
+
+  if (!rarityTier) return expandedInner;
+  return (
+    <RarityAura tier={rarityTier} radius={16} style={styles.rarityWrapExpanded}>
+      {expandedInner}
+    </RarityAura>
   );
 }
 
@@ -665,6 +700,17 @@ const styles = StyleSheet.create({
     ...Typography.caption,
     color: Colors.background,
     fontFamily: 'Inter_600SemiBold',
+  },
+
+  // ===== RARITY wrappers =====
+  rarityWrapList: {
+    marginBottom: Spacing.sm,
+  },
+  rarityWrapExpanded: {
+    marginBottom: Spacing.md,
+  },
+  cardNoMargin: {
+    marginBottom: 0,
   },
 });
 
