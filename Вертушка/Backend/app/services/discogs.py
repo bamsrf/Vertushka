@@ -1011,7 +1011,7 @@ class DiscogsService:
                     ar_data = await self._get(
                         f"{self.BASE_URL}/artists/{artist_id}/releases",
                         params={"page": ar_page, "per_page": 100},
-                        priority=Priority.BATCH,
+                        priority=Priority.SEARCH,
                     )
                     for item in ar_data.get("releases", []):
                         if item.get("type") == "master" and item.get("id"):
@@ -1030,7 +1030,7 @@ class DiscogsService:
         data = await self._get(
             f"{self.BASE_URL}/database/search",
             params={"type": "master", "artist": clean_name, "page": page, "per_page": per_page},
-            priority=Priority.BATCH,
+            priority=Priority.SEARCH,
         )
 
         all_results: list[MasterSearchResult] = []

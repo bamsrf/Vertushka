@@ -147,43 +147,61 @@ function ShimmerAura({ tier, radius = 16 }: AuraProps) {
   }));
 
   return (
-    <View
-      pointerEvents="none"
-      style={[
-        styles.auraRing,
-        {
-          borderRadius: radius + 3,
-          shadowColor: tokens.palette[1],
-          shadowOpacity: 0.55,
-          shadowRadius: 18,
-          shadowOffset: { width: 0, height: 6 },
-          elevation: 8,
-        },
-      ]}
-    >
+    <>
+      {/* Внешний цветной shadow для глубокого свечения вокруг карточки */}
       <View
-        style={[StyleSheet.absoluteFill, styles.auraClip, { borderRadius: radius + 3 }]}
         pointerEvents="none"
+        style={[
+          styles.auraRingOuter,
+          {
+            borderRadius: radius + 3,
+            shadowColor: tokens.palette[1],
+            shadowOpacity: 0.95,
+            shadowRadius: 28,
+            shadowOffset: { width: 0, height: 0 },
+            elevation: 14,
+          },
+        ]}
+      />
+      {/* Кольцо с вращающимся золотым шиммером */}
+      <View
+        pointerEvents="none"
+        style={[
+          styles.auraRing,
+          {
+            borderRadius: radius + 6,
+            shadowColor: tokens.palette[0],
+            shadowOpacity: 0.85,
+            shadowRadius: 12,
+            shadowOffset: { width: 0, height: 4 },
+            elevation: 10,
+          },
+        ]}
       >
-        <Animated.View style={[styles.auraRotator, rotateStyle]} pointerEvents="none">
-          <LinearGradient
-            colors={[
-              'transparent',
-              tokens.palette[0],
-              tokens.palette[1],
-              'transparent',
-              'transparent',
-              tokens.palette[0] + 'aa',
-              tokens.palette[1] + '88',
-              'transparent',
-            ] as readonly [string, string, ...string[]]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={StyleSheet.absoluteFill}
-          />
-        </Animated.View>
+        <View
+          style={[StyleSheet.absoluteFill, styles.auraClip, { borderRadius: radius + 6 }]}
+          pointerEvents="none"
+        >
+          <Animated.View style={[styles.auraRotator, rotateStyle]} pointerEvents="none">
+            <LinearGradient
+              colors={[
+                tokens.palette[0],
+                tokens.palette[1],
+                tokens.palette[0],
+                tokens.palette[1] + 'cc',
+                tokens.palette[0],
+                tokens.palette[1],
+                tokens.palette[0] + 'cc',
+                tokens.palette[1],
+              ] as readonly [string, string, ...string[]]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={StyleSheet.absoluteFill}
+            />
+          </Animated.View>
+        </View>
       </View>
-    </View>
+    </>
   );
 }
 
@@ -214,23 +232,42 @@ function PulseAura({ tier, radius = 16 }: AuraProps) {
   const animStyle = useAnimatedStyle(() => ({ opacity: opacity.value }));
 
   return (
-    <Animated.View
-      pointerEvents="none"
-      style={[
-        styles.auraPulse,
-        {
-          borderRadius: radius,
-          shadowColor: tokens.palette[1],
-          shadowOpacity: 0.7,
-          shadowRadius: 22,
-          shadowOffset: { width: 0, height: 6 },
-          elevation: 10,
-          borderWidth: 1,
-          borderColor: tokens.palette[1] + '55',
-        },
-        animStyle,
-      ]}
-    />
+    <>
+      {/* Глубокий цветной halo */}
+      <Animated.View
+        pointerEvents="none"
+        style={[
+          styles.auraPulseDeep,
+          {
+            borderRadius: radius + 4,
+            shadowColor: tokens.palette[1],
+            shadowOpacity: 0.95,
+            shadowRadius: isHot ? 32 : 26,
+            shadowOffset: { width: 0, height: 0 },
+            elevation: 14,
+          },
+          animStyle,
+        ]}
+      />
+      {/* Близкий border-glow */}
+      <Animated.View
+        pointerEvents="none"
+        style={[
+          styles.auraPulse,
+          {
+            borderRadius: radius,
+            shadowColor: tokens.palette[1],
+            shadowOpacity: 0.85,
+            shadowRadius: 14,
+            shadowOffset: { width: 0, height: 0 },
+            elevation: 10,
+            borderWidth: 2,
+            borderColor: tokens.palette[1] + 'aa',
+          },
+          animStyle,
+        ]}
+      />
+    </>
   );
 }
 
@@ -486,12 +523,19 @@ export function TierFeatureBlock({ tier }: TierFeatureBlockProps) {
 
 const styles = StyleSheet.create({
   // Aura layers — positioned absolutely behind card content
+  auraRingOuter: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+  },
   auraRing: {
     position: 'absolute',
-    top: -3,
-    left: -3,
-    right: -3,
-    bottom: -3,
+    top: -6,
+    left: -6,
+    right: -6,
+    bottom: -6,
   },
   auraClip: {
     overflow: 'hidden',
@@ -509,6 +553,13 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
+  },
+  auraPulseDeep: {
+    position: 'absolute',
+    top: -4,
+    left: -4,
+    right: -4,
+    bottom: -4,
   },
 
   // Cover-internal effects

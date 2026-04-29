@@ -606,8 +606,24 @@ async def get_master_versions(
             per_page=per_page
         )
 
-        # Подмешиваем rarity-флаги из локальной БД для тех релизов,
-        # которые мы уже видели (один SQL IN)
+        # Rarity-флаги для версий — комбинация трёх дешёвых источников:
+        # 1) master.main_release_id → is_first_press для одной канонической версии
+        # 2) parse format string → is_limited (без новых API-вызовов)
+        # 3) локальная БД (если уже видели) → дополняет всё, включая is_hot
+        try:
+            master = await discogs.get_master(master_id)
+            main_release_id = master.main_release_id
+        except Exception:
+            main_release_id = None
+
+        for v in versions.results:
+            if main_release_id and v.release_id == str(main_release_id):
+                v.is_first_press = True
+            fmt_lower = (v.format or "").lower()
+            if any(tok in fmt_lower for tok in DiscogsService.LIMITED_TOKENS):
+                v.is_limited = True
+
+        # Поверх: локальная БД может уточнить (например, hot для виденных релизов)
         release_ids = [v.release_id for v in versions.results if v.release_id]
         if release_ids:
             rows = await db.execute(
@@ -625,7 +641,9 @@ async def get_master_versions(
             for v in versions.results:
                 f = flags_by_id.get(v.release_id)
                 if f:
-                    v.is_first_press, v.is_limited, v.is_hot = f
+                    v.is_first_press = v.is_first_press or f[0]
+                    v.is_limited = v.is_limited or f[1]
+                    v.is_hot = v.is_hot or f[2]
 
         return versions
     except Exception as e:
