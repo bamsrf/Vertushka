@@ -327,6 +327,13 @@ class DiscogsService:
     HOT_WANT_HAVE_RATIO = 1.5
     HOT_MIN_HAVE = 100
 
+    # Пороги для is_collectible — комбо «дорогая + дефицит на маркете + не массовая»
+    # Подобраны после анализа реальной коллекции (см. analyze_db_pricemin.py):
+    # на 188 записях $50 покрывает 27% (слишком много), $100 — 14% (~1 из 7).
+    COLLECTIBLE_MIN_PRICE_USD = 100.0
+    COLLECTIBLE_MAX_FOR_SALE = 3
+    COLLECTIBLE_MAX_HAVE = 200
+
     # Токены, по которым формат считается «лимиткой» (case-insensitive substring match
     # against каждого элемента formats[].descriptions из Discogs)
     LIMITED_TOKENS = (
@@ -354,21 +361,23 @@ class DiscogsService:
         release_data: dict[str, Any],
         master_data: "MasterRelease | None",
         master_versions_count: int | None = None,
+        price_stats: dict | None = None,
     ) -> dict[str, bool]:
         """Compute four rarity flags from raw Discogs payloads.
 
         See Mobile/components/RarityAura.tsx.
 
-        Independent semantics:
         - is_canon: release is the master.main_release (community-edited canonical
-          version per Discogs editors). May not be the chronologically first press.
-        - is_first_press: this release matches the original year of the master
-          (release.year == master.year) AND the master has multiple versions,
-          OR the release is explicitly marked as first/original in notes/formats.
+          version per Discogs editors).
+        - is_collectible: combo signal of actual market scarcity — высокая цена +
+          мало на маркетплейсе + не массовая. Самый объективный сигнал «редкости».
+        - is_limited: structural marker in formats[].descriptions
+          (Limited Edition / Test Pressing / Promo / Numbered / White Label).
+        - is_hot: high want/have ratio with non-trivial owner base.
 
-        Critically these are now INDEPENDENT — for the same master, the canon may
-        be a 2014 reissue (with main_release pointing to it), while a 1994 release
-        of the same master gets is_first_press because it matches master.year.
+        is_first_press пока НЕ вычисляется — слишком heuristic, без визуального
+        осмотра matrix/runout мы не отличим оригинальный пресс от его репресса.
+        Колонка в БД оставлена для безопасного rollback.
         """
         release_id = str(release_data.get("id") or "")
         is_canon = bool(
@@ -378,36 +387,46 @@ class DiscogsService:
             and release_id == str(master_data.main_release_id)
         )
 
-        is_first_press = False
-        if master_data is not None:
-            release_year = release_data.get("year")
-            master_year = master_data.year
-            year_matches = (
-                release_year is not None
-                and master_year is not None
-                and int(release_year) == int(master_year)
-            )
-            has_multiple_versions = (
-                master_versions_count is None  # unknown — don't gate on this
-                or master_versions_count >= 2
-            )
-            # Fallback: релиз явно помечен как оригинальный пресс
-            notes_lower = (release_data.get("notes") or "").lower()
-            notes_say_first = any(tok in notes_lower for tok in cls.FIRST_PRESS_TOKENS)
-            formats_say_first = False
-            for fmt in release_data.get("formats") or []:
-                for desc in fmt.get("descriptions") or []:
-                    if not desc:
-                        continue
-                    lower = desc.lower()
-                    if any(tok in lower for tok in cls.FIRST_PRESS_TOKENS) or "original" in lower:
-                        formats_say_first = True
-                        break
-                if formats_say_first:
-                    break
+        is_first_press = False  # тир закрыт — см. docstring
 
-            if has_multiple_versions and (year_matches or notes_say_first or formats_say_first):
-                is_first_press = True
+        # is_collectible: дорогая + дефицит на маркете + не массовая.
+        # Цену берём median_price, при отсутствии — fallback на lowest_price
+        # (median Discogs возвращает только если было ≥2 продаж — у редких
+        # часто null, тогда lowest_price это «единственное предложение»).
+        is_collectible = False
+        community = release_data.get("community") or {}
+        have = community.get("have") or 0
+
+        def _price_value(stats: dict | None, key: str) -> float | None:
+            if not stats:
+                return None
+            obj = stats.get(key)
+            if isinstance(obj, dict):
+                obj = obj.get("value")
+            try:
+                return float(obj) if obj is not None else None
+            except (TypeError, ValueError):
+                return None
+
+        if price_stats:
+            num_for_sale = price_stats.get("num_for_sale")
+            try:
+                num_for_sale_int = int(num_for_sale) if num_for_sale is not None else None
+            except (TypeError, ValueError):
+                num_for_sale_int = None
+            price_usd = (
+                _price_value(price_stats, "median_price")
+                or _price_value(price_stats, "lowest_price")
+            )
+
+            if (
+                price_usd is not None
+                and num_for_sale_int is not None
+                and price_usd >= cls.COLLECTIBLE_MIN_PRICE_USD
+                and num_for_sale_int <= cls.COLLECTIBLE_MAX_FOR_SALE
+                and have <= cls.COLLECTIBLE_MAX_HAVE
+            ):
+                is_collectible = True
 
         # is_limited: any structural marker in formats[].descriptions
         is_limited = False
@@ -424,9 +443,7 @@ class DiscogsService:
 
         # is_hot: high want/have ratio with non-trivial owner base
         is_hot = False
-        community = release_data.get("community") or {}
         want = community.get("want") or 0
-        have = community.get("have") or 0
         if have >= cls.HOT_MIN_HAVE and have > 0:
             ratio = want / have
             if ratio >= cls.HOT_WANT_HAVE_RATIO:
@@ -435,6 +452,7 @@ class DiscogsService:
         return {
             "is_first_press": is_first_press,
             "is_canon": is_canon,
+            "is_collectible": is_collectible,
             "is_limited": is_limited,
             "is_hot": is_hot,
         }
@@ -507,6 +525,7 @@ class DiscogsService:
         price_min = None
         price_max = None
         price_median = None
+        stats_response: dict | None = None
         try:
             stats_response = await stats_task
             if stats_response:
@@ -516,8 +535,8 @@ class DiscogsService:
         except Exception:
             logger.exception("Failed to get price stats for release %s", release_id)
 
-        # Признаки редкости — нужен мастер для is_canon, плюс кол-во версий
-        # для строгого is_first_press. get_master/versions кэшируются.
+        # Признаки редкости — мастер для is_canon, кол-во версий пока не нужно
+        # (is_first_press закрыт), но оставляем — может пригодиться позже.
         master_data = None
         master_versions_count = None
         master_id_raw = data.get("master_id")
@@ -530,15 +549,11 @@ class DiscogsService:
                     "Failed to fetch master %s for rarity flags (release %s)",
                     mid, release_id,
                 )
-            try:
-                master_versions_count = await self._get_master_versions_count(mid)
-            except Exception:
-                logger.exception(
-                    "Failed to fetch versions count for master %s (release %s)",
-                    mid, release_id,
-                )
         rarity_flags = self._compute_rarity_flags(
-            data, master_data, master_versions_count=master_versions_count,
+            data,
+            master_data,
+            master_versions_count=master_versions_count,
+            price_stats=stats_response,
         )
 
         result = {
