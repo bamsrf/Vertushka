@@ -194,6 +194,7 @@ async def get_or_create_record_by_discogs_id(
             estimated_price_median=record_data.get("price_median"),
             is_first_press=bool(record_data.get("is_first_press")),
             is_canon=bool(record_data.get("is_canon")),
+            is_collectible=bool(record_data.get("is_collectible")),
             is_limited=bool(record_data.get("is_limited")),
             is_hot=bool(record_data.get("is_hot")),
             discogs_data=record_data,
@@ -457,6 +458,7 @@ async def get_record_by_discogs_id(
             estimated_price_median=record_data.get("price_median"),
             is_first_press=bool(record_data.get("is_first_press")),
             is_canon=bool(record_data.get("is_canon")),
+            is_collectible=bool(record_data.get("is_collectible")),
             is_limited=bool(record_data.get("is_limited")),
             is_hot=bool(record_data.get("is_hot")),
             discogs_data=record_data,
@@ -610,62 +612,44 @@ async def get_master_versions(
 
         # Дешёвые «on-the-fly» флаги для всех версий:
         # - is_canon = release_id == master.main_release_id (один кэшированный get_master)
-        # - is_first_press = canon AND year == master.year AND ≥2 версии
         # - is_limited = парсинг строки format на токены (без новых вызовов)
-        # - is_hot — пропускаем (50 marketplace-stats запросов = слишком дорого)
+        # - is_collectible / is_hot — пропускаем (требуют marketplace stats per release =
+        #   50 запросов на список = слишком дорого). Подмешиваем только из локальной БД
+        #   для уже виденных релизов.
         try:
             master = await discogs.get_master(master_id)
             main_release_id = str(master.main_release_id) if master.main_release_id else None
-            master_year = master.year
         except Exception:
             main_release_id = None
-            master_year = None
-
-        try:
-            versions_count = await discogs._get_master_versions_count(master_id)
-        except Exception:
-            versions_count = None
-
-        has_multiple = versions_count is None or versions_count >= 2
 
         for v in versions.results:
-            # canon — только тот, что Discogs пометил main_release
             if main_release_id and v.release_id == main_release_id:
                 v.is_canon = True
-            # first_press — независимо от canon: год совпадает с master.year
-            # и у мастера ≥2 версии (для будущих единственных не помечаем)
-            if (
-                has_multiple
-                and v.year is not None
-                and master_year is not None
-                and int(v.year) == int(master_year)
-            ):
-                v.is_first_press = True
             fmt_lower = (v.format or "").lower()
             if any(tok in fmt_lower for tok in DiscogsService.LIMITED_TOKENS):
                 v.is_limited = True
 
-        # Поверх: локальная БД может уточнить (включая is_hot для виденных релизов)
+        # Локальная БД дополняет (включая is_collectible / is_hot для виденных)
         release_ids = [v.release_id for v in versions.results if v.release_id]
         if release_ids:
             rows = await db.execute(
                 select(
                     Record.discogs_id,
-                    Record.is_first_press,
                     Record.is_canon,
+                    Record.is_collectible,
                     Record.is_limited,
                     Record.is_hot,
                 ).where(Record.discogs_id.in_(release_ids))
             )
             flags_by_id = {
-                row.discogs_id: (row.is_first_press, row.is_canon, row.is_limited, row.is_hot)
+                row.discogs_id: (row.is_canon, row.is_collectible, row.is_limited, row.is_hot)
                 for row in rows
             }
             for v in versions.results:
                 f = flags_by_id.get(v.release_id)
                 if f:
-                    v.is_first_press = v.is_first_press or f[0]
-                    v.is_canon = v.is_canon or f[1]
+                    v.is_canon = v.is_canon or f[0]
+                    v.is_collectible = v.is_collectible or f[1]
                     v.is_limited = v.is_limited or f[2]
                     v.is_hot = v.is_hot or f[3]
 

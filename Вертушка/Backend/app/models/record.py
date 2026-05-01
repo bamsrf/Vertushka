@@ -123,6 +123,12 @@ class Record(Base):
         nullable=False,
         server_default="false",
     )
+    is_collectible: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        nullable=False,
+        server_default="false",
+    )
     is_limited: Mapped[bool] = mapped_column(
         Boolean,
         default=False,

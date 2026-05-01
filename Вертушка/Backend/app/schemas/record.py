@@ -73,6 +73,7 @@ class RecordResponse(BaseModel):
     tracklist: list | None
     is_first_press: bool = False
     is_canon: bool = False
+    is_collectible: bool = False
     is_limited: bool = False
     is_hot: bool = False
     created_at: datetime
@@ -106,6 +107,7 @@ class RecordBrief(BaseModel):
     price_currency: str
     is_first_press: bool = False
     is_canon: bool = False
+    is_collectible: bool = False
     is_limited: bool = False
     is_hot: bool = False
 
@@ -162,9 +164,10 @@ class MasterVersion(BaseModel):
     major_formats: list[str] = []
     thumb_image_url: str | None = None
     cover_image_url: str | None = None
-    # Rarity-флаги, подмешиваются из локальной БД если такой релиз уже видели
-    is_first_press: bool = False
+    # Rarity-флаги, подмешиваются из локальной БД (или вычисляются on-the-fly где можно)
+    is_first_press: bool = False  # тир закрыт, поле остаётся для обратной совместимости
     is_canon: bool = False
+    is_collectible: bool = False
     is_limited: bool = False
     is_hot: bool = False
 
