@@ -5,4 +5,4 @@ set -euo pipefail
 
 cd "$(dirname "$0")/../.."
 cd Backend
-docker compose -f docker-compose.prod.yml exec -T api python scripts/recalc_collection_rub.py
+docker compose -f docker-compose.prod.yml exec -T -w /app -e PYTHONPATH=/app api python scripts/recalc_collection_rub.py
