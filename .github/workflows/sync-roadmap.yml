@@ -1,7 +1,7 @@
 name: Sync ROADMAP
 
 # Запускается на каждый merged PR в main → дописывает запись в
-# Вертушка/docs/plans/ROADMAP.md и открывает sync-PR с обновлением.
+# Вертушка/ROADMAP.md и открывает sync-PR с обновлением.
 #
 # Также можно запустить руками через workflow_dispatch (полная пересинхронизация
 # с указанной даты), если автомат пропустил что-то.
@@ -55,7 +55,7 @@ jobs:
       - name: Check for changes
         id: diff
         run: |
-          if git diff --quiet -- "Вертушка/docs/plans/ROADMAP.md"; then
+          if git diff --quiet -- "Вертушка/ROADMAP.md"; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
           else
             echo "changed=true" >> "$GITHUB_OUTPUT"

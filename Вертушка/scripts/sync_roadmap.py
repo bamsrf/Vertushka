@@ -31,7 +31,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-ROADMAP_PATH = REPO_ROOT / "docs" / "plans" / "ROADMAP.md"
+ROADMAP_PATH = REPO_ROOT / "ROADMAP.md"
 
 # Маппинг conventional-commit scope → milestone code.
 # Если scope не в словаре — запись попадает только в общий Changelog (секция 4).

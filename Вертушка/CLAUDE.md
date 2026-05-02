@@ -1,6 +1,6 @@
 # Проект Вертушка
 
-> 📍 **Текущий roadmap:** [docs/plans/ROADMAP.md](docs/plans/ROADMAP.md) — главный living document с milestone'ами M1–M10, Snapshot, Changelog. Обновляется автоматически при merge через `.github/workflows/sync-roadmap.yml`.
+> 📍 **Текущий roadmap:** [ROADMAP.md](ROADMAP.md) — главный living document с milestone'ами M1–M10, Snapshot, Changelog. Обновляется автоматически при merge через `.github/workflows/sync-roadmap.yml`.
 
 ## Структура
 ```
