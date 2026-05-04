@@ -11,6 +11,7 @@ from app.models.profile_share import ProfileShare
 from app.models.search_cache import SearchCache
 from app.models.user_photo import UserRecordPhoto
 from app.models.collection_value_snapshot import CollectionValueSnapshot
+from app.models.waitlist import WaitlistEntry
 
 __all__ = [
     "User",
@@ -25,5 +26,6 @@ __all__ = [
     "SearchCache",
     "UserRecordPhoto",
     "CollectionValueSnapshot",
+    "WaitlistEntry",
 ]
 

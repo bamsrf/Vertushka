@@ -61,7 +61,7 @@ if _settings_early.sentry_dsn:
     logger.info("Sentry initialised")
 
 # API роутеры
-from app.api import auth, records, collections, wishlists, users, gifts, profile, export, covers, user_photos
+from app.api import auth, records, collections, wishlists, users, gifts, profile, export, covers, user_photos, waitlist
 
 # Web роутеры (HTML страницы)
 from app.web import routes as web_routes
@@ -208,6 +208,7 @@ app.include_router(profile.router, prefix="/api/profile", tags=["Профиль"
 app.include_router(export.router, prefix="/api/export", tags=["Экспорт"])
 app.include_router(covers.router, prefix="/covers", tags=["Обложки"])  # НЕ /api/covers — nginx location /covers/
 app.include_router(user_photos.router, prefix="/api/collections", tags=["Фото пластинок"])
+app.include_router(waitlist.router, prefix="/api/waitlist", tags=["Waitlist"])
 
 # Web страницы (публичный профиль, OG-изображения)
 app.include_router(web_routes.router, tags=["Web"])

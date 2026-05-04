@@ -108,7 +108,9 @@
             width: 52px; height: 52px; border-radius: 50%;
             background: conic-gradient(from 140deg, #F6C7D0, #C9B8FF, #9AA8FF, #BDD4FF, #F7D4B8, #F6C7D0);
             padding: 2px;
-            box-shadow: 0 6px 16px -8px rgba(58, 75, 224, 0.35);
+            box-shadow:
+                0 12px 32px -10px rgba(154, 168, 255, 0.85),
+                0 4px 12px -2px rgba(58, 75, 224, 0.3);
             flex-shrink: 0;
         }
         .avatar-inner {
@@ -128,6 +130,20 @@
         }
         .bio { font-size: 14px; color: var(--slate); margin-top: 8px; max-width: 480px; }
 
+        .stats-card {
+            position: relative;
+            margin-top: 22px;
+            padding: 16px 20px 18px;
+            border-radius: 22px;
+            background: linear-gradient(180deg, rgba(255,255,255,0.78), rgba(255,255,255,0.42));
+            border: 1px solid rgba(255,255,255,0.85);
+            box-shadow:
+                0 1px 0 rgba(255,255,255,0.95) inset,
+                0 18px 38px -22px rgba(27,29,38,0.30),
+                0 6px 14px -6px rgba(58,75,224,0.12);
+            backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+            min-height: 92px;
+        }
         .stat-label {
             font-size: 10px; color: var(--slate); text-transform: uppercase;
             letter-spacing: 0.08em; font-weight: 500;
@@ -143,6 +159,32 @@
             background: rgba(255, 255, 255, 0.55);
             border: 1px solid rgba(58, 75, 224, 0.12);
             font-size: 12px; color: var(--cobalt); font-weight: 500;
+        }
+        /* FUN STATS — ротация под блоком стоимости */
+        .fun-stats-wrap {
+            position: relative; height: 28px; margin-top: 14px; overflow: hidden;
+        }
+        .fun-stat {
+            position: absolute; inset: 0;
+            display: flex; align-items: center; gap: 8px;
+            opacity: 0; transform: translateY(8px);
+            transition: opacity 480ms ease, transform 480ms cubic-bezier(.22,.7,.18,1);
+        }
+        .fun-stat.active { opacity: 1; transform: translateY(0); }
+        .fun-stat-icon {
+            display: inline-flex; align-items: center; justify-content: center;
+            width: 22px; height: 22px; border-radius: 7px;
+            background: linear-gradient(135deg, rgba(154,168,255,0.28), rgba(189,212,255,0.20));
+            border: 1px solid rgba(58,75,224,0.16);
+            font-size: 12px;
+        }
+        .fun-stat-text {
+            font-size: 13px; color: var(--ink); font-weight: 500;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        .fun-stat-text b {
+            color: var(--cobalt); font-weight: 700;
+            font-variant-numeric: tabular-nums;
         }
         .stats-row {
             display: flex; gap: 28px; margin-top: 22px; flex-wrap: wrap;
@@ -186,7 +228,9 @@
                 #1B1D26 63.5% 100%
             );
             position: relative;
-            box-shadow: 0 24px 50px -28px rgba(27, 29, 38, 0.45);
+            box-shadow:
+                0 32px 60px -18px rgba(27, 29, 38, 0.55),
+                0 12px 24px -8px rgba(58, 75, 224, 0.22);
             will-change: transform;
             animation: spin 14s linear infinite;
         }
@@ -568,6 +612,18 @@
             font-size: 9.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--mute);
         }
 
+        /* Sticky CTA — появляется после прокрутки до 9 пластинок */
+        .cta-sticky {
+            position: fixed; left: 0; right: 0; bottom: 0; z-index: 70;
+            display: flex; justify-content: center;
+            padding: 14px 16px calc(14px + env(safe-area-inset-bottom, 0px));
+            background: linear-gradient(180deg, rgba(245,240,234,0) 0%, rgba(245,240,234,0.85) 32%, rgba(245,240,234,0.98) 100%);
+            opacity: 0; transform: translateY(20px); pointer-events: none;
+            transition: opacity 380ms ease, transform 380ms cubic-bezier(.22,.7,.18,1);
+        }
+        .cta-sticky.visible { opacity: 1; transform: translateY(0); pointer-events: auto; }
+        .cta-sticky .cta { width: 100%; max-width: 420px; justify-content: center; }
+
         /* CTA */
         .cta-wrap {
             display: flex; justify-content: center; padding: 36px 4px 12px;
@@ -706,7 +762,7 @@
                 {% if user.bio %}<p class="bio">{{ user.bio }}</p>{% endif %}
 
                 {% if collection_value_rub is not none and profile.show_collection_value %}
-                <div style="margin-top:22px;">
+                <div class="stats-card">
                     <div class="stat-label">Стоимость коллекции</div>
                     <div class="stat-value tnum" id="valueCounter" data-target="{{ collection_value_rub|int }}">
                         0 <span class="currency">₽</span>
@@ -720,6 +776,16 @@
                         <svg width="10" height="10" viewBox="0 0 10 10"><path d="M2 4l3 3 3-3" stroke="#3A4BE0" fill="none" stroke-width="1.6" stroke-linecap="round"/></svg>
                         {{ "{:,.0f}".format(monthly_delta).replace(",", " ") }} ₽ за месяц
                         {% endif %}
+                    </div>
+                    {% endif %}
+                    {% if fun_stats and fun_stats|length > 0 %}
+                    <div class="fun-stats-wrap" id="funStatsWrap" aria-live="polite">
+                        {% for stat in fun_stats %}
+                        <div class="fun-stat {% if loop.first %}active{% endif %}" data-idx="{{ loop.index0 }}">
+                            <span class="fun-stat-icon">{{ stat.icon }}</span>
+                            <span class="fun-stat-text">{{ stat.html|safe }}</span>
+                        </div>
+                        {% endfor %}
                     </div>
                     {% endif %}
                 </div>
@@ -755,6 +821,8 @@
                              data-year="{{ r.year or '' }}"
                              data-format="{{ (r.format_type or '')|e }}"
                              data-cover="{{ r.cover_image_url or '' }}"
+                             data-price="{{ compute_rub(r) or '' }}"
+                             data-catalog="{{ (r.catalog_number or '')|e }}"
                              data-discogs="{{ r.discogs_id or '' }}"
                              onclick="openRecordPreview(this)">
                             <div class="rail-cover">
@@ -785,6 +853,8 @@
                              data-year="{{ r.year or '' }}"
                              data-format="{{ (r.format_type or '')|e }}"
                              data-cover="{{ r.cover_image_url or '' }}"
+                             data-price="{{ compute_rub(r) or '' }}"
+                             data-catalog="{{ (r.catalog_number or '')|e }}"
                              data-discogs="{{ r.discogs_id or '' }}"
                              data-want="{{ r.discogs_want or '' }}"
                              data-have="{{ r.discogs_have or '' }}"
@@ -971,12 +1041,56 @@
         {% endif %}
 
         <div class="cta-wrap">
-            <a href="{{ base_url }}" class="cta">
+            <button type="button" class="cta" onclick="openWaitlistModal('cta-bottom')">
                 <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="7" stroke="white" stroke-opacity="0.45"/><circle cx="8" cy="8" r="2" fill="white"/></svg>
                 Создать свой профиль в Вертушке
-            </a>
+            </button>
         </div>
         <div class="footer-line">VINYL-VERTUSHKA.RU</div>
+    </div>
+
+    <!-- Sticky CTA — появляется когда юзер проскроллил 9 пластинок -->
+    <div class="cta-sticky" id="ctaSticky">
+        <button type="button" class="cta" onclick="openWaitlistModal('sticky')">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="7" stroke="white" stroke-opacity="0.45"/><circle cx="8" cy="8" r="2" fill="white"/></svg>
+            Попробовать приложение Вертушка
+        </button>
+    </div>
+
+    <!-- WAITLIST MODAL -->
+    <div class="modal-overlay" id="waitlistModal">
+        <div class="record-preview-sheet booking-sheet" role="dialog" aria-modal="true">
+            <div class="rp-handle"></div>
+            <div class="rp-header">
+                <span class="rp-header-label">Скоро в App Store и Google Play</span>
+                <button class="rp-close" onclick="closeWaitlistModal()" aria-label="Закрыть">
+                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                        <path d="M1 1l10 10M11 1L1 11" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+                    </svg>
+                </button>
+            </div>
+            <div class="rp-body">
+                <div class="bs-check" style="background: linear-gradient(135deg, rgba(154,168,255,0.32), rgba(189,212,255,0.22));">📱</div>
+                <div class="bs-message">Получите ссылку первым</div>
+                <div class="bs-sub">Пришлём ссылку на стор как только Вертушка выйдет — никакого спама, только один email с релизом.</div>
+                <form id="waitlistForm">
+                    <input type="hidden" id="wlSource" name="source" value="">
+                    <div class="form-row">
+                        <label>Email</label>
+                        <input type="email" name="email" required placeholder="you@example.com" autocomplete="email">
+                    </div>
+                    <div class="modal-actions">
+                        <button type="button" class="btn-ghost" onclick="closeWaitlistModal()">Не сейчас</button>
+                        <button type="submit" class="btn-primary">Хочу ссылку!</button>
+                    </div>
+                </form>
+                <div id="waitlistSuccess" style="display:none; text-align:center; padding-top:12px;">
+                    <div style="font-size:36px; margin-bottom:8px;">🎉</div>
+                    <div class="bs-message" style="font-size:18px;">Готово! Email сохранён.</div>
+                    <div class="bs-sub" style="margin-bottom:6px;">Пришлём ссылку как только релизнем приложение.</div>
+                </div>
+            </div>
+        </div>
     </div>
 
     <!-- RECORD PREVIEW MODAL -->
@@ -1115,6 +1229,20 @@
                 }
                 raf = requestAnimationFrame(tick);
             };
+        })();
+
+        // Fun stats — ротация каждые 3.4 секунды
+        (function() {
+            var wrap = document.getElementById('funStatsWrap');
+            if (!wrap) return;
+            var stats = wrap.querySelectorAll('.fun-stat');
+            if (stats.length < 2) return;
+            var idx = 0;
+            setInterval(function() {
+                stats[idx].classList.remove('active');
+                idx = (idx + 1) % stats.length;
+                stats[idx].classList.add('active');
+            }, 3400);
         })();
 
         // Counter animation
@@ -1414,12 +1542,124 @@
                     openBookingSuccess(data, cover, artist, title);
                 } else {
                     var err = await res.json();
-                    alert('Ошибка: ' + (err.detail || 'не удалось забронировать'));
+                    var detail = err.detail || 'не удалось забронировать';
+                    alert(res.status === 403 ? detail : 'Ошибка: ' + detail);
                 }
             } catch (e) {
                 alert('Не удалось связаться с сервером');
             } finally {
                 btn.disabled = false;
+            }
+        });
+
+        // Sticky CTA — показываем когда пользователь увидел 9 карточек (через IntersectionObserver на 9-й карточке)
+        (function() {
+            var sticky = document.getElementById('ctaSticky');
+            if (!sticky) return;
+            // Берём 9-ю карточку любого активного грида (.grid#collectionGrid или wishlist), либо просто 9-я в порядке появления
+            function getNinthCard() {
+                var grids = document.querySelectorAll('.grid#collectionGrid, .grid#wishlistGrid');
+                for (var i = 0; i < grids.length; i++) {
+                    if (grids[i].offsetParent === null) continue; // скрыт
+                    var cards = grids[i].querySelectorAll('.card');
+                    if (cards.length >= 9) return cards[8];
+                    if (cards.length > 0) return cards[cards.length - 1];
+                }
+                return null;
+            }
+            var shown = false;
+            function attachObserver() {
+                var target = getNinthCard();
+                if (!target) {
+                    // Если карточек меньше 9 — показываем после прокрутки 70% страницы
+                    window.addEventListener('scroll', onScroll, { passive: true });
+                    return;
+                }
+                if ('IntersectionObserver' in window) {
+                    var obs = new IntersectionObserver(function(entries) {
+                        entries.forEach(function(entry) {
+                            if (entry.isIntersecting && !shown) {
+                                shown = true;
+                                sticky.classList.add('visible');
+                                obs.disconnect();
+                            }
+                        });
+                    }, { threshold: 0.4 });
+                    obs.observe(target);
+                } else {
+                    window.addEventListener('scroll', onScroll, { passive: true });
+                }
+            }
+            function onScroll() {
+                if (shown) return;
+                var sh = document.documentElement.scrollHeight - window.innerHeight;
+                if (sh <= 0) return;
+                if (window.scrollY / sh > 0.6) {
+                    shown = true;
+                    sticky.classList.add('visible');
+                    window.removeEventListener('scroll', onScroll);
+                }
+            }
+            // Дождёмся отрисовки гридов
+            requestAnimationFrame(attachObserver);
+            // При смене таба перепривязываем observer на новый грид
+            var seg = document.getElementById('segmented');
+            if (seg) {
+                seg.addEventListener('click', function() {
+                    if (shown) return;
+                    setTimeout(attachObserver, 60);
+                });
+            }
+        })();
+
+        // Waitlist modal
+        var waitlistModal = document.getElementById('waitlistModal');
+        var waitlistForm  = document.getElementById('waitlistForm');
+        function openWaitlistModal(source) {
+            if (!waitlistModal) return;
+            document.getElementById('wlSource').value = source || '';
+            // Сбрасываем success-состояние при повторном открытии
+            document.getElementById('waitlistSuccess').style.display = 'none';
+            if (waitlistForm) waitlistForm.style.display = '';
+            if (!waitlistModal.classList.contains('active')) {
+                waitlistModal.classList.add('active');
+                lockBodyScroll();
+            }
+        }
+        function closeWaitlistModal() {
+            if (!waitlistModal || !waitlistModal.classList.contains('active')) return;
+            waitlistModal.classList.remove('active');
+            unlockBodyScroll();
+        }
+        waitlistModal && waitlistModal.addEventListener('click', function(e) {
+            if (e.target === waitlistModal) closeWaitlistModal();
+        });
+        waitlistForm && waitlistForm.addEventListener('submit', async function(e) {
+            e.preventDefault();
+            var btn = waitlistForm.querySelector('button[type=submit]');
+            var emailEl = waitlistForm.querySelector('input[name=email]');
+            var sourceEl = document.getElementById('wlSource');
+            var profileSource = '@{{ user.username }}|' + (sourceEl.value || 'cta');
+            btn.disabled = true; btn.textContent = 'Отправляем…';
+            try {
+                var res = await fetch('/api/waitlist/', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email: emailEl.value.trim(), source: profileSource }),
+                });
+                if (res.ok) {
+                    waitlistForm.style.display = 'none';
+                    document.getElementById('waitlistSuccess').style.display = '';
+                } else if (res.status === 429) {
+                    alert('Слишком часто. Подождите пару секунд и повторите.');
+                } else {
+                    var err = await res.json().catch(function(){return{};});
+                    alert('Ошибка: ' + (err.detail || 'не удалось сохранить'));
+                }
+            } catch (e) {
+                alert('Не удалось связаться с сервером');
+            } finally {
+                btn.disabled = false; btn.textContent = 'Хочу ссылку!';
             }
         });
 

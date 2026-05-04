@@ -8,7 +8,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import select, func
+from sqlalchemy import select, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -33,6 +33,38 @@ templates = Jinja2Templates(directory="app/web/templates")
 settings = get_settings()
 
 BASE_URL = "https://vinyl-vertushka.ru"
+
+
+_GENRE_RU = {
+    "rock": "рока",
+    "pop": "поп-пластинок",
+    "electronic": "электроники",
+    "hip hop": "хип-хоп пластинок",
+    "hip-hop": "хип-хоп пластинок",
+    "jazz": "джазовых пластинок",
+    "classical": "классики",
+    "funk / soul": "фанка и соула",
+    "funk": "фанка и соула",
+    "soul": "фанка и соула",
+    "reggae": "регги-пластинок",
+    "blues": "блюза",
+    "folk, world, & country": "фолка и кантри",
+    "folk": "фолка",
+    "country": "кантри",
+    "latin": "латинских пластинок",
+    "stage & screen": "саундтреков",
+    "non-music": "non-music записей",
+    "children's": "детских пластинок",
+    "brass & military": "бравурных пластинок",
+}
+
+
+def _genre_label(genre: str) -> str:
+    """Переводит жанр в русскую форму для fun-stats. Иначе возвращает 'пластинок {genre}'."""
+    key = (genre or "").strip().lower()
+    if key in _GENRE_RU:
+        return _GENRE_RU[key]
+    return f"пластинок жанра {genre}"
 
 
 @router.get("/privacy", response_class=HTMLResponse)
@@ -121,6 +153,126 @@ async def public_profile_page(
     top_expensive = await _get_top_expensive(user.id, db, limit=12) if profile.show_collection else []
     new_releases = await _get_new_releases(db, limit=24, user_id=user.id)
 
+    # === Fun stats — ротирующие фишки коллекции ===
+    fun_stats: list[dict] = []
+    if profile.show_collection and collection_count > 0:
+        # Цветные пластинки (по format_description: Coloured / Translucent / Picture / Splatter)
+        color_keywords = ["Coloured", "Color", "Translucent", "Picture Disc", "Splatter", "Marbled", "Glow"]
+        color_filter = func.coalesce(Record.format_description, "")
+        color_clauses = [color_filter.ilike(f"%{kw}%") for kw in color_keywords]
+        color_count = await db.scalar(
+            select(func.count(func.distinct(Record.id)))
+            .join(CollectionItem, CollectionItem.record_id == Record.id)
+            .join(Collection)
+            .where(Collection.user_id == user.id, or_(*color_clauses))
+        ) or 0
+
+        # Топ-жанр (берём первое слово из строки genre, разбитой запятой)
+        genre_rows = await db.execute(
+            select(Record.genre, func.count(Record.id).label("c"))
+            .join(CollectionItem, CollectionItem.record_id == Record.id)
+            .join(Collection)
+            .where(Collection.user_id == user.id, Record.genre.isnot(None), Record.genre != "")
+            .group_by(Record.genre)
+        )
+        genre_counter: dict[str, int] = {}
+        for genre_str, cnt in genre_rows:
+            for g in (genre_str or "").split(","):
+                g_clean = g.strip()
+                if g_clean:
+                    genre_counter[g_clean] = genre_counter.get(g_clean, 0) + int(cnt)
+        top_genre, top_genre_count = (None, 0)
+        if genre_counter:
+            top_genre, top_genre_count = max(genre_counter.items(), key=lambda kv: kv[1])
+
+        # Декада с наибольшим количеством
+        decade_rows = await db.execute(
+            select(((Record.year / 10) * 10).label("decade"), func.count(Record.id).label("c"))
+            .join(CollectionItem, CollectionItem.record_id == Record.id)
+            .join(Collection)
+            .where(Collection.user_id == user.id, Record.year.isnot(None), Record.year > 1900)
+            .group_by("decade")
+            .order_by(func.count(Record.id).desc())
+            .limit(1)
+        )
+        decade_row = decade_rows.first()
+        top_decade = int(decade_row[0]) if decade_row else None
+        top_decade_count = int(decade_row[1]) if decade_row else 0
+
+        # Стран и лейблов (distinct)
+        countries_count = await db.scalar(
+            select(func.count(func.distinct(Record.country)))
+            .join(CollectionItem, CollectionItem.record_id == Record.id)
+            .join(Collection)
+            .where(Collection.user_id == user.id, Record.country.isnot(None), Record.country != "")
+        ) or 0
+
+        labels_count = await db.scalar(
+            select(func.count(func.distinct(Record.label)))
+            .join(CollectionItem, CollectionItem.record_id == Record.id)
+            .join(Collection)
+            .where(Collection.user_id == user.id, Record.label.isnot(None), Record.label != "")
+        ) or 0
+
+        # Самая старая пластинка
+        oldest_row = await db.execute(
+            select(Record.year, Record.artist, Record.title)
+            .join(CollectionItem, CollectionItem.record_id == Record.id)
+            .join(Collection)
+            .where(Collection.user_id == user.id, Record.year.isnot(None), Record.year > 1900)
+            .order_by(Record.year.asc())
+            .limit(1)
+        )
+        oldest = oldest_row.first()
+
+        # Первые прессы / Каноничные / Коллекционка
+        rare_count = await db.scalar(
+            select(func.count(Record.id))
+            .join(CollectionItem, CollectionItem.record_id == Record.id)
+            .join(Collection)
+            .where(
+                Collection.user_id == user.id,
+                or_(Record.is_first_press == True, Record.is_canon == True, Record.is_collectible == True),
+            )
+        ) or 0
+
+        # Собираем список (только непустые)
+        if color_count >= 1:
+            fun_stats.append({
+                "icon": "🎨",
+                "html": f"<b>{color_count}</b> цветных пластинок",
+            })
+        if top_genre and top_genre_count >= 2:
+            fun_stats.append({
+                "icon": "🎧",
+                "html": f"<b>{top_genre_count}</b> {_genre_label(top_genre)}",
+            })
+        if top_decade and top_decade_count >= 2:
+            fun_stats.append({
+                "icon": "📻",
+                "html": f"<b>{top_decade_count}</b> пластинок из {top_decade}-х",
+            })
+        if countries_count >= 2:
+            fun_stats.append({
+                "icon": "🌍",
+                "html": f"<b>{countries_count}</b> стран в коллекции",
+            })
+        if labels_count >= 3:
+            fun_stats.append({
+                "icon": "🏷️",
+                "html": f"<b>{labels_count}</b> разных лейблов",
+            })
+        if oldest:
+            fun_stats.append({
+                "icon": "🕰️",
+                "html": f"Самая старая: <b>{oldest[0]}</b> · {oldest[1]}",
+            })
+        if rare_count >= 1:
+            fun_stats.append({
+                "icon": "💎",
+                "html": f"<b>{rare_count}</b> редких изданий",
+            })
+
     # === Избранные пластинки ===
     highlights = []
     if profile.highlight_record_ids:
@@ -205,6 +357,7 @@ async def public_profile_page(
         "collection_value": collection_value,
         "collection_value_rub": collection_value_rub,
         "monthly_delta": monthly_delta,
+        "fun_stats": fun_stats,
         "top_expensive": top_expensive,
         "new_releases": new_releases,
         "highlights": highlights,
