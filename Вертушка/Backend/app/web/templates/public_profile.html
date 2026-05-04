@@ -43,9 +43,9 @@
         html {
             overflow-x: hidden;
             background:
-                radial-gradient(900px 540px at 88% -6%, rgba(154,168,255,0.42), transparent 58%),
-                radial-gradient(620px 440px at 6% 4%, rgba(189,212,255,0.26), transparent 64%),
-                linear-gradient(180deg, #F4EEE6 0%, #F0EBE2 60%, #ECE6DC 100%);
+                radial-gradient(900px 640px at 92% -4%, rgba(154,168,255,0.82), transparent 62%),
+                radial-gradient(680px 520px at 4% 2%, rgba(189,212,255,0.60), transparent 66%),
+                #F5F0EA;
         }
         body {
             font-family: 'Inter Tight', system-ui, -apple-system, sans-serif;
@@ -1079,10 +1079,10 @@
     <script>
         // Background crossfade — rAF on html canvas, works on all browsers incl. Safari iOS
         var animBg = (function() {
-            var BG_BASE = 'linear-gradient(180deg,#F4EEE6 0%,#F0EBE2 60%,#ECE6DC 100%)';
+            var BG_BASE = '#F5F0EA';
             var STATES = {
-                collection: { c1:[154,168,255,0.42], c2:[189,212,255,0.26] },
-                wishlist:   { c1:[201,184,255,0.42], c2:[246,199,208,0.30] }
+                collection: { c1:[154,168,255,0.82], c2:[189,212,255,0.60] },
+                wishlist:   { c1:[201,184,255,0.85], c2:[246,199,208,0.68] }
             };
             var cur = { c1:STATES.collection.c1.slice(), c2:STATES.collection.c2.slice() };
             var raf = null, t0 = null, fromSnap = null, toSnap = null;
@@ -1090,11 +1090,11 @@
             function ease(t){return t<0.5?2*t*t:-1+(4-2*t)*t;}
             function apply(c1,c2){
                 document.documentElement.style.background =
-                    'radial-gradient(900px 540px at 88% -6%,rgba('+
+                    'radial-gradient(900px 640px at 92% -4%,rgba('+
                         Math.round(c1[0])+','+Math.round(c1[1])+','+Math.round(c1[2])+','+c1[3].toFixed(2)+
-                    '),transparent 58%),radial-gradient(620px 540px at 6% 4%,rgba('+
+                    '),transparent 62%),radial-gradient(680px 520px at 4% 2%,rgba('+
                         Math.round(c2[0])+','+Math.round(c2[1])+','+Math.round(c2[2])+','+c2[3].toFixed(2)+
-                    '),transparent 64%),'+BG_BASE;
+                    '),transparent 66%),'+BG_BASE;
             }
             // Init from server-rendered tab
             var initTab = '{{ active_tab }}';
@@ -1106,7 +1106,7 @@
                 toSnap   = STATES[tab] || STATES.collection;
                 t0 = performance.now();
                 function tick(now) {
-                    var t = ease(Math.min(1,(now-t0)/2600));
+                    var t = ease(Math.min(1,(now-t0)/600));
                     var c1=[lerp(fromSnap.c1[0],toSnap.c1[0],t),lerp(fromSnap.c1[1],toSnap.c1[1],t),lerp(fromSnap.c1[2],toSnap.c1[2],t),lerp(fromSnap.c1[3],toSnap.c1[3],t)];
                     var c2=[lerp(fromSnap.c2[0],toSnap.c2[0],t),lerp(fromSnap.c2[1],toSnap.c2[1],t),lerp(fromSnap.c2[2],toSnap.c2[2],t),lerp(fromSnap.c2[3],toSnap.c2[3],t)];
                     apply(c1,c2);
