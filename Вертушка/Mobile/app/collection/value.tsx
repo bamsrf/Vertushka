@@ -147,7 +147,7 @@ export default function CollectionValueScreen() {
         onPress={() => router.push(`/record/${record.id}`)}
         activeOpacity={0.7}
       >
-        <Text style={styles.listRank}>#{index + 1}</Text>
+        <Text style={styles.listRank} numberOfLines={1}>#{index + 1}</Text>
         <Image
           source={record.thumb_image_url || record.cover_image_url}
           style={styles.listThumb}
@@ -465,7 +465,7 @@ const styles = StyleSheet.create({
   listRank: {
     ...Typography.bodyBold,
     color: Colors.textMuted,
-    width: 30,
+    width: 48,
     textAlign: 'center',
   },
   listThumb: {
