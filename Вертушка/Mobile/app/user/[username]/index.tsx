@@ -108,11 +108,11 @@ function Vinyl({ size = 150 }: { size?: number }) {
         borderRadius: size / 2,
         backgroundColor: PP.ink,
         transform: [{ rotate: spin }],
-        shadowColor: PP.ink,
-        shadowOffset: { width: 0, height: 18 },
-        shadowOpacity: 0.35,
-        shadowRadius: 24,
-        elevation: 14,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 22 },
+        shadowOpacity: 0.55,
+        shadowRadius: 30,
+        elevation: 18,
       }}
     >
       {/* Виниловые «канавки» */}
@@ -522,7 +522,7 @@ export default function UserProfileScreen() {
   useEffect(() => {
     Animated.timing(bgAnim, {
       toValue: activeTab === 'collection' ? 0 : 1,
-      duration: 2500,
+      duration: 600,
       easing: Easing.bezier(0.4, 0, 0.2, 1),
       useNativeDriver: false,
     }).start();
@@ -705,34 +705,36 @@ export default function UserProfileScreen() {
     <View style={[styles.container, { paddingTop: insets.top }]}>
       {/* Background layers */}
       <View style={StyleSheet.absoluteFill}>
-        <LinearGradient colors={[PP.ivory, PP.ivorySoft, PP.ivoryDeep]} style={StyleSheet.absoluteFill} />
+        <View style={[StyleSheet.absoluteFill, { backgroundColor: '#F5F0EA' }]} />
+        {/* Collection: periwinkle top-right + sky top-left */}
         <Animated.View
           pointerEvents="none"
           style={[StyleSheet.absoluteFill, { opacity: collectionBgOpacity }]}
         >
           <LinearGradient
-            colors={['rgba(154,168,255,0.42)', 'transparent']}
-            start={{ x: 0.85, y: 0 }} end={{ x: 0.4, y: 0.5 }}
+            colors={['rgba(154,168,255,0.82)', 'rgba(154,168,255,0.20)', 'transparent']}
+            start={{ x: 1, y: 0 }} end={{ x: 0.2, y: 0.65 }}
             style={StyleSheet.absoluteFill}
           />
           <LinearGradient
-            colors={['rgba(189,212,255,0.26)', 'transparent']}
-            start={{ x: 0.05, y: 0 }} end={{ x: 0.5, y: 0.5 }}
+            colors={['rgba(189,212,255,0.60)', 'rgba(189,212,255,0.10)', 'transparent']}
+            start={{ x: 0, y: 0 }} end={{ x: 0.7, y: 0.55 }}
             style={StyleSheet.absoluteFill}
           />
         </Animated.View>
+        {/* Wishlist: lavender top-right + blush top-left */}
         <Animated.View
           pointerEvents="none"
           style={[StyleSheet.absoluteFill, { opacity: wishlistBgOpacity }]}
         >
           <LinearGradient
-            colors={['rgba(201,184,255,0.42)', 'transparent']}
-            start={{ x: 0.85, y: 0 }} end={{ x: 0.4, y: 0.5 }}
+            colors={['rgba(201,184,255,0.85)', 'rgba(201,184,255,0.22)', 'transparent']}
+            start={{ x: 1, y: 0 }} end={{ x: 0.2, y: 0.65 }}
             style={StyleSheet.absoluteFill}
           />
           <LinearGradient
-            colors={['rgba(246,199,208,0.30)', 'transparent']}
-            start={{ x: 0.05, y: 0 }} end={{ x: 0.5, y: 0.5 }}
+            colors={['rgba(246,199,208,0.68)', 'rgba(246,199,208,0.12)', 'transparent']}
+            start={{ x: 0, y: 0 }} end={{ x: 0.7, y: 0.55 }}
             style={StyleSheet.absoluteFill}
           />
         </Animated.View>
@@ -760,19 +762,21 @@ export default function UserProfileScreen() {
         <View style={styles.hero}>
           <View style={styles.heroLeft}>
             <View style={styles.userRow}>
-              <LinearGradient colors={[PP.blush, PP.lavender, PP.periwinkle, PP.sky]} style={styles.avatarRing}>
-                <View style={styles.avatarInner}>
-                  {pubProfile.avatar_url ? (
-                    <Image
-                      source={resolveMediaUrl(pubProfile.avatar_url)}
-                      style={{ width: '100%', height: '100%', borderRadius: 50 }}
-                      cachePolicy="disk"
-                    />
-                  ) : (
-                    <Text style={styles.avatarInitials}>{initials}</Text>
-                  )}
-                </View>
-              </LinearGradient>
+              <View style={styles.avatarShadow}>
+                <LinearGradient colors={[PP.blush, PP.lavender, PP.periwinkle, PP.sky]} style={styles.avatarRing}>
+                  <View style={styles.avatarInner}>
+                    {pubProfile.avatar_url ? (
+                      <Image
+                        source={resolveMediaUrl(pubProfile.avatar_url)}
+                        style={{ width: '100%', height: '100%', borderRadius: 50 }}
+                        cachePolicy="disk"
+                      />
+                    ) : (
+                      <Text style={styles.avatarInitials}>{initials}</Text>
+                    )}
+                  </View>
+                </LinearGradient>
+              </View>
               <View style={{ minWidth: 0 }}>
                 <Text style={styles.username} numberOfLines={1}>@{pubProfile.username}</Text>
                 {pubProfile.custom_title ? (
@@ -782,7 +786,7 @@ export default function UserProfileScreen() {
             </View>
 
             {collectionValueRub != null ? (
-              <View style={{ marginTop: 16 }}>
+              <View style={[{ marginTop: 16 }, styles.statsCard]}>
                 <Text style={styles.statLabel}>Стоимость коллекции</Text>
                 <Text style={styles.statValue}>
                   {formatRub(displayValue)} <Text style={styles.currency}>₽</Text>
@@ -1029,6 +1033,13 @@ const styles = StyleSheet.create({
   heroLeft: { flex: 1, paddingRight: 12 },
   heroRight: { alignItems: 'flex-end' },
   userRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  avatarShadow: {
+    shadowColor: PP.periwinkle,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.55,
+    shadowRadius: 16,
+    elevation: 10,
+  },
   avatarRing: { width: 50, height: 50, borderRadius: 25, padding: 2 },
   avatarInner: {
     flex: 1, borderRadius: 50, backgroundColor: PP.pearl,
@@ -1038,6 +1049,12 @@ const styles = StyleSheet.create({
   username: { fontSize: 22, fontWeight: '700', color: PP.ink, letterSpacing: -0.3 },
   customTitle: { fontSize: 12, color: PP.slate, marginTop: 2 },
 
+  statsCard: {
+    shadowColor: PP.ink,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.10,
+    shadowRadius: 12,
+  },
   statLabel: {
     fontSize: 10, color: PP.slate, textTransform: 'uppercase', letterSpacing: 0.8,
     fontWeight: '500',
