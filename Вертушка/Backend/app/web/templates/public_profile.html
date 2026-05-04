@@ -160,29 +160,43 @@
             border: 1px solid rgba(58, 75, 224, 0.12);
             font-size: 12px; color: var(--cobalt); font-weight: 500;
         }
-        /* FUN STATS — ротация под блоком стоимости */
-        .fun-stats-wrap {
-            position: relative; height: 28px; margin-top: 14px; overflow: hidden;
+        /* FUN STATS — горизонтальный скролл-ряд чипсов под стоимостью */
+        .fun-stats-rail {
+            display: flex; gap: 8px;
+            overflow-x: auto; overflow-y: hidden;
+            margin: 16px -20px 0;
+            padding: 4px 20px 8px;
+            scrollbar-width: none;
+            -webkit-overflow-scrolling: touch;
+            scroll-snap-type: x proximity;
+            mask-image: linear-gradient(90deg, transparent 0, #000 16px, #000 calc(100% - 16px), transparent 100%);
+            -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 16px, #000 calc(100% - 16px), transparent 100%);
         }
-        .fun-stat {
-            position: absolute; inset: 0;
-            display: flex; align-items: center; gap: 8px;
-            opacity: 0; transform: translateY(8px);
-            transition: opacity 480ms ease, transform 480ms cubic-bezier(.22,.7,.18,1);
+        .fun-stats-rail::-webkit-scrollbar { display: none; }
+        .fun-stat-chip {
+            flex-shrink: 0;
+            display: inline-flex; align-items: center; gap: 8px;
+            padding: 8px 14px 8px 10px;
+            border-radius: 999px;
+            background: rgba(255,255,255,0.78);
+            border: 1px solid rgba(58,75,224,0.14);
+            box-shadow:
+                0 1px 0 rgba(255,255,255,0.85) inset,
+                0 6px 14px -10px rgba(58,75,224,0.30);
+            scroll-snap-align: start;
+            white-space: nowrap;
         }
-        .fun-stat.active { opacity: 1; transform: translateY(0); }
-        .fun-stat-icon {
+        .fun-stat-chip .icon {
             display: inline-flex; align-items: center; justify-content: center;
-            width: 22px; height: 22px; border-radius: 7px;
-            background: linear-gradient(135deg, rgba(154,168,255,0.28), rgba(189,212,255,0.20));
+            width: 24px; height: 24px; border-radius: 8px;
+            background: linear-gradient(135deg, rgba(154,168,255,0.30), rgba(189,212,255,0.22));
             border: 1px solid rgba(58,75,224,0.16);
-            font-size: 12px;
+            font-size: 13px;
         }
-        .fun-stat-text {
+        .fun-stat-chip .text {
             font-size: 13px; color: var(--ink); font-weight: 500;
-            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
         }
-        .fun-stat-text b {
+        .fun-stat-chip .text b {
             color: var(--cobalt); font-weight: 700;
             font-variant-numeric: tabular-nums;
         }
@@ -377,8 +391,8 @@
         /* TOOLBAR — format chips + view toggle (только над коллекцией) */
         .toolbar { padding: 6px 0 4px; margin-top: 4px; }
         .format-chips {
-            display: flex; gap: 6px; overflow-x: auto;
-            padding: 0 4px 2px; scrollbar-width: none;
+            display: flex; gap: 6px; overflow-x: auto; overflow-y: hidden;
+            padding: 6px 4px 14px; scrollbar-width: none;
         }
         .format-chips::-webkit-scrollbar { display: none; }
         .format-chip {
@@ -388,17 +402,19 @@
             border: 1px solid rgba(27,29,38,0.06);
             font-family: inherit; font-size: 12px; font-weight: 500;
             color: #3A3E4D; cursor: pointer;
-            transition: all 220ms;
+            transition: background 220ms, border-color 220ms, color 220ms, box-shadow 220ms;
             white-space: nowrap;
         }
         .format-chip.active {
             background: linear-gradient(180deg, #fff, #F2F0FF);
-            border: 1px solid rgba(58,75,224,0.2);
+            border: 1px solid rgba(58,75,224,0.22);
             color: var(--cobalt); font-weight: 600;
-            box-shadow: 0 4px 12px -6px rgba(58,75,224,0.3);
+            box-shadow:
+                0 1px 0 rgba(255,255,255,0.95) inset,
+                0 6px 14px -8px rgba(58,75,224,0.45);
         }
         .view-row {
-            padding: 12px 4px 0;
+            padding: 8px 4px 12px;
             display: flex; justify-content: flex-end; gap: 6px;
         }
         .icon-btn {
@@ -612,17 +628,17 @@
             font-size: 9.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--mute);
         }
 
-        /* Sticky CTA — появляется после прокрутки до 9 пластинок */
+        /* Sticky CTA — появляется после прокрутки до 9 пластинок и исчезает,
+           когда статическая кнопка снизу попадает в viewport (landing-эффект). */
         .cta-sticky {
             position: fixed; left: 0; right: 0; bottom: 0; z-index: 70;
             display: flex; justify-content: center;
-            padding: 14px 16px calc(14px + env(safe-area-inset-bottom, 0px));
+            padding: 16px 16px calc(16px + env(safe-area-inset-bottom, 0px));
             background: linear-gradient(180deg, rgba(245,240,234,0) 0%, rgba(245,240,234,0.85) 32%, rgba(245,240,234,0.98) 100%);
             opacity: 0; transform: translateY(20px); pointer-events: none;
             transition: opacity 380ms ease, transform 380ms cubic-bezier(.22,.7,.18,1);
         }
         .cta-sticky.visible { opacity: 1; transform: translateY(0); pointer-events: auto; }
-        .cta-sticky .cta { width: 100%; max-width: 420px; justify-content: center; }
 
         /* CTA */
         .cta-wrap {
@@ -779,11 +795,11 @@
                     </div>
                     {% endif %}
                     {% if fun_stats and fun_stats|length > 0 %}
-                    <div class="fun-stats-wrap" id="funStatsWrap" aria-live="polite">
+                    <div class="fun-stats-rail" id="funStatsRail" role="list" aria-label="Статистика коллекции">
                         {% for stat in fun_stats %}
-                        <div class="fun-stat {% if loop.first %}active{% endif %}" data-idx="{{ loop.index0 }}">
-                            <span class="fun-stat-icon">{{ stat.icon }}</span>
-                            <span class="fun-stat-text">{{ stat.html|safe }}</span>
+                        <div class="fun-stat-chip" role="listitem">
+                            <span class="icon">{{ stat.icon }}</span>
+                            <span class="text">{{ stat.html|safe }}</span>
                         </div>
                         {% endfor %}
                     </div>
@@ -1038,16 +1054,17 @@
         </section>
         {% endif %}
 
-        <div class="cta-wrap">
+        <div class="cta-wrap" id="ctaStatic">
             <button type="button" class="cta" onclick="openWaitlistModal('cta-bottom')">
                 <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="7" stroke="white" stroke-opacity="0.45"/><circle cx="8" cy="8" r="2" fill="white"/></svg>
-                Создать свой профиль в Вертушке
+                Попробовать приложение Вертушка
             </button>
         </div>
         <div class="footer-line">VINYL-VERTUSHKA.RU</div>
     </div>
 
-    <!-- Sticky CTA — появляется когда юзер проскроллил 9 пластинок -->
+    <!-- Sticky CTA — клон нижней кнопки. Появляется после 9-й пластинки и
+         исчезает, когда статическая кнопка снизу попадает в viewport (landing). -->
     <div class="cta-sticky" id="ctaSticky">
         <button type="button" class="cta" onclick="openWaitlistModal('sticky')">
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="7" stroke="white" stroke-opacity="0.45"/><circle cx="8" cy="8" r="2" fill="white"/></svg>
@@ -1229,20 +1246,6 @@
             };
         })();
 
-        // Fun stats — ротация каждые 3.4 секунды
-        (function() {
-            var wrap = document.getElementById('funStatsWrap');
-            if (!wrap) return;
-            var stats = wrap.querySelectorAll('.fun-stat');
-            if (stats.length < 2) return;
-            var idx = 0;
-            setInterval(function() {
-                stats[idx].classList.remove('active');
-                idx = (idx + 1) % stats.length;
-                stats[idx].classList.add('active');
-            }, 3400);
-        })();
-
         // Counter animation
         (function() {
             var el = document.getElementById('valueCounter');
@@ -1330,6 +1333,26 @@
                     rail.addEventListener('mouseenter', function() { paused = true; });
                     rail.addEventListener('mouseleave', function() { paused = false; });
                 }
+                // Touch / pointer: пауза при касании, продолжение после release
+                // (с задержкой, чтобы юзер успел кликнуть до того, как карусель снова поедет).
+                var resumeTimer = null;
+                function pause() {
+                    paused = true;
+                    if (resumeTimer) { clearTimeout(resumeTimer); resumeTimer = null; }
+                }
+                function resumeWithGrace(delay) {
+                    if (resumeTimer) clearTimeout(resumeTimer);
+                    resumeTimer = setTimeout(function() { paused = false; resumeTimer = null; }, delay || 1400);
+                }
+                rail.addEventListener('pointerdown', pause);
+                rail.addEventListener('pointerup',     function() { resumeWithGrace(1400); });
+                rail.addEventListener('pointercancel', function() { resumeWithGrace(800);  });
+                rail.addEventListener('pointerleave',  function() { if (!canHover) resumeWithGrace(800); });
+                // Доп. на iOS Safari, где pointer events иногда подавляются
+                rail.addEventListener('touchstart', pause, { passive: true });
+                rail.addEventListener('touchend',   function() { resumeWithGrace(1400); }, { passive: true });
+                rail.addEventListener('touchcancel',function() { resumeWithGrace(800);  }, { passive: true });
+
                 function tick(ts) {
                     if (last !== null && !paused) {
                         pos += speed * (ts - last) / 1000;
@@ -1550,62 +1573,82 @@
             }
         });
 
-        // Sticky CTA — показываем когда пользователь увидел 9 карточек (через IntersectionObserver на 9-й карточке)
+        // Sticky CTA с landing-эффектом
+        // — появляется после 9-й карточки
+        // — исчезает, когда статическая кнопка попадает в viewport
+        // (визуально создаётся ощущение, что sticky «приземлилась» в подвал)
         (function() {
             var sticky = document.getElementById('ctaSticky');
+            var staticCta = document.getElementById('ctaStatic');
             if (!sticky) return;
-            // Берём 9-ю карточку любого активного грида (.grid#collectionGrid или wishlist), либо просто 9-я в порядке появления
+
+            var passedTrigger = false;  // прошёл ли 9-ю карточку
+            var staticVisible = false;  // видна ли статическая кнопка
+
+            function update() {
+                if (passedTrigger && !staticVisible) sticky.classList.add('visible');
+                else sticky.classList.remove('visible');
+            }
+
+            // 1) Триггер на 9-й карточке (или последней, если меньше)
             function getNinthCard() {
                 var grids = document.querySelectorAll('.grid#collectionGrid, .grid#wishlistGrid');
                 for (var i = 0; i < grids.length; i++) {
-                    if (grids[i].offsetParent === null) continue; // скрыт
+                    if (grids[i].offsetParent === null) continue;
                     var cards = grids[i].querySelectorAll('.card');
                     if (cards.length >= 9) return cards[8];
                     if (cards.length > 0) return cards[cards.length - 1];
                 }
                 return null;
             }
-            var shown = false;
-            function attachObserver() {
+            function attachTriggerObserver() {
                 var target = getNinthCard();
                 if (!target) {
-                    // Если карточек меньше 9 — показываем после прокрутки 70% страницы
-                    window.addEventListener('scroll', onScroll, { passive: true });
+                    window.addEventListener('scroll', onScrollFallback, { passive: true });
                     return;
                 }
                 if ('IntersectionObserver' in window) {
                     var obs = new IntersectionObserver(function(entries) {
                         entries.forEach(function(entry) {
-                            if (entry.isIntersecting && !shown) {
-                                shown = true;
-                                sticky.classList.add('visible');
+                            if (entry.isIntersecting && !passedTrigger) {
+                                passedTrigger = true;
+                                update();
                                 obs.disconnect();
                             }
                         });
                     }, { threshold: 0.4 });
                     obs.observe(target);
                 } else {
-                    window.addEventListener('scroll', onScroll, { passive: true });
+                    window.addEventListener('scroll', onScrollFallback, { passive: true });
                 }
             }
-            function onScroll() {
-                if (shown) return;
+            function onScrollFallback() {
+                if (passedTrigger) return;
                 var sh = document.documentElement.scrollHeight - window.innerHeight;
                 if (sh <= 0) return;
-                if (window.scrollY / sh > 0.6) {
-                    shown = true;
-                    sticky.classList.add('visible');
-                    window.removeEventListener('scroll', onScroll);
+                if (window.scrollY / sh > 0.55) {
+                    passedTrigger = true; update();
+                    window.removeEventListener('scroll', onScrollFallback);
                 }
             }
-            // Дождёмся отрисовки гридов
-            requestAnimationFrame(attachObserver);
-            // При смене таба перепривязываем observer на новый грид
+
+            // 2) Landing — наблюдаем статическую кнопку
+            if (staticCta && 'IntersectionObserver' in window) {
+                var landingObs = new IntersectionObserver(function(entries) {
+                    entries.forEach(function(entry) {
+                        staticVisible = entry.isIntersecting;
+                        update();
+                    });
+                }, { threshold: 0.35 });
+                landingObs.observe(staticCta);
+            }
+
+            requestAnimationFrame(attachTriggerObserver);
             var seg = document.getElementById('segmented');
             if (seg) {
                 seg.addEventListener('click', function() {
-                    if (shown) return;
-                    setTimeout(attachObserver, 60);
+                    if (passedTrigger) return;
+                    setTimeout(attachTriggerObserver, 60);
                 });
             }
         })();
