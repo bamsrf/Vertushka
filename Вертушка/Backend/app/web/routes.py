@@ -107,8 +107,11 @@ async def public_profile_page(
     await db.commit()
 
     # === Статистика ===
+    # Считаем уникальные пластинки (distinct record_id), чтобы не дублировать
+    # одну и ту же пластинку из разных папок — мобила показывает дефолт-папку,
+    # а здесь должна быть единая картина «сколько пластинок у юзера всего».
     collection_count = await db.scalar(
-        select(func.count(CollectionItem.id))
+        select(func.count(func.distinct(CollectionItem.record_id)))
         .join(Collection)
         .where(Collection.user_id == user.id)
     ) or 0
@@ -127,24 +130,40 @@ async def public_profile_page(
     usd_rub_rate = await get_usd_rub_rate()
     pricing_params = PricingParams.from_settings(settings)
 
-    # Стоимость коллекции
+    # Стоимость коллекции — суммируем по уникальным пластинкам (дедуп по record_id),
+    # чтобы пластинка, добавленная в несколько папок, не считалась дважды.
     collection_value = None
     collection_value_rub = None
     monthly_delta = None
     if profile.show_collection_value:
-        value_result = await db.scalar(
-            select(func.sum(func.coalesce(Record.estimated_price_min, Record.estimated_price_median)))
-            .join(CollectionItem, CollectionItem.record_id == Record.id)
-            .join(Collection)
+        # Суррогат базовой USD-цены через distinct запись (берём min/median)
+        usd_subq = (
+            select(
+                CollectionItem.record_id.label("rid"),
+                func.coalesce(Record.estimated_price_min, Record.estimated_price_median).label("usd"),
+            )
+            .join(Collection, Collection.id == CollectionItem.collection_id)
+            .join(Record, Record.id == CollectionItem.record_id)
             .where(Collection.user_id == user.id)
+            .distinct(CollectionItem.record_id)
+            .subquery()
         )
+        value_result = await db.scalar(select(func.sum(usd_subq.c.usd)))
         collection_value = round(float(value_result), 2) if value_result else 0.0
-        # Рубли — из закэшированного estimated_price_rub (рассчитанного по новой формуле)
-        value_rub_result = await db.scalar(
-            select(func.sum(CollectionItem.estimated_price_rub))
-            .join(Collection)
+
+        # Рубли — кэшированные на уровне CollectionItem.estimated_price_rub.
+        # Берём max среди дублей (разные папки могут иметь разные значения).
+        rub_subq = (
+            select(
+                CollectionItem.record_id.label("rid"),
+                func.max(CollectionItem.estimated_price_rub).label("rub"),
+            )
+            .join(Collection, Collection.id == CollectionItem.collection_id)
             .where(Collection.user_id == user.id)
+            .group_by(CollectionItem.record_id)
+            .subquery()
         )
+        value_rub_result = await db.scalar(select(func.sum(rub_subq.c.rub)))
         collection_value_rub = round(float(value_rub_result), 2) if value_rub_result else 0.0
         delta = await get_monthly_delta(user.id, db)
         monthly_delta = float(delta) if delta is not None else None
@@ -154,44 +173,51 @@ async def public_profile_page(
     new_releases = await _get_new_releases(db, limit=24, user_id=user.id)
 
     # === Fun stats — ротирующие фишки коллекции ===
+    # Все агрегации идут поверх DISTINCT record_id, чтобы один и тот же релиз
+    # из разных папок не задваивал статистику.
     fun_stats: list[dict] = []
     try:
       if profile.show_collection and collection_count > 0:
+        # Подзапрос с уникальными record_id юзера
+        user_records_subq = (
+            select(CollectionItem.record_id.distinct().label("rid"))
+            .join(Collection, Collection.id == CollectionItem.collection_id)
+            .where(Collection.user_id == user.id)
+            .subquery()
+        )
+        ur_join = user_records_subq.join(Record, Record.id == user_records_subq.c.rid)
+
         # Цветные пластинки (по format_description: Coloured / Translucent / Picture / Splatter)
         color_keywords = ["Coloured", "Color", "Translucent", "Picture Disc", "Splatter", "Marbled", "Glow"]
         color_filter = func.coalesce(Record.format_description, "")
         color_clauses = [color_filter.ilike(f"%{kw}%") for kw in color_keywords]
         color_count = await db.scalar(
-            select(func.count(func.distinct(Record.id)))
-            .join(CollectionItem, CollectionItem.record_id == Record.id)
-            .join(Collection)
-            .where(Collection.user_id == user.id, or_(*color_clauses))
+            select(func.count(Record.id))
+            .select_from(ur_join)
+            .where(or_(*color_clauses))
         ) or 0
 
-        # Топ-жанр (берём первое слово из строки genre, разбитой запятой)
+        # Топ-жанр (Discogs хранит несколько через запятую — расщепляем в Python)
         genre_rows = await db.execute(
-            select(Record.genre, func.count(Record.id).label("c"))
-            .join(CollectionItem, CollectionItem.record_id == Record.id)
-            .join(Collection)
-            .where(Collection.user_id == user.id, Record.genre.isnot(None), Record.genre != "")
-            .group_by(Record.genre)
+            select(Record.genre)
+            .select_from(ur_join)
+            .where(Record.genre.isnot(None), Record.genre != "")
         )
         genre_counter: dict[str, int] = {}
-        for genre_str, cnt in genre_rows:
+        for (genre_str,) in genre_rows:
             for g in (genre_str or "").split(","):
                 g_clean = g.strip()
                 if g_clean:
-                    genre_counter[g_clean] = genre_counter.get(g_clean, 0) + int(cnt)
+                    genre_counter[g_clean] = genre_counter.get(g_clean, 0) + 1
         top_genre, top_genre_count = (None, 0)
         if genre_counter:
             top_genre, top_genre_count = max(genre_counter.items(), key=lambda kv: kv[1])
 
-        # Декада с наибольшим количеством — считаем в Python поверх плоского списка лет
+        # Декада с наибольшим количеством
         year_rows = await db.execute(
             select(Record.year)
-            .join(CollectionItem, CollectionItem.record_id == Record.id)
-            .join(Collection)
-            .where(Collection.user_id == user.id, Record.year.isnot(None), Record.year > 1900)
+            .select_from(ur_join)
+            .where(Record.year.isnot(None), Record.year > 1900)
         )
         decade_counter: dict[int, int] = {}
         for (yr,) in year_rows:
@@ -203,27 +229,24 @@ async def public_profile_page(
         if decade_counter:
             top_decade, top_decade_count = max(decade_counter.items(), key=lambda kv: kv[1])
 
-        # Стран и лейблов (distinct)
+        # Стран и лейблов (distinct по уникальным записям)
         countries_count = await db.scalar(
             select(func.count(func.distinct(Record.country)))
-            .join(CollectionItem, CollectionItem.record_id == Record.id)
-            .join(Collection)
-            .where(Collection.user_id == user.id, Record.country.isnot(None), Record.country != "")
+            .select_from(ur_join)
+            .where(Record.country.isnot(None), Record.country != "")
         ) or 0
 
         labels_count = await db.scalar(
             select(func.count(func.distinct(Record.label)))
-            .join(CollectionItem, CollectionItem.record_id == Record.id)
-            .join(Collection)
-            .where(Collection.user_id == user.id, Record.label.isnot(None), Record.label != "")
+            .select_from(ur_join)
+            .where(Record.label.isnot(None), Record.label != "")
         ) or 0
 
         # Самая старая пластинка
         oldest_row = await db.execute(
             select(Record.year, Record.artist, Record.title)
-            .join(CollectionItem, CollectionItem.record_id == Record.id)
-            .join(Collection)
-            .where(Collection.user_id == user.id, Record.year.isnot(None), Record.year > 1900)
+            .select_from(ur_join)
+            .where(Record.year.isnot(None), Record.year > 1900)
             .order_by(Record.year.asc())
             .limit(1)
         )
@@ -232,12 +255,8 @@ async def public_profile_page(
         # Первые прессы / Каноничные / Коллекционка
         rare_count = await db.scalar(
             select(func.count(Record.id))
-            .join(CollectionItem, CollectionItem.record_id == Record.id)
-            .join(Collection)
-            .where(
-                Collection.user_id == user.id,
-                or_(Record.is_first_press == True, Record.is_canon == True, Record.is_collectible == True),
-            )
+            .select_from(ur_join)
+            .where(or_(Record.is_first_press == True, Record.is_canon == True, Record.is_collectible == True))
         ) or 0
 
         # Собираем список (только непустые)

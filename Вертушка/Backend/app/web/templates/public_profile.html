@@ -160,43 +160,37 @@
             border: 1px solid rgba(58, 75, 224, 0.12);
             font-size: 12px; color: var(--cobalt); font-weight: 500;
         }
-        /* FUN STATS — горизонтальный скролл-ряд чипсов под стоимостью */
-        .fun-stats-rail {
-            display: flex; gap: 8px;
-            overflow-x: auto; overflow-y: hidden;
-            margin: 16px -20px 0;
-            padding: 4px 20px 8px;
-            scrollbar-width: none;
-            -webkit-overflow-scrolling: touch;
-            scroll-snap-type: x proximity;
-            mask-image: linear-gradient(90deg, transparent 0, #000 16px, #000 calc(100% - 16px), transparent 100%);
-            -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 16px, #000 calc(100% - 16px), transparent 100%);
+        /* FUN STATS — fade-ротация по одному факту, держится в ширине stats-card */
+        .fun-stats-wrap {
+            position: relative;
+            margin-top: 14px;
+            min-height: 44px;
+            overflow: hidden;
         }
-        .fun-stats-rail::-webkit-scrollbar { display: none; }
-        .fun-stat-chip {
-            flex-shrink: 0;
-            display: inline-flex; align-items: center; gap: 8px;
-            padding: 8px 14px 8px 10px;
-            border-radius: 999px;
-            background: rgba(255,255,255,0.78);
-            border: 1px solid rgba(58,75,224,0.14);
-            box-shadow:
-                0 1px 0 rgba(255,255,255,0.85) inset,
-                0 6px 14px -10px rgba(58,75,224,0.30);
-            scroll-snap-align: start;
-            white-space: nowrap;
+        .fun-stat {
+            position: absolute; left: 0; right: 0; top: 0;
+            display: flex; align-items: flex-start; gap: 10px;
+            opacity: 0; transform: translateY(8px);
+            transition: opacity 480ms ease, transform 480ms cubic-bezier(.22,.7,.18,1);
+            pointer-events: none;
         }
-        .fun-stat-chip .icon {
+        .fun-stat.active { opacity: 1; transform: translateY(0); pointer-events: auto; }
+        .fun-stat .icon {
             display: inline-flex; align-items: center; justify-content: center;
-            width: 24px; height: 24px; border-radius: 8px;
+            flex-shrink: 0;
+            width: 26px; height: 26px; border-radius: 9px;
             background: linear-gradient(135deg, rgba(154,168,255,0.30), rgba(189,212,255,0.22));
             border: 1px solid rgba(58,75,224,0.16);
             font-size: 13px;
         }
-        .fun-stat-chip .text {
+        .fun-stat .text {
+            flex: 1; min-width: 0;
             font-size: 13px; color: var(--ink); font-weight: 500;
+            line-height: 1.35;
+            /* до 2 строк, без обрезки текста */
+            word-wrap: break-word; overflow-wrap: break-word;
         }
-        .fun-stat-chip .text b {
+        .fun-stat .text b {
             color: var(--cobalt); font-weight: 700;
             font-variant-numeric: tabular-nums;
         }
@@ -795,9 +789,9 @@
                     </div>
                     {% endif %}
                     {% if fun_stats and fun_stats|length > 0 %}
-                    <div class="fun-stats-rail" id="funStatsRail" role="list" aria-label="Статистика коллекции">
+                    <div class="fun-stats-wrap" id="funStatsWrap" aria-live="polite">
                         {% for stat in fun_stats %}
-                        <div class="fun-stat-chip" role="listitem">
+                        <div class="fun-stat {% if loop.first %}active{% endif %}" data-idx="{{ loop.index0 }}">
                             <span class="icon">{{ stat.icon }}</span>
                             <span class="text">{{ stat.html|safe }}</span>
                         </div>
@@ -1244,6 +1238,32 @@
                 }
                 raf = requestAnimationFrame(tick);
             };
+        })();
+
+        // Fun stats — fade-ротация каждые 3.6 секунды
+        (function() {
+            var wrap = document.getElementById('funStatsWrap');
+            if (!wrap) return;
+            var stats = wrap.querySelectorAll('.fun-stat');
+            if (stats.length < 2) return;
+            // Подгоняем высоту контейнера под самый длинный факт (после рендера)
+            requestAnimationFrame(function() {
+                var maxH = 0;
+                stats.forEach(function(s) {
+                    s.style.position = 'static';
+                    s.style.opacity = '1';
+                    var h = s.getBoundingClientRect().height;
+                    if (h > maxH) maxH = h;
+                    s.style.position = ''; s.style.opacity = '';
+                });
+                if (maxH > 0) wrap.style.minHeight = maxH + 'px';
+            });
+            var idx = 0;
+            setInterval(function() {
+                stats[idx].classList.remove('active');
+                idx = (idx + 1) % stats.length;
+                stats[idx].classList.add('active');
+            }, 3600);
         })();
 
         // Counter animation
