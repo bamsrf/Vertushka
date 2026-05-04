@@ -7,6 +7,7 @@ import {
   StyleSheet,
   TextInput,
   TouchableOpacity,
+  Pressable,
   Alert,
   Text,
   Modal,
@@ -380,6 +381,11 @@ export default function SearchScreen() {
     );
   }, [clearHistory]);
 
+  const handleHistoryExpandToggle = useCallback(() => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setHistoryExpanded((v) => !v);
+  }, []);
+
   const handleBlur = useCallback(() => {
     // showHistory намеренно не сбрасываем — список остаётся интерактивным
   }, []);
@@ -529,30 +535,26 @@ export default function SearchScreen() {
           <View style={styles.historyContainer}>
             {visibleHistory.map((item, index) => (
               <View key={`${item}-${index}`} style={styles.historyItem}>
-                <TouchableOpacity
+                <Pressable
                   style={styles.historyItemButton}
                   onPress={() => handleHistoryItemPress(item)}
-                  activeOpacity={0.7}
+                  hitSlop={6}
                 >
                   <Ionicons name="time-outline" size={18} color={Colors.periwinkle} />
                   <Text style={styles.historyItemText}>{item}</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
+                </Pressable>
+                <Pressable
                   onPress={() => handleRemoveHistoryItem(item)}
                   hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                  activeOpacity={0.7}
                 >
                   <Ionicons name="close" size={18} color={Colors.textMuted} />
-                </TouchableOpacity>
+                </Pressable>
               </View>
             ))}
             {historyOverflow > 0 && (
-              <TouchableOpacity
-                onPress={() => {
-                  LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-                  setHistoryExpanded((v) => !v);
-                }}
-                activeOpacity={0.7}
+              <Pressable
+                onPress={handleHistoryExpandToggle}
+                hitSlop={8}
                 style={styles.historyExpandButton}
               >
                 <Text style={styles.historyExpandText}>
@@ -563,7 +565,7 @@ export default function SearchScreen() {
                   size={16}
                   color={Colors.royalBlue}
                 />
-              </TouchableOpacity>
+              </Pressable>
             )}
           </View>
         </Section>
@@ -695,16 +697,20 @@ export default function SearchScreen() {
     </Modal>
   ) : null;
 
-  const handleProfilePress = () => {
+  const handleProfilePress = useCallback(() => {
     router.push('/profile');
-  };
+  }, [router]);
 
   const SearchHeader = (
     <View style={styles.searchContainer}>
       {/* Title row + avatar */}
       <View style={styles.topRow}>
         <AnimatedGradientText style={Typography.heroTitle}>Поиск</AnimatedGradientText>
-        <TouchableOpacity style={styles.profileButton} onPress={handleProfilePress}>
+        <Pressable
+          style={styles.profileButton}
+          onPress={handleProfilePress}
+          hitSlop={12}
+        >
           {user?.avatar_url ? (
             <Image source={resolveMediaUrl(user.avatar_url)} style={styles.avatar} cachePolicy="disk" />
           ) : (
@@ -715,7 +721,7 @@ export default function SearchScreen() {
               <Ionicons name="disc" size={20} color={Colors.background} />
             </LinearGradient>
           )}
-        </TouchableOpacity>
+        </Pressable>
       </View>
 
       {/* Search input — pill style */}
