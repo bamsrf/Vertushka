@@ -37,35 +37,54 @@ BASE_URL = "https://vinyl-vertushka.ru"
 
 
 _GENRE_RU = {
-    "rock": "рока",
-    "pop": "поп-пластинок",
-    "electronic": "электроники",
-    "hip hop": "хип-хоп пластинок",
-    "hip-hop": "хип-хоп пластинок",
-    "jazz": "джазовых пластинок",
-    "classical": "классики",
-    "funk / soul": "фанка и соула",
-    "funk": "фанка и соула",
-    "soul": "фанка и соула",
-    "reggae": "регги-пластинок",
-    "blues": "блюза",
-    "folk, world, & country": "фолка и кантри",
-    "folk": "фолка",
-    "country": "кантри",
-    "latin": "латинских пластинок",
-    "stage & screen": "саундтреков",
-    "non-music": "non-music записей",
-    "children's": "детских пластинок",
-    "brass & military": "бравурных пластинок",
+    # {rel} → склоняется на «релиз / релиза / релизов» по числу.
+    # Жанры без дефиса (электроника, классика, джаз) идут как прилагательное в род. падеже.
+    "rock": "рок-{rel}",
+    "pop": "поп-{rel}",
+    "electronic": "электронных {rel}",
+    "hip hop": "хип-хоп {rel}",
+    "hip-hop": "хип-хоп {rel}",
+    "jazz": "джазовых {rel}",
+    "classical": "классических {rel}",
+    "funk / soul": "фанк- и соул-{rel}",
+    "funk": "фанк-{rel}",
+    "soul": "соул-{rel}",
+    "reggae": "регги-{rel}",
+    "blues": "блюзовых {rel}",
+    "folk, world, & country": "фолк- и кантри-{rel}",
+    "folk": "фолк-{rel}",
+    "country": "кантри-{rel}",
+    "latin": "латинских {rel}",
+    "stage & screen": "саундтрек-{rel}",
+    "non-music": "non-music {rel}",
+    "children's": "детских {rel}",
+    "brass & military": "бравурных {rel}",
 }
 
 
-def _genre_label(genre: str) -> str:
-    """Переводит жанр в русскую форму для fun-stats. Иначе возвращает 'пластинок {genre}'."""
+def _ru_plural(n: int, one: str, few: str, many: str) -> str:
+    """Русское склонение существительного по числу.
+    one — для 1, 21, 31… (last digit 1, кроме 11–14)
+    few — для 2–4, 22–24… (last digit 2–4, кроме 12–14)
+    many — для 0, 5–20, 25–30…
+    """
+    n_abs = abs(int(n))
+    if 11 <= n_abs % 100 <= 14:
+        return many
+    last = n_abs % 10
+    if last == 1:
+        return one
+    if 2 <= last <= 4:
+        return few
+    return many
+
+
+def _genre_label(genre: str, count: int) -> str:
+    """Возвращает русскую форму жанра + склонённое 'релиз/-а/-ов' по числу."""
+    rel = _ru_plural(count, "релиз", "релиза", "релизов")
     key = (genre or "").strip().lower()
-    if key in _GENRE_RU:
-        return _GENRE_RU[key]
-    return f"пластинок жанра {genre}"
+    template = _GENRE_RU.get(key) or f"{genre}-{{rel}}"
+    return template.replace("{rel}", rel)
 
 
 @router.get("/privacy", response_class=HTMLResponse)
@@ -337,41 +356,47 @@ async def public_profile_page(
 
         # === Сборка списка ===
         # Правило: stat показывается только если значение > 0 и проходит порог.
-        # Порог выше 1 ставим там, где маленькое число выглядит неинтересно (лейблы, артисты).
+        # Все формы существительных/прилагательных склоняются по числу через _ru_plural.
         if color_count > 0:
+            phrase = _ru_plural(color_count, "цветная пластинка", "цветные пластинки", "цветных пластинок")
             fun_stats.append({
                 "icon": "🎨",
-                "html": f"<b>{color_count}</b> цветных пластинок",
+                "html": f"<b>{color_count}</b> {phrase}",
             })
         if top_genre and top_genre_count >= 2:
             fun_stats.append({
                 "icon": "🎧",
-                "html": f"<b>{top_genre_count}</b> {_genre_label(top_genre)}",
+                "html": f"<b>{top_genre_count}</b> {_genre_label(top_genre, top_genre_count)}",
             })
         if top_decade and top_decade_count >= 2:
+            word = _ru_plural(top_decade_count, "пластинка", "пластинки", "пластинок")
             fun_stats.append({
                 "icon": "📻",
-                "html": f"<b>{top_decade_count}</b> пластинок из {top_decade}-х",
+                "html": f"<b>{top_decade_count}</b> {word} из {top_decade}-х",
             })
         if fresh_count > 0:
+            word = _ru_plural(fresh_count, "релиз", "релиза", "релизов")
             fun_stats.append({
                 "icon": "🚀",
-                "html": f"<b>{fresh_count}</b> релизов {current_year}-го",
+                "html": f"<b>{fresh_count}</b> {word} {current_year}-го",
             })
         if countries_count >= 2:
+            word = _ru_plural(countries_count, "страна", "страны", "стран")
             fun_stats.append({
                 "icon": "🌍",
-                "html": f"<b>{countries_count}</b> стран в коллекции",
+                "html": f"<b>{countries_count}</b> {word} в коллекции",
             })
         if labels_count >= 3:
+            phrase = _ru_plural(labels_count, "разный лейбл", "разных лейбла", "разных лейблов")
             fun_stats.append({
                 "icon": "🏷️",
-                "html": f"<b>{labels_count}</b> разных лейблов",
+                "html": f"<b>{labels_count}</b> {phrase}",
             })
         if artists_count >= 5:
+            phrase = _ru_plural(artists_count, "разный артист", "разных артиста", "разных артистов")
             fun_stats.append({
                 "icon": "🎙️",
-                "html": f"<b>{artists_count}</b> разных артистов",
+                "html": f"<b>{artists_count}</b> {phrase}",
             })
         if top_artist and top_artist[1] >= 2:
             artist_name = (top_artist[0] or "").strip()
@@ -396,9 +421,10 @@ async def public_profile_page(
                 "html": f"Самая свежая: <b>{newest[0]}</b>",
             })
         if rare_count > 0:
+            phrase = _ru_plural(rare_count, "редкое издание", "редких издания", "редких изданий")
             fun_stats.append({
                 "icon": "💎",
-                "html": f"<b>{rare_count}</b> редких изданий",
+                "html": f"<b>{rare_count}</b> {phrase}",
             })
         if priciest and priciest[2] and priciest[2] >= 1000:
             price_fmt = f"{int(priciest[2]):,}".replace(",", " ")
@@ -411,22 +437,23 @@ async def public_profile_page(
             days = (now_utc_naive - fa).days
             if days >= 365:
                 years = days // 365
-                word = "год" if years == 1 else ("года" if 2 <= years <= 4 else "лет")
+                word = _ru_plural(years, "год", "года", "лет")
                 fun_stats.append({
                     "icon": "📅",
                     "html": f"Собирает <b>{years}</b> {word}",
                 })
             elif days >= 90:
                 months = max(1, days // 30)
-                word = "месяц" if months == 1 else ("месяца" if 2 <= months <= 4 else "месяцев")
+                word = _ru_plural(months, "месяц", "месяца", "месяцев")
                 fun_stats.append({
                     "icon": "📅",
                     "html": f"Собирает <b>{months}</b> {word}",
                 })
         if new_this_week >= 2:
+            phrase = _ru_plural(new_this_week, "новая пластинка", "новые пластинки", "новых пластинок")
             fun_stats.append({
                 "icon": "⚡",
-                "html": f"<b>{new_this_week}</b> новых за неделю",
+                "html": f"<b>{new_this_week}</b> {phrase} за неделю",
             })
     except Exception as e:
         logger.warning("fun_stats computation failed: %s", e)
