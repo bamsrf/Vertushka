@@ -16,8 +16,11 @@ depends_on = None
 
 
 def upgrade() -> None:
-    blocked_kind = sa.Enum("email", "ip", name="blocked_contact_kind")
-    blocked_kind.create(op.get_bind(), checkfirst=True)
+    # create_type=False — enum-тип создаём руками ниже с checkfirst,
+    # иначе create_table повторно вызовет CREATE TYPE без checkfirst и упадёт
+    # при повторном применении миграции на БД, где тип уже остался от предыдущего запуска.
+    blocked_kind = sa.Enum("email", "ip", name="blocked_contact_kind", create_type=False)
+    sa.Enum("email", "ip", name="blocked_contact_kind").create(op.get_bind(), checkfirst=True)
 
     op.create_table(
         "blocked_contacts",
