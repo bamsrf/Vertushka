@@ -16,6 +16,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Button, Input } from '../../components/ui';
+import { SocialAuthButtons } from '../../components/SocialAuthButtons';
 import { useAuthStore } from '../../lib/store';
 import { Colors, Typography, Spacing, BorderRadius } from '../../constants/theme';
 
@@ -117,6 +118,8 @@ export default function LoginScreen() {
           <Link href="/(auth)/forgot-password" style={styles.forgotLink}>
             <Text style={styles.forgotText}>Забыли пароль?</Text>
           </Link>
+
+          <SocialAuthButtons mode="login" />
         </View>
 
         {/* Ссылка на регистрацию */}

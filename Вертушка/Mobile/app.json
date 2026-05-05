@@ -44,6 +44,12 @@
       "expo-secure-store",
       "expo-apple-authentication",
       [
+        "@react-native-google-signin/google-signin",
+        {
+          "iosUrlScheme": "com.googleusercontent.apps.REPLACE_WITH_REVERSED_CLIENT_ID"
+        }
+      ],
+      [
         "expo-camera",
         {
           "cameraPermission": "Приложению нужен доступ к камере для сканирования штрихкодов пластинок"
@@ -58,6 +64,9 @@
       "termsOfServiceUrl": "https://vinyl-vertushka.ru/terms",
       "devApiUrl": "https://api.vinyl-vertushka.ru/api",
       "sentryDsn": "",
+      "amplitudeApiKey": "",
+      "googleWebClientId": "",
+      "googleIosClientId": "",
       "router": {},
       "eas": {
         "projectId": "a603ba4b-61d4-4179-9384-e5f3ed4e4bca"

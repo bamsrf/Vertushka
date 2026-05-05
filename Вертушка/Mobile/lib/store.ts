@@ -5,6 +5,7 @@ import { create } from 'zustand';
 import { toast } from './toast';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { api } from './api';
+import { analytics } from './analytics';
 import {
   User,
   VinylRecord,
@@ -153,6 +154,8 @@ interface AuthState {
   // Actions
   login: (login: string, password: string) => Promise<void>;
   register: (email: string, username: string, password: string) => Promise<void>;
+  loginWithApple: (data: import('./types').AppleSignInRequest) => Promise<void>;
+  loginWithGoogle: (idToken: string) => Promise<void>;
   logout: () => Promise<void>;
   checkAuth: () => Promise<void>;
   setUser: (user: User | null) => void;
@@ -169,6 +172,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       await api.login({ login, password });
       const user = await api.getMe();
       set({ user, isAuthenticated: true, isLoading: false });
+      analytics.identify(user.id);
+      analytics.login('email');
     } catch (error) {
       set({ isLoading: false });
       throw error;
@@ -183,6 +188,36 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       // Получаем данные пользователя
       const user = await api.getMe();
       set({ user, isAuthenticated: true, isLoading: false });
+      analytics.identify(user.id);
+      analytics.register();
+    } catch (error) {
+      set({ isLoading: false });
+      throw error;
+    }
+  },
+
+  loginWithApple: async (data) => {
+    set({ isLoading: true });
+    try {
+      await api.appleSignIn(data);
+      const user = await api.getMe();
+      set({ user, isAuthenticated: true, isLoading: false });
+      analytics.identify(user.id);
+      analytics.login('apple');
+    } catch (error) {
+      set({ isLoading: false });
+      throw error;
+    }
+  },
+
+  loginWithGoogle: async (idToken) => {
+    set({ isLoading: true });
+    try {
+      await api.googleSignIn({ id_token: idToken });
+      const user = await api.getMe();
+      set({ user, isAuthenticated: true, isLoading: false });
+      analytics.identify(user.id);
+      analytics.login('google');
     } catch (error) {
       set({ isLoading: false });
       throw error;
@@ -192,6 +227,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   logout: async () => {
     await api.logout();
     set({ user: null, isAuthenticated: false });
+    analytics.logout();
     useSearchStore.getState().clearHistory();
   },
 
@@ -202,6 +238,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       if (token) {
         const user = await api.getMe();
         set({ user, isAuthenticated: true, isLoading: false });
+        analytics.identify(user.id);
       } else {
         set({ isLoading: false });
       }

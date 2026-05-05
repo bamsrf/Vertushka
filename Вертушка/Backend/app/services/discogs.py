@@ -5,6 +5,7 @@
 import asyncio
 import logging
 import re
+import time
 
 import httpx
 from typing import Any
@@ -43,6 +44,70 @@ from app.schemas.record import (
 logger = logging.getLogger(__name__)
 
 settings = get_settings()
+
+
+class CircuitOpenError(Exception):
+    """Raised when Discogs circuit breaker is OPEN — fast-fail без похода в сеть."""
+
+
+class _CircuitBreaker:
+    """Circuit breaker для Discogs.
+
+    CLOSED → нормальная работа.
+    OPEN  → 5 подряд 5xx/network → блокируем запросы на reset_after сек.
+    HALF_OPEN → пускаем один пробный запрос. Успех → CLOSED, провал → OPEN.
+
+    429 не считаем фейлом — это rate-limit, не падение сервиса.
+    """
+
+    CLOSED = "closed"
+    OPEN = "open"
+    HALF_OPEN = "half_open"
+
+    def __init__(self, failure_threshold: int = 5, reset_after_sec: float = 60.0):
+        self.failure_threshold = failure_threshold
+        self.reset_after_sec = reset_after_sec
+        self._state = self.CLOSED
+        self._consecutive_failures = 0
+        self._opened_at: float | None = None
+        self._lock = asyncio.Lock()
+
+    async def before_request(self) -> None:
+        async with self._lock:
+            if self._state == self.OPEN:
+                assert self._opened_at is not None
+                if time.monotonic() - self._opened_at >= self.reset_after_sec:
+                    self._state = self.HALF_OPEN
+                    logger.warning("Discogs circuit HALF_OPEN — probing")
+                else:
+                    raise CircuitOpenError("Discogs circuit is OPEN")
+
+    async def record_success(self) -> None:
+        async with self._lock:
+            if self._state != self.CLOSED:
+                logger.info("Discogs circuit CLOSED — service recovered")
+            self._state = self.CLOSED
+            self._consecutive_failures = 0
+            self._opened_at = None
+
+    async def record_failure(self) -> None:
+        async with self._lock:
+            self._consecutive_failures += 1
+            if self._state == self.HALF_OPEN:
+                self._state = self.OPEN
+                self._opened_at = time.monotonic()
+                logger.warning("Discogs probe failed — circuit OPEN again")
+            elif self._consecutive_failures >= self.failure_threshold:
+                if self._state != self.OPEN:
+                    logger.warning(
+                        "Discogs circuit OPEN after %d consecutive failures",
+                        self._consecutive_failures,
+                    )
+                self._state = self.OPEN
+                self._opened_at = time.monotonic()
+
+
+discogs_circuit = _CircuitBreaker()
 
 _CYRILLIC_RE = re.compile(r'[а-яёА-ЯЁ]')
 
@@ -114,26 +179,48 @@ class DiscogsService:
         headers: dict | None = None,
         priority: int = Priority.DETAIL,
     ) -> dict:
-        """GET с token bucket rate limiter и retry при 429/503."""
+        """GET с token bucket rate limiter, circuit breaker и retry при 429/503."""
+        await discogs_circuit.before_request()
+
         client = self._get_shared_client()
         request_headers = headers or self._get_headers()
 
         last_response = None
         for attempt in range(3):
             await discogs_limiter.acquire(priority=priority, timeout=30.0)
-            last_response = await client.get(
-                url,
-                params=params,
-                headers=request_headers,
-                timeout=30.0,
-            )
-            if last_response.status_code in (429, 503) and attempt < 2:
+            try:
+                last_response = await client.get(
+                    url,
+                    params=params,
+                    headers=request_headers,
+                    timeout=30.0,
+                )
+            except (httpx.HTTPError, asyncio.TimeoutError):
+                await discogs_circuit.record_failure()
+                if attempt < 2:
+                    await asyncio.sleep(2)
+                    continue
+                raise
+
+            status_code = last_response.status_code
+            if status_code in (429, 503) and attempt < 2:
                 retry_after = int(last_response.headers.get("Retry-After", "2"))
-                logger.warning("Discogs %d, retry after %ds", last_response.status_code, retry_after)
+                logger.warning("Discogs %d, retry after %ds", status_code, retry_after)
+                if status_code >= 500:
+                    await discogs_circuit.record_failure()
                 await asyncio.sleep(retry_after)
                 continue
+
+            if status_code >= 500:
+                await discogs_circuit.record_failure()
+            elif status_code < 400:
+                await discogs_circuit.record_success()
+
             last_response.raise_for_status()
             return last_response.json()
+
+        if last_response.status_code >= 500:
+            await discogs_circuit.record_failure()
         last_response.raise_for_status()
         return last_response.json()
 

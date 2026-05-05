@@ -34,6 +34,18 @@ export interface RegisterRequest {
   password: string;
 }
 
+export interface AppleSignInRequest {
+  identity_token: string;
+  authorization_code: string;
+  user_identifier: string;
+  email?: string | null;
+  full_name?: string | null;
+}
+
+export interface GoogleSignInRequest {
+  id_token: string;
+}
+
 // ==================== VinylRecord (Пластинка) ====================
 
 export interface VinylRecord {

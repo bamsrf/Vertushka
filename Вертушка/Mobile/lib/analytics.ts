@@ -1,10 +1,8 @@
 /**
  * Аналитика — провайдер-агностик обёртка.
- *
- * Чтобы подключить PostHog или Amplitude:
- *   1. Установить SDK: npx expo install posthog-react-native
- *   2. В _layout.tsx вызвать setAnalyticsProvider({ track, identify, reset })
+ * Провайдер по умолчанию — Amplitude, инициализируется в _layout.tsx через initAmplitude().
  */
+import * as Amplitude from '@amplitude/analytics-react-native';
 
 type AnalyticsProvider = {
   track: (event: string, properties?: Record<string, unknown>) => void;
@@ -16,6 +14,31 @@ let provider: AnalyticsProvider | null = null;
 
 export function setAnalyticsProvider(p: AnalyticsProvider) {
   provider = p;
+}
+
+export async function initAmplitude(apiKey: string): Promise<void> {
+  if (!apiKey) return;
+  await Amplitude.init(apiKey, undefined, {
+    trackingOptions: { ipAddress: false },
+  }).promise;
+  setAnalyticsProvider({
+    track: (event, properties) => {
+      Amplitude.track(event, properties);
+    },
+    identify: (userId, properties) => {
+      Amplitude.setUserId(userId);
+      if (properties) {
+        const id = new Amplitude.Identify();
+        for (const [k, v] of Object.entries(properties)) {
+          id.set(k, v as never);
+        }
+        Amplitude.identify(id);
+      }
+    },
+    reset: () => {
+      Amplitude.reset();
+    },
+  });
 }
 
 function track(event: string, properties?: Record<string, unknown>) {

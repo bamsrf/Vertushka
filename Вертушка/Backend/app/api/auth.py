@@ -23,7 +23,7 @@ from app.models.wishlist import Wishlist
 from app.models.collection import Collection
 from app.schemas.user import UserCreate, UserLogin, UserResponse
 from app.schemas.auth import (
-    Token, RefreshToken, AppleSignIn,
+    Token, RefreshToken, AppleSignIn, GoogleSignIn,
     ForgotPasswordRequest, VerifyResetCodeRequest, ResetPasswordRequest,
     RestoreAccountRequest,
 )
@@ -103,6 +103,76 @@ async def _verify_apple_identity_token(identity_token: str) -> dict:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Недействительный Apple identity token"
+        )
+
+
+# ---------- Google Sign In verification ----------
+
+GOOGLE_JWKS_URL = "https://www.googleapis.com/oauth2/v3/certs"
+GOOGLE_ISSUERS = ("https://accounts.google.com", "accounts.google.com")
+_google_jwks_cache: dict | None = None
+
+
+async def _get_google_jwks() -> dict:
+    """Получение Google JWKS (с кэшированием в памяти)."""
+    global _google_jwks_cache
+    if _google_jwks_cache:
+        return _google_jwks_cache
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(GOOGLE_JWKS_URL, timeout=10.0)
+        resp.raise_for_status()
+        _google_jwks_cache = resp.json()
+        return _google_jwks_cache
+
+
+async def _verify_google_id_token(id_token: str) -> dict:
+    """Верифицирует Google id_token через Google JWKS.
+    Возвращает payload с sub, email и др."""
+    settings = get_settings()
+    if not settings.google_client_id:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Google Sign In не сконфигурирован на сервере"
+        )
+
+    try:
+        unverified_header = jose_jwt.get_unverified_header(id_token)
+        kid = unverified_header.get("kid")
+        if not kid:
+            raise ValueError("No kid in token header")
+
+        jwks = await _get_google_jwks()
+        key_data = next((k for k in jwks.get("keys", []) if k["kid"] == kid), None)
+
+        if not key_data:
+            global _google_jwks_cache
+            _google_jwks_cache = None
+            jwks = await _get_google_jwks()
+            key_data = next((k for k in jwks.get("keys", []) if k["kid"] == kid), None)
+
+        if not key_data:
+            raise ValueError(f"Google public key with kid={kid} not found")
+
+        public_key = jwk.construct(key_data)
+
+        last_err: Exception | None = None
+        for issuer in GOOGLE_ISSUERS:
+            try:
+                return jose_jwt.decode(
+                    id_token,
+                    public_key,
+                    algorithms=["RS256"],
+                    audience=settings.google_client_id,
+                    issuer=issuer,
+                )
+            except JWTError as e:
+                last_err = e
+        raise last_err or ValueError("Google token verification failed")
+    except (JWTError, ValueError, Exception) as e:
+        logger.warning("Google id_token verification failed: %s", e)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Недействительный Google id_token"
         )
 
 
@@ -411,6 +481,94 @@ async def apple_sign_in(
     await db.commit()
 
     logger.info("apple_sign_in", extra={"user_id": str(user.id), "email": user.email})
+
+    access_token = create_access_token(user.id)
+    refresh_token = create_refresh_token(user.id)
+
+    return Token(
+        access_token=access_token,
+        refresh_token=refresh_token
+    )
+
+
+@router.post("/google", response_model=Token)
+@limiter.limit("5/minute")
+async def google_sign_in(
+    request: Request,
+    data: GoogleSignIn,
+    db: AsyncSession = Depends(get_db)
+):
+    """Вход через Google Sign In"""
+    payload = await _verify_google_id_token(data.id_token)
+
+    google_sub = payload.get("sub")
+    if not google_sub:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Google токен без sub"
+        )
+
+    email = (payload.get("email") or "").lower().strip() or None
+    email_verified = bool(payload.get("email_verified"))
+    name = payload.get("name")
+
+    # Поиск пользователя: сначала по google_id, потом по email (для линковки)
+    result = await db.execute(select(User).where(User.google_id == google_sub))
+    user = result.scalar_one_or_none()
+
+    if not user and email:
+        result = await db.execute(select(User).where(User.email == email))
+        existing = result.scalar_one_or_none()
+        if existing:
+            existing.google_id = google_sub
+            if email_verified and not existing.is_verified:
+                existing.is_verified = True
+            user = existing
+
+    if not user:
+        if not email:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Email обязателен для регистрации"
+            )
+
+        base_username = email.split("@")[0]
+        username = base_username
+        counter = 1
+        while counter <= 100:
+            result = await db.execute(select(User).where(User.username == username))
+            if not result.scalar_one_or_none():
+                break
+            username = f"{base_username}{counter}"
+            counter += 1
+        else:
+            username = f"{base_username}_{uuid_mod.uuid4().hex[:8]}"
+
+        user = User(
+            email=email,
+            username=username,
+            google_id=google_sub,
+            display_name=name or username,
+            is_verified=email_verified,
+        )
+        db.add(user)
+        await db.flush()
+
+        wishlist = Wishlist(user_id=user.id)
+        db.add(wishlist)
+
+        collection = Collection(
+            user_id=user.id,
+            name="Моя коллекция"
+        )
+        db.add(collection)
+
+        await db.commit()
+
+    user.last_login_at = datetime.utcnow()
+    await db.commit()
+
+    logger.info("google_sign_in", extra={"user_id": str(user.id), "email": user.email})
 
     access_token = create_access_token(user.id)
     refresh_token = create_refresh_token(user.id)

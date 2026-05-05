@@ -32,6 +32,7 @@ import { OfflineBanner } from '../components/OfflineBanner';
 import { OnboardingOverlay } from '../components/OnboardingOverlay';
 import Toast from 'react-native-toast-message';
 import { toastConfig } from '../components/CustomToast';
+import { initAmplitude } from '../lib/analytics';
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -50,6 +51,13 @@ if (sentryDsn) {
     environment: __DEV__ ? 'development' : 'production',
     tracesSampleRate: 0.2,
     attachScreenshot: false,
+  });
+}
+
+const amplitudeApiKey = Constants.expoConfig?.extra?.amplitudeApiKey as string | undefined;
+if (amplitudeApiKey) {
+  initAmplitude(amplitudeApiKey).catch(() => {
+    // тихо — аналитика не должна ломать загрузку приложения
   });
 }
 

@@ -38,6 +38,8 @@ import {
   CoverScanResponse,
   NotificationSettings,
   SuggestResponse,
+  AppleSignInRequest,
+  GoogleSignInRequest,
 } from './types';
 
 // API сервер
@@ -257,6 +259,18 @@ class ApiClient {
     const response = await this.client.post<AuthTokens>('/auth/register', data);
     
     // Сохраняем оба токена сразу после регистрации
+    await this.setTokens(response.data.access_token, response.data.refresh_token || '');
+    return response.data;
+  }
+
+  async appleSignIn(data: AppleSignInRequest): Promise<AuthTokens> {
+    const response = await this.client.post<AuthTokens>('/auth/apple', data);
+    await this.setTokens(response.data.access_token, response.data.refresh_token || '');
+    return response.data;
+  }
+
+  async googleSignIn(data: GoogleSignInRequest): Promise<AuthTokens> {
+    const response = await this.client.post<AuthTokens>('/auth/google', data);
     await this.setTokens(response.data.access_token, response.data.refresh_token || '');
     return response.data;
   }

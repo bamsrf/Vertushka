@@ -16,6 +16,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Button, Input } from '../../components/ui';
+import { SocialAuthButtons } from '../../components/SocialAuthButtons';
 import { useAuthStore } from '../../lib/store';
 import { Colors, Typography, Spacing } from '../../constants/theme';
 
@@ -154,6 +155,8 @@ export default function RegisterScreen() {
             fullWidth
             style={styles.button}
           />
+
+          <SocialAuthButtons mode="register" />
         </View>
 
         {/* Ссылка на вход */}
