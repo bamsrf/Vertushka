@@ -1335,11 +1335,14 @@
             }
         })();
 
-        // Infinite auto-scroll рейл — нативный horizontal scroll (как мобильный AutoRail).
-        // Авто-двигаем rail.scrollLeft программно. Когда юзер касается / драгает / крутит
-        // колёсико — паузим на 2.5с. После grace-периода возобновляем движение с
-        // текущей user-позиции, без «прыжков» в авто-точку.
+        // Infinite auto-scroll рейл.
+        // Состояния: moving → paused (touch/scroll) → moving через 3s после
+        // последнего взаимодействия. Юзер может в любой момент драгать вручную;
+        // авто-движение возобновляется с user-позиции без прыжков.
         (function() {
+            var RESUME_MS = 3000;
+            var SPEED_PX_S = 45;
+
             function startInfiniteRail(rail) {
                 if (!rail || rail.dataset.infiniteInit === '1') return;
                 var track = rail.querySelector('.rail-track');
@@ -1348,7 +1351,7 @@
                 if (cards.length < 2) return;
                 rail.dataset.infiniteInit = '1';
 
-                // Клонируем карточки для бесшовного цикла
+                // Бесшовный цикл — дублируем карточки.
                 cards.forEach(function(card) {
                     var clone = card.cloneNode(true);
                     clone.setAttribute('aria-hidden', 'true');
@@ -1357,44 +1360,85 @@
 
                 var cardStep = 116 + 14;
                 var loopWidth = cards.length * cardStep;
-                var speed = 45; // px/s — медленнее, чтобы успевать читать
                 var paused = false;
                 var resumeTimer = null;
                 var last = null;
+                var suppressScrollEvent = false;
 
-                function pauseAndScheduleResume(delay) {
-                    paused = true;
+                function scheduleResume() {
                     if (resumeTimer) clearTimeout(resumeTimer);
                     resumeTimer = setTimeout(function() {
-                        paused = false; resumeTimer = null;
-                    }, delay || 2500);
+                        paused = false;
+                        resumeTimer = null;
+                        last = null; // сбросим dt, чтобы не было прыжка
+                    }, RESUME_MS);
                 }
 
-                // Любая активная интеракция → пауза с grace-периодом
-                rail.addEventListener('pointerdown', function() { pauseAndScheduleResume(2500); }, { passive: true });
-                rail.addEventListener('touchstart',  function() { pauseAndScheduleResume(2500); }, { passive: true });
-                rail.addEventListener('wheel',       function() { pauseAndScheduleResume(2500); }, { passive: true });
-                // На десктопе пауза при наведении мыши
-                if (window.matchMedia('(hover: hover)').matches) {
-                    rail.addEventListener('mouseenter', function() { paused = true; if (resumeTimer) { clearTimeout(resumeTimer); resumeTimer = null; } });
-                    rail.addEventListener('mouseleave', function() { pauseAndScheduleResume(800); });
+                function pauseNow() {
+                    paused = true;
+                    if (resumeTimer) { clearTimeout(resumeTimer); resumeTimer = null; }
                 }
+
+                // Touch — мобилка
+                rail.addEventListener('touchstart', pauseNow, { passive: true });
+                rail.addEventListener('touchend',   scheduleResume, { passive: true });
+                rail.addEventListener('touchcancel', scheduleResume, { passive: true });
+
+                // Pointer — universal (desktop + некоторые сенсорные)
+                rail.addEventListener('pointerdown', pauseNow);
+                rail.addEventListener('pointerup',   scheduleResume);
+                rail.addEventListener('pointercancel', scheduleResume);
+
+                // Scroll: ловим юзерский скролл (мышь-колесо или drag),
+                // но игнорим тот, что мы сами генерим через scrollLeft setter.
+                rail.addEventListener('scroll', function() {
+                    if (suppressScrollEvent) { suppressScrollEvent = false; return; }
+                    paused = true;
+                    scheduleResume();
+                }, { passive: true });
+
+                // Desktop hover — пауза пока курсор над рейлом
+                if (window.matchMedia('(hover: hover)').matches) {
+                    rail.addEventListener('mouseenter', pauseNow);
+                    rail.addEventListener('mouseleave', scheduleResume);
+                }
+
+                // Не двигаем фоном, когда вкладка не видна или рейл за вьюпортом
+                var visible = true;
+                document.addEventListener('visibilitychange', function() {
+                    visible = !document.hidden;
+                    if (visible) last = null;
+                });
 
                 function tick(ts) {
-                    if (last !== null && !paused) {
-                        var dt = (ts - last) / 1000;
-                        var next = rail.scrollLeft + speed * dt;
-                        if (next >= loopWidth) next -= loopWidth;
-                        // setter не триггерит scroll-event с user intent → юзер по-прежнему может
-                        // драгать поверх авто-движения; pointerdown/touchstart выше всё равно поймают
-                        rail.scrollLeft = next;
+                    if (visible && !paused) {
+                        if (last !== null) {
+                            var dt = (ts - last) / 1000;
+                            // Кэп на dt: если вкладка спала, не прыгаем на полрейла.
+                            if (dt > 0.1) dt = 0.1;
+                            var next = rail.scrollLeft + SPEED_PX_S * dt;
+                            if (next >= loopWidth) next -= loopWidth;
+                            suppressScrollEvent = true;
+                            rail.scrollLeft = next;
+                        }
+                        last = ts;
+                    } else {
+                        last = null;
                     }
-                    last = ts;
                     requestAnimationFrame(tick);
                 }
                 requestAnimationFrame(tick);
             }
-            document.querySelectorAll('.rail-infinite').forEach(startInfiniteRail);
+
+            function initAll() {
+                document.querySelectorAll('.rail-infinite').forEach(startInfiniteRail);
+            }
+
+            // Двойная инициализация: сразу + после полной отрисовки (защита от пустых треков на первом проходе).
+            initAll();
+            if (document.readyState !== 'complete') {
+                window.addEventListener('load', initAll);
+            }
         })();
 
         // Share
