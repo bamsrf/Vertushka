@@ -6,6 +6,7 @@ Create Date: 2026-05-04
 """
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
 from sqlalchemy.dialects.postgresql import UUID
 
 
@@ -16,11 +17,22 @@ depends_on = None
 
 
 def upgrade() -> None:
-    # create_type=False — enum-тип создаём руками ниже с checkfirst,
-    # иначе create_table повторно вызовет CREATE TYPE без checkfirst и упадёт
-    # при повторном применении миграции на БД, где тип уже остался от предыдущего запуска.
-    blocked_kind = sa.Enum("email", "ip", name="blocked_contact_kind", create_type=False)
-    sa.Enum("email", "ip", name="blocked_contact_kind").create(op.get_bind(), checkfirst=True)
+    # Идемпотентное создание enum-типа на уровне SQL (Postgres не умеет CREATE TYPE IF NOT EXISTS).
+    op.execute(
+        """
+        DO $$ BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'blocked_contact_kind') THEN
+                CREATE TYPE blocked_contact_kind AS ENUM ('email', 'ip');
+            END IF;
+        END $$;
+        """
+    )
+
+    # postgresql.ENUM с create_type=False гарантированно подавляет авто-создание типа
+    # из create_table (в отличие от sa.Enum, который теряет флаг при dispatch в диалект).
+    blocked_kind = postgresql.ENUM(
+        "email", "ip", name="blocked_contact_kind", create_type=False
+    )
 
     op.create_table(
         "blocked_contacts",
