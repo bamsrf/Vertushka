@@ -357,8 +357,11 @@
         .rail-infinite {
             overflow-x: auto; overflow-y: hidden;
             scrollbar-width: none;
-            -webkit-overflow-scrolling: touch;
             overscroll-behavior-x: contain;
+            /* -webkit-overflow-scrolling: touch — НЕ возвращать.
+               На iOS Safari momentum-скролл ломает программные scrollLeft-записи:
+               auto-scroll визуально не двигается, хотя scrollLeft в JS меняется.
+               Современный iOS (15.4+) использует smooth scroll по умолчанию. */
         }
         .rail-infinite::-webkit-scrollbar { display: none; }
         .rail-infinite .rail-track {
