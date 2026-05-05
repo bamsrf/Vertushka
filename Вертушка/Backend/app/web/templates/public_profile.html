@@ -354,20 +354,20 @@
            Авто-двигает scrollLeft через rAF; при касании паузится на 2.5с,
            юзер свободно драгает / тапает, после grace-периода авто-движение
            возобновляется с текущей user-позиции. */
+        /* rail-infinite использует transform-based анимацию track'а.
+           Native scroll (overflow:auto + scrollLeft) выключен — iOS Safari ненадёжно
+           обрабатывает программный scrollLeft, авто-движение не отрисовывалось.
+           Манипуляции пальцем — через touchmove → translateX. */
         .rail-infinite {
-            overflow-x: auto; overflow-y: hidden;
-            scrollbar-width: none;
-            overscroll-behavior-x: contain;
-            /* -webkit-overflow-scrolling: touch — НЕ возвращать.
-               На iOS Safari momentum-скролл ломает программные scrollLeft-записи:
-               auto-scroll визуально не двигается, хотя scrollLeft в JS меняется.
-               Современный iOS (15.4+) использует smooth scroll по умолчанию. */
+            overflow: hidden;
+            position: relative;
+            touch-action: pan-y; /* вертикальный скролл страницы продолжает работать */
         }
-        .rail-infinite::-webkit-scrollbar { display: none; }
         .rail-infinite .rail-track {
             display: flex; gap: 14px;
             padding: 4px 4px 8px;
             width: max-content;
+            will-change: transform;
         }
 
         /* BOOKING EXPLAINER */
@@ -1338,10 +1338,12 @@
             }
         })();
 
-        // Infinite auto-scroll рейл.
-        // Состояния: moving → paused (touch/scroll) → moving через 3s после
-        // последнего взаимодействия. Юзер может в любой момент драгать вручную;
-        // авто-движение возобновляется с user-позиции без прыжков.
+        // Infinite auto-scroll рейл — transform-based.
+        // Анимация двигает translateX на .rail-track. Native scrollLeft не используем:
+        // на iOS Safari программные scrollLeft-записи ненадёжны (не отрисовываются).
+        // Состояния: moving → paused (touch/wheel/hover) → moving через 3s после
+        // последнего взаимодействия. Юзер драгает рейл пальцем — touchmove обновляет
+        // translateX напрямую, после отпускания через 3s продолжается с user-позиции.
         (function() {
             var RESUME_MS = 3000;
             var SPEED_PX_S = 45;
@@ -1363,16 +1365,26 @@
 
                 var cardStep = 116 + 14;
                 var loopWidth = cards.length * cardStep;
+                var offset = 0; // текущий translateX (px), всегда [0, loopWidth)
                 var paused = false;
                 var resumeTimer = null;
                 var last = null;
+
+                function applyTransform() {
+                    track.style.transform = 'translate3d(' + (-offset) + 'px, 0, 0)';
+                }
+
+                function wrap(v) {
+                    v = v % loopWidth;
+                    return v < 0 ? v + loopWidth : v;
+                }
 
                 function scheduleResume() {
                     if (resumeTimer) clearTimeout(resumeTimer);
                     resumeTimer = setTimeout(function() {
                         paused = false;
                         resumeTimer = null;
-                        last = null; // сбросим dt, чтобы не было прыжка
+                        last = null;
                     }, RESUME_MS);
                 }
 
@@ -1383,22 +1395,37 @@
 
                 function pauseAndResume() { pauseNow(); scheduleResume(); }
 
-                // Touch — мобилка
-                rail.addEventListener('touchstart', pauseNow, { passive: true });
-                rail.addEventListener('touchend',   scheduleResume, { passive: true });
-                rail.addEventListener('touchcancel', scheduleResume, { passive: true });
+                // Touch drag — мобилка. Палец двигает track напрямую через touchmove.
+                var touchStartX = null;
+                var touchStartOffset = 0;
+                rail.addEventListener('touchstart', function(e) {
+                    pauseNow();
+                    if (e.touches.length === 1) {
+                        touchStartX = e.touches[0].clientX;
+                        touchStartOffset = offset;
+                    }
+                }, { passive: true });
+                rail.addEventListener('touchmove', function(e) {
+                    if (touchStartX !== null && e.touches.length === 1) {
+                        var dx = e.touches[0].clientX - touchStartX;
+                        offset = wrap(touchStartOffset - dx);
+                        applyTransform();
+                    }
+                }, { passive: true });
+                function endTouch() {
+                    touchStartX = null;
+                    scheduleResume();
+                }
+                rail.addEventListener('touchend',    endTouch, { passive: true });
+                rail.addEventListener('touchcancel', endTouch, { passive: true });
 
-                // Pointer — desktop drag (на touch-устройствах дублирует touch-события,
-                // но pauseNow/scheduleResume идемпотентны).
-                rail.addEventListener('pointerdown', pauseNow);
-                rail.addEventListener('pointerup',   scheduleResume);
-                rail.addEventListener('pointercancel', scheduleResume);
-
-                // Wheel — desktop колёсико. Не используем 'scroll'-event:
-                // наш scrollLeft setter тоже триггерит scroll, причём асинхронно
-                // несколько раз в очередь, и фильтр через флаг ненадёжен —
-                // именно из-за этого прошлая версия падала в постоянную паузу.
-                rail.addEventListener('wheel', pauseAndResume, { passive: true });
+                // Wheel — desktop колёсико. Двигаем offset на deltaX (или deltaY если горизонталь = 0).
+                rail.addEventListener('wheel', function(e) {
+                    var d = e.deltaX || e.deltaY || 0;
+                    offset = wrap(offset + d);
+                    applyTransform();
+                    pauseAndResume();
+                }, { passive: true });
 
                 // Desktop hover — пауза пока курсор над рейлом
                 if (window.matchMedia('(hover: hover)').matches) {
@@ -1406,8 +1433,8 @@
                     rail.addEventListener('mouseleave', scheduleResume);
                 }
 
-                // Не двигаем фоном, когда вкладка не видна или рейл за вьюпортом
-                var visible = true;
+                // Не двигаем фоном
+                var visible = !document.hidden;
                 document.addEventListener('visibilitychange', function() {
                     visible = !document.hidden;
                     if (visible) last = null;
@@ -1417,11 +1444,9 @@
                     if (visible && !paused) {
                         if (last !== null) {
                             var dt = (ts - last) / 1000;
-                            // Кэп на dt: если вкладка спала, не прыгаем на полрейла.
                             if (dt > 0.1) dt = 0.1;
-                            var next = rail.scrollLeft + SPEED_PX_S * dt;
-                            if (next >= loopWidth) next -= loopWidth;
-                            rail.scrollLeft = next;
+                            offset = wrap(offset + SPEED_PX_S * dt);
+                            applyTransform();
                         }
                         last = ts;
                     } else {
@@ -1436,7 +1461,6 @@
                 document.querySelectorAll('.rail-infinite').forEach(startInfiniteRail);
             }
 
-            // Двойная инициализация: сразу + после полной отрисовки (защита от пустых треков на первом проходе).
             initAll();
             if (document.readyState !== 'complete') {
                 window.addEventListener('load', initAll);
