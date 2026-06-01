@@ -21,6 +21,7 @@ import Animated, {
 import { Colors, Typography, BorderRadius, Shadows, Spacing, Gradients } from '../constants/theme';
 import { RecordSearchResult, VinylRecord, MasterSearchResult, ReleaseSearchResult, PublicProfileRecord } from '../lib/types';
 import { getCoverUrl } from '../lib/api';
+import { ms } from '../lib/responsive';
 import { cleanArtistName } from '../lib/format';
 import { RarityAura, TierCoverEffects, TierLabel, pickRarityTier, RarityContext, RarityFlags, RARITY_TIERS } from './RarityAura';
 import HotStockTag, { type ResolvedHotStock } from './HotStockTag';
@@ -599,7 +600,7 @@ const styles = StyleSheet.create({
     paddingTop: 40,
   },
   compactArtist: {
-    fontSize: 12,
+    fontSize: ms(12),
     fontFamily: 'Inter_500Medium',
     color: 'rgba(255,255,255,0.85)',
     textTransform: 'uppercase',
@@ -607,10 +608,10 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   compactTitle: {
-    fontSize: 16,
+    fontSize: ms(16),
     fontFamily: 'Inter_700Bold',
     color: '#FFFFFF',
-    lineHeight: 20,
+    lineHeight: ms(20),
   },
   compactRarity: {
     alignSelf: 'flex-start',

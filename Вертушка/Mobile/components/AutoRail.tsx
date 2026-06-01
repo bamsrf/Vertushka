@@ -28,6 +28,7 @@ import Animated, {
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
+import { ms } from '../lib/responsive';
 import { resolveMediaUrl } from '../lib/api';
 import { cleanArtistName } from '../lib/format';
 import { PublicProfileRecord } from '../lib/types';
@@ -344,16 +345,16 @@ const styles = StyleSheet.create({
     flexShrink: 0,      // action не сжимается, subtitle обрезается раньше
   },
   railHeadActionText: {
-    fontSize: 11,
+    fontSize: ms(12),
     fontWeight: '600',
   },
   railTitle: {
-    fontSize: 11,
+    fontSize: ms(11),
     letterSpacing: 1.2,
     fontWeight: '600',
     fontFamily: Platform.select({ ios: 'Menlo', android: 'monospace' }),
   },
-  railSub: { fontSize: 13, color: PALETTE.mute, flexShrink: 1, minWidth: 0 },
+  railSub: { fontSize: ms(13), color: PALETTE.mute, flexShrink: 1, minWidth: 0 },
   viewport: {
     overflow: 'hidden',
   },
@@ -378,10 +379,10 @@ const styles = StyleSheet.create({
   },
   railArtist: {
     fontFamily: Platform.select({ ios: 'Menlo', android: 'monospace' }),
-    fontSize: 9,
+    fontSize: ms(10),
     letterSpacing: 0.6,
     marginTop: 8,
   },
-  railTitleSmall: { fontSize: 11.5, fontWeight: '600', color: PALETTE.ink, marginTop: 2 },
-  railYear: { fontSize: 11, color: PALETTE.periwinkle, marginTop: 2 },
+  railTitleSmall: { fontSize: ms(12), fontWeight: '600', color: PALETTE.ink, marginTop: 2 },
+  railYear: { fontSize: ms(12), color: PALETTE.periwinkle, marginTop: 2 },
 });

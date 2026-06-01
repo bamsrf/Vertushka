@@ -41,6 +41,7 @@ import { AutoRail } from '../../components/AutoRail';
 import { Section } from '../../components/Section';
 import { useSearchStore, useCollectionStore, useUserSearchStore, useAuthStore, useSuggestStore } from '../../lib/store';
 import { useTourTarget } from '../../lib/useTourTarget';
+import { ms } from '../../lib/responsive';
 import { analytics } from '../../lib/analytics';
 import { api, resolveMediaUrl } from '../../lib/api';
 import { MasterSearchResult, ReleaseSearchResult, ArtistSearchResult, UserWithStats, PublicProfileRecord, MarketCarouselItem } from '../../lib/types';
@@ -1523,7 +1524,7 @@ const styles = StyleSheet.create({
   searchInput: {
     flex: 1,
     minWidth: 0,
-    fontSize: 16,
+    fontSize: ms(16),
     color: Colors.text,
     padding: 0,
     margin: 0,
@@ -1720,7 +1721,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
   topArtistName: {
-    fontSize: 22,
+    fontSize: ms(22),
     fontFamily: 'Inter_700Bold',
     color: '#FFFFFF',
     marginTop: 2,
@@ -1759,7 +1760,7 @@ const styles = StyleSheet.create({
   suggestName: {
     ...Typography.bodyBold,
     color: Colors.text,
-    fontSize: 14,
+    fontSize: ms(14),
   },
   suggestType: {
     ...Typography.caption,
