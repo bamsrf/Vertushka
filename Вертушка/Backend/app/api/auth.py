@@ -3,6 +3,7 @@ API для аутентификации
 """
 import asyncio
 import logging
+import os
 import random
 import uuid as uuid_mod
 from datetime import datetime, timedelta, timezone
@@ -157,21 +158,41 @@ async def _verify_google_id_token(id_token: str) -> dict:
 
         public_key = jwk.construct(key_data)
 
+        # Возможные audience: web client id (GOOGLE_CLIENT_ID) и iOS client id
+        # (GOOGLE_IOS_CLIENT_ID). iOS-SDK кладёт в aud iOS-client, web/Android — web.
+        ios_client_id = os.environ.get("GOOGLE_IOS_CLIENT_ID", "")
+        audiences = [a for a in (settings.google_client_id, ios_client_id) if a]
+        if not audiences:
+            raise ValueError("No Google audiences configured")
+
         last_err: Exception | None = None
-        for issuer in GOOGLE_ISSUERS:
-            try:
-                return jose_jwt.decode(
-                    id_token,
-                    public_key,
-                    algorithms=["RS256"],
-                    audience=settings.google_client_id,
-                    issuer=issuer,
-                )
-            except JWTError as e:
-                last_err = e
+        for audience in audiences:
+            for issuer in GOOGLE_ISSUERS:
+                try:
+                    return jose_jwt.decode(
+                        id_token,
+                        public_key,
+                        algorithms=["RS256"],
+                        audience=audience,
+                        issuer=issuer,
+                    )
+                except JWTError as e:
+                    last_err = e
         raise last_err or ValueError("Google token verification failed")
     except (JWTError, ValueError, Exception) as e:
-        logger.warning("Google id_token verification failed: %s", e)
+        # Лог aud/iss из unverified payload — для диагностики мисматча audience
+        try:
+            unverified = jose_jwt.get_unverified_claims(id_token)
+            ios_client_id = os.environ.get("GOOGLE_IOS_CLIENT_ID", "")
+            logger.warning(
+                "Google id_token verification failed: %s; aud=%s iss=%s expected_aud=%s",
+                e,
+                unverified.get("aud"),
+                unverified.get("iss"),
+                [a for a in (settings.google_client_id, ios_client_id) if a],
+            )
+        except Exception:
+            logger.warning("Google id_token verification failed: %s (could not decode unverified)", e)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Недействительный Google id_token"
