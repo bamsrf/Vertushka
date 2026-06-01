@@ -32,6 +32,9 @@ class Settings(BaseSettings):
     discogs_api_secret: str = Field(default="", alias="DISCOGS_API_SECRET")
     discogs_token: str = Field(default="", alias="DISCOGS_TOKEN")
     discogs_user_agent: str = Field(default="VertushkaApp/1.0", alias="DISCOGS_USER_AGENT")
+    discogs_oauth_callback_url: str = Field(default="https://api.vinyl-vertushka.ru/api/auth/discogs/callback", alias="DISCOGS_OAUTH_CALLBACK_URL")
+    discogs_oauth_app_redirect: str = Field(default="vertushka://discogs-callback", alias="DISCOGS_OAUTH_APP_REDIRECT")
+    discogs_token_encryption_key: str = Field(default="", alias="DISCOGS_TOKEN_ENCRYPTION_KEY")
     
     # OpenAI API (распознавание обложки)
     openai_api_key: str = Field(default="", alias="OPENAI_API_KEY")

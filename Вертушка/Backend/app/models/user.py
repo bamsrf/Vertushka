@@ -66,7 +66,25 @@ class User(Base):
         nullable=True,
         index=True
     )
-    
+
+    # Discogs OAuth 1.0a — per-user токен. oauth_token_secret шифруется (Fernet) до записи.
+    discogs_username: Mapped[str | None] = mapped_column(
+        String(100),
+        nullable=True
+    )
+    discogs_oauth_token: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True
+    )
+    discogs_oauth_token_secret: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True
+    )
+    discogs_connected_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True
+    )
+
     # Статус
     is_active: Mapped[bool] = mapped_column(
         Boolean,

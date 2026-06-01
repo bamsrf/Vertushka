@@ -203,16 +203,30 @@ class DiscogsService:
         params: dict | None = None,
         headers: dict | None = None,
         priority: int = Priority.DETAIL,
+        creds: "tuple[str, str] | None" = None,
     ) -> dict:
-        """GET с token bucket rate limiter, circuit breaker и retry при 429/503."""
+        """GET с token bucket rate limiter, circuit breaker и retry при 429/503.
+
+        creds=(oauth_token, oauth_token_secret) — запрос идёт от имени юзера:
+        его OAuth-подпись + его персональный rate-limit bucket. При 401 (токен
+        отозван/протух) — прозрачный fallback на общий app-токен.
+        """
+        from app.services.rate_limiter import get_limiter
+
         await discogs_circuit.before_request()
 
         client = self._get_shared_client()
-        request_headers = headers or self._get_headers()
+        if creds is not None:
+            from app.services.discogs_oauth import sign_headers
+            request_headers = sign_headers(creds[0], creds[1])
+            limiter_key = creds[0]
+        else:
+            request_headers = headers or self._get_headers()
+            limiter_key = "app"
 
         last_response = None
         for attempt in range(3):
-            await discogs_limiter.acquire(priority=priority, timeout=30.0)
+            await get_limiter(limiter_key).acquire(priority=priority, timeout=30.0)
             try:
                 last_response = await client.get(
                     url,
@@ -226,6 +240,14 @@ class DiscogsService:
                     await asyncio.sleep(2)
                     continue
                 raise
+
+            # User-токен отозван/протух → fallback на app-токен, не валим запрос.
+            if last_response.status_code == 401 and creds is not None:
+                logger.warning("Discogs 401 on user token, falling back to app token")
+                request_headers = self._get_headers()
+                limiter_key = "app"
+                creds = None
+                continue
 
             status_code = last_response.status_code
             if status_code in (429, 503) and attempt < 2:
@@ -291,7 +313,12 @@ class DiscogsService:
     # Автодополнение (suggest)
     # ------------------------------------------------------------------
 
-    async def suggest(self, query: str, per_page: int = 8) -> dict:
+    async def suggest(
+        self,
+        query: str,
+        per_page: int = 8,
+        creds: "tuple[str, str] | None" = None,
+    ) -> dict:
         """Автодополнение: один запрос к Discogs без type= (ищет всё),
         результаты разделяются по типу. 1 токен вместо 2."""
         # query передаётся в Discogs как есть (кириллица включительно) — тест без транслитерации
@@ -306,6 +333,7 @@ class DiscogsService:
             f"{self.BASE_URL}/database/search",
             params=params,
             priority=Priority.SEARCH,
+            creds=creds,
         )
 
         artists = []
@@ -349,7 +377,8 @@ class DiscogsService:
         year_max: int | None = None,
         label: str | None = None,
         page: int = 1,
-        per_page: int = 20
+        per_page: int = 20,
+        creds: "tuple[str, str] | None" = None,
     ) -> RecordSearchResponse:
         """Поиск пластинок в Discogs."""
         q_value, year_param = _build_year_query(query, year, year_min, year_max)
@@ -378,7 +407,7 @@ class DiscogsService:
             await cache.set("search_release", ck, db_cached, TTL_SEARCH)
             return RecordSearchResponse(**db_cached)
 
-        data = await self._get(f"{self.BASE_URL}/database/search", params=params, priority=Priority.SEARCH)
+        data = await self._get(f"{self.BASE_URL}/database/search", params=params, priority=Priority.SEARCH, creds=creds)
 
         results = []
         for item in data.get("results", []):

@@ -61,7 +61,7 @@ if _settings_early.sentry_dsn:
     logger.info("Sentry initialised")
 
 # API роутеры
-from app.api import auth, records, collections, wishlists, users, gifts, profile, export, covers, user_photos, waitlist, achievements, offers, market, messages, notifications
+from app.api import auth, records, collections, wishlists, users, gifts, profile, export, covers, user_photos, waitlist, achievements, offers, market, messages, notifications, discogs_oauth
 
 # Web роутеры (HTML страницы)
 from app.web import routes as web_routes
@@ -231,6 +231,7 @@ templates = Jinja2Templates(directory="app/web/templates")
 
 # Подключение API роутеров
 app.include_router(auth.router, prefix="/api/auth", tags=["Аутентификация"])
+app.include_router(discogs_oauth.router, prefix="/api/auth/discogs", tags=["Discogs OAuth"])
 app.include_router(records.router, prefix="/api/records", tags=["Пластинки"])
 app.include_router(collections.router, prefix="/api/collections", tags=["Коллекции"])
 app.include_router(wishlists.router, prefix="/api/wishlists", tags=["Вишлисты"])

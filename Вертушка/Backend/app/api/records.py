@@ -41,6 +41,7 @@ from app.schemas.record import (
     Artist,
 )
 from app.services.discogs import DiscogsService
+from app.services.discogs_oauth import user_creds
 from app.services.rate_limiter import Priority
 from app.services.artist_name import clean_artist_name
 from app.services.openai_vision import OpenAIVisionService, CoverRecognitionError
@@ -388,6 +389,15 @@ async def _ensure_record_discogs_payload(record: Record, db: AsyncSession) -> No
         record.thumb_image_url = data["thumb_image"]
         changed = True
 
+    # Discogs не дал обложку → бесплатный fallback через Cover Art Archive
+    # (barcode → MusicBrainz MBID → CAA). Не тратит Discogs rate-limit.
+    if not record.cover_image_url and record.barcode:
+        from app.services.cover_fallback import cover_url_by_barcode
+        caa_url = await cover_url_by_barcode(record.barcode)
+        if caa_url:
+            record.cover_image_url = caa_url
+            changed = True
+
     # discogs_data МЕРДЖИМ, не перезаписываем — иначе теряем поля, которые
     # уже положил _ensure_record_artist_data (artist_id, artist_thumb_image_url).
     # data — свежий Discogs payload, может НЕ содержать artist_thumb_image_url
@@ -538,7 +548,7 @@ async def _search_local_index(
     # потом используется ТОЛЬКО для ранжирования на этом малом наборе.
     # Чистый `artist % :q` сканировал миллионы для "Beatles" (32s cold).
     if q and len(q.strip()) >= 3:
-        conds.append("(artist ILIKE :q_pat OR title ILIKE :q_pat)")
+        conds.append("(dri.artist ILIKE :q_pat OR dri.title ILIKE :q_pat)")
         params["q"] = q.strip()
         params["q_pat"] = f"%{q.strip()}%"
     else:
@@ -546,20 +556,20 @@ async def _search_local_index(
         return []
 
     if artist:
-        conds.append("artist ILIKE :artist_like")
+        conds.append("dri.artist ILIKE :artist_like")
         params["artist_like"] = f"%{artist}%"
     if year is not None:
-        conds.append("year = :year_eq")
+        conds.append("dri.year = :year_eq")
         params["year_eq"] = year
     else:
         if year_min is not None:
-            conds.append("year >= :year_min")
+            conds.append("dri.year >= :year_min")
             params["year_min"] = year_min
         if year_max is not None:
-            conds.append("year <= :year_max")
+            conds.append("dri.year <= :year_max")
             params["year_max"] = year_max
     if label:
-        conds.append("label ILIKE :label_like")
+        conds.append("dri.label ILIKE :label_like")
         params["label_like"] = f"%{label}%"
 
     where = " AND ".join(conds)
@@ -568,19 +578,33 @@ async def _search_local_index(
     # Ранжирование: artist match × 2, title match × 1. Prefix-match
     # (artist начинается с q) добавляет +1 чтобы "Beatles" находил
     # "The Beatles" поверх случайных альбомов где title содержит "beatles".
+    # LEFT JOIN records: подтягиваем обложки из локального кэша. Дамп Discogs
+    # не несёт image URLs (dri.cover_image_url в основном NULL), но
+    # records.cover_local_path / cover_image_url заполнены для релизов, которые
+    # уже открывали — так каждый detail-view улучшает будущие списки.
     sql = text(
         f"""
         SELECT
-            discogs_id::text AS discogs_id,
-            artist, title, year, country, format_type, label, cover_image_url,
+            dri.discogs_id::text AS discogs_id,
+            dri.artist, dri.title, dri.year, dri.country,
+            dri.format_type, dri.label,
+            COALESCE(
+                CASE WHEN r.cover_local_path IS NOT NULL
+                     THEN '/uploads/' || r.cover_local_path END,
+                r.cover_image_url,
+                dri.cover_image_url
+            ) AS cover_image_url,
             (
-              similarity(artist, :q) * 2.0
-              + similarity(title, :q)
-              + CASE WHEN artist ILIKE :q_pref THEN 1.0 ELSE 0.0 END
+              similarity(dri.artist, :q) * 2.0
+              + similarity(dri.title, :q)
+              + CASE WHEN dri.artist ILIKE :q_pref THEN 1.0 ELSE 0.0 END
             ) AS sim
-        FROM discogs_releases_index
+        FROM discogs_releases_index dri
+        LEFT JOIN records r
+            ON r.discogs_id = dri.discogs_id::text
+            AND r.merged_into_id IS NULL
         WHERE {where}
-        ORDER BY sim DESC, year DESC NULLS LAST
+        ORDER BY sim DESC, dri.year DESC NULLS LAST
         LIMIT :limit OFFSET :offset
         """
     )
@@ -662,7 +686,8 @@ async def search_records(
             year_max=year_max,
             label=label,
             page=page,
-            per_page=per_page
+            per_page=per_page,
+            creds=user_creds(current_user),
         )
         await _enrich_search_results_with_rarity(
             results.results, db, id_attr="discogs_id", format_attr="format_type"
@@ -818,7 +843,7 @@ async def scan_cover(
     async def _search_releases(query: str) -> list:
         """Поиск релизов без жёсткого artist-фильтра."""
         try:
-            resp = await discogs.search(query=query, per_page=15)
+            resp = await discogs.search(query=query, per_page=15, creds=user_creds(current_user))
             return resp.results
         except Exception:
             return []
@@ -899,6 +924,7 @@ async def scan_cover(
 async def suggest(
     q: str = Query(..., min_length=2, max_length=100),
     limit: int = Query(8, ge=1, le=15),
+    current_user: User | None = Depends(get_current_user_optional),
 ):
     """
     Автодополнение: один запрос к Discogs, результаты разделяются по типу.
@@ -906,7 +932,7 @@ async def suggest(
     """
     discogs = DiscogsService()
     try:
-        return await discogs.suggest(query=q, per_page=limit)
+        return await discogs.suggest(query=q, per_page=limit, creds=user_creds(current_user))
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,

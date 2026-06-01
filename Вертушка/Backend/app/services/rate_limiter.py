@@ -126,5 +126,50 @@ class TokenBucketRateLimiter:
         }
 
 
-# Singleton — один лимитер на приложение
-discogs_limiter = TokenBucketRateLimiter()
+class _LimiterRegistry:
+    """Реестр token-bucket'ов по ключу токена.
+
+    Ключ "app" — общий app-токен (бэкграунд, неавторизованные юзеры).
+    Ключ = oauth_token юзера — его личные 60 req/min.
+    Idle per-user bucket'ы чистятся по TTL, чтобы не течь памятью.
+    """
+
+    _IDLE_TTL = 900.0  # 15 минут без обращений → bucket удаляется
+
+    def __init__(self) -> None:
+        self._buckets: dict[str, TokenBucketRateLimiter] = {}
+        self._last_access: dict[str, float] = {}
+
+    def get(self, key: str = "app") -> TokenBucketRateLimiter:
+        bucket = self._buckets.get(key)
+        if bucket is None:
+            bucket = TokenBucketRateLimiter()
+            self._buckets[key] = bucket
+        self._last_access[key] = time.monotonic()
+        self._evict_idle()
+        return bucket
+
+    def _evict_idle(self) -> None:
+        now = time.monotonic()
+        for key in list(self._last_access):
+            if key == "app":
+                continue
+            if now - self._last_access[key] > self._IDLE_TTL:
+                self._buckets.pop(key).stop()
+                del self._last_access[key]
+
+    def stats(self) -> dict:
+        return {key: bucket.stats() for key, bucket in self._buckets.items()}
+
+
+_registry = _LimiterRegistry()
+
+
+def get_limiter(key: str = "app") -> TokenBucketRateLimiter:
+    """Bucket по ключу токена. key='app' — общий, иначе oauth_token юзера."""
+    return _registry.get(key)
+
+
+# Общий app-bucket. acquire() сам лениво стартует processor, так что .start()
+# в main.lifespan остаётся валидным (идемпотентен).
+discogs_limiter = get_limiter("app")
