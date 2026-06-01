@@ -18,7 +18,6 @@ import {
   FlatList,
   TextInput,
   TouchableOpacity,
-  KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
   AppState,
@@ -54,6 +53,7 @@ import {
   type MenuAction,
 } from '../../components/messages/MessageContextMenu';
 import { Colors, Spacing, BorderRadius } from '../../constants/theme';
+import { ms } from '../../lib/responsive';
 import { useAuthStore } from '../../lib/store';
 import { useMessagesStore } from '../../lib/messagesStore';
 import { resolveMediaUrl } from '../../lib/api';
@@ -669,6 +669,7 @@ export default function ConversationScreen() {
   } | null>(null);
   const [partnerTyping, setPartnerTyping] = useState(false);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
   const [highlightedMessageId, setHighlightedMessageId] = useState<string | null>(null);
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const [unreadAccum, setUnreadAccum] = useState(0);
@@ -691,8 +692,14 @@ export default function ConversationScreen() {
   useEffect(() => {
     const showEvt = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
     const hideEvt = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
-    const s = Keyboard.addListener(showEvt, () => setKeyboardVisible(true));
-    const h = Keyboard.addListener(hideEvt, () => setKeyboardVisible(false));
+    const s = Keyboard.addListener(showEvt, (e) => {
+      setKeyboardVisible(true);
+      setKeyboardHeight(e.endCoordinates?.height ?? 0);
+    });
+    const h = Keyboard.addListener(hideEvt, () => {
+      setKeyboardVisible(false);
+      setKeyboardHeight(0);
+    });
     return () => {
       s.remove();
       h.remove();
@@ -1534,14 +1541,10 @@ export default function ConversationScreen() {
         </TouchableOpacity>
       ) : null}
 
-      <KeyboardAvoidingView
-        style={styles.kbWrap}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        // Header находится СНАРУЖИ KAV, и KAV доходит до низа экрана —
-        // никакого дополнительного оффсета не нужно. Указание headerHeight
-        // давало лишний зазор размером с хедер.
-        keyboardVerticalOffset={0}
-      >
+      {/* Ручной keyboard-avoid: KeyboardAvoidingView ненадёжен на new arch +
+          edge-to-edge. Поднимаем контент на реальную высоту клавиатуры из
+          событий — детерминированно и одинаково на iOS/Android/Expo Go. */}
+      <View style={[styles.kbWrap, { paddingBottom: keyboardHeight }]}>
         <View style={styles.listWrap}>
           <FlatList
             ref={listRef}
@@ -1570,7 +1573,7 @@ export default function ConversationScreen() {
             }}
             ListEmptyComponent={isLoading ? null : <EmptyState partner={partner} />}
             keyboardShouldPersistTaps="handled"
-            keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+            keyboardDismissMode="on-drag"
           />
           {showScrollToBottom ? (
             <TouchableOpacity
@@ -1760,7 +1763,7 @@ export default function ConversationScreen() {
             />
           </TouchableOpacity>
         </View>
-      </KeyboardAvoidingView>
+      </View>
 
       <MessageContextMenu
         visible={!!menuTarget}
@@ -1853,10 +1856,10 @@ const styles = StyleSheet.create({
     letterSpacing: 0.3,
   },
   partnerTextWrap: { flex: 1, minWidth: 0 },
-  partnerName: { fontSize: 15, fontWeight: '600', color: Colors.text },
+  partnerName: { fontSize: ms(15), fontWeight: '600', color: Colors.text },
   partnerStatusRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 1 },
-  partnerStatus: { fontSize: 11, color: Colors.textMuted },
-  partnerStatusOnline: { fontSize: 11, color: '#30A46C', fontWeight: '500' },
+  partnerStatus: { fontSize: ms(11), color: Colors.textMuted },
+  partnerStatusOnline: { fontSize: ms(11), color: '#30A46C', fontWeight: '500' },
   onlineDot: {
     width: 7,
     height: 7,
@@ -1890,7 +1893,7 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 0.3,
   },
-  pinnedBannerBody: { fontSize: 13, color: Colors.text, marginTop: 1 },
+  pinnedBannerBody: { fontSize: ms(13), color: Colors.text, marginTop: 1 },
   pinnedBannerClose: {
     width: 28,
     height: 28,
@@ -1978,7 +1981,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(154,168,255,0.15)',
   },
   dateChipTxt: {
-    fontSize: 11,
+    fontSize: ms(11),
     fontWeight: '600',
     color: Colors.royalBlue,
     letterSpacing: 0.2,
@@ -2022,7 +2025,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.border,
   },
-  bubbleBody: { fontSize: 14, color: Colors.text, lineHeight: 19 },
+  bubbleBody: { fontSize: ms(14), color: Colors.text, lineHeight: ms(19) },
   bubbleBodyMine: { color: '#fff' },
   bubbleMedia: {
     width: 240,
@@ -2032,7 +2035,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.04)',
   },
   bubbleDeletedTxt: {
-    fontSize: 12,
+    fontSize: ms(12),
     color: Colors.textMuted,
     fontStyle: 'italic',
   },
@@ -2111,8 +2114,8 @@ const styles = StyleSheet.create({
     color: '#fff',
     letterSpacing: 0.5,
   },
-  emptyName: { fontSize: 16, fontWeight: '600', color: Colors.text },
-  emptyHint: { fontSize: 13, color: Colors.textMuted },
+  emptyName: { fontSize: ms(16), fontWeight: '600', color: Colors.text },
+  emptyHint: { fontSize: ms(13), color: Colors.textMuted },
 
   /* Attach (record) preview над composer */
   attachBar: {
@@ -2132,8 +2135,8 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.surface,
   },
   attachCoverPlaceholder: { alignItems: 'center', justifyContent: 'center' },
-  attachTitle: { fontSize: 13, fontWeight: '600', color: Colors.text },
-  attachSub: { fontSize: 11, color: Colors.textMuted, marginTop: 1 },
+  attachTitle: { fontSize: ms(13), fontWeight: '600', color: Colors.text },
+  attachSub: { fontSize: ms(11), color: Colors.textMuted, marginTop: 1 },
 
   /* Attached-record card внутри bubble */
   bubbleRecord: {
@@ -2147,8 +2150,8 @@ const styles = StyleSheet.create({
   bubbleRecordMine: { backgroundColor: 'rgba(255,255,255,0.18)' },
   bubbleRecordOther: { backgroundColor: 'rgba(59,75,245,0.08)' },
   bubbleRecordCover: { width: 44, height: 44, borderRadius: 4 },
-  bubbleRecordTitle: { fontSize: 13, fontWeight: '600' },
-  bubbleRecordSub: { fontSize: 11, marginTop: 1 },
+  bubbleRecordTitle: { fontSize: ms(13), fontWeight: '600' },
+  bubbleRecordSub: { fontSize: ms(11), marginTop: 1 },
 
   /* Reply preview над composer */
   replyBar: {
@@ -2167,8 +2170,8 @@ const styles = StyleSheet.create({
     borderRadius: 2,
     backgroundColor: Colors.royalBlue,
   },
-  replyTitle: { fontSize: 12, fontWeight: '600', color: Colors.royalBlue },
-  replyBody: { fontSize: 12, color: Colors.textMuted, marginTop: 1 },
+  replyTitle: { fontSize: ms(12), fontWeight: '600', color: Colors.royalBlue },
+  replyBody: { fontSize: ms(12), color: Colors.textMuted, marginTop: 1 },
   replyClose: {
     width: 28,
     height: 28,
@@ -2188,7 +2191,7 @@ const styles = StyleSheet.create({
   },
   bubbleReplyMineLine: { borderLeftColor: 'rgba(255,255,255,0.7)' },
   bubbleReplyOtherLine: { borderLeftColor: Colors.royalBlue },
-  bubbleReplyText: { fontSize: 12, lineHeight: 16 },
+  bubbleReplyText: { fontSize: ms(12), lineHeight: ms(16) },
   bubbleReplyTextMine: { color: 'rgba(255,255,255,0.85)' },
   bubbleReplyTextOther: { color: Colors.textMuted },
 
@@ -2218,7 +2221,7 @@ const styles = StyleSheet.create({
     paddingVertical: Platform.OS === 'ios' ? 10 : 6,
     borderRadius: BorderRadius.md,
     backgroundColor: Colors.surface,
-    fontSize: 14,
+    fontSize: ms(14),
     color: Colors.text,
   },
   sendBtn: {

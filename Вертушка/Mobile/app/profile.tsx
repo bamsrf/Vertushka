@@ -27,6 +27,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuthStore, useCollectionStore, useOnboardingStore, useFollowStore, useGiftStore } from '../lib/store';
 import { useMessagesStore } from '../lib/messagesStore';
 import { useTourTarget } from '../lib/useTourTarget';
+import { ms } from '../lib/responsive';
 import { OnboardingOverlay } from '../components/OnboardingOverlay';
 import { CollectionTab, GiftGivenItem } from '../lib/types';
 import { Button } from '../components/ui';
@@ -545,6 +546,14 @@ export default function ProfileScreen() {
 
           <TouchableOpacity
             style={styles.settingsItem}
+            onPress={() => router.push('/settings/discogs' as any)}
+          >
+            <Icon name="disc-outline" size={24} color={Colors.royalBlue} />
+            <Text style={styles.settingsItemText}>Discogs</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.settingsItem}
             onPress={handleExportPress}
             disabled={exporting}
           >
@@ -753,9 +762,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   statValue: {
-    fontSize: 28,
+    fontSize: ms(28),
     fontFamily: 'Inter_800ExtraBold',
-    lineHeight: 34,
+    lineHeight: ms(34),
     color: Colors.deepNavy,
     marginTop: Spacing.xs,
   },
@@ -783,7 +792,7 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.xs,
   },
   linkUrl: {
-    fontSize: 13,
+    fontSize: ms(13),
     fontFamily: 'Inter_600SemiBold',
     color: Colors.royalBlue,
     marginBottom: Spacing.md,
@@ -940,13 +949,13 @@ const styles = StyleSheet.create({
   },
   giftCardTitle: {
     ...Typography.bodyBold,
-    fontSize: 13,
+    fontSize: ms(13),
     color: Colors.deepNavy,
     lineHeight: 16,
   },
   giftCardArtist: {
     ...Typography.caption,
-    fontSize: 12,
+    fontSize: ms(12),
     color: Colors.textSecondary,
     marginBottom: Spacing.sm,
   },
@@ -968,7 +977,7 @@ const styles = StyleSheet.create({
   },
   giftCardRecipientName: {
     ...Typography.caption,
-    fontSize: 11,
+    fontSize: ms(11),
     color: Colors.royalBlue,
     flex: 1,
   },
@@ -996,7 +1005,7 @@ const styles = StyleSheet.create({
   },
   giftCardStatusText: {
     ...Typography.caption,
-    fontSize: 11,
+    fontSize: ms(11),
   },
   swipeAction: {
     justifyContent: 'center',

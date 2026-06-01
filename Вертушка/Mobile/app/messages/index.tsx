@@ -25,6 +25,7 @@ import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Icon, SegmentedControl } from '@/components/ui';
 import { Colors, Spacing, BorderRadius } from '../../constants/theme';
+import { ms } from '../../lib/responsive';
 import { useAuthStore } from '../../lib/store';
 import { useMessagesStore } from '../../lib/messagesStore';
 import { resolveMediaUrl } from '../../lib/api';
@@ -464,8 +465,8 @@ const styles = StyleSheet.create({
     borderColor: Colors.background,
     overflow: 'hidden',
   },
-  requestsHintTitle: { fontSize: 13, fontWeight: '600', color: Colors.text },
-  requestsHintSub: { fontSize: 12, color: Colors.textMuted, marginTop: 1 },
+  requestsHintTitle: { fontSize: ms(13), fontWeight: '600', color: Colors.text },
+  requestsHintSub: { fontSize: ms(12), color: Colors.textMuted, marginTop: 1 },
 
   listContent: { paddingBottom: 160 },
 
@@ -495,7 +496,7 @@ const styles = StyleSheet.create({
   swipeBtnPin: { backgroundColor: '#FBBF24' },
   swipeBtnMute: { backgroundColor: '#94A3B8' },
   swipeBtnArchive: { backgroundColor: '#E5484D' },
-  swipeBtnTxt: { color: '#fff', fontSize: 11, fontWeight: '600' },
+  swipeBtnTxt: { color: '#fff', fontSize: ms(11), fontWeight: '600' },
 
   pinnedBadge: {
     position: 'absolute',
@@ -528,7 +529,7 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   rowName: {
-    fontSize: 15,
+    fontSize: ms(15),
     fontWeight: '600',
     color: Colors.text,
     flexShrink: 1,
@@ -543,7 +544,7 @@ const styles = StyleSheet.create({
     marginTop: 3,
     gap: Spacing.sm,
   },
-  rowPreview: { fontSize: 13, color: Colors.textMuted, flex: 1 },
+  rowPreview: { fontSize: ms(13), color: Colors.textMuted, flex: 1 },
   rowPreviewUnread: { color: Colors.text, fontWeight: '500' },
   rowPreviewMutedUnread: { color: Colors.textMuted, fontWeight: '400' },
 
@@ -573,13 +574,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   reqBtnAccept: { backgroundColor: Colors.royalBlue },
-  reqBtnAcceptTxt: { color: '#fff', fontSize: 13, fontWeight: '600' },
+  reqBtnAcceptTxt: { color: '#fff', fontSize: ms(13), fontWeight: '600' },
   reqBtnReject: {
     backgroundColor: Colors.surface,
     borderWidth: 1,
     borderColor: Colors.border,
   },
-  reqBtnRejectTxt: { color: Colors.text, fontSize: 13, fontWeight: '600' },
+  reqBtnRejectTxt: { color: Colors.text, fontSize: ms(13), fontWeight: '600' },
 
   /* Empty state */
   empty: {
@@ -597,9 +598,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginBottom: Spacing.sm,
   },
-  emptyTitle: { fontSize: 17, fontWeight: '700', color: Colors.text },
+  emptyTitle: { fontSize: ms(17), fontWeight: '700', color: Colors.text },
   emptySub: {
-    fontSize: 13,
+    fontSize: ms(13),
     color: Colors.textMuted,
     textAlign: 'center',
     lineHeight: 18,
@@ -618,7 +619,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 12,
   },
-  emptyBtnTxt: { color: '#fff', fontWeight: '600', fontSize: 14 },
+  emptyBtnTxt: { color: '#fff', fontWeight: '600', fontSize: ms(14) },
 
   fab: {
     position: 'absolute',
