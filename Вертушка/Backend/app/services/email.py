@@ -1,28 +1,18 @@
 """
-Сервис отправки email через SMTP (Yandex)
+Сервис отправки email для сброса пароля.
+
+Использует общий канал из notifications._send_email
+(Resend приоритетный, SMTP — fallback для dev/локалки).
 """
 import logging
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
 
-import aiosmtplib
-
-from app.config import get_settings
+from app.services.notifications import _send_email
 
 logger = logging.getLogger(__name__)
 
 
-async def send_reset_code_email(to_email: str, code: str) -> bool:
-    """Отправка кода сброса пароля на email."""
-    settings = get_settings()
-
-    if not settings.smtp_user or not settings.smtp_password:
-        logger.error("SMTP credentials not configured")
-        return False
-
-    subject = "Вертушка — код для сброса пароля"
-
-    html_body = f"""
+def _build_reset_code_html(code: str) -> str:
+    return f"""
     <!DOCTYPE html>
     <html>
     <head>
@@ -53,24 +43,13 @@ async def send_reset_code_email(to_email: str, code: str) -> bool:
     </html>
     """
 
-    msg = MIMEMultipart("alternative")
-    msg["From"] = settings.email_from or settings.smtp_user
-    msg["To"] = to_email
-    msg["Subject"] = subject
-    msg.attach(MIMEText(f"Ваш код для сброса пароля: {code}\n\nКод действителен 15 минут.", "plain", "utf-8"))
-    msg.attach(MIMEText(html_body, "html", "utf-8"))
 
-    try:
-        await aiosmtplib.send(
-            msg,
-            hostname=settings.smtp_host,
-            port=settings.smtp_port,
-            username=settings.smtp_user,
-            password=settings.smtp_password,
-            use_tls=True,
-        )
-        logger.info("Reset code email sent to %s", to_email)
-        return True
-    except Exception as e:
-        logger.error("Failed to send email to %s: %s", to_email, e)
-        return False
+async def send_reset_code_email(to_email: str, code: str) -> bool:
+    """Отправка кода сброса пароля на email через Resend (SMTP fallback)."""
+    subject = "Вертушка — код для сброса пароля"
+    html_body = _build_reset_code_html(code)
+
+    await _send_email(to_email, subject, html_body)
+    # _send_email логирует исход сам; считаем вызов успешным (анти-энумерация
+    # в эндпоинте всё равно не раскрывает результат пользователю).
+    return True

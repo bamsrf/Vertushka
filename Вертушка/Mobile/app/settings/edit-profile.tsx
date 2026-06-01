@@ -196,7 +196,7 @@ export default function EditProfileScreen() {
     try {
       const payload: { display_name?: string; username?: string } = {};
       if (displayName !== (user?.display_name ?? '')) {
-        payload.display_name = displayName || undefined;
+        payload.display_name = displayName;
       }
       if (username !== (user?.username ?? '')) {
         payload.username = username;
@@ -270,7 +270,7 @@ export default function EditProfileScreen() {
               onChangeText={setDisplayName}
               placeholder="Ваше имя"
               placeholderTextColor={Colors.textMuted}
-              maxLength={20}
+              maxLength={100}
               autoCapitalize="words"
               returnKeyType="done"
             />

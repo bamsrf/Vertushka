@@ -18,6 +18,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Icon } from '@/components/ui';
 import { Colors, Spacing, BorderRadius } from '../../constants/theme';
+import { ms } from '../../lib/responsive';
 import { api, resolveMediaUrl } from '../../lib/api';
 import { useMessagesStore } from '../../lib/messagesStore';
 import { UserWithStats } from '../../lib/types';
@@ -236,7 +237,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: Colors.surface,
   },
-  title: { flex: 1, fontSize: 16, fontWeight: '700', color: Colors.text, textAlign: 'center' },
+  title: { flex: 1, fontSize: ms(16), fontWeight: '700', color: Colors.text, textAlign: 'center' },
 
   searchWrap: {
     flexDirection: 'row',
@@ -251,7 +252,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.border,
   },
-  searchInput: { flex: 1, fontSize: 14, color: Colors.text },
+  searchInput: { flex: 1, fontSize: ms(14), color: Colors.text },
 
   list: { paddingHorizontal: Spacing.md, paddingTop: Spacing.md },
   row: {
@@ -270,9 +271,9 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   avatarTxt: { fontSize: 12, fontWeight: '700', color: Colors.royalBlue, textTransform: 'uppercase' },
-  rowName: { fontSize: 14, fontWeight: '600', color: Colors.text },
-  rowSub: { fontSize: 12, color: Colors.textMuted, marginTop: 2 },
-  empty: { fontSize: 13, color: Colors.textMuted, textAlign: 'center', marginTop: Spacing.lg },
+  rowName: { fontSize: ms(14), fontWeight: '600', color: Colors.text },
+  rowSub: { fontSize: ms(12), color: Colors.textMuted, marginTop: 2 },
+  empty: { fontSize: ms(13), color: Colors.textMuted, textAlign: 'center', marginTop: Spacing.lg },
 
   forwardPreview: {
     flexDirection: 'row',
@@ -300,5 +301,5 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 0.3,
   },
-  forwardBody: { fontSize: 13, color: Colors.text, marginTop: 2 },
+  forwardBody: { fontSize: ms(13), color: Colors.text, marginTop: 2 },
 });

@@ -29,7 +29,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import * as Sharing from 'expo-sharing';
-import { File, Paths } from 'expo-file-system';
+import { LinearGradient } from 'expo-linear-gradient';
 
 import { api } from '../lib/api';
 import { AchievementPin } from './AchievementPin';
@@ -153,6 +153,7 @@ function UnlockModal({
   const ribbonOpacity = useRef(new Animated.Value(0)).current;
   const ribbonTranslateY = useRef(new Animated.Value(20)).current;
   const [sharing, setSharing] = useState(false);
+  const shareCardRef = useRef<View>(null);
 
   useEffect(() => {
     // Haptic — сразу
@@ -217,17 +218,18 @@ function UnlockModal({
       Haptics.selectionAsync().catch(() => {});
     }
     try {
-      // Тянем PNG из бэкенда (формат stories — самый широкий)
-      const dataUrl = await api.fetchShareCardPng(main.code, 'stories');
-      // Сохраняем во временный файл (expo-sharing требует file:// URI)
-      const base64 = dataUrl.replace(/^data:image\/png;base64,/, '');
-      const fileName = `vertushka_${main.code}_${Date.now()}.png`;
-      const file = new File(Paths.cache, fileName);
-      file.create({ overwrite: true });
-      file.write(base64, { encoding: 'base64' });
+      // Снимаем реальную карточку (пин + текст) в PNG на клиенте.
+      // Ленивый require: view-shot — нативный модуль, его нет в Expo Go.
+      // Статический импорт ронял старт; здесь падение ловит catch ниже.
+      const { captureRef } = require('react-native-view-shot');
+      const uri = await captureRef(shareCardRef, {
+        format: 'png',
+        quality: 1,
+        result: 'tmpfile',
+      });
       const available = await Sharing.isAvailableAsync();
       if (available) {
-        await Sharing.shareAsync(file.uri, {
+        await Sharing.shareAsync(uri, {
           mimeType: 'image/png',
           dialogTitle: main.title_ru || 'Ачивка',
         });
@@ -349,6 +351,37 @@ function UnlockModal({
           </Animated.View>
         </View>
       </Animated.View>
+
+      {/* Off-screen карточка для шаринга (снимается через view-shot) */}
+      <View style={styles.shareCardOffscreen} pointerEvents="none">
+        <View ref={shareCardRef} collapsable={false} style={styles.shareCard}>
+          <LinearGradient
+            colors={[main.tier.color_hex + '33', '#0E0E16']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 0, y: 1 }}
+            style={styles.shareCardBg}
+          >
+            <Text style={styles.shareCardBrand}>Вертушка</Text>
+            <AchievementPin item={main} size={140} glowOverride />
+            <Text style={styles.shareCardTitle}>{main.title_ru || '🥚 Пасхалка'}</Text>
+            <View
+              style={[
+                styles.shareCardTierChip,
+                { backgroundColor: main.tier.color_hex, shadowColor: main.tier.color_hex },
+              ]}
+            >
+              <Text style={styles.shareCardTierText}>
+                {main.tier.label_ru.toUpperCase()}
+              </Text>
+            </View>
+            {main.flavor_ru ? (
+              <Text style={styles.shareCardFlavor}>«{main.flavor_ru}»</Text>
+            ) : main.description_ru ? (
+              <Text style={styles.shareCardFlavor}>{main.description_ru}</Text>
+            ) : null}
+          </LinearGradient>
+        </View>
+      </View>
     </Modal>
   );
 }
@@ -365,6 +398,61 @@ const styles = StyleSheet.create({
   backdrop: {
     flex: 1,
     justifyContent: 'center',
+  },
+  shareCardOffscreen: {
+    position: 'absolute',
+    left: -9999,
+    top: 0,
+  },
+  shareCard: {
+    width: 1080 / 3,
+    height: 1920 / 3,
+  },
+  shareCardBg: {
+    flex: 1,
+    paddingHorizontal: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  shareCardTitle: {
+    fontSize: 28,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    textAlign: 'center',
+    marginTop: 16,
+  },
+  shareCardTierChip: {
+    marginTop: 16,
+    paddingHorizontal: 18,
+    paddingVertical: 8,
+    borderRadius: 16,
+    shadowOpacity: 0.5,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 6,
+  },
+  shareCardTierText: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    letterSpacing: 1.5,
+  },
+  shareCardFlavor: {
+    fontSize: 15,
+    fontStyle: 'italic',
+    color: 'rgba(255,255,255,0.82)',
+    textAlign: 'center',
+    marginTop: 14,
+    lineHeight: 21,
+  },
+  shareCardBrand: {
+    position: 'absolute',
+    top: 72,
+    fontFamily: 'RubikMonoOne-Regular',
+    fontSize: 26,
+    color: 'rgba(255,255,255,0.92)',
+    textAlign: 'center',
+    letterSpacing: 1,
   },
   center: {
     alignItems: 'center',

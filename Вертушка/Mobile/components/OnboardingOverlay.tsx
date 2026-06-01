@@ -27,6 +27,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useOnboardingStore, useCollectionStore, TourTargetKey } from '../lib/store';
 import { Colors } from '../constants/theme';
+import { ms } from '../lib/responsive';
 
 const SCREEN = Dimensions.get('window');
 
@@ -447,16 +448,16 @@ const styles = StyleSheet.create({
   },
   tipTitle: {
     fontFamily: 'Inter_700Bold',
-    fontSize: 19,
-    lineHeight: 23,
+    fontSize: ms(19),
+    lineHeight: ms(23),
     color: '#0F1B4C',
     letterSpacing: -0.4,
     marginBottom: 6,
   },
   tipBody: {
     fontFamily: 'Inter_400Regular',
-    fontSize: 14,
-    lineHeight: 20,
+    fontSize: ms(14),
+    lineHeight: ms(20),
     color: '#5A6585',
     marginBottom: 14,
   },
@@ -467,7 +468,7 @@ const styles = StyleSheet.create({
   },
   tipSkip: {
     fontFamily: 'Inter_500Medium',
-    fontSize: 13,
+    fontSize: ms(13),
     color: '#8E97B5',
     paddingHorizontal: 4,
     paddingVertical: 8,
@@ -490,7 +491,7 @@ const styles = StyleSheet.create({
   },
   tipNextText: {
     fontFamily: 'Inter_600SemiBold',
-    fontSize: 14,
+    fontSize: ms(14),
     color: '#fff',
   },
 });
