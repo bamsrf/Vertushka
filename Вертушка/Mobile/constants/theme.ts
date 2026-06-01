@@ -25,6 +25,8 @@
 // Helper: достать light-hex из роли (для legacy aliases)
 // ───────────────────────────────────────────────────────────────────────────
 
+import { ms } from '../lib/responsive';
+
 type ThemeMode = 'light' | 'dark';
 const MODE: ThemeMode = 'light';
 const L = <T,>(role: { light: T; dark: T }): T => role[MODE];
@@ -356,7 +358,12 @@ export const MarketPalette = {
 } as const;
 
 // Type scale legacy. heroTitle — RubikMonoOne (был Inter Bold).
-export const Typography = {
+//
+// Все размеры прогнаны через ms() (см. lib/responsive.ts): на iPhone Mini/SE
+// (эталон 375pt) = без изменений, на больших экранах fontSize/lineHeight мягко
+// растут. letterSpacing/fontFamily не трогаем. Один источник → 300+ мест
+// `...Typography.x` становятся адаптивными автоматически.
+const TYPOGRAPHY_BASE = {
   heroTitle: {
     fontSize: 40,
     fontFamily: 'RubikMonoOne-Regular',
@@ -443,6 +450,22 @@ export const Typography = {
     letterSpacing: 1.5,
   },
 };
+
+// Прогон через ms(): fontSize + lineHeight масштабируются, остальное as-is.
+type TypeStyle = { fontSize: number; lineHeight?: number; [k: string]: unknown };
+const scaleType = <T extends Record<string, TypeStyle>>(base: T): T =>
+  Object.fromEntries(
+    Object.entries(base).map(([key, v]) => [
+      key,
+      {
+        ...v,
+        fontSize: ms(v.fontSize),
+        ...(v.lineHeight != null ? { lineHeight: ms(v.lineHeight) } : {}),
+      },
+    ]),
+  ) as T;
+
+export const Typography = scaleType(TYPOGRAPHY_BASE);
 
 // Shadow color — pristine Blue Gradient (royalBlue), не navy. Вместе с тёплой
 // Colors-палитрой даёт характерный сине-фиолетовый shadow вокруг карточек.
