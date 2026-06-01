@@ -39,6 +39,7 @@ import {
   M_NAVY_MID,
 } from './achievement-mockup/palette';
 import { Spacing, BorderRadius } from '../constants/theme';
+import { ms } from '../lib/responsive';
 import { rarestUnlocked } from '../lib/achievementHelpers';
 import { computeArchetype } from '../lib/archetype';
 import type { AchievementItem, MyAchievementsResponse } from '../lib/types';
@@ -300,10 +301,10 @@ const styles = StyleSheet.create({
   },
   flavor: {
     marginTop: Spacing.md,
-    fontSize: 13,
+    fontSize: ms(13),
     color: M_IVORY_MUTED,
     fontStyle: 'italic',
-    lineHeight: 18,
+    lineHeight: ms(18),
   },
   progressBlock: {
     marginTop: Spacing.sm,
@@ -350,7 +351,7 @@ const styles = StyleSheet.create({
   },
   progressText: {
     marginTop: 6,
-    fontSize: 11,
+    fontSize: ms(11),
     fontWeight: '600',
     color: M_IVORY_MUTED,
     letterSpacing: 0.3,

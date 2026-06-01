@@ -19,6 +19,7 @@ import {
   M_NAVY_MID,
 } from './achievement-mockup/palette';
 import { Spacing, BorderRadius, Colors } from '../constants/theme';
+import { ms } from '../lib/responsive';
 import type {
   AchievementItem,
   AchievementSeriesItem,
@@ -136,13 +137,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
   },
   title: {
-    fontSize: 19,
+    fontSize: ms(19),
     fontWeight: '800',
     color: Colors.text,
     letterSpacing: -0.4,
   },
   subtitle: {
-    fontSize: 12,
+    fontSize: ms(12),
     color: Colors.textSecondary,
     marginTop: 2,
   },
@@ -188,7 +189,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   cardLabel: {
-    fontSize: 14,
+    fontSize: ms(14),
     fontWeight: '700',
     color: M_IVORY,
     textAlign: 'center',

@@ -17,6 +17,7 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { api } from '../lib/api';
 import { Colors, Spacing, BorderRadius, Typography } from '../constants/theme';
+import { ms } from '../lib/responsive';
 import { AchievementPin } from './AchievementPin';
 import type { AchievementItem, MyAchievementsResponse } from '../lib/types';
 
@@ -152,7 +153,7 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.sm,
   },
   title: {
-    fontSize: 17,
+    fontSize: ms(17),
     fontWeight: '700',
     color: Colors.text,
   },
@@ -162,7 +163,7 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   counter: {
-    fontSize: 14,
+    fontSize: ms(14),
     color: Colors.textMuted,
     fontWeight: '500',
   },
@@ -177,13 +178,13 @@ const styles = StyleSheet.create({
   },
   pinLabel: {
     marginTop: 6,
-    fontSize: 12,
+    fontSize: ms(12),
     color: Colors.text,
     textAlign: 'center',
   },
   emptyText: {
     color: Colors.textMuted,
-    fontSize: 14,
+    fontSize: ms(14),
     flex: 1,
     paddingVertical: Spacing.sm,
   },
@@ -194,7 +195,7 @@ const styles = StyleSheet.create({
     borderTopColor: Colors.border,
   },
   surpriseText: {
-    fontSize: 13,
+    fontSize: ms(13),
     color: Colors.textSecondary,
     fontWeight: '500',
   },

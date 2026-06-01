@@ -15,6 +15,7 @@ import {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '../lib/store';
+import { ms } from '../lib/responsive';
 
 const KEY_PREFIX = '@vertushka:achievements_tour_seen:';
 
@@ -121,17 +122,17 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   title: {
-    fontSize: 22,
+    fontSize: ms(22),
     fontWeight: '800',
     color: '#0E121C',
     marginBottom: 8,
     textAlign: 'center',
   },
   body: {
-    fontSize: 14,
+    fontSize: ms(14),
     color: '#4D5263',
     textAlign: 'center',
-    lineHeight: 20,
+    lineHeight: ms(20),
     marginBottom: 18,
   },
   points: {
@@ -150,9 +151,9 @@ const styles = StyleSheet.create({
   },
   bulletText: {
     flex: 1,
-    fontSize: 14,
+    fontSize: ms(14),
     color: '#0E121C',
-    lineHeight: 19,
+    lineHeight: ms(19),
   },
   btn: {
     backgroundColor: '#3B4BF5',
@@ -166,6 +167,6 @@ const styles = StyleSheet.create({
   btnText: {
     color: '#FFFFFF',
     fontWeight: '700',
-    fontSize: 15,
+    fontSize: ms(15),
   },
 });
