@@ -396,7 +396,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: Colors.divider,
   },
-  headerTitle: { ...Typography.h4, color: Colors.royalBlue },
+  headerTitle: { ...Typography.h4, fontSize: 17, color: Colors.royalBlue },
   backButton: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
   placeholder: { width: 36, height: 36 },
   content: { padding: Spacing.lg },

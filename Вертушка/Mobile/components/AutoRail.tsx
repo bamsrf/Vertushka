@@ -348,12 +348,12 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   railTitle: {
-    fontSize: 10,
+    fontSize: 11,
     letterSpacing: 1.2,
     fontWeight: '600',
     fontFamily: Platform.select({ ios: 'Menlo', android: 'monospace' }),
   },
-  railSub: { fontSize: 11, color: PALETTE.mute, flexShrink: 1, minWidth: 0 },
+  railSub: { fontSize: 13, color: PALETTE.mute, flexShrink: 1, minWidth: 0 },
   viewport: {
     overflow: 'hidden',
   },

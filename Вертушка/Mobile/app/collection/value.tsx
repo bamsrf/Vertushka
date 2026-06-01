@@ -209,7 +209,7 @@ export default function CollectionValueScreen() {
                   hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
                   activeOpacity={0.7}
                 >
-                  <Icon name="question" size={14} color="#FFFFFF" />
+                  <Icon name="question" size={16} color="#FFFFFF" />
                 </TouchableOpacity>
 
                 <Text style={styles.valueLabel}>Примерная стоимость</Text>
@@ -378,6 +378,7 @@ const styles = StyleSheet.create({
   },
   valueLabel: {
     ...Typography.bodySmall,
+    fontSize: 16,
     color: 'rgba(255,255,255,0.8)',
     marginBottom: Spacing.md,
   },
@@ -385,9 +386,9 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: Spacing.sm,
     right: Spacing.sm,
-    width: 26,
-    height: 26,
-    borderRadius: 13,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
     backgroundColor: 'rgba(255,255,255,0.22)',
     alignItems: 'center',
     justifyContent: 'center',

@@ -234,6 +234,7 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     ...Typography.h4,
+    fontSize: 17,
     color: Colors.royalBlue,
   },
   backButton: {

@@ -876,7 +876,7 @@ export default function SearchScreen() {
         <Section id="search-market-arrivals">
           <AutoRail
             title="В наличии сейчас"
-            subtitle={`Свежие предложения${marketItems.length ? ` · ${marketItems.length}` : ''}`}
+            subtitle={`Магазины${marketItems.length ? ` · ${marketItems.length}` : ''}`}
             titleColor={Colors.royalBlue}
             items={marketAsProfileRecords}
             onPick={handleMarketPick}
