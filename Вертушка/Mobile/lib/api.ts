@@ -1130,33 +1130,20 @@ class ApiClient {
     return data;
   }
 
-  /** URL для share-card PNG. Не загружается через axios — используется напрямую в Image
-   *  или передаётся в Share/ViewShot. Сервер требует Bearer токен, поэтому для прямого
-   *  показа в `<Image>` лучше скачать через axios и передать base64/блоб. */
-  async fetchShareCardPng(code: string, fmt: 'stories' | 'feed' | 'portrait' = 'stories'): Promise<string> {
-    const { data } = await this.client.get<ArrayBuffer>(
-      `/achievements/me/share-card/${encodeURIComponent(code)}`,
-      {
-        params: { fmt },
-        responseType: 'arraybuffer',
-      }
-    );
-    // base64 для передачи в Share / FileSystem
-    const bytes = new Uint8Array(data);
-    let binary = '';
-    for (let i = 0; i < bytes.byteLength; i++) {
-      binary += String.fromCharCode(bytes[i]);
-    }
-    if (typeof btoa !== 'undefined') {
-      return `data:image/png;base64,${btoa(binary)}`;
-    }
-    // RN fallback через global Buffer (если установлен)
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const G: any = global as any;
-    if (G.Buffer) {
-      return `data:image/png;base64,${G.Buffer.from(bytes).toString('base64')}`;
-    }
-    throw new Error('Base64 encoder not available');
+  // Discogs OAuth (per-user токен)
+  async getDiscogsStatus(): Promise<{ connected: boolean; username: string | null }> {
+    const { data } = await this.client.get('/auth/discogs/status');
+    return data;
+  }
+
+  async connectDiscogs(): Promise<{ authorize_url: string }> {
+    const { data } = await this.client.post('/auth/discogs/connect');
+    return data;
+  }
+
+  async disconnectDiscogs(): Promise<{ connected: boolean }> {
+    const { data } = await this.client.delete('/auth/discogs');
+    return data;
   }
 
 }
