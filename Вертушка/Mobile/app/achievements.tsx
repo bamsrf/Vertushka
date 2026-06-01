@@ -6,7 +6,7 @@
  * - С виджета в `user/[username]/index.tsx` → через `/user/[username]/achievements`
  *   (см. соседний роут с параметром username).
  */
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -23,9 +23,10 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import * as Sharing from 'expo-sharing';
-import { File, Paths } from 'expo-file-system';
+import { LinearGradient } from 'expo-linear-gradient';
 import { api } from '../lib/api';
 import { Colors, Spacing, BorderRadius } from '../constants/theme';
+import { ms } from '../lib/responsive';
 import { AchievementPin } from '../components/AchievementPin';
 import { AchievementsHero } from '../components/AchievementsHero';
 import { AchievementsTourOverlay } from '../components/AchievementsTourOverlay';
@@ -363,6 +364,7 @@ function DetailsSheet({
   const insets = useSafeAreaInsets();
   const [stats, setStats] = useState<AchievementStats | null>(null);
   const [sharing, setSharing] = useState(false);
+  const shareCardRef = useRef<View>(null);
 
   // Подтягиваем статистику для не-скрытых ачивок (для скрытых до анлока — нет смысла)
   useEffect(() => {
@@ -390,15 +392,19 @@ function DetailsSheet({
     }
     setSharing(true);
     try {
-      const dataUrl = await api.fetchShareCardPng(item.code, 'stories');
-      const base64 = dataUrl.replace(/^data:image\/png;base64,/, '');
-      const fileName = `vertushka_${item.code}_${Date.now()}.png`;
-      const file = new File(Paths.cache, fileName);
-      file.create({ overwrite: true });
-      file.write(base64, { encoding: 'base64' });
+      // Снимаем реальную карточку (пин + текст) в PNG на клиенте.
+      // Ленивый require: нативный модуль view-shot отсутствует в Expo Go —
+      // статический импорт ронял старт приложения. Тут падение ловит catch
+      // ниже и шаринг деградирует до текстового.
+      const { captureRef } = require('react-native-view-shot');
+      const uri = await captureRef(shareCardRef, {
+        format: 'png',
+        quality: 1,
+        result: 'tmpfile',
+      });
       const available = await Sharing.isAvailableAsync();
       if (available) {
-        await Sharing.shareAsync(file.uri, {
+        await Sharing.shareAsync(uri, {
           mimeType: 'image/png',
           dialogTitle: item.title_ru || 'Ачивка',
         });
@@ -519,6 +525,45 @@ function DetailsSheet({
           <Ionicons name="close" size={22} color={Colors.text} />
         </TouchableOpacity>
       </View>
+
+      {/* Off-screen карточка для шаринга (снимается через view-shot) */}
+      <View style={styles.shareCardOffscreen} pointerEvents="none">
+        <View ref={shareCardRef} collapsable={false} style={styles.shareCard}>
+          <LinearGradient
+            colors={[item.tier.color_hex + '33', '#0E0E16']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 0, y: 1 }}
+            style={styles.shareCardBg}
+          >
+            <Text style={styles.shareCardBrand}>Вертушка</Text>
+            <View style={styles.shareCardPinWrap}>
+              <AchievementPin item={item} size={140} glowOverride />
+            </View>
+            <Text style={styles.shareCardTitle}>{item.title_ru || '🥚 Пасхалка'}</Text>
+            <View
+              style={[
+                styles.shareCardTierChip,
+                {
+                  backgroundColor: item.tier.color_hex,
+                  shadowColor: item.tier.color_hex,
+                },
+              ]}
+            >
+              <Text style={styles.shareCardTierText}>
+                {item.tier.label_ru.toUpperCase()}
+              </Text>
+            </View>
+            {item.flavor_ru && !item.is_hidden ? (
+              <Text style={styles.shareCardFlavor}>«{item.flavor_ru}»</Text>
+            ) : item.description_ru ? (
+              <Text style={styles.shareCardFlavor}>{item.description_ru}</Text>
+            ) : null}
+            {item.unlocked_at && (
+              <Text style={styles.shareCardDate}>Открыто {formatDate(item.unlocked_at)}</Text>
+            )}
+          </LinearGradient>
+        </View>
+      </View>
     </View>
   );
 }
@@ -555,7 +600,7 @@ const styles = StyleSheet.create({
   },
   errorText: {
     color: Colors.textMuted,
-    fontSize: 14,
+    fontSize: ms(14),
   },
   summary: {
     paddingHorizontal: Spacing.lg,
@@ -563,18 +608,18 @@ const styles = StyleSheet.create({
     paddingBottom: Spacing.md,
   },
   summaryHeader: {
-    fontSize: 28,
+    fontSize: ms(28),
     fontWeight: '800',
     color: Colors.text,
     marginBottom: 6,
   },
   summaryCount: {
-    fontSize: 15,
+    fontSize: ms(15),
     color: Colors.textSecondary,
   },
   summaryRandom: {
     marginTop: 4,
-    fontSize: 14,
+    fontSize: ms(14),
     color: Colors.textMuted,
   },
   seriesCard: {
@@ -618,13 +663,13 @@ const styles = StyleSheet.create({
     lineHeight: 24,
   },
   seriesTitle: {
-    fontSize: 17,
+    fontSize: ms(17),
     fontWeight: '800',
     color: M_IVORY,
     letterSpacing: -0.3,
   },
   seriesDescription: {
-    fontSize: 12,
+    fontSize: ms(12),
     color: M_IVORY_MUTED,
     marginTop: 1,
   },
@@ -681,14 +726,14 @@ const styles = StyleSheet.create({
   },
   gridLabel: {
     marginTop: 8,
-    fontSize: 12,
+    fontSize: ms(12),
     color: M_IVORY,
     textAlign: 'center',
     fontWeight: '600',
   },
   gridLabelMeta: {
     fontWeight: '800',
-    fontSize: 13,
+    fontSize: ms(13),
   },
   gridMetaTag: {
     marginTop: 2,
@@ -699,7 +744,7 @@ const styles = StyleSheet.create({
   },
   gridProgress: {
     marginTop: 2,
-    fontSize: 11,
+    fontSize: ms(11),
     color: M_IVORY_MUTED,
     fontWeight: '600',
   },
@@ -709,7 +754,7 @@ const styles = StyleSheet.create({
   },
   surpriseEmptyText: {
     color: M_IVORY_DIM,
-    fontSize: 13,
+    fontSize: ms(13),
   },
   sheetBackdrop: {
     position: 'absolute',
@@ -728,6 +773,70 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 24,
     minHeight: 360,
   },
+  shareCardOffscreen: {
+    position: 'absolute',
+    left: -9999,
+    top: 0,
+  },
+  shareCard: {
+    width: 1080 / 3,
+    height: 1920 / 3,
+  },
+  shareCardBg: {
+    flex: 1,
+    paddingHorizontal: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  shareCardPinWrap: {
+    marginBottom: 8,
+  },
+  shareCardTitle: {
+    fontSize: 28,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    textAlign: 'center',
+    marginTop: 12,
+  },
+  shareCardTierChip: {
+    marginTop: 16,
+    paddingHorizontal: 18,
+    paddingVertical: 8,
+    borderRadius: 16,
+    shadowOpacity: 0.5,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 6,
+  },
+  shareCardTierText: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    letterSpacing: 1.5,
+  },
+  shareCardFlavor: {
+    fontSize: 15,
+    fontStyle: 'italic',
+    color: 'rgba(255,255,255,0.82)',
+    textAlign: 'center',
+    marginTop: 14,
+    lineHeight: 21,
+  },
+  shareCardDate: {
+    fontSize: 13,
+    color: 'rgba(255,255,255,0.6)',
+    textAlign: 'center',
+    marginTop: 16,
+  },
+  shareCardBrand: {
+    position: 'absolute',
+    top: 72,
+    fontFamily: 'RubikMonoOne-Regular',
+    fontSize: 26,
+    color: 'rgba(255,255,255,0.92)',
+    textAlign: 'center',
+    letterSpacing: 1,
+  },
   sheetHandle: {
     width: 36,
     height: 4,
@@ -741,7 +850,7 @@ const styles = StyleSheet.create({
     marginVertical: Spacing.sm,
   },
   sheetTitle: {
-    fontSize: 24,
+    fontSize: ms(24),
     fontWeight: '800',
     color: Colors.text,
     textAlign: 'center',
@@ -761,7 +870,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   tierChipText: {
-    fontSize: 12,
+    fontSize: ms(12),
     fontWeight: '600',
   },
   metaChip: {
@@ -773,19 +882,19 @@ const styles = StyleSheet.create({
     borderColor: '#FFD66B',
   },
   metaChipText: {
-    fontSize: 12,
+    fontSize: ms(12),
     fontWeight: '700',
     color: '#7A4E00',
   },
   sheetDescription: {
-    fontSize: 14,
+    fontSize: ms(14),
     color: Colors.textSecondary,
     textAlign: 'center',
     marginTop: 6,
     paddingHorizontal: Spacing.sm,
   },
   sheetFlavor: {
-    fontSize: 13,
+    fontSize: ms(13),
     fontStyle: 'italic',
     color: Colors.textMuted,
     textAlign: 'center',
@@ -797,7 +906,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.sm,
   },
   sheetProgressText: {
-    fontSize: 13,
+    fontSize: ms(13),
     color: Colors.textSecondary,
     marginBottom: 8,
     textAlign: 'center',
@@ -814,7 +923,7 @@ const styles = StyleSheet.create({
   },
   sheetDate: {
     marginTop: Spacing.md,
-    fontSize: 12,
+    fontSize: ms(12),
     color: Colors.textMuted,
     textAlign: 'center',
   },
@@ -838,7 +947,7 @@ const styles = StyleSheet.create({
     marginHorizontal: Spacing.sm,
   },
   howToEyebrow: {
-    fontSize: 11,
+    fontSize: ms(11),
     fontWeight: '700',
     letterSpacing: 1.2,
     textTransform: 'uppercase',
@@ -846,9 +955,9 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   howToText: {
-    fontSize: 14,
+    fontSize: ms(14),
     color: Colors.text,
-    lineHeight: 19,
+    lineHeight: ms(19),
   },
   statsRow: {
     marginTop: Spacing.md,
@@ -858,7 +967,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   statsText: {
-    fontSize: 12,
+    fontSize: ms(12),
     color: Colors.textMuted,
     fontWeight: '500',
   },
@@ -877,6 +986,6 @@ const styles = StyleSheet.create({
   shareBtnText: {
     color: '#FFFFFF',
     fontWeight: '700',
-    fontSize: 15,
+    fontSize: ms(15),
   },
 });

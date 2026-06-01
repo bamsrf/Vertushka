@@ -23,6 +23,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useOnboardingStore } from '../lib/store';
 import { Colors } from '../constants/theme';
+import { ms } from '../lib/responsive';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -334,7 +335,7 @@ const styles = StyleSheet.create({
   },
   skipText: {
     fontFamily: 'Inter_500Medium',
-    fontSize: 14,
+    fontSize: ms(14),
     color: 'rgba(255,255,255,0.92)',
   },
   track: {
@@ -391,7 +392,7 @@ const styles = StyleSheet.create({
   },
   eyebrow: {
     fontFamily: 'Inter_600SemiBold',
-    fontSize: 11,
+    fontSize: ms(11),
     letterSpacing: 1.6,
     color: 'rgba(255,255,255,0.78)',
     textTransform: 'uppercase',
@@ -399,8 +400,8 @@ const styles = StyleSheet.create({
   },
   title: {
     fontFamily: 'Inter_700Bold',
-    fontSize: 36,
-    lineHeight: 38,
+    fontSize: ms(36),
+    lineHeight: ms(38),
     letterSpacing: -1,
     color: '#fff',
     textAlign: 'center',
@@ -408,8 +409,8 @@ const styles = StyleSheet.create({
   },
   body: {
     fontFamily: 'Inter_400Regular',
-    fontSize: 16,
-    lineHeight: 23,
+    fontSize: ms(16),
+    lineHeight: ms(23),
     color: 'rgba(255,255,255,0.88)',
     textAlign: 'center',
     paddingHorizontal: 8,
@@ -455,7 +456,7 @@ const styles = StyleSheet.create({
   },
   ctaText: {
     fontFamily: 'Inter_700Bold',
-    fontSize: 17,
+    fontSize: ms(17),
     letterSpacing: -0.2,
     color: Colors.royalBlue,
     textAlign: 'center',
