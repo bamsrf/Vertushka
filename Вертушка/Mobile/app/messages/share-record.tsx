@@ -24,6 +24,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Icon, SegmentedControl } from '@/components/ui';
 import { Colors, Spacing, BorderRadius } from '../../constants/theme';
+import { ms } from '../../lib/responsive';
 import { api, getCoverUrl } from '../../lib/api';
 import { useAuthStore, useCollectionStore } from '../../lib/store';
 import { toast } from '../../lib/toast';
@@ -359,7 +360,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: Colors.surface,
   },
-  title: { flex: 1, fontSize: 16, fontWeight: '700', color: Colors.text, textAlign: 'center' },
+  title: { flex: 1, fontSize: ms(16), fontWeight: '700', color: Colors.text, textAlign: 'center' },
 
   segmented: { marginHorizontal: Spacing.md, marginVertical: Spacing.sm },
 
@@ -376,7 +377,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.border,
   },
-  searchInput: { flex: 1, fontSize: 14, color: Colors.text },
+  searchInput: { flex: 1, fontSize: ms(14), color: Colors.text },
 
   list: { paddingHorizontal: Spacing.md, paddingBottom: 60 },
   row: {
@@ -394,17 +395,17 @@ const styles = StyleSheet.create({
   },
   cover: { width: 48, height: 48 },
   coverPlaceholder: { alignItems: 'center', justifyContent: 'center' },
-  rowTitle: { fontSize: 14, fontWeight: '600', color: Colors.text },
-  rowSub: { fontSize: 12, color: Colors.textMuted, marginTop: 2 },
+  rowTitle: { fontSize: ms(14), fontWeight: '600', color: Colors.text },
+  rowSub: { fontSize: ms(12), color: Colors.textMuted, marginTop: 2 },
 
   empty: {
-    fontSize: 13,
+    fontSize: ms(13),
     color: Colors.textMuted,
     textAlign: 'center',
     marginTop: Spacing.lg,
   },
   wishlistHint: {
-    fontSize: 12,
+    fontSize: ms(12),
     color: Colors.textMuted,
     marginBottom: Spacing.sm,
     paddingHorizontal: 6,
