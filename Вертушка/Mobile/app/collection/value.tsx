@@ -30,6 +30,7 @@ import { useCollectionStore } from '../../lib/store';
 import { CollectionItem } from '../../lib/types';
 import { cleanArtistName } from '../../lib/format';
 import { Colors, Typography, Spacing, BorderRadius, Shadows } from '../../constants/theme';
+import { ms } from '../../lib/responsive';
 
 
 function formatRub(value: number): string {
@@ -378,7 +379,7 @@ const styles = StyleSheet.create({
   },
   valueLabel: {
     ...Typography.bodySmall,
-    fontSize: 16,
+    fontSize: ms(16),
     color: 'rgba(255,255,255,0.8)',
     marginBottom: Spacing.md,
   },
@@ -442,7 +443,7 @@ const styles = StyleSheet.create({
     borderRadius: 4,
   },
   animatedValueText: {
-    fontSize: 40,
+    fontSize: ms(40),
     fontFamily: 'Inter_800ExtraBold',
     color: '#FFFFFF',
     letterSpacing: -1,

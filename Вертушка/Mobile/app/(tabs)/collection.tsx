@@ -19,6 +19,7 @@ import { FolderPickerModal } from '../../components/FolderPickerModal';
 import { WishlistFolderPickerModal } from '../../components/WishlistFolderPickerModal';
 import { SegmentedControl } from '../../components/ui';
 import { useCollectionStore, useAuthStore } from '../../lib/store';
+import { ms } from '../../lib/responsive';
 import { useTourTarget } from '../../lib/useTourTarget';
 import { api, resolveMediaUrl } from '../../lib/api';
 import { CollectionItem, WishlistItem, CollectionTab, RecordOffersSummary } from '../../lib/types';
@@ -1452,7 +1453,7 @@ const styles = StyleSheet.create({
   folderCount: {
     ...Typography.caption,
     color: Colors.textMuted,
-    fontSize: 11,
+    fontSize: ms(11),
   },
   createFirstFolder: {
     flexDirection: 'row' as const,
