@@ -22,6 +22,7 @@ import {
 
 import { Icon } from '../ui/Icon';
 import { MarketPalette } from '../../constants/theme';
+import { ms } from '../../lib/responsive';
 import StoreLogo, { getStoreName } from './StoreLogo';
 import MarketCarouselCard, { type MarketCarouselCardData } from './MarketCarouselCard';
 
@@ -131,16 +132,16 @@ const styles = StyleSheet.create({
   },
   storeName: {
     fontFamily: 'Inter_700Bold',
-    fontSize: 15,
+    fontSize: ms(15),
     fontWeight: '700',
     color: MarketPalette.chrome.textPrimary,
     letterSpacing: -0.1,
-    lineHeight: 17,
+    lineHeight: ms(17),
     includeFontPadding: false,
   },
   storeMeta: {
     fontFamily: 'Inter_500Medium',
-    fontSize: 10.5,
+    fontSize: ms(10.5),
     color: 'rgba(255,255,255,0.6)',
     marginTop: 2,
     includeFontPadding: false,
@@ -172,7 +173,7 @@ const styles = StyleSheet.create({
   },
   terminalCount: {
     fontFamily: 'Inter_700Bold',
-    fontSize: 22,
+    fontSize: ms(22),
     fontWeight: '700',
     color: '#FFFFFF',
     letterSpacing: -0.4,

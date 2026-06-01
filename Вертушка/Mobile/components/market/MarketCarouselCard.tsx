@@ -22,6 +22,7 @@ import {
 } from 'react-native';
 
 import MiniPriceBadge from '../MiniPriceBadge';
+import { ms } from '../../lib/responsive';
 
 export interface MarketCarouselCardData {
   /** Уникальный ID (record_id из БД). */
@@ -168,10 +169,10 @@ const styles = StyleSheet.create({
   },
   title: {
     fontFamily: 'Inter_700Bold',
-    fontSize: 11.5,
+    fontSize: ms(11.5),
     fontWeight: '700',
     color: '#FFFFFF',
-    lineHeight: 14,
+    lineHeight: ms(14),
     marginBottom: 4,
     includeFontPadding: false,
   },

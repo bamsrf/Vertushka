@@ -24,6 +24,7 @@ import {
 } from 'react-native';
 
 import { MarketPalette } from '../../constants/theme';
+import { ms } from '../../lib/responsive';
 import { resolveMediaUrl } from '../../lib/api';
 import MiniPriceBadge from '../MiniPriceBadge';
 import StoreLogo, { getStoreName } from './StoreLogo';
@@ -137,7 +138,7 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     fontFamily: 'Inter_400Regular',
-    fontSize: 13,
+    fontSize: ms(13),
     color: 'rgba(255,255,255,0.68)',
     textAlign: 'center',
   },
@@ -189,10 +190,10 @@ const styles = StyleSheet.create({
   },
   title: {
     fontFamily: 'Inter_700Bold',
-    fontSize: 12,
+    fontSize: ms(12),
     fontWeight: '700',
     color: '#FFFFFF',
-    lineHeight: 15,
+    lineHeight: ms(15),
   },
   metaRow: {
     flexDirection: 'row',

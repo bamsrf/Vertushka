@@ -26,6 +26,7 @@ import {
 
 import HotStockTag, { formatPrice } from '../HotStockTag';
 import OfferDetailCard, { type OfferDetailData } from './OfferDetailCard';
+import { ms } from '../../lib/responsive';
 
 export interface OffersBottomSheetData {
   artist: string;
@@ -205,11 +206,11 @@ const styles = StyleSheet.create({
   },
   title: {
     fontFamily: 'Inter_800ExtraBold',
-    fontSize: 19,
+    fontSize: ms(19),
     fontWeight: '800',
     color: '#0E121C',
     letterSpacing: -0.3,
-    lineHeight: 22,
+    lineHeight: ms(22),
     marginTop: 4,
     includeFontPadding: false,
   },
@@ -221,7 +222,7 @@ const styles = StyleSheet.create({
   },
   summaryText: {
     fontFamily: 'Inter_400Regular',
-    fontSize: 12,
+    fontSize: ms(12),
     color: '#4D5263',
     includeFontPadding: false,
   },

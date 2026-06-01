@@ -27,6 +27,7 @@ import { Icon } from '../ui/Icon';
 import { Gradients } from '../../constants/theme';
 import { formatPrice } from '../HotStockTag';
 import StoreLogo, { getStoreName } from './StoreLogo';
+import { ms } from '../../lib/responsive';
 
 export interface OfferDetailData {
   listingId: string;
@@ -302,7 +303,7 @@ const styles = StyleSheet.create({
   },
   storeName: {
     fontFamily: 'Inter_600SemiBold',
-    fontSize: 12,
+    fontSize: ms(12),
     fontWeight: '600',
     color: '#0E121C',
     includeFontPadding: false,
@@ -325,7 +326,7 @@ const styles = StyleSheet.create({
   },
   price: {
     fontFamily: 'Inter_800ExtraBold',
-    fontSize: 17,
+    fontSize: ms(17),
     fontWeight: '800',
     color: '#0E121C',
     letterSpacing: -0.3,
@@ -341,7 +342,7 @@ const styles = StyleSheet.create({
   },
   metaText: {
     fontFamily: 'Inter_400Regular',
-    fontSize: 11.5,
+    fontSize: ms(11.5),
     color: '#4D5263',
     includeFontPadding: false,
   },
@@ -422,7 +423,7 @@ const styles = StyleSheet.create({
   },
   ctaLabel: {
     fontFamily: 'Inter_800ExtraBold',
-    fontSize: 12,
+    fontSize: ms(12),
     fontWeight: '800',
     color: '#FFFFFF',
     letterSpacing: 0.6,

@@ -53,6 +53,7 @@ import Animated, {
 
 import { Icon } from '../ui';
 import { Gradients, Spacing } from '../../constants/theme';
+import { ms } from '../../lib/responsive';
 import { useMarketStore } from '../../lib/marketStore';
 import { formatPrice } from '../HotStockTag';
 
@@ -297,7 +298,7 @@ const styles = StyleSheet.create({
   },
   ctaTitle: {
     fontFamily: 'Inter_800ExtraBold',
-    fontSize: 14,
+    fontSize: ms(14),
     fontWeight: '800',
     color: '#FFFFFF',
     letterSpacing: -0.2,
@@ -305,7 +306,7 @@ const styles = StyleSheet.create({
   },
   ctaSub: {
     fontFamily: 'Inter_500Medium',
-    fontSize: 10.5,
+    fontSize: ms(10.5),
     color: 'rgba(255,255,255,0.85)',
     marginTop: 1,
     includeFontPadding: false,

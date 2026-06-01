@@ -31,6 +31,7 @@ import { api } from '../lib/api';
 import { analytics } from '../lib/analytics';
 import { Offer } from '../lib/types';
 import { Typography, Spacing, BorderRadius, MarketPalette, Gradients } from '../constants/theme';
+import { ms } from '../lib/responsive';
 import StoreLogo from './market/StoreLogo';
 
 interface OffersBlockProps {
@@ -450,11 +451,11 @@ const styles = StyleSheet.create({
   },
   marketEntryTitle: {
     fontFamily: 'Inter_800ExtraBold',
-    fontSize: 15,
+    fontSize: ms(15),
     fontWeight: '800',
     color: '#FFFFFF',
     letterSpacing: -0.3,
-    lineHeight: 19,
+    lineHeight: ms(19),
   },
   marketEntryArrowCircle: {
     width: 36,

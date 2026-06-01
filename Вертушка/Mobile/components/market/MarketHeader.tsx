@@ -20,6 +20,7 @@ import { BlurView } from 'expo-blur';
 
 import { Icon } from '../ui/Icon';
 import { MarketPalette } from '../../constants/theme';
+import { ms } from '../../lib/responsive';
 
 interface MarketHeaderProps {
   mode?: 'hero' | 'sticky';
@@ -139,7 +140,7 @@ const styles = StyleSheet.create({
   },
   subtitle: {
     fontFamily: 'Inter_500Medium',
-    fontSize: 13,
+    fontSize: ms(13),
     fontWeight: '500',
     color: MarketPalette.chrome.textSecondary,
     marginTop: 14,
@@ -166,7 +167,7 @@ const styles = StyleSheet.create({
   },
   stickyTitle: {
     fontFamily: 'Inter_800ExtraBold',
-    fontSize: 17,
+    fontSize: ms(17),
     fontWeight: '800',
     color: MarketPalette.chrome.textPrimary,
     letterSpacing: -0.3,

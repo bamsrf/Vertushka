@@ -26,6 +26,7 @@ import {
 import { Icon } from '../ui/Icon';
 import HotStockTag, { formatPrice } from '../HotStockTag';
 import StoreLogo, { getStoreName } from './StoreLogo';
+import { ms } from '../../lib/responsive';
 
 export interface DrawerOffer {
   /** listing.id из БД — для affiliate-tracking POST /offers/{id}/click. */
@@ -142,7 +143,7 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     fontFamily: 'Inter_700Bold',
-    fontSize: 13,
+    fontSize: ms(13),
     fontWeight: '700',
     color: '#FFFFFF',
     includeFontPadding: false,
@@ -163,14 +164,14 @@ const styles = StyleSheet.create({
   storeName: {
     flex: 1,
     fontFamily: 'Inter_600SemiBold',
-    fontSize: 12.5,
+    fontSize: ms(12.5),
     fontWeight: '600',
     color: '#FFFFFF',
     includeFontPadding: false,
   },
   price: {
     fontFamily: 'Inter_700Bold',
-    fontSize: 13.5,
+    fontSize: ms(13.5),
     fontWeight: '700',
     color: '#FFFFFF',
     fontVariant: ['tabular-nums'],
@@ -187,7 +188,7 @@ const styles = StyleSheet.create({
   },
   seeAllText: {
     fontFamily: 'Inter_700Bold',
-    fontSize: 11.5,
+    fontSize: ms(11.5),
     fontWeight: '700',
     color: '#FFD9C8',
     includeFontPadding: false,
