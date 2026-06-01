@@ -24,6 +24,7 @@ import { api } from '../../lib/api';
 import { toast } from '../../lib/toast';
 import { NotificationSettings } from '../../lib/types';
 import { Colors, Typography, Spacing, BorderRadius } from '../../constants/theme';
+import { ms } from '../../lib/responsive';
 
 const TRACK_W = 52;
 const TRACK_H = 30;
@@ -396,7 +397,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: Colors.divider,
   },
-  headerTitle: { ...Typography.h4, fontSize: 17, color: Colors.royalBlue },
+  headerTitle: { ...Typography.h4, fontSize: ms(17), color: Colors.royalBlue },
   backButton: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
   placeholder: { width: 36, height: 36 },
   content: { padding: Spacing.lg },
@@ -445,7 +446,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   permissionTextContainer: { flex: 1 },
-  permissionTitle: { ...Typography.bodyBold, color: Colors.text, fontSize: 14 },
+  permissionTitle: { ...Typography.bodyBold, color: Colors.text, fontSize: ms(14) },
   permissionSubtitle: { ...Typography.caption, color: Colors.textSecondary, marginTop: 1 },
   permissionButton: {
     paddingVertical: Spacing.sm,

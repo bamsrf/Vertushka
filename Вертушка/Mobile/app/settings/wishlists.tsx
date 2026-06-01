@@ -21,6 +21,7 @@ import { GiftGivenItem, GiftReceivedItem } from '../../lib/types';
 import { cleanArtistName } from '../../lib/format';
 import { SegmentedControl } from '../../components/ui';
 import { Colors, Typography, Spacing, BorderRadius } from '../../constants/theme';
+import { ms } from '../../lib/responsive';
 
 type Tab = 'given' | 'received';
 
@@ -234,7 +235,7 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     ...Typography.h4,
-    fontSize: 17,
+    fontSize: ms(17),
     color: Colors.royalBlue,
   },
   backButton: {
@@ -308,7 +309,7 @@ const styles = StyleSheet.create({
   statusText: {
     ...Typography.caption,
     fontWeight: '600',
-    fontSize: 11,
+    fontSize: ms(11),
   },
   emptyContainer: {
     alignItems: 'center',

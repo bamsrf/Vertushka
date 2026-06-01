@@ -29,6 +29,7 @@ import { BlurView } from 'expo-blur';
 import { Icon } from '@/components/ui';
 import { api, resolveMediaUrl } from '../../../lib/api';
 import { MarketPalette } from '../../../constants/theme';
+import { ms } from '../../../lib/responsive';
 import type {
   MarketSearchItem,
   MarketStoreInfo,
@@ -332,15 +333,15 @@ const styles = StyleSheet.create({
   },
   storeName: {
     fontFamily: 'Inter_800ExtraBold',
-    fontSize: 22,
+    fontSize: ms(22),
     fontWeight: '800',
     color: MarketPalette.chrome.textPrimary,
     letterSpacing: -0.4,
-    lineHeight: 24,
+    lineHeight: ms(24),
   },
   storeMeta: {
     fontFamily: 'Inter_400Regular',
-    fontSize: 11.5,
+    fontSize: ms(11.5),
     color: 'rgba(255,255,255,0.65)',
     marginTop: 4,
   },
@@ -400,10 +401,10 @@ const styles = StyleSheet.create({
   },
   title: {
     fontFamily: 'Inter_700Bold',
-    fontSize: 12,
+    fontSize: ms(12),
     fontWeight: '700',
     color: '#FFFFFF',
-    lineHeight: 15,
+    lineHeight: ms(15),
   },
   metaRow: {
     flexDirection: 'row',
@@ -427,13 +428,13 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     fontFamily: 'Inter_400Regular',
-    fontSize: 14,
+    fontSize: ms(14),
     color: 'rgba(255,255,255,0.70)',
     textAlign: 'center',
   },
   footerLoading: {
     fontFamily: 'Inter_400Regular',
-    fontSize: 12,
+    fontSize: ms(12),
     color: 'rgba(255,255,255,0.55)',
     textAlign: 'center',
     paddingVertical: 16,

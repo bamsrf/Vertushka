@@ -17,6 +17,7 @@ import { UserListItem } from '../../components/UserListItem';
 import { SegmentedControl } from '../../components/ui';
 import { Header } from '../../components/Header';
 import { Colors, Spacing } from '../../constants/theme';
+import { ms } from '../../lib/responsive';
 
 type Tab = 'followers' | 'following';
 
@@ -121,7 +122,7 @@ const styles = StyleSheet.create({
     paddingTop: Spacing.xxl,
   },
   emptyText: {
-    fontSize: 15,
+    fontSize: ms(15),
     color: Colors.textSecondary,
   },
 });

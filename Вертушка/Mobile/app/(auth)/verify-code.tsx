@@ -20,6 +20,7 @@ import { Icon } from '@/components/ui';
 import { Button } from '../../components/ui';
 import { api } from '../../lib/api';
 import { Colors, Typography, Spacing, BorderRadius } from '../../constants/theme';
+import { ms } from '../../lib/responsive';
 
 const CODE_LENGTH = 6;
 const RESEND_COOLDOWN = 60; // секунд
@@ -255,7 +256,7 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.sm,
     backgroundColor: Colors.surface,
     textAlign: 'center',
-    fontSize: 24,
+    fontSize: ms(24),
     fontFamily: 'Inter_600SemiBold',
     color: Colors.deepNavy,
   },

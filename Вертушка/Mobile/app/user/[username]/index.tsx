@@ -46,6 +46,7 @@ import {
 import { api, resolveMediaUrl } from '../../../lib/api';
 import { useAuthStore, useFollowStore } from '../../../lib/store';
 import { useMessagesStore } from '../../../lib/messagesStore';
+import { ms } from '../../../lib/responsive';
 import {
   PublicProfile,
   PublicProfileRecord,
@@ -1166,17 +1167,17 @@ const styles = StyleSheet.create({
     justifyContent: 'space-around',
   },
   heroStatItem: { alignItems: 'center', flex: 1 },
-  heroStatNum: { fontSize: 18, fontWeight: '700', color: PP.ink, letterSpacing: -0.2 },
-  heroStatLbl: { fontSize: 11, color: PP.mute, marginTop: 3, letterSpacing: 0.2, textAlign: 'center' },
+  heroStatNum: { fontSize: ms(18), fontWeight: '700', color: PP.ink, letterSpacing: -0.2 },
+  heroStatLbl: { fontSize: ms(11), color: PP.mute, marginTop: 3, letterSpacing: 0.2, textAlign: 'center' },
 
   /* Identity (ник, имя, bio) под шапкой */
   identityBlock: {
     marginTop: 14,
   },
-  username: { fontSize: 18, fontWeight: '700', color: PP.ink, letterSpacing: -0.3 },
-  displayName: { fontSize: 14, color: PP.slate, marginTop: 2, fontWeight: '500' },
-  customTitle: { fontSize: 12, color: PP.slate, marginTop: 6 },
-  bio: { fontSize: 13, color: PP.ink, marginTop: 6, lineHeight: 18 },
+  username: { fontSize: ms(18), fontWeight: '700', color: PP.ink, letterSpacing: -0.3 },
+  displayName: { fontSize: ms(14), color: PP.slate, marginTop: 2, fontWeight: '500' },
+  customTitle: { fontSize: ms(12), color: PP.slate, marginTop: 6 },
+  bio: { fontSize: ms(13), color: PP.ink, marginTop: 6, lineHeight: ms(18) },
 
   /* Follow buttons (одиночная и двойная пара) */
   followRow: {
@@ -1200,7 +1201,7 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: 'rgba(58,75,224,0.25)',
     marginTop: 0, marginBottom: 0,
   },
-  followTxt: { color: '#fff', fontWeight: '600', fontSize: 14 },
+  followTxt: { color: '#fff', fontWeight: '600', fontSize: ms(14) },
   followTxtActive: { color: PP.cobalt },
 
   /* Карточка стоимости коллекции */
@@ -1220,9 +1221,9 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   valueAmount: {
-    fontSize: 32, fontWeight: '700', color: PP.ink, marginTop: 6, letterSpacing: -0.5,
+    fontSize: ms(32), fontWeight: '700', color: PP.ink, marginTop: 6, letterSpacing: -0.5,
   },
-  valueCurrency: { fontSize: 18, color: PP.slate, fontWeight: '500' },
+  valueCurrency: { fontSize: ms(18), color: PP.slate, fontWeight: '500' },
   deltaPill: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
     marginTop: 12, paddingHorizontal: 10, paddingVertical: 5,
@@ -1249,14 +1250,14 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: PP.hairline,
   },
   bookingHintInline: {
-    fontSize: 11.5,
+    fontSize: ms(11.5),
     color: PP.slate,
     fontWeight: '500',
     letterSpacing: 0.1,
     textAlign: 'center',
   },
   bookingHintSub: {
-    fontSize: 11, color: PP.cobalt, fontWeight: '600',
+    fontSize: ms(11), color: PP.cobalt, fontWeight: '600',
     marginTop: 6, paddingTop: 6,
     borderTopWidth: 1, borderTopColor: PP.hairline,
     textAlign: 'center',
@@ -1268,7 +1269,7 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   foldersSectionTitle: {
-    fontSize: 13,
+    fontSize: ms(13),
     fontWeight: '700',
     color: PP.ink,
     paddingHorizontal: GRID_PADDING,
@@ -1296,13 +1297,13 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   folderName: {
-    fontSize: 12.5,
+    fontSize: ms(12.5),
     color: PP.ink,
     fontWeight: '600',
     textAlign: 'center',
   },
   folderCount: {
-    fontSize: 10.5,
+    fontSize: ms(10.5),
     color: PP.mute,
     marginTop: 2,
   },
@@ -1321,7 +1322,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   toolbarCount: {
-    fontSize: 12,
+    fontSize: ms(12),
     color: PP.mute,
     fontWeight: '600',
     letterSpacing: 0.3,
@@ -1347,7 +1348,7 @@ const styles = StyleSheet.create({
     borderColor: PP.cobalt,
     paddingHorizontal: 12,
   },
-  toolbarBtnActiveTxt: { color: '#fff', fontSize: 12, fontWeight: '700' },
+  toolbarBtnActiveTxt: { color: '#fff', fontSize: ms(12), fontWeight: '700' },
 
   /* Dropdown menu (filter / sort) */
   dropdownCard: {
@@ -1368,7 +1369,7 @@ const styles = StyleSheet.create({
   dropdownItemActive: {
     backgroundColor: 'rgba(58,75,224,0.08)',
   },
-  dropdownItemTxt: { fontSize: 13.5, color: PP.ink, fontWeight: '500' },
+  dropdownItemTxt: { fontSize: ms(13.5), color: PP.ink, fontWeight: '500' },
   dropdownItemTxtActive: { color: PP.cobalt, fontWeight: '700' },
 
   viewToggle: {
@@ -1407,7 +1408,7 @@ const styles = StyleSheet.create({
   },
 
   empty: {
-    width: '100%', textAlign: 'center', color: PP.mute, fontSize: 14, paddingVertical: 60,
+    width: '100%', textAlign: 'center', color: PP.mute, fontSize: ms(14), paddingVertical: 60,
   },
 
   /* Sticky CTA — только для гостей */
@@ -1427,7 +1428,7 @@ const styles = StyleSheet.create({
     shadowColor: PP.cobalt, shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.45, shadowRadius: 18,
     elevation: 8,
   },
-  ctaTxt: { color: '#fff', fontWeight: '700', fontSize: 14, letterSpacing: 0.2 },
+  ctaTxt: { color: '#fff', fontWeight: '700', fontSize: ms(14), letterSpacing: 0.2 },
 
   /* Modal */
   modalOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(27,29,38,0.32)' },
@@ -1443,7 +1444,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     marginBottom: 10,
   },
-  modalTitle: { fontSize: 18, fontWeight: '700', color: PP.ink, letterSpacing: -0.3 },
+  modalTitle: { fontSize: ms(18), fontWeight: '700', color: PP.ink, letterSpacing: -0.3 },
   modalRecRow: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
     paddingVertical: 10,
@@ -1455,13 +1456,13 @@ const styles = StyleSheet.create({
     width: 56, height: 56, borderRadius: 10, overflow: 'hidden',
     backgroundColor: PP.lavender,
   },
-  modalRecTitle: { fontSize: 14, color: PP.ink, fontWeight: '700', marginTop: 2 },
-  modalInfo: { fontSize: 12.5, color: PP.slate, lineHeight: 18, marginBottom: 12 },
+  modalRecTitle: { fontSize: ms(14), color: PP.ink, fontWeight: '700', marginTop: 2 },
+  modalInfo: { fontSize: ms(12.5), color: PP.slate, lineHeight: ms(18), marginBottom: 12 },
   input: {
     height: 46, paddingHorizontal: 14, borderRadius: 14,
     backgroundColor: 'rgba(255,255,255,0.75)',
     borderWidth: 1, borderColor: PP.hairline,
-    fontSize: 14, color: PP.ink,
+    fontSize: ms(14), color: PP.ink,
     marginBottom: 10,
   },
   textarea: { height: 80, paddingTop: 12, textAlignVertical: 'top' },
@@ -1471,5 +1472,5 @@ const styles = StyleSheet.create({
     backgroundColor: PP.cobalt,
     shadowColor: PP.cobalt, shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.45, shadowRadius: 14,
   },
-  confirmBtnTxt: { color: '#fff', fontWeight: '700', fontSize: 14 },
+  confirmBtnTxt: { color: '#fff', fontWeight: '700', fontSize: ms(14) },
 });

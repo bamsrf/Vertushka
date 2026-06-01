@@ -21,6 +21,7 @@ import { api, resolveMediaUrl } from '../../lib/api';
 import { FollowRequestItem } from '../../lib/types';
 import { toast } from '../../lib/toast';
 import { Colors, Spacing, BorderRadius, Typography } from '../../constants/theme';
+import { ms } from '../../lib/responsive';
 
 export default function FollowRequestsScreen() {
   const router = useRouter();
@@ -191,8 +192,8 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   avatarInitials: { fontSize: 14, fontWeight: '700', color: Colors.royalBlue },
-  name: { fontSize: 15, fontWeight: '600', color: Colors.text },
-  handle: { fontSize: 12, color: Colors.textMuted, marginTop: 2 },
+  name: { fontSize: ms(15), fontWeight: '600', color: Colors.text },
+  handle: { fontSize: ms(12), color: Colors.textMuted, marginTop: 2 },
 
   actions: { flexDirection: 'row', gap: 8 },
   btn: {
@@ -209,11 +210,11 @@ const styles = StyleSheet.create({
 
   emptyWrap: { flexGrow: 1, justifyContent: 'center' },
   emptyTitle: {
-    fontSize: 17, fontWeight: '700', color: Colors.text,
+    fontSize: ms(17), fontWeight: '700', color: Colors.text,
     marginTop: Spacing.md, textAlign: 'center',
   },
   emptySub: {
-    fontSize: 13, color: Colors.textMuted, marginTop: 6,
-    textAlign: 'center', maxWidth: 280, lineHeight: 18,
+    fontSize: ms(13), color: Colors.textMuted, marginTop: 6,
+    textAlign: 'center', maxWidth: 280, lineHeight: ms(18),
   },
 });

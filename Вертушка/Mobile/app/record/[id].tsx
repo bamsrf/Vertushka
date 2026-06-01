@@ -36,6 +36,7 @@ import { cleanArtistName } from '../../lib/format';
 import { useCollectionStore } from '../../lib/store';
 import { VinylRecord, CollectionItem } from '../../lib/types';
 import { Colors, Typography, Spacing, BorderRadius, Gradients } from '../../constants/theme';
+import { ms } from '../../lib/responsive';
 import { VinylColorTag } from '../../components/VinylColorTag';
 import { VinylSpinner } from '../../components/VinylSpinner';
 import { OffersBlock } from '../../components/OffersBlock';
@@ -923,9 +924,9 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   title: {
-    fontSize: 36,
+    fontSize: ms(36),
     fontFamily: 'Inter_800ExtraBold',
-    lineHeight: 42,
+    lineHeight: ms(42),
     letterSpacing: -1,
     color: Colors.deepNavy,
     marginBottom: Spacing.md,
