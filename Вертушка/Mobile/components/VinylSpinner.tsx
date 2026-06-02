@@ -6,6 +6,7 @@ import Animated, {
   withRepeat,
   withTiming,
   Easing,
+  ReduceMotion,
 } from 'react-native-reanimated';
 import Svg, {
   Circle,
@@ -189,7 +190,13 @@ export function VinylSpinner({ colorConfig, size = 220, labelName }: VinylSpinne
 
   useEffect(() => {
     rotation.value = withRepeat(
-      withTiming(360, { duration: 1800, easing: Easing.linear }),
+      withTiming(360, {
+        duration: 1800,
+        easing: Easing.linear,
+        // Бренд-анимация диска должна крутиться даже при включённом
+        // системном Reduce Motion (иначе винил «мёртвый»).
+        reduceMotion: ReduceMotion.Never,
+      }),
       -1,
     );
   }, []);
