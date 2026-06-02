@@ -774,6 +774,53 @@ class DiscogsService:
         return result
 
     # ------------------------------------------------------------------
+    # Коллекция пользователя (для импорта)
+    # ------------------------------------------------------------------
+
+    async def get_collection_releases(
+        self,
+        username: str,
+        creds: "tuple[str, str]",
+        *,
+        max_items: int = 3000,
+    ) -> list[dict]:
+        """Все релизы из коллекции юзера (folder 0 = All). Возвращает список
+        basic_information dict'ов — их достаточно чтобы создать slim Record без
+        per-release detail-вызова. Идёт под токеном юзера (его лимит 60/min).
+
+        max_items — защита от гигантских коллекций; режем хвост.
+        """
+        per_page = 100
+        page = 1
+        out: list[dict] = []
+        while True:
+            data = await self._get(
+                f"{self.BASE_URL}/users/{username}/collection/folders/0/releases",
+                params={
+                    "per_page": per_page,
+                    "page": page,
+                    "sort": "added",
+                    "sort_order": "desc",
+                },
+                priority=Priority.DETAIL,
+                creds=creds,
+            )
+            releases = data.get("releases", [])
+            for entry in releases:
+                basic = entry.get("basic_information")
+                if basic:
+                    out.append(basic)
+                if len(out) >= max_items:
+                    return out
+
+            pagination = data.get("pagination", {})
+            total_pages = pagination.get("pages", page)
+            if page >= total_pages or not releases:
+                break
+            page += 1
+        return out
+
+    # ------------------------------------------------------------------
     # Мастер-релизы (кэшируются на 7 дней)
     # ------------------------------------------------------------------
 

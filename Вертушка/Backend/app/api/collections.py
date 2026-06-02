@@ -1,12 +1,16 @@
 """
 API для работы с коллекциями
 """
+import logging
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy import select, func
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+
+logger = logging.getLogger(__name__)
 
 from app.database import get_db
 from app.models.user import User
@@ -718,5 +722,130 @@ async def get_collection_stats(
         oldest_record_year=min(years) if years else None,
         newest_record_year=max(years) if years else None
     )
+
+
+def _record_from_basic_information(basic: dict) -> Record:
+    """Строит slim Record из basic_information коллекции Discogs — без detail
+    API-вызова. Полный payload (tracklist, цены) дозагружается лениво при первом
+    открытии детали (_ensure_record_discogs_payload)."""
+    artists = basic.get("artists") or []
+    artist = ", ".join(a.get("name", "").strip() for a in artists if a.get("name")) or "Unknown"
+
+    labels = basic.get("labels") or []
+    label = labels[0].get("name") if labels else None
+    catalog = labels[0].get("catno") if labels else None
+
+    formats = basic.get("formats") or []
+    format_type = formats[0].get("name") if formats else None
+    format_description = ", ".join(formats[0].get("descriptions", []) or []) if formats else None
+
+    year = basic.get("year") or None
+    if year == 0:
+        year = None
+
+    return Record(
+        discogs_id=str(basic.get("id")),
+        discogs_master_id=str(basic["master_id"]) if basic.get("master_id") else None,
+        title=basic.get("title", "Unknown"),
+        artist=artist,
+        label=label,
+        catalog_number=catalog,
+        year=year,
+        genre=", ".join(basic.get("genres", []) or []) or None,
+        style=", ".join(basic.get("styles", []) or []) or None,
+        format_type=format_type,
+        format_description=format_description,
+        cover_image_url=basic.get("cover_image"),
+        thumb_image_url=basic.get("thumb"),
+    )
+
+
+@router.post("/import/discogs")
+async def import_discogs_collection(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """One-time импорт коллекции из Discogs в основную коллекцию юзера.
+
+    Требует подключённого Discogs (свой OAuth-токен). Идёт под токеном юзера —
+    его лимит 60/min. Дедуп по discogs_id: уже добавленные пропускаются."""
+    from app.services.discogs import DiscogsService
+    from app.services.discogs_oauth import user_creds
+
+    creds = user_creds(current_user)
+    if not creds or not current_user.discogs_username:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Сначала подключите Discogs в настройках",
+        )
+
+    # Основная коллекция юзера (первая по порядку).
+    result = await db.execute(
+        select(Collection)
+        .where(Collection.user_id == current_user.id)
+        .order_by(Collection.sort_order, Collection.created_at)
+    )
+    collection = result.scalars().first()
+    if not collection:
+        collection = Collection(user_id=current_user.id, name="Моя коллекция")
+        db.add(collection)
+        await db.flush()
+
+    discogs = DiscogsService()
+    try:
+        releases = await discogs.get_collection_releases(
+            current_user.discogs_username, creds
+        )
+    except Exception:
+        logger.exception("Discogs collection fetch failed for %s", current_user.discogs_username)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Не удалось получить коллекцию из Discogs. Попробуйте позже.",
+        )
+
+    # Какие record_id уже в этой коллекции — чтобы не плодить дубли.
+    existing_result = await db.execute(
+        select(CollectionItem.record_id).where(
+            CollectionItem.collection_id == collection.id
+        )
+    )
+    existing_record_ids = set(existing_result.scalars().all())
+
+    imported = 0
+    skipped = 0
+    for basic in releases:
+        discogs_id = str(basic.get("id"))
+        if not discogs_id or discogs_id == "None":
+            continue
+
+        rec_result = await db.execute(
+            select(Record).where(Record.discogs_id == discogs_id)
+        )
+        record = rec_result.scalar_one_or_none()
+        if record is None:
+            record = _record_from_basic_information(basic)
+            db.add(record)
+            try:
+                await db.flush()
+            except IntegrityError:
+                # Параллельная вставка того же discogs_id — читаем существующую.
+                await db.rollback()
+                rec_result = await db.execute(
+                    select(Record).where(Record.discogs_id == discogs_id)
+                )
+                record = rec_result.scalar_one_or_none()
+                if record is None:
+                    continue
+
+        if record.id in existing_record_ids:
+            skipped += 1
+            continue
+
+        db.add(CollectionItem(collection_id=collection.id, record_id=record.id))
+        existing_record_ids.add(record.id)
+        imported += 1
+
+    await db.commit()
+    return {"imported": imported, "skipped": skipped, "total": len(releases)}
 
 

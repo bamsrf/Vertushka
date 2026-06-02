@@ -5,10 +5,15 @@
 import { useEffect, useState } from 'react';
 import { Platform, StyleSheet, Text, TouchableOpacity, View, ActivityIndicator } from 'react-native';
 import Constants from 'expo-constants';
+import * as WebBrowser from 'expo-web-browser';
+import * as Linking from 'expo-linking';
 import { Icon } from '@/components/ui';
 import { toast } from '../lib/toast';
+import { api } from '../lib/api';
 import { useAuthStore } from '../lib/store';
 import { Colors, Typography, Spacing, BorderRadius } from '../constants/theme';
+
+const DISCOGS_REDIRECT = 'vertushka://discogs-callback';
 
 // Нативные модули — недоступны в Expo Go, поэтому импорт ленивый
 let AppleAuthentication: any = null;
@@ -49,9 +54,9 @@ interface Props {
 }
 
 export function SocialAuthButtons({ mode }: Props) {
-  const { loginWithApple, loginWithGoogle } = useAuthStore();
+  const { loginWithApple, loginWithGoogle, loginWithDiscogs } = useAuthStore();
   const [appleAvailable, setAppleAvailable] = useState(false);
-  const [busy, setBusy] = useState<null | 'apple' | 'google'>(null);
+  const [busy, setBusy] = useState<null | 'apple' | 'google' | 'discogs'>(null);
 
   useEffect(() => {
     if (Platform.OS === 'ios' && AppleAuthentication) {
@@ -124,10 +129,37 @@ export function SocialAuthButtons({ mode }: Props) {
     }
   };
 
+  const handleDiscogs = async () => {
+    if (busy) return;
+    setBusy('discogs');
+    try {
+      const { authorize_url } = await api.discogsLoginStart();
+      const result = await WebBrowser.openAuthSessionAsync(authorize_url, DISCOGS_REDIRECT);
+      if (result.type !== 'success' || !result.url) {
+        return; // юзер закрыл окно
+      }
+      const { queryParams } = Linking.parse(result.url);
+      const status = queryParams?.status;
+      const ticket = queryParams?.ticket;
+      if (status === 'login' && typeof ticket === 'string') {
+        await loginWithDiscogs(ticket);
+      } else if (status === 'expired') {
+        toast.error('Сессия истекла', 'Попробуйте снова');
+      } else {
+        toast.error('Не удалось войти через Discogs');
+      }
+    } catch (error: any) {
+      toast.error('Ошибка входа через Discogs', error?.response?.data?.detail || error?.message || 'Попробуйте позже');
+    } finally {
+      setBusy(null);
+    }
+  };
+
   const showApple = Platform.OS === 'ios' && appleAvailable && AppleAuthentication;
   const showGoogle = Boolean(GoogleSignin && googleWebClientId);
+  const showDiscogs = true; // OAuth через WebBrowser — без нативных модулей
 
-  if (!showApple && !showGoogle) return null;
+  if (!showApple && !showGoogle && !showDiscogs) return null;
 
   const dividerLabel = mode === 'login' ? 'или войдите через' : 'или зарегистрируйтесь через';
 
@@ -167,6 +199,26 @@ export function SocialAuthButtons({ mode }: Props) {
               <Icon name="logo-google" size={20} color={Colors.deepNavy} />
               <Text style={styles.googleText}>
                 {mode === 'login' ? 'Войти через Google' : 'Создать через Google'}
+              </Text>
+            </>
+          )}
+        </TouchableOpacity>
+      )}
+
+      {showDiscogs && (
+        <TouchableOpacity
+          style={styles.discogsButton}
+          onPress={handleDiscogs}
+          activeOpacity={0.8}
+          disabled={busy !== null}
+        >
+          {busy === 'discogs' ? (
+            <ActivityIndicator color="#FFF" />
+          ) : (
+            <>
+              <Icon name="disc-outline" size={20} color="#FFF" />
+              <Text style={styles.discogsText}>
+                {mode === 'login' ? 'Войти через Discogs' : 'Создать через Discogs'}
               </Text>
             </>
           )}
@@ -214,6 +266,20 @@ const styles = StyleSheet.create({
   googleText: {
     ...Typography.body,
     color: Colors.deepNavy,
+    fontWeight: '600',
+  },
+  discogsButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.sm,
+    height: 48,
+    borderRadius: BorderRadius.md,
+    backgroundColor: '#333333',
+  },
+  discogsText: {
+    ...Typography.body,
+    color: '#FFF',
     fontWeight: '600',
   },
 });

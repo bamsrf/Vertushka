@@ -57,7 +57,7 @@ function track(event: string, properties?: Record<string, unknown>) {
 export const analytics = {
   // --- Auth ---
   register: () => track('register'),
-  login: (method: 'email' | 'apple' | 'google') => track('login', { method }),
+  login: (method: 'email' | 'apple' | 'google' | 'discogs') => track('login', { method }),
   logout: () => {
     track('logout');
     provider?.reset();

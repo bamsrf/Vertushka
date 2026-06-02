@@ -184,6 +184,7 @@ interface AuthState {
   register: (email: string, username: string, password: string) => Promise<void>;
   loginWithApple: (data: import('./types').AppleSignInRequest) => Promise<void>;
   loginWithGoogle: (idToken: string) => Promise<void>;
+  loginWithDiscogs: (ticket: string) => Promise<void>;
   logout: () => Promise<void>;
   /**
    * Локальный logout без сетевого вызова. Используется когда refresh-токен
@@ -254,6 +255,21 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       set({ user, isAuthenticated: true, isLoading: false });
       analytics.identify(user.id);
       analytics.login('google');
+      initAchievementsCache().catch(() => {});
+    } catch (error) {
+      set({ isLoading: false });
+      throw error;
+    }
+  },
+
+  loginWithDiscogs: async (ticket) => {
+    set({ isLoading: true });
+    try {
+      await api.exchangeDiscogsTicket(ticket);
+      const user = await api.getMe();
+      set({ user, isAuthenticated: true, isLoading: false });
+      analytics.identify(user.id);
+      analytics.login('discogs');
       initAchievementsCache().catch(() => {});
     } catch (error) {
       set({ isLoading: false });

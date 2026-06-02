@@ -1146,6 +1146,25 @@ class ApiClient {
     return data;
   }
 
+  // Логин через Discogs (без JWT) — возвращает URL авторизации.
+  async discogsLoginStart(): Promise<{ authorize_url: string }> {
+    const { data } = await this.client.post('/auth/discogs/login');
+    return data;
+  }
+
+  // Обмен one-time ticket из deep-link на JWT-пару. Сохраняет токены.
+  async exchangeDiscogsTicket(ticket: string): Promise<AuthTokens> {
+    const { data } = await this.client.post<AuthTokens>('/auth/discogs/exchange-ticket', { ticket });
+    await this.setTokens(data.access_token, data.refresh_token || '');
+    return data;
+  }
+
+  // One-time импорт коллекции из Discogs в основную коллекцию.
+  async importDiscogsCollection(): Promise<{ imported: number; skipped: number; total: number }> {
+    const { data } = await this.client.post('/collections/import/discogs');
+    return data;
+  }
+
 }
 
 export const api = new ApiClient();

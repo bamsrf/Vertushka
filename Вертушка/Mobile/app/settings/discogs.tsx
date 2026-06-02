@@ -36,6 +36,7 @@ export default function DiscogsSettings() {
   const insets = useSafeAreaInsets();
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [importing, setImporting] = useState(false);
   const [connected, setConnected] = useState(false);
   const [username, setUsername] = useState<string | null>(null);
 
@@ -83,6 +84,33 @@ export default function DiscogsSettings() {
       setBusy(false);
     }
   }, [loadStatus]);
+
+  const handleImport = useCallback(() => {
+    Alert.alert(
+      'Импортировать коллекцию?',
+      'Все пластинки из вашей коллекции Discogs добавятся в основную коллекцию. Уже добавленные пропустятся.',
+      [
+        { text: 'Отмена', style: 'cancel' },
+        {
+          text: 'Импортировать',
+          onPress: async () => {
+            setImporting(true);
+            try {
+              const r = await api.importDiscogsCollection();
+              toast.success(
+                'Импорт завершён',
+                `Добавлено: ${r.imported}, пропущено: ${r.skipped} из ${r.total}`
+              );
+            } catch (e: any) {
+              toast.error('Не удалось импортировать', e?.response?.data?.detail || 'Попробуйте позже');
+            } finally {
+              setImporting(false);
+            }
+          },
+        },
+      ]
+    );
+  }, []);
 
   const handleDisconnect = useCallback(() => {
     Alert.alert(
@@ -147,17 +175,31 @@ export default function DiscogsSettings() {
           </View>
 
           {connected ? (
-            <TouchableOpacity
-              style={[styles.button, styles.buttonDanger]}
-              onPress={handleDisconnect}
-              disabled={busy}
-            >
-              {busy ? (
-                <ActivityIndicator size="small" color={Colors.warning} />
-              ) : (
-                <Text style={[styles.buttonText, styles.buttonTextDanger]}>Отключить</Text>
-              )}
-            </TouchableOpacity>
+            <>
+              <TouchableOpacity
+                style={styles.button}
+                onPress={handleImport}
+                disabled={importing || busy}
+              >
+                {importing ? (
+                  <ActivityIndicator size="small" color="#FFF" />
+                ) : (
+                  <Text style={styles.buttonText}>Импортировать коллекцию</Text>
+                )}
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.button, styles.buttonDanger, { marginTop: Spacing.md }]}
+                onPress={handleDisconnect}
+                disabled={busy || importing}
+              >
+                {busy ? (
+                  <ActivityIndicator size="small" color={Colors.warning} />
+                ) : (
+                  <Text style={[styles.buttonText, styles.buttonTextDanger]}>Отключить</Text>
+                )}
+              </TouchableOpacity>
+            </>
           ) : (
             <TouchableOpacity
               style={styles.button}

@@ -6,7 +6,7 @@
 
 export interface User {
   id: string;
-  email: string;
+  email: string | null;  // null для аккаунтов через Discogs-логин
   username: string;
   display_name?: string;
   avatar_url?: string;

@@ -22,10 +22,12 @@ class User(Base):
     )
     
     # Основные данные
-    email: Mapped[str] = mapped_column(
+    # nullable: Discogs-логин создаёт аккаунт без email (см. миграцию
+    # 20260602_discogs_login). NULL не конфликтует в UNIQUE-индексе Postgres.
+    email: Mapped[str | None] = mapped_column(
         String(255),
         unique=True,
-        nullable=False,
+        nullable=True,
         index=True
     )
     username: Mapped[str] = mapped_column(
