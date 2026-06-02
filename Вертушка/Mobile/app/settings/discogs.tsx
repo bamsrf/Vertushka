@@ -26,7 +26,6 @@ import * as WebBrowser from 'expo-web-browser';
 import * as Linking from 'expo-linking';
 import { Icon } from '@/components/ui';
 import { api } from '../../lib/api';
-import { toast } from '../../lib/toast';
 import { Colors, Spacing, BorderRadius, Typography } from '../../constants/theme';
 
 const REDIRECT = 'vertushka://discogs-callback';
@@ -46,7 +45,7 @@ export default function DiscogsSettings() {
       setConnected(s.connected);
       setUsername(s.username);
     } catch {
-      toast.error('Не удалось загрузить статус Discogs');
+      Alert.alert('Discogs', 'Не удалось загрузить статус Discogs');
     } finally {
       setLoading(false);
     }
@@ -71,15 +70,15 @@ export default function DiscogsSettings() {
       const status = queryParams?.status;
 
       if (status === 'connected') {
-        toast.success('Discogs подключён');
+        Alert.alert('Discogs', 'Аккаунт подключён');
         await loadStatus();
       } else if (status === 'expired') {
-        toast.error('Сессия истекла, попробуйте снова');
+        Alert.alert('Discogs', 'Сессия истекла, попробуйте снова');
       } else {
-        toast.error('Не удалось подключить Discogs');
+        Alert.alert('Discogs', 'Не удалось подключить Discogs');
       }
     } catch {
-      toast.error('Не удалось начать подключение');
+      Alert.alert('Discogs', 'Не удалось начать подключение');
     } finally {
       setBusy(false);
     }
@@ -97,12 +96,15 @@ export default function DiscogsSettings() {
             setImporting(true);
             try {
               const r = await api.importDiscogsCollection();
-              toast.success(
+              // Alert, не toast: этот экран — нативный stack-screen и рендерится
+              // поверх корневого <Toast>, поэтому toast тут не виден. Alert
+              // нативный и всегда поверх.
+              Alert.alert(
                 'Импорт завершён',
                 `Добавлено: ${r.imported}, пропущено: ${r.skipped} из ${r.total}`
               );
             } catch (e: any) {
-              toast.error('Не удалось импортировать', e?.response?.data?.detail || 'Попробуйте позже');
+              Alert.alert('Не удалось импортировать', e?.response?.data?.detail || 'Попробуйте позже');
             } finally {
               setImporting(false);
             }
@@ -127,9 +129,9 @@ export default function DiscogsSettings() {
               await api.disconnectDiscogs();
               setConnected(false);
               setUsername(null);
-              toast.success('Discogs отключён');
+              Alert.alert('Discogs', 'Аккаунт отключён');
             } catch {
-              toast.error('Не удалось отключить');
+              Alert.alert('Discogs', 'Не удалось отключить');
             } finally {
               setBusy(false);
             }

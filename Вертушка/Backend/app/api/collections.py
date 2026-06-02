@@ -230,13 +230,17 @@ async def get_collection(
     else:
         order_clause = CollectionItem.added_at.desc()
 
-    # Получаем элементы с пагинацией
+    # Получаем элементы с пагинацией.
+    # Вторичная сортировка по id обязательна: при импорте создаётся пачка
+    # CollectionItem с одинаковым added_at, и без стабильного тай-брейкера
+    # OFFSET-пагинация возвращает строки в произвольном порядке — одна и та же
+    # строка может попасть на две страницы, что ломает уникальность ключей в UI.
     offset = (page - 1) * per_page
     items_result = await db.execute(
         select(CollectionItem)
         .where(CollectionItem.collection_id == collection_id)
         .options(selectinload(CollectionItem.record))
-        .order_by(order_clause)
+        .order_by(order_clause, CollectionItem.id)
         .offset(offset)
         .limit(per_page)
     )
@@ -811,6 +815,14 @@ async def import_discogs_collection(
     )
     existing_record_ids = set(existing_result.scalars().all())
 
+    # Курс и параметры считаем один раз — чтобы проставить рублёвую стоимость
+    # тем записям, у которых уже есть цена (estimated_price_min). Свежие slim-
+    # записи без цены получат её из фоновой задачи update_prices_batch (4:00)
+    # или через ручной /recalculate-prices.
+    settings = get_settings()
+    usd_rub = await get_usd_rub_rate()
+    params = PricingParams.from_settings(settings)
+
     imported = 0
     skipped = 0
     for basic in releases:
@@ -841,7 +853,16 @@ async def import_discogs_collection(
             skipped += 1
             continue
 
-        db.add(CollectionItem(collection_id=collection.id, record_id=record.id))
+        price_rub = (
+            _record_rub(record, usd_rub, params)
+            if record.estimated_price_min
+            else None
+        )
+        db.add(CollectionItem(
+            collection_id=collection.id,
+            record_id=record.id,
+            estimated_price_rub=price_rub,
+        ))
         existing_record_ids.add(record.id)
         imported += 1
 
