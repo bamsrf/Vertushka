@@ -10,6 +10,7 @@ from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
 import httpx
+import sentry_sdk
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from slowapi import Limiter
@@ -263,6 +264,13 @@ async def get_current_user(
         )
 
     await _maybe_touch_last_seen(user.id)
+
+    # Привязываем юзера к Sentry/GlitchTip-скоупу, чтобы по нику/id находить его ошибки
+    sentry_sdk.set_user({
+        "id": str(user.id),
+        "username": user.username,
+        "email": user.email,
+    })
 
     return user
 
