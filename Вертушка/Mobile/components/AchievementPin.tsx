@@ -41,6 +41,7 @@ import {
   TIER_AURA,
 } from './achievement-scenes';
 import { PIN_SVGS } from '../assets/achievements/pins/pins-index';
+import { DESIGN_PNGS } from '../assets/achievements/designs';
 import type { AchievementItem } from '../lib/types';
 
 // Локальные ассеты-заглушки для locked-состояний без своего SVG.
@@ -81,9 +82,12 @@ function pickAsset(item: AchievementItem, locked: boolean, isMystery: boolean): 
     return { kind: 'png', source: PLACEHOLDER_EGG };
   }
 
-  // Открытая ачивка со своим SVG-пином — рендерим SVG.
+  // Открытая ачивка: приоритет — финальный PNG-дизайн, затем SVG-пин.
   if (!locked && item.icon_slug) {
-    const xml = PIN_SVGS[item.icon_slug.toLowerCase()];
+    const slug = item.icon_slug.toLowerCase();
+    const png = DESIGN_PNGS[slug];
+    if (png) return { kind: 'png', source: png };
+    const xml = PIN_SVGS[slug];
     if (xml) return { kind: 'svg', xml };
   }
 
