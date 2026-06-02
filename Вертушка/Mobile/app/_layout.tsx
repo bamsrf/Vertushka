@@ -44,6 +44,11 @@ import { InAppNotificationToastHost, inAppToast } from '../components/notificati
 import Toast from 'react-native-toast-message';
 import { toastConfig } from '../components/CustomToast';
 import { initAmplitude } from '../lib/analytics';
+import { clampSystemFontScale } from '../lib/responsive';
+
+// Ограничиваем системный font-scale до старта рендера — крупный «Размер текста»
+// в настройках устройства не должен ломать верстку (ms() уже даёт нужный размер).
+clampSystemFontScale();
 
 Notifications.setNotificationHandler({
   handleNotification: async () => {
