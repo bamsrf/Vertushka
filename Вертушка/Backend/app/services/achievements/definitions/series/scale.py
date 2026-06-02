@@ -39,13 +39,24 @@ ANTIFARM_COOLDOWN = timedelta(hours=24)
 
 
 async def _count_aged_unique_records(db: AsyncSession, user_id: UUID) -> int:
-    """COUNT(DISTINCT record_id) для всех CollectionItem юзера старше 24 часов."""
+    """COUNT(DISTINCT record_id) в ОСНОВНОЙ коллекции юзера старше 24 часов.
+
+    Папки — это отдельные Collection с большим sort_order; пластинки в них
+    копируются из основной коллекции. Считаем только основную коллекцию
+    (минимальный sort_order), иначе папки накручивают размер коллекции.
+    """
     cutoff = datetime.utcnow() - ANTIFARM_COOLDOWN
+    default_collection_id = (
+        select(Collection.id)
+        .where(Collection.user_id == user_id)
+        .order_by(Collection.sort_order, Collection.created_at)
+        .limit(1)
+        .scalar_subquery()
+    )
     count = await db.scalar(
         select(func.count(func.distinct(CollectionItem.record_id)))
-        .join(Collection, CollectionItem.collection_id == Collection.id)
         .where(
-            Collection.user_id == user_id,
+            CollectionItem.collection_id == default_collection_id,
             CollectionItem.added_at <= cutoff,
         )
     )
