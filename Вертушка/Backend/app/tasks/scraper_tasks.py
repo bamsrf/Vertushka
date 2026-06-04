@@ -18,7 +18,11 @@ from app.models.store import Store
 from app.models.store_listing import StoreListing, ListingStatus
 from app.services.scrapers.runner import crawl_store
 from app.services.scrapers.shops import *  # noqa: F401,F403  — auto-register parsers
-from app.services.listing_matcher import match_unmatched_batch, rematch_store_native_batch
+from app.services.listing_matcher import (
+    match_unmatched_batch,
+    rematch_store_native_batch,
+    rematch_format_conflicts_batch,
+)
 from app.api.offers import invalidate_record_offers
 from app.api.records import _ensure_record_artist_data
 
@@ -182,6 +186,17 @@ async def daily_rematch_store_native() -> dict:
     полный круг ≤ недели. Discogs API нагрузка ≈ 12 req/час (лимит 2000/час).
     """
     return await rematch_store_native_batch(batch_size=300)
+
+
+async def daily_rematch_format_conflicts() -> dict:
+    """Раз в сутки — сброс листингов с конфликтом носителя (винил↔CD).
+
+    Чинит исторические fuzzy-привязки винил-листинга к CD-релизу (хедер врал
+    «CD»). Сбрасывает matched_record_id=NULL → hourly_match_unmatched
+    пере-привяжет с format-penalty. batch 500/день покрывает весь каталог
+    (~5500 листингов) за ≤2 недели; конфликтов кратно меньше.
+    """
+    return await rematch_format_conflicts_batch(batch_size=500)
 
 
 # ---- Чистка stale ------------------------------------------------------ #

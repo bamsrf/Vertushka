@@ -97,7 +97,7 @@ async def lifespan(app: FastAPI):
             from app.tasks.discogs_tasks import cleanup_search_cache, enrich_records_artist_data, update_prices_batch, enrich_market_covers, refresh_market_store_stats
             from app.tasks.valuation_tasks import record_daily_snapshots
             from app.tasks.achievements_tasks import daily_tick_achievements
-            from app.tasks.notification_tasks import emit_wishlist_in_stock_notifications
+            from app.tasks.notification_tasks import emit_wishlist_in_stock_notifications, emit_weekly_wishlist_digest
             from app.services.cover_storage import CoverStorageService
 
             async def cleanup_covers():
@@ -120,6 +120,7 @@ async def lifespan(app: FastAPI):
             scheduler.add_job(refresh_market_store_stats, 'interval', minutes=15, id='refresh_market_store_stats')
             scheduler.add_job(daily_tick_achievements, 'cron', hour=6, minute=0, id='achievements_daily_tick')
             scheduler.add_job(emit_wishlist_in_stock_notifications, 'interval', minutes=15, id='wishlist_in_stock_notifications')
+            scheduler.add_job(emit_weekly_wishlist_digest, 'cron', day_of_week='mon', hour=10, minute=0, id='weekly_wishlist_digest')
 
             # ---- Парсеры магазинов винила (под env SCRAPERS_ENABLED) ----
             if os.environ.get("SCRAPERS_ENABLED", "false").lower() == "true":
@@ -132,6 +133,7 @@ async def lifespan(app: FastAPI):
                     weekly_cleanup_stale,
                     invalidate_offers_for_recently_updated,
                     daily_rematch_store_native,
+                    daily_rematch_format_conflicts,
                     hourly_enrich_artist_thumbs,
                 )
                 scheduler.add_job(daily_full_crawl_http, 'cron', hour=2, minute=0, id='scrape_full_http')
@@ -142,6 +144,7 @@ async def lifespan(app: FastAPI):
                 scheduler.add_job(weekly_cleanup_stale, 'cron', day_of_week='sun', hour=4, minute=0, id='scrape_cleanup_stale')
                 scheduler.add_job(invalidate_offers_for_recently_updated, 'interval', minutes=15, id='scrape_invalidate_offers')
                 scheduler.add_job(daily_rematch_store_native, 'cron', hour=3, minute=30, id='scrape_rematch_store_native')
+                scheduler.add_job(daily_rematch_format_conflicts, 'cron', hour=3, minute=45, id='scrape_rematch_format_conflicts')
                 scheduler.add_job(hourly_enrich_artist_thumbs, 'interval', minutes=60, id='enrich_artist_thumbs')
                 logger.info("✅ Scraper jobs зарегистрированы (SCRAPERS_ENABLED=true)")
 
