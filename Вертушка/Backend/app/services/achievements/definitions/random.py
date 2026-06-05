@@ -204,7 +204,7 @@ DEFINITIONS: list[AchievementDefinition] = [
     AchievementDefinition(
         code=R_THIRTY_THREE_CODE,
         title_ru="Тридцать три",
-        description_ru="Скрытая ачивка.",
+        description_ru="В коллекции ровно 33 пластинки — как 33⅓ оборота.",
         series="random",
         tier=AchievementTier.RARE,
         is_hidden=True,
@@ -216,7 +216,7 @@ DEFINITIONS: list[AchievementDefinition] = [
     AchievementDefinition(
         code=R_SEVENTY_EIGHT_CODE,
         title_ru="Семьдесят восемь",
-        description_ru="Скрытая ачивка.",
+        description_ru="В коллекции ровно 78 пластинок — как 78 RPM.",
         series="random",
         tier=AchievementTier.RARE,
         is_hidden=True,
@@ -228,7 +228,7 @@ DEFINITIONS: list[AchievementDefinition] = [
     AchievementDefinition(
         code=R_PI_CODE,
         title_ru="Число Пи",
-        description_ru="Скрытая ачивка.",
+        description_ru="В коллекции ровно 314 пластинок — первые цифры числа Пи.",
         series="random",
         tier=AchievementTier.EPIC,
         is_hidden=True,
@@ -240,7 +240,7 @@ DEFINITIONS: list[AchievementDefinition] = [
     AchievementDefinition(
         code=R_PALINDROME_CODE,
         title_ru="Палиндром",
-        description_ru="Скрытая ачивка.",
+        description_ru="Пластинка с годом-палиндромом в коллекции.",
         series="random",
         tier=AchievementTier.RARE,
         is_hidden=True,
@@ -253,7 +253,7 @@ DEFINITIONS: list[AchievementDefinition] = [
     AchievementDefinition(
         code=R_SELF_TITLED_CODE,
         title_ru="Тёзка",
-        description_ru="Скрытая ачивка.",
+        description_ru="Пластинка, где имя артиста совпадает с названием.",
         series="random",
         tier=AchievementTier.RARE,
         is_hidden=True,
@@ -265,7 +265,7 @@ DEFINITIONS: list[AchievementDefinition] = [
     AchievementDefinition(
         code=R_SELF_AWARE_CODE,
         title_ru="Самосознание",
-        description_ru="Скрытая ачивка.",
+        description_ru="Пластинка про саму музыку и пластинки.",
         series="random",
         tier=AchievementTier.RARE,
         is_hidden=True,
@@ -277,7 +277,7 @@ DEFINITIONS: list[AchievementDefinition] = [
     AchievementDefinition(
         code=R_META_VERTUSHKA_CODE,
         title_ru="Вертушка",
-        description_ru="Скрытая ачивка.",
+        description_ru="Пластинка про вертушку — тёзка приложения.",
         series="random",
         tier=AchievementTier.EPIC,
         is_hidden=True,
@@ -289,7 +289,7 @@ DEFINITIONS: list[AchievementDefinition] = [
     AchievementDefinition(
         code=R_LONG_TITLE_CODE,
         title_ru="Поэма",
-        description_ru="Скрытая ачивка.",
+        description_ru="Пластинка с очень длинным названием.",
         series="random",
         tier=AchievementTier.RARE,
         is_hidden=True,

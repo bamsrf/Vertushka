@@ -48,7 +48,7 @@ class AchievementDefinition:
     code: str
     title_ru: str
     description_ru: str
-    series: str                 # 'foundation', 'scale', 'gifts', 'random'
+    series: str                # 'foundation', 'scale', 'gifts', 'random'
     tier: AchievementTier
     is_hidden: bool
     triggers: tuple[str, ...]
@@ -59,6 +59,7 @@ class AchievementDefinition:
     is_meta: bool = False       # Мета-ачивка серии (выдаётся после всех остальных)
     flavor_ru: str = ""
     icon_slug: str = ""         # имя SVG-файла без .svg (для Mobile assets)
+    description_done_ru: str = ""  # текст в прошедшем времени, когда ачивка открыта
 
 
 # --- Реестр (заполняется в конце файла после импорта definitions) ---

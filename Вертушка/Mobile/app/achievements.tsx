@@ -471,8 +471,14 @@ function DetailsSheet({
             </View>
           )}
         </View>
-        {item.description_ru && (
-          <Text style={styles.sheetDescription}>{item.description_ru}</Text>
+        {(item.is_unlocked && item.description_done_ru
+          ? item.description_done_ru
+          : item.description_ru) && (
+          <Text style={styles.sheetDescription}>
+            {item.is_unlocked && item.description_done_ru
+              ? item.description_done_ru
+              : item.description_ru}
+          </Text>
         )}
         {item.flavor_ru && !item.is_hidden && item.is_unlocked && (
           <Text style={styles.sheetFlavor}>«{item.flavor_ru}»</Text>
@@ -569,8 +575,10 @@ function DetailsSheet({
             </View>
             {item.flavor_ru && !item.is_hidden ? (
               <Text style={styles.shareCardFlavor}>«{item.flavor_ru}»</Text>
-            ) : item.description_ru ? (
-              <Text style={styles.shareCardFlavor}>{item.description_ru}</Text>
+            ) : item.description_done_ru || item.description_ru ? (
+              <Text style={styles.shareCardFlavor}>
+                {item.description_done_ru || item.description_ru}
+              </Text>
             ) : null}
             {item.unlocked_at && (
               <Text style={styles.shareCardDate}>Открыто {formatDate(item.unlocked_at)}</Text>

@@ -15,6 +15,7 @@ export const DESIGN_PNGS: Record<string, ImageSourcePropType> = {
   b5_keeper: require('./b5_keeper.png'),
   c3_collectible_x1: require('./c3_collectible_x1.png'),
   d3_country_x30: require('./d3_country_x30.png'),
+  meta_foundation: require('./meta_foundation.png'),
   r_self_titled: require('./r_self_titled.png'),
   r_thirty_three: require('./r_thirty_three.png'),
 };
