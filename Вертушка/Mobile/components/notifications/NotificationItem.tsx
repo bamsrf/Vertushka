@@ -6,17 +6,16 @@
  * - inline accept/reject для follow_request
  * - tap → переход (отмечает прочитанным)
  */
-import React, { useMemo, useRef } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Animated } from 'react-native';
+import React, { useMemo } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { Image } from 'expo-image';
-import { LinearGradient } from 'expo-linear-gradient';
-import { Swipeable } from 'react-native-gesture-handler';
-import * as Haptics from 'expo-haptics';
 import { Colors, Spacing, BorderRadius, Typography } from '@/constants/theme';
 import { Icon } from '@/components/ui';
 import { resolveMediaUrl, getCoverUrl } from '@/lib/api';
+import { DESIGN_PNGS } from '@/assets/achievements/designs';
 import type { NotificationItem as NotificationItemType, NotificationType } from '@/lib/types';
 import { FollowRequestActions } from './FollowRequestActions';
+import { NotificationSwipe } from './NotificationSwipe';
 
 interface Props {
   item: NotificationItemType;
@@ -173,7 +172,6 @@ export const NotificationItem: React.FC<Props> = ({
   onAcceptFollow,
   onRejectFollow,
   onLongPress,
-  onMarkRead,
   onDelete,
 }) => {
   const unread = !item.read_at;
@@ -183,96 +181,13 @@ export const NotificationItem: React.FC<Props> = ({
   const coverUrl = useMemo(() => getCoverFromData(item.data || {}), [item.data]);
   const showInlineActions = item.type === 'follow_request' && onAcceptFollow && onRejectFollow;
   const isMilestone = item.type === 'milestone_unlocked';
-  const swipeRef = useRef<Swipeable>(null);
-  // Флаг «только что свайпнули» — гасит ложный onPress, который иначе открывал
-  // /record даже при свайпе-удалении.
-  const swipedRef = useRef(false);
+  const pinSource = useMemo(() => getAchievementPin(item), [item]);
 
-  const renderRightActions = (
-    _: Animated.AnimatedInterpolation<number>,
-    drag: Animated.AnimatedInterpolation<number>,
-  ) => {
-    if (!onDelete) return null;
-    const scale = drag.interpolate({
-      inputRange: [-100, 0],
-      outputRange: [1, 0.6],
-      extrapolate: 'clamp',
-    });
-    return (
-      <View style={styles.actionContainer}>
-        <Animated.View style={[styles.actionCard, styles.deleteAction, { transform: [{ scale }] }]}>
-          <Icon name="trash" size={22} color={Colors.background} />
-          <Text style={styles.actionText}>Удалить</Text>
-        </Animated.View>
-      </View>
-    );
-  };
-
-  const renderLeftActions = (
-    _: Animated.AnimatedInterpolation<number>,
-    drag: Animated.AnimatedInterpolation<number>,
-  ) => {
-    if (!onMarkRead || !unread) return null;
-    const scale = drag.interpolate({
-      inputRange: [0, 100],
-      outputRange: [0.6, 1],
-      extrapolate: 'clamp',
-    });
-    return (
-      <View style={styles.actionContainer}>
-        <Animated.View style={[styles.actionCard, styles.readAction, { transform: [{ scale }] }]}>
-          <Icon name="checkmark" size={22} color={Colors.background} />
-          <Text style={styles.actionText}>Прочитано</Text>
-        </Animated.View>
-      </View>
-    );
-  };
-
-  const handleSwipeOpen = (direction: 'left' | 'right') => {
-    swipedRef.current = true;
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
-    if (direction === 'left' && onMarkRead) {
-      onMarkRead(item);
-    } else if (direction === 'right' && onDelete) {
-      onDelete(item);
-    }
-    swipeRef.current?.close();
-  };
-
-  const handlePress = () => {
-    // Гасим тап, прилетевший на отпускании свайпа (иначе откроется /record при удалении).
-    if (swipedRef.current) {
-      swipedRef.current = false;
-      return;
-    }
-    onPress(item);
-  };
-
-  return (
-    <Swipeable
-      ref={swipeRef}
-      renderLeftActions={renderLeftActions}
-      renderRightActions={renderRightActions}
-      onSwipeableWillOpen={() => {
-        swipedRef.current = true;
-      }}
-      onSwipeableOpen={handleSwipeOpen}
-      onSwipeableClose={() => {
-        // Сброс с задержкой — чтобы onPress, прилетевший сразу после, успел погаситься.
-        setTimeout(() => {
-          swipedRef.current = false;
-        }, 50);
-      }}
-      friction={2}
-      leftThreshold={60}
-      rightThreshold={60}
-      overshootLeft={false}
-      overshootRight={false}
-    >
+  const row = (
     <TouchableOpacity
       activeOpacity={0.7}
       style={[styles.row, unread && styles.rowUnread, isMilestone && styles.rowMilestone]}
-      onPress={handlePress}
+      onPress={() => onPress(item)}
       onLongPress={onLongPress ? () => onLongPress(item) : undefined}
       delayLongPress={350}
     >
@@ -281,7 +196,9 @@ export const NotificationItem: React.FC<Props> = ({
       </View>
 
       <View style={styles.avatarWrap}>
-        {avatarUrl ? (
+        {pinSource ? (
+          <Image source={pinSource} style={styles.pin} contentFit="contain" cachePolicy="memory-disk" />
+        ) : avatarUrl ? (
           <>
             <Image source={avatarUrl} style={styles.avatar} cachePolicy="disk" />
             <View style={[styles.iconBadge, { backgroundColor: meta.tint }]}>
@@ -315,9 +232,20 @@ export const NotificationItem: React.FC<Props> = ({
         <Image source={coverUrl} style={styles.cover} cachePolicy="disk" contentFit="cover" />
       ) : null}
     </TouchableOpacity>
-    </Swipeable>
   );
+
+  if (!onDelete) return row;
+
+  return <NotificationSwipe onDelete={() => onDelete(item)}>{row}</NotificationSwipe>;
 };
+
+/** Мини-имидж пина для ачивок (по icon_slug из data). Иначе undefined → fallback на иконку. */
+function getAchievementPin(item: NotificationItemType): number | undefined {
+  if (item.type !== 'achievement_unlocked' && item.type !== 'milestone_unlocked') return undefined;
+  const slug = (item.data?.icon_slug as string | undefined) || undefined;
+  if (!slug) return undefined;
+  return (DESIGN_PNGS as Record<string, number>)[slug];
+}
 
 const styles = StyleSheet.create({
   row: {
@@ -352,6 +280,10 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 22,
+  },
+  pin: {
+    width: 44,
+    height: 44,
   },
   avatarPlaceholder: {
     width: 44,
@@ -395,32 +327,6 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: BorderRadius.sm,
-  },
-  actionContainer: {
-    width: 96,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: Spacing.sm,
-  },
-  actionCard: {
-    flex: 1,
-    alignSelf: 'stretch',
-    marginVertical: 6,
-    borderRadius: BorderRadius.lg,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  deleteAction: {
-    backgroundColor: Colors.error,
-  },
-  readAction: {
-    backgroundColor: Colors.royalBlue,
-  },
-  actionText: {
-    ...Typography.caption,
-    color: Colors.background,
-    marginTop: 4,
-    fontFamily: 'Inter_600SemiBold',
   },
 });
 
