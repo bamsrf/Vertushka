@@ -838,6 +838,8 @@ export interface AchievementItem {
   /** null если ачивка скрытая и ещё не открыта (рендерим как «🥚 Пасхалка») */
   title_ru: string | null;
   description_ru: string | null;
+  /** прошедшее время, показываем когда is_unlocked */
+  description_done_ru?: string | null;
   flavor_ru?: string | null;
   icon_slug?: string | null;
   series: AchievementSeriesKey | 'random';

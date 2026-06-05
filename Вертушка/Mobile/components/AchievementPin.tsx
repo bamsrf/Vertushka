@@ -182,7 +182,9 @@ export function AchievementPin({ item, size = 72, style, glowOverride = false }:
 
   // Заглушки уже содержат gold-rim+lock в самой картинке, своих бэйджей не дублируем.
   const assetHasBakedLock = asset?.kind === 'png';
-  const assetHasBakedMeta = asset?.kind === 'png' && item.is_meta;
+  // Звезду глушим только у locked-placeholder (trophy с baked-меткой),
+  // а у открытого PNG-дизайна meta-звезду показываем.
+  const assetHasBakedMeta = asset?.kind === 'png' && item.is_meta && locked;
   const showLockBadge = locked && !isMystery && !assetHasBakedLock;
   const showMetaBadge = item.is_meta && !isMystery && !assetHasBakedMeta;
 

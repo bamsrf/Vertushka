@@ -376,8 +376,10 @@ function UnlockModal({
             </View>
             {main.flavor_ru ? (
               <Text style={styles.shareCardFlavor}>«{main.flavor_ru}»</Text>
-            ) : main.description_ru ? (
-              <Text style={styles.shareCardFlavor}>{main.description_ru}</Text>
+            ) : main.description_done_ru || main.description_ru ? (
+              <Text style={styles.shareCardFlavor}>
+                {main.description_done_ru || main.description_ru}
+              </Text>
             ) : null}
           </LinearGradient>
         </View>

@@ -22,6 +22,7 @@ class AchievementItem(BaseModel):
     code: str
     title_ru: str | None = None
     description_ru: str | None = None
+    description_done_ru: str | None = None  # прошедшее время для открытой ачивки
     flavor_ru: str | None = None
     icon_slug: str | None = None
     series: str
