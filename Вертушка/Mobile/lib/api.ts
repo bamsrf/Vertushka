@@ -782,10 +782,11 @@ class ApiClient {
     collectionId: string,
     sortBy: string = 'added_at',
     page: number = 1,
-    perPage: number = 30
+    perPage: number = 30,
+    excludeFoldered: boolean = false
   ): Promise<{ items: CollectionItem[]; hasMore: boolean }> {
     const response = await this.client.get<Collection>(`/collections/${collectionId}`, {
-      params: { sort_by: sortBy, page, per_page: perPage },
+      params: { sort_by: sortBy, page, per_page: perPage, exclude_foldered: excludeFoldered },
     });
     const items = response.data.items || [];
     return { items, hasMore: items.length === perPage };

@@ -203,6 +203,7 @@ async def get_collection(
     page: int = Query(1, ge=1),
     per_page: int = Query(50, ge=1, le=200),
     sort_by: str = Query("added_at", regex="^(added_at|price_desc|price_asc)$"),
+    exclude_foldered: bool = Query(False),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
@@ -222,6 +223,23 @@ async def get_collection(
             detail="Коллекция не найдена"
         )
 
+    # record_id, вынесенные пользователем в папки (коллекции с бóльшим
+    # sort_order). При exclude_foldered такие пластинки убираем из выдачи —
+    # та же логика, что в /stats, чтобы оценка стоимости и список совпадали.
+    base_filter = [CollectionItem.collection_id == collection_id]
+    if exclude_foldered:
+        foldered_result = await db.execute(
+            select(CollectionItem.record_id)
+            .join(Collection, CollectionItem.collection_id == Collection.id)
+            .where(
+                Collection.user_id == current_user.id,
+                Collection.sort_order > collection.sort_order,
+            )
+        )
+        foldered_record_ids = list(foldered_result.scalars().all())
+        if foldered_record_ids:
+            base_filter.append(CollectionItem.record_id.notin_(foldered_record_ids))
+
     # Определяем порядок сортировки
     if sort_by == "price_desc":
         order_clause = CollectionItem.estimated_price_rub.desc().nullslast()
@@ -238,7 +256,7 @@ async def get_collection(
     offset = (page - 1) * per_page
     items_result = await db.execute(
         select(CollectionItem)
-        .where(CollectionItem.collection_id == collection_id)
+        .where(*base_filter)
         .options(selectinload(CollectionItem.record))
         .order_by(order_clause, CollectionItem.id)
         .offset(offset)
@@ -249,7 +267,7 @@ async def get_collection(
     # Подсчёт общего количества
     count_result = await db.execute(
         select(func.count(CollectionItem.id))
-        .where(CollectionItem.collection_id == collection_id)
+        .where(*base_filter)
     )
     items_count = count_result.scalar() or 0
 
