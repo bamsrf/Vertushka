@@ -735,6 +735,8 @@ export interface WishlistInStockStore {
 export interface NotificationItem {
   id: string;
   type: NotificationType;
+  /** Ключ дедупликации одной «нити» (один record / одна ачивка). */
+  dedup_key?: string | null;
   entity_type?: string | null;
   entity_id?: string | null;
   data: Record<string, unknown>;

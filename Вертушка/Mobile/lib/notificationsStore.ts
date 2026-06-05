@@ -33,6 +33,7 @@ interface NotificationsState {
   loadSocial: (opts?: { refresh?: boolean }) => Promise<void>;
   loadMoreSocial: () => Promise<void>;
   markRead: (id: string) => Promise<void>;
+  markManyRead: (ids: string[]) => Promise<void>;
   markAllRead: () => Promise<void>;
   mutatePersonal: (id: string, patch: Partial<NotificationItem>) => void;
   removePersonal: (id: string) => Promise<void>;
@@ -160,6 +161,37 @@ export const useNotificationsStore = create<NotificationsState>((set, get) => ({
         ),
         unreadCount: state.unreadCount,
       }));
+    }
+  },
+
+  async markManyRead(ids: string[]) {
+    // Instagram-паттерн «seen = read»: помечаем оптимистично только реально
+    // видимые непрочитанные. Items ниже фолда сюда не попадают.
+    const state = get();
+    const fresh = ids.filter((id) => {
+      const t = state.personalItems.find((it) => it.id === id);
+      return t && !t.read_at;
+    });
+    if (fresh.length === 0) return;
+    const now = new Date().toISOString();
+    const freshSet = new Set(fresh);
+    set((prev) => ({
+      personalItems: prev.personalItems.map((it) =>
+        freshSet.has(it.id) ? { ...it, read_at: it.read_at ?? now } : it,
+      ),
+      unreadCount: Math.max(0, prev.unreadCount - fresh.length),
+    }));
+    try {
+      const unread = await api.markNotificationsRead(fresh);
+      set({ unreadCount: unread });
+    } catch {
+      // откатываем при ошибке
+      set((prev) => ({
+        personalItems: prev.personalItems.map((it) =>
+          freshSet.has(it.id) ? { ...it, read_at: null } : it,
+        ),
+      }));
+      await get().fetchUnreadCount();
     }
   },
 

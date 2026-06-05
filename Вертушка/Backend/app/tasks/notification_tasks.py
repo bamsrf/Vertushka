@@ -28,8 +28,6 @@ from sqlalchemy.orm import selectinload
 from app.database import async_session_maker
 from app.models.notification import (
     Notification,
-    PRIORITY_FEED,
-    PRIORITY_PUSH,
     PRIORITY_QUIET,
 )
 from app.models.store_listing import StoreListing, ListingStatus
@@ -44,13 +42,11 @@ logger = logging.getLogger(__name__)
 # Окно: новые/изменённые listing'и за последние N минут (с запасом перед интервалом запуска).
 RECENT_WINDOW_MINUTES = 20
 
-# Окно «recent» для классификации первичного матча: если у юзера за это время не было
-# никакого in_stock-алерта по этому record — это «первый раз», шлём push (PRIORITY_PUSH).
-# Если был — повторный bump, тихий (PRIORITY_QUIET, без push).
-FIRST_MATCH_LOOKBACK_DAYS = 90
+# Сколько дней назад смотрим непрочитанные wishlist_in_stock при сборке недельного digest.
+WEEKLY_DIGEST_LOOKBACK_DAYS = 7
 
-# Если за один прогон одному user'у падает ≥N новых wishlist_in_stock — сворачиваем в digest.
-DIGEST_THRESHOLD = 5
+# Максимум превью-обложек в data.items недельного digest.
+DIGEST_PREVIEW_LIMIT = 10
 
 
 async def emit_wishlist_in_stock_notifications() -> None:
@@ -65,7 +61,6 @@ async def emit_wishlist_in_stock_notifications() -> None:
 async def _run(db: AsyncSession) -> None:
     now = datetime.utcnow()
     window_start = now - timedelta(minutes=RECENT_WINDOW_MINUTES)
-    lookback = now - timedelta(days=FIRST_MATCH_LOOKBACK_DAYS)
 
     listings = (
         await db.execute(
@@ -99,21 +94,6 @@ async def _run(db: AsyncSession) -> None:
     if not wishlist_items:
         return
 
-    # Для каждой (user, record) пары — узнать, был ли у юзера недавний in_stock алерт.
-    # Это определит priority: первый раз за 90 дней = push, иначе тихий bump.
-    pairs = [(wi.wishlist.user_id, wi.record_id) for wi in wishlist_items if wi.record]
-    recent_alerts: set[tuple[UUID, str]] = set()
-    if pairs:
-        dedup_keys = [f"wishlist_in_stock:{rid}" for _, rid in pairs]
-        rows = await db.execute(
-            select(Notification.user_id, Notification.dedup_key).where(
-                Notification.dedup_key.in_(dedup_keys),
-                Notification.created_at >= lookback,
-            )
-        )
-        for uid, dk in rows.all():
-            recent_alerts.add((uid, dk))
-
     # Группируем listings по record для аккуратного передачи в data.stores[].
     listings_by_record: dict[str, list[StoreListing]] = defaultdict(list)
     for l in listings:
@@ -144,10 +124,10 @@ async def _run(db: AsyncSession) -> None:
         store_payload = _build_store_payload(cheapest)
 
         dedup_key = f"wishlist_in_stock:{record.id}"
-        is_first_match = (owner_id, dedup_key) not in recent_alerts
-        priority = PRIORITY_PUSH if is_first_match else PRIORITY_QUIET
 
-        price_str = f" от {int(min_price)}₽" if min_price is not None else ""
+        # In-app only: индивидуальные wishlist_in_stock больше НЕ шлют push.
+        # Кадэнс push отдан недельному digest (emit_weekly_wishlist_digest),
+        # чтобы юзер не получал одну и ту же обложку раз в пару дней.
         try:
             notif, is_new = await upsert_notification(
                 db,
@@ -167,9 +147,7 @@ async def _run(db: AsyncSession) -> None:
                     "stores": [store_payload],
                     "store": store_payload,  # для merge_data_fn в bump-path
                 },
-                push_title="Снова в продаже",
-                push_body=f"«{record.title}» из твоего вишлиста доступна{price_str}",
-                priority=priority,
+                priority=PRIORITY_QUIET,
                 merge_data_fn=merge_wishlist_stores,
             )
             if notif is not None and is_new:
@@ -181,22 +159,10 @@ async def _run(db: AsyncSession) -> None:
                 record.id,
             )
 
-    # Дайджест: если у юзера в одном прогоне >= DIGEST_THRESHOLD новых записей —
-    # сворачиваем в digest и помечаем индивидуальные как read (они остаются в БД
-    # для аналитики, но не маячат в ленте).
-    for user_id, notifs in emitted_per_user.items():
-        if len(notifs) < DIGEST_THRESHOLD:
-            continue
-        await _collapse_into_digest(db, user_id=user_id, items=notifs, when=now)
-
     await db.commit()
     total = sum(len(v) for v in emitted_per_user.values())
     if total:
-        logger.info(
-            "emit_wishlist_in_stock: emitted=%d digested_users=%d",
-            total,
-            sum(1 for v in emitted_per_user.values() if len(v) >= DIGEST_THRESHOLD),
-        )
+        logger.info("emit_wishlist_in_stock: emitted=%d (in-app, no push)", total)
 
 
 def _build_store_payload(listing: StoreListing) -> dict:
@@ -211,43 +177,70 @@ def _build_store_payload(listing: StoreListing) -> dict:
     }
 
 
-async def _collapse_into_digest(
-    db: AsyncSession,
-    *,
-    user_id: UUID,
-    items: list[Notification],
-    when: datetime,
-) -> None:
-    """Свернуть N индивидуальных wishlist_in_stock в один digest за день."""
-    day = when.date().isoformat()
-    dedup_key = f"digest:wl:{day}"
+def _plural_records(n: int) -> str:
+    mod10, mod100 = n % 10, n % 100
+    if 11 <= mod100 <= 14:
+        return "пластинок"
+    if mod10 == 1:
+        return "пластинка"
+    if 2 <= mod10 <= 4:
+        return "пластинки"
+    return "пластинок"
 
-    preview = [
-        {
-            "record_id": (n.data or {}).get("record_id") or n.entity_id,
-            "record_title": (n.data or {}).get("record_title"),
-            "record_artist": (n.data or {}).get("record_artist"),
-            "cover_url": (n.data or {}).get("cover_url"),
-            "min_price_rub": (n.data or {}).get("min_price_rub"),
-        }
-        for n in items[:10]
-    ]
 
-    await upsert_notification(
-        db,
-        user_id=user_id,
-        type="digest_wishlist_in_stock",
-        dedup_key=dedup_key,
-        entity_type="digest",
-        entity_id=day,
-        data={"count": len(items), "items": preview},
-        push_title=f"{len(items)} пластинок из вишлиста снова в продаже",
-        push_body="Открой ленту, чтобы посмотреть",
-        priority=PRIORITY_FEED,
+async def emit_weekly_wishlist_digest() -> None:
+    """Недельный digest-push «N пластинок из вишлиста снова в продаже».
+
+    Push-only: in-app лента уже наполнена индивидуальными `wishlist_in_stock`
+    (тихими, без push) из 15-минутного джоба. Здесь мы лишь раз в неделю
+    шлём ОДИН push на юзера, чтобы напомнить заглянуть в ленту — без спама
+    одной и той же обложкой раз в пару дней.
+    """
+    try:
+        async with async_session_maker() as db:
+            await _run_weekly_digest(db)
+    except Exception:
+        logger.exception("emit_weekly_wishlist_digest failed")
+
+
+async def _run_weekly_digest(db: AsyncSession) -> None:
+    from sqlalchemy import func
+
+    from app.services.push import send_push
+
+    now = datetime.utcnow()
+    lookback = now - timedelta(days=WEEKLY_DIGEST_LOOKBACK_DAYS)
+
+    # Сколько непрочитанных wishlist_in_stock накопилось у каждого юзера за неделю.
+    rows = await db.execute(
+        select(Notification.user_id, func.count(Notification.id))
+        .where(
+            Notification.type == "wishlist_in_stock",
+            Notification.read_at.is_(None),
+            Notification.created_at >= lookback,
+        )
+        .group_by(Notification.user_id)
     )
+    counts = rows.all()
+    if not counts:
+        return
 
-    # Скрываем индивидуальные за этот тик: помечаем прочитанными (НЕ удаляем,
-    # чтобы recent_alerts в следующем прогоне их видел и не плодил дубликаты).
-    for n in items:
-        if n.read_at is None:
-            n.read_at = when
+    sent = 0
+    for user_id, count in counts:
+        if not count:
+            continue
+        try:
+            ok = await send_push(
+                db,
+                user_id,
+                notification_type="digest_wishlist_in_stock",
+                title=f"{count} {_plural_records(count)} из вишлиста снова в продаже",
+                body="Открой ленту, чтобы посмотреть",
+                data={"type": "digest_wishlist_in_stock", "count": count},
+            )
+            if ok:
+                sent += 1
+        except Exception:
+            logger.exception("weekly digest push failed for user=%s", user_id)
+
+    logger.info("emit_weekly_wishlist_digest: pushed=%d users", sent)

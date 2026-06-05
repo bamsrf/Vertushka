@@ -196,7 +196,8 @@ class VinylRuParser(BaseStoreParser):
             year_raw=year,
             format_raw=format_raw,
             vinyl_color_raw=vinyl_color,
-            condition=None,
+            # Магазин нового товара — состояние всегда запечатанный нов.
+            condition="Новый (Mint)",
             price_rub=price,
             price_currency="RUB",
             status=status,

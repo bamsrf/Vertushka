@@ -65,7 +65,7 @@ export default function NotificationsScreen() {
     loadSocial,
     loadMoreSocial,
     markRead,
-    markAllRead,
+    markManyRead,
     mutatePersonal,
     removePersonal,
     snoozePersonal,
@@ -75,6 +75,43 @@ export default function NotificationsScreen() {
   } = useNotificationsStore();
   const sectionListRef = useRef<SectionList<NotificationItemType> | null>(null);
   const socialSectionListRef = useRef<SectionList<SocialFeedItem> | null>(null);
+
+  // «Seen = read» (Instagram-паттерн): копим id видимых непрочитанных, дебаунсим,
+  // шлём батчем. Items ниже фолда в viewable не попадают → остаются непрочитанными.
+  const pendingSeen = useRef<Set<string>>(new Set());
+  const seenTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const flushSeen = useCallback(() => {
+    const ids = Array.from(pendingSeen.current);
+    pendingSeen.current.clear();
+    if (ids.length > 0) markManyRead(ids);
+  }, [markManyRead]);
+
+  const viewabilityConfig = useRef({
+    itemVisiblePercentThreshold: 60,
+    minimumViewTime: 500,
+  }).current;
+
+  const onViewableItemsChanged = useRef(
+    ({ viewableItems }: { viewableItems: Array<{ item: unknown }> }) => {
+      let added = false;
+      for (const v of viewableItems) {
+        const it = v.item as NotificationItemType | undefined;
+        if (it && typeof it.id === 'string' && !it.read_at) {
+          pendingSeen.current.add(it.id);
+          added = true;
+        }
+      }
+      if (!added) return;
+      if (seenTimer.current) clearTimeout(seenTimer.current);
+      seenTimer.current = setTimeout(flushSeen, 600);
+    },
+  ).current;
+
+  useEffect(() => () => {
+    if (seenTimer.current) clearTimeout(seenTimer.current);
+    flushSeen();
+  }, [flushSeen]);
 
   useEffect(() => {
     loadPersonal();
@@ -242,7 +279,10 @@ export default function NotificationsScreen() {
     else if (tab === 'social' && socialNextCursor) loadMoreSocial();
   }, [tab, personalNextCursor, socialNextCursor, loadMorePersonal, loadMoreSocial]);
 
-  const personalSections = useMemo(() => groupByDateBucket(personalItems), [personalItems]);
+  const personalSections = useMemo(
+    () => groupByDateBucket(collapseByDedup(personalItems)),
+    [personalItems],
+  );
   const socialSections = useMemo(() => groupByDateBucket(socialItems), [socialItems]);
 
   const renderPersonal = ({ item }: { item: NotificationItemType }) => (
@@ -296,12 +336,6 @@ export default function NotificationsScreen() {
         />
       </View>
 
-      {tab === 'personal' && unreadCount > 0 ? (
-        <TouchableOpacity onPress={markAllRead} style={styles.markAllBtn}>
-          <Text style={styles.markAllText}>Отметить всё прочитанным</Text>
-        </TouchableOpacity>
-      ) : null}
-
       {pendingNew > 0 ? (
         <TouchableOpacity onPress={handleShowNew} style={styles.pill} activeOpacity={0.85}>
           <Text style={styles.pillText}>
@@ -318,6 +352,8 @@ export default function NotificationsScreen() {
           renderItem={renderPersonal}
           renderSectionHeader={renderSectionHeader}
           stickySectionHeadersEnabled={false}
+          viewabilityConfig={viewabilityConfig}
+          onViewableItemsChanged={onViewableItemsChanged}
           contentContainerStyle={
             personalSections.length === 0 ? styles.emptyContainer : styles.listContainer
           }
@@ -387,6 +423,39 @@ export default function NotificationsScreen() {
   );
 }
 
+/**
+ * Схлопывает дубликаты одной «нити» (один dedup_key — одна пластинка/ачивка),
+ * которые backend мог наплодить через read→new-row. Оставляем самую свежую запись:
+ * непрочитанную в приоритете, иначе по bumped_at. Записи без dedup_key не трогаем.
+ */
+function collapseByDedup(items: NotificationItemType[]): NotificationItemType[] {
+  const byKey = new Map<string, NotificationItemType>();
+  const passthrough: NotificationItemType[] = [];
+  for (const it of items) {
+    const key = it.dedup_key;
+    if (!key) {
+      passthrough.push(it);
+      continue;
+    }
+    const prev = byKey.get(key);
+    if (!prev) {
+      byKey.set(key, it);
+      continue;
+    }
+    byKey.set(key, pickFresher(prev, it));
+  }
+  return [...passthrough, ...byKey.values()];
+}
+
+function pickFresher(a: NotificationItemType, b: NotificationItemType): NotificationItemType {
+  const aUnread = !a.read_at;
+  const bUnread = !b.read_at;
+  if (aUnread !== bUnread) return aUnread ? a : b;
+  const at = new Date(a.bumped_at || a.created_at).getTime();
+  const bt = new Date(b.bumped_at || b.created_at).getTime();
+  return bt > at ? b : a;
+}
+
 function pluralizeNew(n: number): string {
   const mod10 = n % 10;
   const mod100 = n % 100;
@@ -419,9 +488,11 @@ function routeForPersonal(item: NotificationItemType, router: ReturnType<typeof 
       if (recordId) router.push(`/record/${recordId}` as any);
       return;
     case 'achievement_unlocked':
-    case 'milestone_unlocked':
-      router.push('/achievements');
+    case 'milestone_unlocked': {
+      const code = data.code as string | undefined;
+      router.push(code ? (`/achievements?code=${code}` as any) : '/achievements');
       return;
+    }
   }
 }
 
@@ -471,16 +542,6 @@ const styles = StyleSheet.create({
   segmentWrap: {
     paddingHorizontal: Spacing.md,
     paddingBottom: Spacing.sm,
-  },
-  markAllBtn: {
-    paddingHorizontal: Spacing.md,
-    paddingBottom: Spacing.xs,
-    alignItems: 'flex-end',
-  },
-  markAllText: {
-    ...Typography.bodySmall,
-    color: Colors.royalBlue,
-    fontFamily: 'Inter_600SemiBold',
   },
   pill: {
     marginHorizontal: Spacing.md,

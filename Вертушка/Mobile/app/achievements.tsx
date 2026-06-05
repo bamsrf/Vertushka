@@ -54,8 +54,9 @@ import type {
 export default function AchievementsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const params = useLocalSearchParams<{ username?: string }>();
+  const params = useLocalSearchParams<{ username?: string; code?: string }>();
   const username = params.username || null;
+  const deepLinkCode = params.code || null;
 
   const [data, setData] = useState<MyAchievementsResponse | null>(null);
   const [randomItems, setRandomItems] = useState<AchievementItem[]>([]);
@@ -88,6 +89,19 @@ export default function AchievementsScreen() {
     await load();
     setRefreshing(false);
   }, [load]);
+
+  // Deep-link из push/уведомления: ?code=XXX → авто-открыть DetailsSheet нужной ачивки.
+  const deepLinkOpened = useRef(false);
+  useEffect(() => {
+    if (!deepLinkCode || deepLinkOpened.current || !data) return;
+    const match = data.series
+      .flatMap((s) => s.items)
+      .find((it) => it.code === deepLinkCode);
+    if (match) {
+      deepLinkOpened.current = true;
+      setSelected(match);
+    }
+  }, [deepLinkCode, data]);
 
   if (loading) {
     return (

@@ -24,6 +24,7 @@ class NotificationResponse(BaseModel):
 
     id: UUID
     type: str
+    dedup_key: str | None = None
     entity_type: str | None = None
     entity_id: str | None = None
     data: dict[str, Any] = Field(default_factory=dict)
@@ -60,6 +61,11 @@ class UnreadCountResponse(BaseModel):
 class MarkReadResponse(BaseModel):
     """Ответ после отметки прочитанным."""
     unread_count: int
+
+
+class MarkReadBatchRequest(BaseModel):
+    """Батч-отметка прочитанными по списку id (Instagram-паттерн «seen = read»)."""
+    ids: list[UUID] = Field(min_length=1, max_length=100)
 
 
 # --- Social feed (что делают подписки) ---

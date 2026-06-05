@@ -33,6 +33,7 @@ from app.models.store_listing import StoreListing, MatchMethod
 from app.services.scrapers.extractors import (
     normalize_barcode,
     normalize_catalog,
+    infer_format,
 )
 
 logger = logging.getLogger(__name__)
@@ -40,6 +41,27 @@ logger = logging.getLogger(__name__)
 
 FUZZY_THRESHOLD = 0.85
 FUZZY_CANDIDATES_LIMIT = 50
+
+# Штраф fuzzy-score при конфликте носителя (винил-листинг ↔ CD-релиз и т.п.).
+# 1.0 * 0.3 = 0.3 < FUZZY_THRESHOLD → конфликтный кандидат отсекается.
+FORMAT_MISMATCH_PENALTY = 0.3
+
+
+def _format_family(raw: str | None) -> str | None:
+    """Грубая «семья носителя» для сравнения форматов листинга и записи.
+
+    Прогоняем через infer_format (понимает Vinyl/LP/CD/Cassette в любом
+    написании), затем сворачиваем в семью. Box Set / неизвестное → None
+    (penalty не применяется — бокс бывает и виниловый, и CD).
+    """
+    fmt = infer_format(raw)
+    if fmt in ("LP", "2xLP", "EP", "Single"):
+        return "VINYL"
+    if fmt in ("CD", "SACD"):
+        return "CD"
+    if fmt == "Cassette":
+        return "CASSETTE"
+    return None
 
 # Аксессуары: магазины ставят их в общий каталог рядом с пластинками
 # (пины-значки, пакеты, щётки, постеры, сертификаты), а парсер по дефолту
@@ -139,6 +161,7 @@ async def _lookup_in_dump_index(
     artist: str | None,
     title: str | None,
     year: int | None,
+    listing_format: str | None = None,
 ) -> tuple[dict, str, Decimal] | None:
     """Поиск в slim Discogs Dump. Возвращает (row, method, confidence) или None.
 
@@ -183,7 +206,10 @@ async def _lookup_in_dump_index(
     # в экранировании `%%` (это нужно только для psycopg2), и `%%` отправляется
     # в Postgres буквально как `%%`, вызывая UndefinedFunctionError.
     if artist and title:
-        row = (await db.execute(
+        # LIMIT 5 (не 1): топ-кандидат может быть конфликтным по носителю
+        # (CD-пресс выигрывает similarity у винила). Берём первого, чей
+        # format_family совпадает с листингом (или неизвестен).
+        rows = (await db.execute(
             text(
                 "SELECT discogs_id, master_id, artist, title, year, country, "
                 "       format_type, label, cover_image_url, "
@@ -191,11 +217,17 @@ async def _lookup_in_dump_index(
                 "FROM discogs_releases_index "
                 "WHERE artist % :a AND title % :t "
                 "  AND (cast(:y as int) IS NULL OR year IS NULL OR ABS(year - cast(:y as int)) <= 2) "
-                "ORDER BY score DESC LIMIT 1"
+                "ORDER BY score DESC LIMIT 5"
             ),
             {"a": artist, "t": title, "y": year},
-        )).mappings().first()
-        if row and row.get("score") and row["score"] >= 1.4:
+        )).mappings().all()
+        lf = _format_family(listing_format)
+        for row in rows:
+            if not row.get("score") or row["score"] < 1.4:
+                break  # отсортировано DESC — дальше только хуже
+            rf = _format_family(row.get("format_type"))
+            if lf and rf and lf != rf:
+                continue  # конфликт носителя — пропускаем кандидата
             # Confidence масштабируем: 1.4 → 0.85, 2.0 → 0.95.
             conf = min(Decimal("0.950"), Decimal(str(round(0.5 + row["score"] * 0.25, 3))))
             return dict(row), MatchMethod.DUMP_INDEX, conf
@@ -318,7 +350,14 @@ def _fuzzy_score(rec: Record, listing: StoreListing) -> float:
         if listing.artist_raw else 0.5
     )
     year_bonus = 0.1 if (rec.year and listing.year_raw and rec.year == listing.year_raw) else 0.0
-    return min(1.0, title_score * 0.6 + artist_score * 0.3 + year_bonus)
+    score = min(1.0, title_score * 0.6 + artist_score * 0.3 + year_bonus)
+    # Format-aware: если носитель листинга и записи известны и различны
+    # (винил-листинг → CD-релиз), давим score ниже порога — иначе fuzzy
+    # привязывает винил к CD-прессу, и хедер записи врёт «CD».
+    lf, rf = _format_family(listing.format_raw), _format_family(rec.format_type)
+    if lf and rf and lf != rf:
+        score *= FORMAT_MISMATCH_PENALTY
+    return score
 
 
 # ---- Главная функция матчинга ------------------------------------------ #
@@ -382,6 +421,7 @@ async def match_listing(listing: StoreListing, db: AsyncSession) -> bool:
         artist=listing.artist_raw,
         title=listing.title_raw,
         year=listing.year_raw,
+        listing_format=listing.format_raw,
     )
     if dump_hit:
         entry, method, conf = dump_hit
@@ -852,6 +892,74 @@ async def match_unmatched_batch(batch_size: int = 200) -> dict[str, int]:
 
 
 # ---- Weekly re-match для store-native записей -------------------------- #
+
+
+async def rematch_format_conflicts_batch(batch_size: int = 500) -> dict[str, int]:
+    """Сброс matched-листингов, у которых носитель конфликтует с записью.
+
+    Кейс: винил-листинг исторически привязан к CD-релизу (fuzzy до того, как
+    появился format-penalty). Хедер записи тогда врёт «CD». match_unmatched_batch
+    такие НЕ трогает (фильтрует matched_record_id IS NULL), поэтому чиним точечно:
+    находим конфликт семьи формата → сбрасываем привязку в NULL. Следующий
+    hourly_match_unmatched пере-привяжет уже с penalty → правильный носитель
+    (или оставит unmatched, что лучше, чем врущий «CD»).
+
+    STORE_NATIVE пропускаем — у них format_type записи выведен из самого
+    листинга, конфликта по определению нет, а сброс сломал бы merge-цепочку.
+
+    Возвращает: scanned, conflicts_reset, errors.
+    """
+    counters = {"scanned": 0, "conflicts_reset": 0, "errors": 0}
+    affected_discogs_ids: set[str] = set()
+    async with async_session_maker() as db:
+        res = await db.execute(
+            select(StoreListing, Record)
+            .join(Record, Record.id == StoreListing.matched_record_id)
+            .where(StoreListing.matched_record_id.is_not(None))
+            .where(StoreListing.status.in_(("in_stock", "preorder")))
+            .where(StoreListing.match_method != MatchMethod.STORE_NATIVE)
+            .where(StoreListing.format_raw.is_not(None))
+            .where(Record.format_type.is_not(None))
+            .order_by(StoreListing.matched_at.asc())
+            .limit(batch_size)
+        )
+        rows = res.all()
+        for listing, rec in rows:
+            counters["scanned"] += 1
+            lf = _format_family(listing.format_raw)
+            rf = _format_family(rec.format_type)
+            if not (lf and rf and lf != rf):
+                continue
+            listing.matched_record_id = None
+            listing.match_confidence = None
+            listing.match_method = None
+            listing.matched_at = None
+            counters["conflicts_reset"] += 1
+            if rec.discogs_id:
+                affected_discogs_ids.add(rec.discogs_id)
+
+        try:
+            await db.commit()
+        except Exception:
+            await db.rollback()
+            counters["errors"] += counters["conflicts_reset"]
+            counters["conflicts_reset"] = 0
+            logger.exception("commit failed in rematch_format_conflicts_batch")
+            return counters
+
+    # Сброс offers-кэша затронутых записей — иначе до TTL юзер видит старый
+    # (конфликтный) оффер. Function-level import во избежание циклической
+    # зависимости с app.api.offers.
+    if affected_discogs_ids:
+        try:
+            from app.api.offers import invalidate_record_offers
+            for did in affected_discogs_ids:
+                await invalidate_record_offers(did)
+        except Exception:
+            logger.exception("offers cache invalidation failed after format rematch")
+
+    logger.info("format-conflict rematch: %s", counters)
+    return counters
 
 
 async def rematch_store_native_batch(batch_size: int = 200) -> dict[str, int]:

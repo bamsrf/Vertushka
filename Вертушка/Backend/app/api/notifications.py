@@ -15,6 +15,7 @@ from app.database import get_db
 from app.models.notification import Notification
 from app.models.user import User
 from app.schemas.notification import (
+    MarkReadBatchRequest,
     MarkReadResponse,
     NotificationActor,
     NotificationListResponse,
@@ -60,6 +61,7 @@ def _serialize(n: Notification) -> NotificationResponse:
     return NotificationResponse(
         id=n.id,
         type=n.type,
+        dedup_key=n.dedup_key,
         entity_type=n.entity_type,
         entity_id=n.entity_id,
         data=n.data or {},
@@ -150,6 +152,42 @@ async def mark_all_read(
     )
     await db.commit()
     return MarkReadResponse(unread_count=0)
+
+
+@router.post("/read", response_model=MarkReadResponse)
+async def mark_read_batch(
+    body: MarkReadBatchRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Батч «seen = read»: отметить прочитанными список видимых уведомлений.
+
+    Клиент шлёт id'шники строк, попавших в видимую область экрана (viewability).
+    Для wishlist-семейства применяем snooze ladder, как в одиночном пути.
+    """
+    rows = (
+        await db.execute(
+            select(Notification).where(
+                Notification.id.in_(body.ids),
+                Notification.user_id == current_user.id,
+                Notification.read_at.is_(None),
+            )
+        )
+    ).scalars().all()
+    now = datetime.utcnow()
+    for n in rows:
+        n.read_at = now
+        apply_snooze_on_read(n)
+    if rows:
+        await db.commit()
+    cnt = await db.scalar(
+        select(func.count(Notification.id)).where(
+            Notification.user_id == current_user.id,
+            Notification.read_at.is_(None),
+            _hide_stale_clause(),
+        )
+    )
+    return MarkReadResponse(unread_count=int(cnt or 0))
 
 
 @router.post("/{notification_id}/read", response_model=MarkReadResponse)

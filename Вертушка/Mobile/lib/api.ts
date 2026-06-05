@@ -420,6 +420,14 @@ class ApiClient {
     await this.client.post('/notifications/read-all');
   }
 
+  /** Батч «seen = read»: отметить прочитанными список видимых уведомлений. */
+  async markNotificationsRead(ids: string[]): Promise<number> {
+    const response = await this.client.post<{ unread_count: number }>('/notifications/read', {
+      ids,
+    });
+    return response.data.unread_count;
+  }
+
   async deleteNotification(id: string): Promise<void> {
     await this.client.delete(`/notifications/${id}`);
   }

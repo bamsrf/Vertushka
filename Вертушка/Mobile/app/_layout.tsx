@@ -132,13 +132,18 @@ function RootLayout() {
       const recordId = (data?.record_id || data?.recordId) as string | undefined;
       const username = data?.username as string | undefined;
       const entityId = data?.entity_id as string | undefined;
+      const code = data?.code as string | undefined;
 
       if (type === 'follow_request') {
         router.push('/social/follow-requests');
         return;
       }
-      if (type === 'achievement_unlocked') {
-        router.push('/achievements');
+      if (type === 'digest_wishlist_in_stock') {
+        router.push('/notifications');
+        return;
+      }
+      if (type === 'achievement_unlocked' || type === 'milestone_unlocked') {
+        router.push(code ? (`/achievements?code=${code}` as any) : '/achievements');
         return;
       }
       if ((type === 'gift_booked' || type === 'gift_confirmed') && entityId) {
