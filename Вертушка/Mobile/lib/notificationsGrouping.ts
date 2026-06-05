@@ -39,18 +39,30 @@ export interface Section<T> {
 
 const ORDER: DateBucket[] = ['today', 'yesterday', 'week', 'earlier'];
 
-export function groupByDateBucket<T extends { created_at: string }>(
+/**
+ * Бакетизация по «эффективной дате» (по умолчанию bumped_at ?? created_at), чтобы
+ * свежие повторы (occurrences>1) попадали в правильную секцию и всплывали наверх.
+ * Внутри секции сортируем по эффективной дате desc.
+ */
+export function groupByDateBucket<T extends { created_at: string; bumped_at?: string }>(
   items: T[],
   now: Date = new Date(),
+  dateOf: (item: T) => string = (item) => item.bumped_at ?? item.created_at,
 ): Section<T>[] {
   const map = new Map<DateBucket, T[]>();
   for (const item of items) {
-    const b = dateBucket(item.created_at, now);
+    const b = dateBucket(dateOf(item), now);
     const arr = map.get(b) ?? [];
     arr.push(item);
     map.set(b, arr);
   }
   return ORDER
     .filter((b) => (map.get(b)?.length ?? 0) > 0)
-    .map((b) => ({ bucket: b, title: BUCKET_LABEL[b], data: map.get(b)! }));
+    .map((b) => {
+      const data = map
+        .get(b)!
+        .slice()
+        .sort((a, c) => new Date(dateOf(c)).getTime() - new Date(dateOf(a)).getTime());
+      return { bucket: b, title: BUCKET_LABEL[b], data };
+    });
 }

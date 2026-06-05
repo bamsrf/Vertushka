@@ -184,6 +184,9 @@ export const NotificationItem: React.FC<Props> = ({
   const showInlineActions = item.type === 'follow_request' && onAcceptFollow && onRejectFollow;
   const isMilestone = item.type === 'milestone_unlocked';
   const swipeRef = useRef<Swipeable>(null);
+  // Флаг «только что свайпнули» — гасит ложный onPress, который иначе открывал
+  // /record даже при свайпе-удалении.
+  const swipedRef = useRef(false);
 
   const renderRightActions = (
     _: Animated.AnimatedInterpolation<number>,
@@ -196,8 +199,8 @@ export const NotificationItem: React.FC<Props> = ({
       extrapolate: 'clamp',
     });
     return (
-      <View style={[styles.actionContainer, styles.deleteAction]}>
-        <Animated.View style={{ transform: [{ scale }], alignItems: 'center' }}>
+      <View style={styles.actionContainer}>
+        <Animated.View style={[styles.actionCard, styles.deleteAction, { transform: [{ scale }] }]}>
           <Icon name="trash" size={22} color={Colors.background} />
           <Text style={styles.actionText}>Удалить</Text>
         </Animated.View>
@@ -216,8 +219,8 @@ export const NotificationItem: React.FC<Props> = ({
       extrapolate: 'clamp',
     });
     return (
-      <View style={[styles.actionContainer, styles.readAction]}>
-        <Animated.View style={{ transform: [{ scale }], alignItems: 'center' }}>
+      <View style={styles.actionContainer}>
+        <Animated.View style={[styles.actionCard, styles.readAction, { transform: [{ scale }] }]}>
           <Icon name="checkmark" size={22} color={Colors.background} />
           <Text style={styles.actionText}>Прочитано</Text>
         </Animated.View>
@@ -226,6 +229,7 @@ export const NotificationItem: React.FC<Props> = ({
   };
 
   const handleSwipeOpen = (direction: 'left' | 'right') => {
+    swipedRef.current = true;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
     if (direction === 'left' && onMarkRead) {
       onMarkRead(item);
@@ -235,12 +239,31 @@ export const NotificationItem: React.FC<Props> = ({
     swipeRef.current?.close();
   };
 
+  const handlePress = () => {
+    // Гасим тап, прилетевший на отпускании свайпа (иначе откроется /record при удалении).
+    if (swipedRef.current) {
+      swipedRef.current = false;
+      return;
+    }
+    onPress(item);
+  };
+
   return (
     <Swipeable
       ref={swipeRef}
       renderLeftActions={renderLeftActions}
       renderRightActions={renderRightActions}
+      onSwipeableWillOpen={() => {
+        swipedRef.current = true;
+      }}
       onSwipeableOpen={handleSwipeOpen}
+      onSwipeableClose={() => {
+        // Сброс с задержкой — чтобы onPress, прилетевший сразу после, успел погаситься.
+        setTimeout(() => {
+          swipedRef.current = false;
+        }, 50);
+      }}
+      friction={2}
       leftThreshold={60}
       rightThreshold={60}
       overshootLeft={false}
@@ -249,7 +272,7 @@ export const NotificationItem: React.FC<Props> = ({
     <TouchableOpacity
       activeOpacity={0.7}
       style={[styles.row, unread && styles.rowUnread, isMilestone && styles.rowMilestone]}
-      onPress={() => onPress(item)}
+      onPress={handlePress}
       onLongPress={onLongPress ? () => onLongPress(item) : undefined}
       delayLongPress={350}
     >
@@ -374,9 +397,18 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.sm,
   },
   actionContainer: {
-    width: 100,
+    width: 96,
     justifyContent: 'center',
     alignItems: 'center',
+    paddingHorizontal: Spacing.sm,
+  },
+  actionCard: {
+    flex: 1,
+    alignSelf: 'stretch',
+    marginVertical: 6,
+    borderRadius: BorderRadius.lg,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   deleteAction: {
     backgroundColor: Colors.error,
