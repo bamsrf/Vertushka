@@ -27,6 +27,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { Header } from '../../components/Header';
 import { useCollectionStore } from '../../lib/store';
+import { api } from '../../lib/api';
 import { CollectionItem } from '../../lib/types';
 import { cleanArtistName } from '../../lib/format';
 import { Colors, Typography, Spacing, BorderRadius, Shadows } from '../../constants/theme';
@@ -78,7 +79,12 @@ import React from 'react';
 
 export default function CollectionValueScreen() {
   const router = useRouter();
-  const { stats, isLoadingStats, fetchStats, collectionItems, defaultCollection } = useCollectionStore();
+  const { stats, isLoadingStats, fetchStats, defaultCollection } = useCollectionStore();
+
+  // Локальный список items только для оценки. Грузим напрямую через api с
+  // exclude_foldered=true (пластинки в папках не считаются), не трогая общий
+  // store коллекции — вкладка «Коллекция» должна показывать всё как раньше.
+  const [valuedItems, setValuedItems] = React.useState<CollectionItem[]>([]);
 
   const [helpOpen, setHelpOpen] = React.useState(false);
 
@@ -87,6 +93,31 @@ export default function CollectionValueScreen() {
 
   useEffect(() => {
     fetchStats();
+    // Грузим ВСЕ страницы коллекции с exclude_foldered=true, иначе список
+    // обрезается до первой пачки и не совпадает со статистикой «оценено N из M».
+    (async () => {
+      let collectionId = useCollectionStore.getState().defaultCollection?.id;
+      if (!collectionId) {
+        await useCollectionStore.getState().fetchCollections().catch(() => {});
+        collectionId = useCollectionStore.getState().defaultCollection?.id;
+      }
+      if (!collectionId) return;
+
+      const perPage = 50;
+      const all: CollectionItem[] = [];
+      for (let page = 1; ; page += 1) {
+        try {
+          const { items, hasMore } = await api.getCollectionItems(
+            collectionId, 'price_desc', page, perPage, true,
+          );
+          all.push(...items);
+          if (!hasMore || items.length === 0) break;
+        } catch {
+          break;
+        }
+      }
+      setValuedItems(all);
+    })();
     gradientShift.value = 0;
     gradientShift.value = withRepeat(
       withTiming(1, { duration: 4000, easing: Easing.inOut(Easing.ease) }),
@@ -130,7 +161,7 @@ export default function CollectionValueScreen() {
       return Math.round(totalUsd * usdRub);
     };
 
-    return [...collectionItems]
+    return [...valuedItems]
       .map(item => {
         if (item.estimated_price_rub) return item;
         const record = item.record;
@@ -141,7 +172,7 @@ export default function CollectionValueScreen() {
       })
       .filter(item => item.estimated_price_rub)
       .sort((a, b) => (b.estimated_price_rub || 0) - (a.estimated_price_rub || 0));
-  }, [collectionItems, stats]);
+  }, [valuedItems, stats]);
 
   const renderItem = useCallback(({ item, index }: { item: CollectionItem; index: number }) => {
     const record = item.record;
