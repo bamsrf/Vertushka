@@ -17,6 +17,7 @@ import {
   Platform,
 } from 'react-native';
 import * as Haptics from 'expo-haptics';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Colors, Spacing, Typography } from '@/constants/theme';
@@ -315,7 +316,10 @@ export default function NotificationsScreen() {
   }, [router]);
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
+    // Своя GestureHandlerRootView: экран — нативный modal (presentation:'modal'),
+    // куда корневой root-view из _layout не дотягивается → без неё Gesture.Pan
+    // свайпа удаления не срабатывает на iOS.
+    <GestureHandlerRootView style={[styles.container, { paddingTop: insets.top }]}>
       <View style={styles.header}>
         <View style={styles.headerTitleWrap}>
           <AnimatedGradientText style={styles.headerTitle}>Уведомления</AnimatedGradientText>
@@ -419,7 +423,7 @@ export default function NotificationsScreen() {
           }
         />
       )}
-    </View>
+    </GestureHandlerRootView>
   );
 }
 
