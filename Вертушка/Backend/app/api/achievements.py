@@ -58,52 +58,52 @@ _TIER_INFO: dict[AchievementTier, AchievementTierInfo] = {
 _SERIES_META: dict[str, dict[str, str]] = {
     "foundation": {
         "title_ru": "Первые шаги",
-        "description_ru": "Знакомство с базовыми возможностями Вертушки.",
+        "description_ru": "Базовые возможности.",
         "icon_emoji": "🌱",
     },
     "scale": {
         "title_ru": "Размер коллекции",
-        "description_ru": "Главная вертикаль — рост коллекции.",
+        "description_ru": "Рост коллекции.",
         "icon_emoji": "📚",
     },
     "rarity": {
         "title_ru": "Охота за редкостями",
-        "description_ru": "Лимитки, коллекционки, горячие пластинки.",
+        "description_ru": "Лимитки и редкости.",
         "icon_emoji": "💎",
     },
     "geography": {
         "title_ru": "Кругосветка",
-        "description_ru": "Прессы со всех концов света.",
+        "description_ru": "Прессы со всего мира.",
         "icon_emoji": "🌍",
     },
     "eras": {
         "title_ru": "Машина времени",
-        "description_ru": "Винил по десятилетиям.",
+        "description_ru": "Винил по эпохам.",
         "icon_emoji": "📅",
     },
     "genres": {
         "title_ru": "Жанры",
-        "description_ru": "Глубина и ширина музыкальных вкусов.",
+        "description_ru": "Ширина вкусов.",
         "icon_emoji": "🎼",
     },
     "gifts": {
         "title_ru": "Дарящая рука",
-        "description_ru": "Подарки друзьям и близким.",
+        "description_ru": "Подарки близким.",
         "icon_emoji": "🎁",
     },
     "community": {
         "title_ru": "Сообщество",
-        "description_ru": "Подписки, фолловеры, просмотры профиля.",
+        "description_ru": "Подписки и просмотры.",
         "icon_emoji": "👥",
     },
     "invitations": {
         "title_ru": "Глас наружу",
-        "description_ru": "Приглашения и реферальная цепочка.",
+        "description_ru": "Реферальная цепочка.",
         "icon_emoji": "🗣",
     },
     "discography": {
         "title_ru": "Полная дискография",
-        "description_ru": "Глубокие коллекции артистов, мастеров и лейблов.",
+        "description_ru": "Глубокие коллекции.",
         "icon_emoji": "🎚",
     },
 }
