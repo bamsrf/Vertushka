@@ -437,6 +437,26 @@ def _build_store_payload(listing: StoreListing) -> dict:
     }
 
 
+async def check_push_receipts() -> None:
+    """Отложенная проверка доставки push (Expo receipts).
+
+    Expo возвращает синхронный ticket=ok ещё до реальной доставки в APNs/FCM.
+    Настоящие ошибки (`DeviceNotRegistered` и пр.) приходят позже в receipts.
+    Этот джоб изымает накопленные receipt-id, спрашивает Expo и зачищает
+    протухшие push_token. Идемпотентен, best-effort (без Redis — no-op)."""
+    try:
+        from app.services.push import process_pending_receipts
+        async with async_session_maker() as db:
+            stats = await process_pending_receipts(db)
+        if stats.get("checked"):
+            logger.info(
+                "check_push_receipts: checked=%d errors=%d cleared=%d",
+                stats["checked"], stats["errors"], stats["cleared"],
+            )
+    except Exception:
+        logger.exception("check_push_receipts failed")
+
+
 async def emit_weekly_wishlist_digest() -> None:
     """Недельный digest-push «За неделю: N пластинок из вишлиста».
 

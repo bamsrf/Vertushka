@@ -119,6 +119,7 @@ async def lifespan(app: FastAPI):
                 emit_wishlist_price_drop_notifications,
                 emit_wishlist_absent_notifications,
                 cleanup_price_history,
+                check_push_receipts,
             )
             from app.tasks.cover_drip_tasks import drip_covers_batch
             from app.tasks.cover_drip_tasks import hourly_backfill_store_covers
@@ -241,6 +242,7 @@ async def lifespan(app: FastAPI):
             from app.tasks.yandex_enrich_tasks import enrich_store_native_yandex
             scheduler.add_job(enrich_store_native_yandex, 'interval', minutes=10,
                               id='yandex_enrich_store_native', max_instances=1, coalesce=True)
+            scheduler.add_job(check_push_receipts, 'interval', minutes=20, id='push_receipts_check')
 
             # ---- Парсеры магазинов винила (под env SCRAPERS_ENABLED) ----
             if os.environ.get("SCRAPERS_ENABLED", "false").lower() == "true":

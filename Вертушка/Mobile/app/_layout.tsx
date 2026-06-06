@@ -316,6 +316,14 @@ function RootLayout() {
 
     registerPushToken({ requestIfNeeded: false });
 
+    // R3: APNs/FCM может сменить токен в любой момент — слушаем ротацию и
+    // пересохраняем, иначе бэк продолжит слать на мёртвый токен.
+    const tokenSub = Notifications.addPushTokenListener((t) => {
+      if (t?.data && !cancelled) {
+        api.savePushToken(t.data).catch(() => {});
+      }
+    });
+
     useNotificationsStore.getState().fetchUnreadCount();
 
     // Глобальный polling: пока приложение активно, раз в 30с подтягиваем unreadCount,
@@ -348,6 +356,7 @@ function RootLayout() {
     return () => {
       stopPolling();
       sub.remove();
+      tokenSub.remove();
     };
   }, [isAuthenticated]);
 
