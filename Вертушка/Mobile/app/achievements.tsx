@@ -411,11 +411,13 @@ function DetailsSheet({
       // статический импорт ронял старт приложения. Тут падение ловит catch
       // ниже и шаринг деградирует до текстового.
       const { captureRef } = require('react-native-view-shot');
-      const uri = await captureRef(shareCardRef, {
-        format: 'png',
-        quality: 1,
-        result: 'tmpfile',
-      });
+      const opts = { format: 'png' as const, quality: 1, result: 'tmpfile' as const };
+      // Дизайн-пин рендерится через async <Image>. Без прогрева view-shot
+      // успевает снять кадр до декодирования картинки → пустой пин.
+      // Даём кадру отрисоваться и снимаем дважды (первый снимок — тёплый).
+      await new Promise((r) => setTimeout(r, 350));
+      await captureRef(shareCardRef, opts);
+      const uri = await captureRef(shareCardRef, opts);
       const available = await Sharing.isAvailableAsync();
       if (available) {
         await Sharing.shareAsync(uri, {
