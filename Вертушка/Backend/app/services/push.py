@@ -26,9 +26,19 @@ from app.services.cache import cache
 logger = logging.getLogger(__name__)
 
 EXPO_PUSH_URL = "https://exp.host/--/api/v2/push/send"
+EXPO_RECEIPTS_URL = "https://exp.host/--/api/v2/push/getReceipts"
 EXPO_CHUNK_SIZE = 100
 PUSH_RETRY_DELAYS = (1.0, 2.0, 4.0)
 FREQ_CAP_TTL_SECONDS = 60 * 60  # 1 час
+
+# Очередь receipt-id для отложенной проверки доставки (см. check_push_receipts).
+RECEIPTS_QUEUE_NS = "push_receipts"
+RECEIPTS_QUEUE_KEY = "pending"
+RECEIPTS_QUEUE_TTL = 60 * 60 * 25  # 25ч — Expo хранит receipts ~24ч
+RECEIPTS_DRAIN_LIMIT = 1000
+
+# Коды ошибок Expo, по которым токен считается мёртвым и зачищается.
+DEAD_TOKEN_ERRORS = ("DeviceNotRegistered", "InvalidCredentials")
 
 # Маппинг типа Notification → имя флага User.notify_*
 PUSH_PREFERENCE_FIELD = {
@@ -113,7 +123,7 @@ async def send_push(
     if isinstance(ticket, dict) and ticket.get("status") == "error":
         details = ticket.get("details") or {}
         error_code = details.get("error")
-        if error_code in ("DeviceNotRegistered", "InvalidCredentials"):
+        if error_code in DEAD_TOKEN_ERRORS:
             logger.info("Push token invalid (%s) for user %s — clearing", error_code, user_id)
             user.push_token = None
             await db.commit()
@@ -121,7 +131,103 @@ async def send_push(
             logger.warning("Expo push ticket error: %s", ticket)
         return False
 
+    # Успешный ticket несёт receipt-id. Кладём в очередь на отложенную проверку
+    # доставки (см. check_push_receipts) — синхронный ticket=ok ≠ доставлено.
+    receipt_id = ticket.get("id") if isinstance(ticket, dict) else None
+    if receipt_id:
+        await cache.list_rpush(
+            RECEIPTS_QUEUE_NS,
+            RECEIPTS_QUEUE_KEY,
+            {"id": receipt_id, "user_id": str(user_id)},
+            ttl=RECEIPTS_QUEUE_TTL,
+        )
+
     return True
+
+
+async def fetch_push_receipts(receipt_ids: list[str]) -> dict[str, Any]:
+    """Запросить у Expo статусы доставки по списку receipt-id.
+
+    Возвращает map {receipt_id: {status, message?, details?}}. Пустой dict при
+    сетевой ошибке (вызывающий код просто пропустит цикл — id уже изъяты из
+    очереди, потеря допустима: цель — почистить мёртвые токены, не гарантия)."""
+    if not receipt_ids:
+        return {}
+    payload = {"ids": receipt_ids}
+    for attempt, delay in enumerate([0.0, *PUSH_RETRY_DELAYS]):
+        if delay > 0:
+            await asyncio.sleep(delay)
+        try:
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                r = await client.post(
+                    EXPO_RECEIPTS_URL,
+                    json=payload,
+                    headers={
+                        "Accept": "application/json",
+                        "Accept-Encoding": "gzip, deflate",
+                        "Content-Type": "application/json",
+                    },
+                )
+            if r.status_code >= 500:
+                logger.warning("Expo receipts 5xx (attempt %d): %s", attempt + 1, r.status_code)
+                continue
+            if r.status_code >= 400:
+                logger.warning("Expo receipts HTTP %s (no retry): %s", r.status_code, r.text[:200])
+                return {}
+            body = r.json() or {}
+            data = body.get("data")
+            return data if isinstance(data, dict) else {}
+        except (httpx.TransportError, httpx.TimeoutException) as exc:
+            logger.warning("Expo receipts transport error (attempt %d): %s", attempt + 1, exc)
+            continue
+        except Exception as exc:
+            logger.warning("Expo receipts unexpected error (no retry): %s", exc)
+            return {}
+    return {}
+
+
+async def process_pending_receipts(db: AsyncSession) -> dict[str, int]:
+    """Изъять очередь receipt-id, запросить статусы у Expo, зачистить мёртвые токены.
+
+    Идемпотентна и best-effort. Возвращает счётчики для логов."""
+    items = await cache.list_drain(RECEIPTS_QUEUE_NS, RECEIPTS_QUEUE_KEY, RECEIPTS_DRAIN_LIMIT)
+    if not items:
+        return {"checked": 0, "errors": 0, "cleared": 0}
+
+    by_receipt: dict[str, str] = {}
+    for it in items:
+        rid = it.get("id")
+        uid = it.get("user_id")
+        if rid and uid:
+            by_receipt[rid] = uid
+
+    receipts = await fetch_push_receipts(list(by_receipt.keys()))
+    errors = 0
+    dead_user_ids: set[str] = set()
+    for rid, info in receipts.items():
+        if not isinstance(info, dict) or info.get("status") != "error":
+            continue
+        errors += 1
+        code = (info.get("details") or {}).get("error")
+        if code in DEAD_TOKEN_ERRORS:
+            uid = by_receipt.get(rid)
+            if uid:
+                dead_user_ids.add(uid)
+        else:
+            logger.warning("Expo receipt error rid=%s: %s", rid, info)
+
+    cleared = 0
+    if dead_user_ids:
+        uuids = [UUID(u) for u in dead_user_ids]
+        users = (await db.scalars(select(User).where(User.id.in_(uuids)))).all()
+        for u in users:
+            if u.push_token is not None:
+                u.push_token = None
+                cleared += 1
+        if cleared:
+            await db.commit()
+
+    return {"checked": len(by_receipt), "errors": errors, "cleared": cleared}
 
 
 async def send_pushes_batch(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:

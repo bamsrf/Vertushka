@@ -126,6 +126,38 @@ class RedisCache:
             logger.warning("Redis SET NX error: %s:%s", namespace, key, exc_info=True)
             return True
 
+    async def list_rpush(self, namespace: str, key: str, value: Any, ttl: int) -> None:
+        """Добавить элемент в конец Redis-списка (с обновлением TTL на ключ).
+
+        Используется как лёгкая durable-очередь (push-receipts). При недоступном
+        Redis — no-op (фича best-effort, не критична для основного потока)."""
+        if not self._available:
+            return
+        try:
+            full = self._key(namespace, key)
+            await self._pool.rpush(full, orjson.dumps(value))
+            await self._pool.expire(full, ttl)
+        except Exception:
+            logger.warning("Redis RPUSH error: %s:%s", namespace, key, exc_info=True)
+
+    async def list_drain(self, namespace: str, key: str, count: int) -> list[Any]:
+        """Атомарно изъять до `count` элементов из начала списка (LPOP count).
+
+        Возвращает распакованные значения. Пустой список — если Redis недоступен
+        или очередь пуста."""
+        if not self._available:
+            return []
+        try:
+            raw = await self._pool.lpop(self._key(namespace, key), count)
+            if not raw:
+                return []
+            if isinstance(raw, (bytes, bytearray)):
+                raw = [raw]
+            return [orjson.loads(item) for item in raw]
+        except Exception:
+            logger.warning("Redis LPOP error: %s:%s", namespace, key, exc_info=True)
+            return []
+
     async def health(self) -> dict:
         """Статус Redis для /health endpoint."""
         if not self._available:

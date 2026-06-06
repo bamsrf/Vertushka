@@ -498,35 +498,38 @@ async def add_record_to_collection(
         {"collection_item_id": item.id, "record_id": record.id, "record": record},
     )
 
-    # Milestone notifications: 100/500/1000-я пластинка в коллекции пользователя
-    try:
-        from sqlalchemy import func as _func
-        from app.models.collection import Collection as _Collection, CollectionItem as _CI
-        total = await db.scalar(
-            select(_func.count(_CI.id)).join(_Collection).where(_Collection.user_id == current_user.id)
-        )
-        total = int(total or 0)
-        if total in (100, 500, 1000):
-            from app.services.notification_service import create_notification
-            await create_notification(
-                db,
-                user_id=current_user.id,
-                type="milestone_unlocked",
-                entity_type="milestone",
-                entity_id=f"collection_{total}",
-                data={
-                    "milestone": f"collection_{total}",
-                    "count": total,
-                    "title": f"{total} пластинок в коллекции 🎉",
-                    "cover_url": getattr(record, "cover_image_url", None),
-                },
-                push_title=f"{total} пластинок в коллекции 🎉",
-                push_body="Поздравляем с вехой! Поделись с друзьями.",
-            )
-            await db.commit()
-    except Exception:
-        import logging as _logging
-        _logging.getLogger(__name__).exception("Failed to emit milestone notification")
+    # Milestone notifications (100/500/1000) ОТКЛЮЧЕНЫ: дублируют ачивки серии
+    # `scale` (Архивариус=100, Хранитель=500, Смотритель=1000), которые шлют свой
+    # push `achievement_unlocked`. Оставлен закомментированным на случай возврата.
+    # См. docs/plans/PUSH_NOTIFICATIONS_AUDIT_AND_SCENARIOS.md (D2).
+    # try:
+    #     from sqlalchemy import func as _func
+    #     from app.models.collection import Collection as _Collection, CollectionItem as _CI
+    #     total = await db.scalar(
+    #         select(_func.count(_CI.id)).join(_Collection).where(_Collection.user_id == current_user.id)
+    #     )
+    #     total = int(total or 0)
+    #     if total in (100, 500, 1000):
+    #         from app.services.notification_service import create_notification
+    #         await create_notification(
+    #             db,
+    #             user_id=current_user.id,
+    #             type="milestone_unlocked",
+    #             entity_type="milestone",
+    #             entity_id=f"collection_{total}",
+    #             data={
+    #                 "milestone": f"collection_{total}",
+    #                 "count": total,
+    #                 "title": f"{total} пластинок в коллекции 🎉",
+    #                 "cover_url": getattr(record, "cover_image_url", None),
+    #             },
+    #             push_title=f"{total} пластинок в коллекции 🎉",
+    #             push_body="Поздравляем с вехой! Поделись с друзьями.",
+    #         )
+    #         await db.commit()
+    # except Exception:
+    #     import logging as _logging
+    #     _logging.getLogger(__name__).exception("Failed to emit milestone notification")
 
     return CollectionItemResponse(
         id=item.id,

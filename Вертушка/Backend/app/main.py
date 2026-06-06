@@ -97,7 +97,7 @@ async def lifespan(app: FastAPI):
             from app.tasks.discogs_tasks import cleanup_search_cache, enrich_records_artist_data, update_prices_batch, enrich_market_covers, refresh_market_store_stats
             from app.tasks.valuation_tasks import record_daily_snapshots
             from app.tasks.achievements_tasks import daily_tick_achievements
-            from app.tasks.notification_tasks import emit_wishlist_in_stock_notifications, emit_weekly_wishlist_digest
+            from app.tasks.notification_tasks import emit_wishlist_in_stock_notifications, emit_weekly_wishlist_digest, check_push_receipts
             from app.services.cover_storage import CoverStorageService
 
             async def cleanup_covers():
@@ -121,6 +121,7 @@ async def lifespan(app: FastAPI):
             scheduler.add_job(daily_tick_achievements, 'cron', hour=6, minute=0, id='achievements_daily_tick')
             scheduler.add_job(emit_wishlist_in_stock_notifications, 'interval', minutes=15, id='wishlist_in_stock_notifications')
             scheduler.add_job(emit_weekly_wishlist_digest, 'cron', day_of_week='mon', hour=10, minute=0, id='weekly_wishlist_digest')
+            scheduler.add_job(check_push_receipts, 'interval', minutes=20, id='push_receipts_check')
 
             # ---- Парсеры магазинов винила (под env SCRAPERS_ENABLED) ----
             if os.environ.get("SCRAPERS_ENABLED", "false").lower() == "true":
