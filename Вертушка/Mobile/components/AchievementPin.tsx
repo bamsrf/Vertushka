@@ -50,6 +50,20 @@ const PLACEHOLDER_EGG: ImageSourcePropType = require('../assets/achievements/pla
 const PLACEHOLDER_GIFT: ImageSourcePropType = require('../assets/achievements/placeholders/gift.png');
 const PLACEHOLDER_TROPHY: ImageSourcePropType = require('../assets/achievements/placeholders/trophy.png');
 
+// Locked-заглушки по серии. Каждый PNG уже содержит gold-rim + замочек,
+// поэтому собственный lock-badge не рисуем.
+const SERIES_PLACEHOLDERS: Record<string, ImageSourcePropType> = {
+  foundation: require('../assets/achievements/placeholders/foundation.png'),
+  scale: require('../assets/achievements/placeholders/scale.png'),
+  rarity: require('../assets/achievements/placeholders/rarity.png'),
+  geography: require('../assets/achievements/placeholders/geography.png'),
+  eras: require('../assets/achievements/placeholders/eras.png'),
+  genres: require('../assets/achievements/placeholders/genres.png'),
+  community: require('../assets/achievements/placeholders/community.png'),
+  discography: require('../assets/achievements/placeholders/discography.png'),
+  gifts: PLACEHOLDER_GIFT,
+};
+
 type PinSize = 56 | 72 | 96 | 140;
 
 interface Props {
@@ -94,7 +108,8 @@ function pickAsset(item: AchievementItem, locked: boolean, isMystery: boolean): 
   // Locked: единый стиль заглушек по серии/мета.
   if (locked) {
     if (item.is_meta) return { kind: 'png', source: PLACEHOLDER_TROPHY };
-    if (item.series === 'gifts') return { kind: 'png', source: PLACEHOLDER_GIFT };
+    const seriesPng = SERIES_PLACEHOLDERS[item.series];
+    if (seriesPng) return { kind: 'png', source: seriesPng };
   }
 
   return null;
