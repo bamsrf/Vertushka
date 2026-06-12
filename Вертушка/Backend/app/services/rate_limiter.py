@@ -28,13 +28,22 @@ class TokenBucketRateLimiter:
     - Запросы ждут в PriorityQueue, обслуживаются по приоритету
     """
 
+    # Прод = 2 API-воркера + scheduler. Без Redis каждый процесс имел бы свой
+    # bucket 55/0.95 → суммарно ~170 req/min против лимита Discogs 60/min.
+    # Поэтому primary-путь — распределённый bucket в Redis (cache.take_token),
+    # а локальный bucket — fallback с консервативным rate (~⅓ лимита на процесс).
+    FALLBACK_REFILL_RATE = 0.3
+    FALLBACK_CAPACITY = 15
+
     def __init__(
         self,
         capacity: int = 55,
         refill_rate: float = 0.95,
+        bucket_key: str = "app",
     ):
         self._capacity = capacity
         self._refill_rate = refill_rate
+        self._bucket_key = bucket_key
         self._tokens = float(capacity)
         self._last_refill = time.monotonic()
         self._lock = asyncio.Lock()
@@ -92,6 +101,39 @@ class TokenBucketRateLimiter:
             )
             raise
 
+    async def _take_token_global(self) -> None:
+        """Взять токен: сперва распределённый bucket в Redis (общий на все
+        воркеры), при недоступном Redis — локальный bucket с пониженным rate.
+        """
+        from app.services.cache import cache
+
+        while True:
+            wait_ms = await cache.take_token(
+                self._bucket_key, self._capacity, self._refill_rate,
+            )
+            if wait_ms == 0:
+                return
+            if wait_ms is not None:
+                await asyncio.sleep(wait_ms / 1000.0)
+                continue
+
+            # Redis недоступен — локальный fallback с консервативным rate.
+            self._refill()
+            fallback_rate = min(self._refill_rate, self.FALLBACK_REFILL_RATE)
+            fallback_cap = min(self._capacity, self.FALLBACK_CAPACITY)
+            self._tokens = min(self._tokens, float(fallback_cap))
+            while self._tokens < 1.0:
+                wait_time = (1.0 - self._tokens) / fallback_rate
+                await asyncio.sleep(wait_time)
+                now = time.monotonic()
+                elapsed = now - self._last_refill
+                self._tokens = min(
+                    float(fallback_cap), self._tokens + elapsed * fallback_rate,
+                )
+                self._last_refill = now
+            self._tokens -= 1.0
+            return
+
     async def _process_queue(self) -> None:
         """Фоновый цикл: выдаёт токены из bucket по приоритету."""
         try:
@@ -99,12 +141,7 @@ class TokenBucketRateLimiter:
                 priority, enqueue_time, event = await self._queue.get()
 
                 async with self._lock:
-                    self._refill()
-                    while self._tokens < 1.0:
-                        wait_time = (1.0 - self._tokens) / self._refill_rate
-                        await asyncio.sleep(wait_time)
-                        self._refill()
-                    self._tokens -= 1.0
+                    await self._take_token_global()
 
                 wait_duration = time.monotonic() - enqueue_time
                 self._total_requests += 1
@@ -143,7 +180,14 @@ class _LimiterRegistry:
     def get(self, key: str = "app") -> TokenBucketRateLimiter:
         bucket = self._buckets.get(key)
         if bucket is None:
-            bucket = TokenBucketRateLimiter()
+            # bucket_key уходит в Redis-ключ — oauth_token юзера хешируем,
+            # чтобы секрет не лежал в plaintext в имени ключа.
+            if key == "app":
+                redis_key = "app"
+            else:
+                import hashlib
+                redis_key = f"user:{hashlib.sha256(key.encode()).hexdigest()[:16]}"
+            bucket = TokenBucketRateLimiter(bucket_key=redis_key)
             self._buckets[key] = bucket
         self._last_access[key] = time.monotonic()
         self._evict_idle()

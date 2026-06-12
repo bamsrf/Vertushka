@@ -25,7 +25,9 @@ logger = logging.getLogger(__name__)
 
 _LOCK_PREFIX = "vertushka:cover_dl:"
 _LOCK_TTL = 60  # секунд
-_MAX_SIDE = 500  # px — resize до 500px max side
+# 1000px: detail-экран рендерит обложку почти во всю ширину (~390pt → 1170px
+# на 3x-ретине); 500px заметно пикселило. 1000px @ q85 ≈ 80-150KB на файл.
+_MAX_SIDE = 1000
 _JPEG_QUALITY = 85
 _DOWNLOAD_TIMEOUT = 30  # секунд
 

@@ -24,6 +24,8 @@ TTL_ARTIST = 3 * 86400        # 3 дня — могут появиться но�
 TTL_ARTIST_THUMB = 30 * 86400 # 30 дней — фото почти не меняется
 TTL_ARTIST_MASTERS = 86400    # 1 день
 TTL_SEARCH = 600              # 10 минут — выдача может обновляться
+TTL_SUGGEST = 86400           # 24 часа — автодополнение по префиксу стабильно,
+                              # горячие префиксы шарятся между юзерами
 TTL_PRICE_STATS = 6 * 3600    # 6 часов — цены меняются
 TTL_MASTER_VERSIONS = 3 * 86400  # 3 дня
 TTL_MASTER_INFO = 7 * 86400   # 7 дней — обложки почти не меняются
@@ -125,6 +127,59 @@ class RedisCache:
         except Exception:
             logger.warning("Redis SET NX error: %s:%s", namespace, key, exc_info=True)
             return True
+
+    # Атомарный token bucket: refill пропорционально времени + попытка взять
+    # токен одним вызовом. Возвращает 0 (токен взят) или wait_ms до следующего.
+    # Состояние в HASH {tokens, ts_ms} — шарится между всеми воркерами,
+    # поэтому суммарный rps по Discogs не зависит от числа процессов.
+    _TOKEN_BUCKET_LUA = """
+    local key = KEYS[1]
+    local capacity = tonumber(ARGV[1])
+    local refill_per_ms = tonumber(ARGV[2])
+    local now_ms = tonumber(ARGV[3])
+    local data = redis.call('HMGET', key, 'tokens', 'ts_ms')
+    local tokens = tonumber(data[1])
+    local ts_ms = tonumber(data[2])
+    if tokens == nil or ts_ms == nil then
+      tokens = capacity
+      ts_ms = now_ms
+    end
+    tokens = math.min(capacity, tokens + (now_ms - ts_ms) * refill_per_ms)
+    local wait_ms = 0
+    if tokens >= 1 then
+      tokens = tokens - 1
+    else
+      wait_ms = math.ceil((1 - tokens) / refill_per_ms)
+    end
+    redis.call('HMSET', key, 'tokens', tokens, 'ts_ms', now_ms)
+    redis.call('EXPIRE', key, 300)
+    return wait_ms
+    """
+
+    async def take_token(
+        self, bucket_key: str, capacity: float, refill_rate_per_sec: float,
+    ) -> int | None:
+        """Взять токен из распределённого bucket'а.
+
+        Возвращает 0 если токен получен, wait_ms если bucket пуст,
+        None если Redis недоступен (caller делает локальный fallback).
+        """
+        if not self._available:
+            return None
+        try:
+            import time as _time
+            wait_ms = await self._pool.eval(
+                self._TOKEN_BUCKET_LUA,
+                1,
+                self._key("ratelimit", bucket_key),
+                capacity,
+                refill_rate_per_sec / 1000.0,
+                int(_time.time() * 1000),
+            )
+            return int(wait_ms)
+        except Exception:
+            logger.warning("Redis take_token error: %s", bucket_key, exc_info=True)
+            return None
 
     async def health(self) -> dict:
         """Статус Redis для /health endpoint."""

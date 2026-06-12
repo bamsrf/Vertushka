@@ -3,6 +3,7 @@ API для работы с пластинками
 """
 import asyncio
 import logging
+import re
 from datetime import datetime
 from uuid import UUID
 
@@ -666,6 +667,13 @@ async def search_records(
         await _enrich_search_results_with_rarity(
             local, db, id_attr="discogs_id", format_attr="format_type"
         )
+        # Прогрев обложек для топ-результатов без cover: CAA по barcode
+        # (бесплатно) + капнутый Discogs ENRICHMENT. Пишет в dump-индекс —
+        # следующая выдача уже с обложками. Fire-and-forget, поиск не ждёт.
+        from app.services.cover_warm import schedule_warm_dump_covers
+        schedule_warm_dump_covers(
+            [r.discogs_id for r in local[:10] if not r.cover_image_url]
+        )
         # total известен только приблизительно — отдаём len(local) + offset как
         # минимум. Mobile-pager работает с has_next по len(results)==per_page.
         return RecordSearchResponse(
@@ -728,7 +736,44 @@ async def scan_barcode(
             thumb_image_url=local_record.thumb_image_url,
             format_type=local_record.format_type,
         )]
-    
+
+    # Dump-индекс по barcode_norm (btree) — закрывает скан без Discogs API.
+    # Нормализация та же, что при ingest: только цифры.
+    barcode_norm = re.sub(r"\D+", "", barcode)
+    if barcode_norm:
+        try:
+            dump_rows = (await db.execute(
+                text(
+                    "SELECT discogs_id::text AS discogs_id, artist, title, year, "
+                    "country, format_type, label, cover_image_url "
+                    "FROM discogs_releases_index "
+                    "WHERE barcode_norm = :bc LIMIT 10"
+                ),
+                {"bc": barcode_norm},
+            )).mappings().all()
+        except Exception:
+            logger.warning("dump barcode lookup failed", exc_info=True)
+            dump_rows = []
+        if dump_rows:
+            from app.services.cover_warm import schedule_warm_dump_covers
+            schedule_warm_dump_covers(
+                [r["discogs_id"] for r in dump_rows if not r["cover_image_url"]]
+            )
+            return [
+                RecordSearchResult(
+                    discogs_id=row["discogs_id"],
+                    title=row["title"],
+                    artist=row["artist"],
+                    label=row["label"],
+                    year=row["year"],
+                    country=row["country"],
+                    cover_image_url=row["cover_image_url"],
+                    thumb_image_url=None,
+                    format_type=row["format_type"],
+                )
+                for row in dump_rows
+            ]
+
     # Поиск в Discogs
     discogs = DiscogsService()
     
@@ -920,16 +965,119 @@ async def scan_cover(
     )
 
 
+async def _suggest_local(db: AsyncSession, q: str) -> dict | None:
+    """Автодополнение по локальным данным, без Discogs API.
+
+    masters — из dump-индекса (trgm-кандидаты, дедуп по master_id);
+    artists — из records (там есть artist_id + thumb из discogs_data,
+    дамп их не несёт). Возвращает None если masters не нашлись —
+    caller уходит в Discogs API.
+    """
+    qs = q.strip()
+    if len(qs) < 3:
+        return None
+    pat = f"%{qs}%"
+
+    # Кандидаты из дампа: ILIKE активирует GIN trgm (как в _search_local_index),
+    # similarity ранжирует малый набор. Берём с запасом — дедуп по master_id
+    # ниже срежет переиздания одного альбома.
+    master_rows = (await db.execute(
+        text(
+            """
+            SELECT
+                dri.master_id::text AS master_id,
+                dri.artist, dri.title, dri.year,
+                COALESCE(
+                    CASE WHEN r.cover_local_path IS NOT NULL
+                         THEN '/uploads/' || r.cover_local_path END,
+                    r.cover_image_url,
+                    dri.cover_image_url
+                ) AS thumb,
+                (
+                  similarity(dri.artist, :q) * 2.0
+                  + similarity(dri.title, :q)
+                  + CASE WHEN dri.artist ILIKE :pat THEN 1.0 ELSE 0.0 END
+                ) AS sim
+            FROM discogs_releases_index dri
+            LEFT JOIN records r
+                ON r.discogs_id = dri.discogs_id::text
+                AND r.merged_into_id IS NULL
+            WHERE dri.master_id IS NOT NULL
+              AND (dri.artist ILIKE :pat OR dri.title ILIKE :pat)
+            ORDER BY sim DESC, dri.year ASC NULLS LAST
+            LIMIT 40
+            """
+        ),
+        {"q": qs, "pat": pat},
+    )).mappings().all()
+
+    masters: list[dict] = []
+    seen: set[str] = set()
+    for row in master_rows:
+        mid = row["master_id"]
+        if mid in seen:
+            continue
+        seen.add(mid)
+        masters.append({
+            "master_id": mid,
+            "title": row["title"],
+            "artist": row["artist"],
+            "year": row["year"],
+            "thumb": row["thumb"],
+        })
+        if len(masters) >= 5:
+            break
+
+    if not masters:
+        return None
+
+    # Артисты — из records: только там есть artist_id для навигации.
+    # Покрытие растёт с использованием (каждый detail-view пишет artist_id).
+    artist_rows = (await db.execute(
+        text(
+            """
+            SELECT DISTINCT ON (lower(artist))
+                discogs_data->>'artist_id' AS artist_id,
+                artist AS name,
+                discogs_data->>'artist_thumb_image_url' AS thumb
+            FROM records
+            WHERE artist ILIKE :pat
+              AND discogs_data->>'artist_id' IS NOT NULL
+              AND merged_into_id IS NULL
+            ORDER BY lower(artist), created_at DESC
+            LIMIT 3
+            """
+        ),
+        {"pat": pat},
+    )).mappings().all()
+
+    artists = [
+        {"artist_id": r["artist_id"], "name": r["name"], "thumb": r["thumb"]}
+        for r in artist_rows
+    ]
+    return {"artists": artists, "masters": masters}
+
+
 @router.get("/suggest")
 async def suggest(
     q: str = Query(..., min_length=2, max_length=100),
     limit: int = Query(8, ge=1, le=15),
     current_user: User | None = Depends(get_current_user_optional),
+    db: AsyncSession = Depends(get_db),
 ):
     """
-    Автодополнение: один запрос к Discogs, результаты разделяются по типу.
-    Возвращает artists (до 3) и masters (до 5).
+    Автодополнение: local-first (dump-индекс + records), fallback на Discogs.
+
+    Suggest — самый горячий путь к Discogs API (вызов на каждую паузу набора),
+    локальный путь снимает его с rate-limit бюджета целиком.
     """
+    try:
+        local = await _suggest_local(db, q)
+        if local is not None:
+            return local
+    except Exception:
+        logger.warning("local suggest failed, fallback to API", exc_info=True)
+
     discogs = DiscogsService()
     try:
         return await discogs.suggest(query=q, per_page=limit, creds=user_creds(current_user))
