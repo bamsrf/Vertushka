@@ -73,7 +73,7 @@ async def crawl_store(slug: str, *, mode: CrawlMode = "full", limit: int | None 
                     break
 
             await db.commit()
-            smoke_msg = await _smoke_check(db, store, counters, mode)
+            smoke_msg = await _smoke_check(db, store, counters, mode, limit)
             if smoke_msg:
                 logger.error("[%s] smoke check failed: %s", slug, smoke_msg)
                 await _mark_error(db, store, smoke_msg)
@@ -234,19 +234,22 @@ def _serialize_raw(dto: ListingDTO) -> dict:
     return out
 
 
-async def _smoke_check(db, store: Store, counters: dict, mode: CrawlMode) -> str | None:
+async def _smoke_check(
+    db, store: Store, counters: dict, mode: CrawlMode, limit: int | None = None
+) -> str | None:
     """None = crawl выглядит здоровым. Иначе текст проблемы.
 
     Ловит «магазин сменил HTML → парсер тихо отдаёт ноль/мусор»: сравниваем
     результат прохода с историей листингов в БД. Для incremental пустой
-    результат — норма (новинок нет), деградацию там не детектим.
+    результат — норма (новинок нет), деградацию там не детектим. Прогон с
+    limit искусственно обрезан — объёмные проверки для него тоже пропускаем.
     """
     existing = await db.scalar(
         select(func.count()).select_from(StoreListing).where(StoreListing.store_id == store.id)
     )
     if not existing:
         return None
-    if mode != "incremental":
+    if mode != "incremental" and limit is None:
         if counters["discovered"] == 0:
             return f"smoke: 0 discovered при {existing} листингах в БД"
         if counters["discovered"] < existing * 0.1:
