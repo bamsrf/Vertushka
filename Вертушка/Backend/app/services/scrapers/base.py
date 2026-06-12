@@ -13,7 +13,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import AsyncIterator
 
-from app.services.scrapers.http_client import ScraperHttpClient
+from app.services.scrapers.http_client import ParserError_404, ScraperHttpClient
 from app.services.scrapers.browser import BrowserPool
 
 logger = logging.getLogger(__name__)
@@ -140,6 +140,25 @@ class BaseStoreParser:
                 # http_client уже выставил Store.requires_browser=True если нужно
                 logger.warning("[%s] blocked at %s — stopping crawl", self.slug, url)
                 return
+            except (TransientParserError, ParserError):
+                continue
+            await asyncio.sleep(delay + random.uniform(0.0, delay * 0.5))
+
+    async def refresh_urls(self, urls: list[str]) -> AsyncIterator[tuple[str, ListingDTO | None]]:
+        """Точечная перепроверка известных URL (stock-refresh).
+
+        Yields (url, dto). dto=None — товар удалён (404/410), листинг надо
+        пометить removed. ParserBlocked останавливает обход магазина.
+        """
+        delay = 1.0 / max(self.rate_limit_per_sec, 0.01)
+        for url in urls:
+            try:
+                yield url, await self.parse_listing(url)
+            except ParserBlocked:
+                logger.warning("[%s] blocked at %s — stopping refresh", self.slug, url)
+                return
+            except ParserError_404:
+                yield url, None
             except (TransientParserError, ParserError):
                 continue
             await asyncio.sleep(delay + random.uniform(0.0, delay * 0.5))
