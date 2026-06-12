@@ -21,6 +21,7 @@ from app.services.cache import (
     TTL_ARTIST_THUMB,
     TTL_ARTIST_MASTERS,
     TTL_SEARCH,
+    TTL_SUGGEST,
     TTL_PRICE_STATS,
     TTL_MASTER_VERSIONS,
     TTL_MASTER_INFO,
@@ -361,7 +362,10 @@ class DiscogsService:
                 })
 
         result = {"artists": artists[:3], "masters": masters[:5]}
-        await cache.set("suggest", ck, result, TTL_SEARCH)
+        # Пустую выдачу не кешируем на сутки — Discogs под rate-limit отдаёт
+        # 200 с пустым results; короткий TTL чтобы не залипнуть.
+        ttl = TTL_SUGGEST if (artists or masters) else TTL_SEARCH
+        await cache.set("suggest", ck, result, ttl)
         return result
 
     # ------------------------------------------------------------------
@@ -1292,6 +1296,38 @@ class DiscogsService:
         result = {"cover": cover, "release_type": release_type}
         await cache.set("master_info", master_id, result, TTL_MASTER_INFO)
         return result
+
+    async def get_release_cover(self, release_id: str) -> str | None:
+        """Только обложка релиза (`images[0].uri`), без фан-аута на artist
+        thumb / price stats / master — 1 API-вызов вместо 4. Для фонового
+        прогрева обложек dump-строк (cover_warm).
+
+        Если полный payload уже в кэше release — берём оттуда бесплатно.
+        Negative cache на 1 час.
+        """
+        cached_release = await cache.get("release", release_id)
+        if cached_release is not None:
+            return cached_release.get("cover_image")
+
+        cached = await cache.get("release_cover", release_id)
+        if cached is not None:
+            return cached.get("cover") if isinstance(cached, dict) else None
+
+        try:
+            data = await self._get(
+                f"{self.BASE_URL}/releases/{release_id}",
+                priority=Priority.ENRICHMENT,
+            )
+        except Exception:
+            logger.debug("get_release_cover failed for %s", release_id, exc_info=True)
+            await cache.set("release_cover", release_id, {"cover": None}, 3600)
+            return None
+
+        images = data.get("images", [])
+        cover = images[0].get("uri") if images else None
+        ttl = TTL_RELEASE if cover else 3600
+        await cache.set("release_cover", release_id, {"cover": cover}, ttl)
+        return cover
 
     async def _get_artist_thumb(self, artist_id: str) -> str | None:
         """Получение миниатюры артиста по ID. Кэшируется в Redis на 30 дней.

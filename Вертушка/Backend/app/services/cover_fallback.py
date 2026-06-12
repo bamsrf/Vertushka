@@ -16,7 +16,9 @@ from app.config import get_settings
 logger = logging.getLogger(__name__)
 
 _MB_URL = "https://musicbrainz.org/ws/2/release"
-_CAA_FRONT = "https://coverartarchive.org/release/{mbid}/front-500"
+# front-1200 (не front-500): URL уходит в cover_image_url и показывается на
+# detail-экране во всю ширину; зеркало в cover_storage ужмёт до 1000px.
+_CAA_FRONT = "https://coverartarchive.org/release/{mbid}/front-1200"
 
 # MusicBrainz: жёсткий лимит 1 req/s на IP. Глобальный троттл.
 _mb_lock = asyncio.Lock()
