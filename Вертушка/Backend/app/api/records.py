@@ -40,6 +40,11 @@ from app.schemas.record import (
     ReleaseSearchResponse,
     ArtistSearchResponse,
     Artist,
+    PreflightRequest,
+    PreflightResponse,
+    SpotifyAlbumCandidate,
+    SpotifySearchResponse,
+    UserRecordCreate,
 )
 from app.services.discogs import DiscogsService
 from app.services.discogs_oauth import user_creds
@@ -1157,6 +1162,156 @@ async def _schedule_store_native_discogs_match(record_id: UUID) -> None:
         logger.exception("on-demand store-native enrichment failed for %s", record_id)
 
 
+# ── User-submitted records (source='user') ─────────────────────────────── #
+# ВАЖНО: эти статичные роуты объявлены ДО `/{record_id}`, иначе path-param
+# проглотит 'preflight'/'spotify-search'/'user' как record_id.
+
+
+@router.post("/preflight/", response_model=PreflightResponse)
+async def preflight(
+    data: PreflightRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Дабл-чек перед ручным добавлением пластинки. Проверяет, нет ли её уже в
+    Маркете/Discogs. См. USER_SUBMITTED_RECORDS.md §2.
+    """
+    from app.services.user_record import preflight_dedup
+
+    res = await preflight_dedup(
+        artist=data.artist,
+        title=data.title,
+        year=data.year,
+        barcode=data.barcode,
+        catalog=data.catalog,
+        db=db,
+    )
+    return PreflightResponse(
+        status=res.status,
+        match=RecordResponse.model_validate(res.match) if res.match else None,
+        discogs_id=res.discogs_id,
+        score=res.score,
+    )
+
+
+@router.get("/spotify-search/", response_model=SpotifySearchResponse)
+async def spotify_search(
+    q: str = Query(..., min_length=2, max_length=200),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Автозаполнение из Spotify: артист/альбом → кандидаты с обложкой/годом/
+    треклистом. Пустой результат, если Spotify-креды не настроены. §3.
+    """
+    from app.services.spotify import spotify_service
+
+    albums = await spotify_service.search_album(artist="", title=q)
+    candidates: list[SpotifyAlbumCandidate] = []
+    for a in albums:
+        tracks = await spotify_service.get_album_tracks(a["id"]) if a.get("id") else []
+        candidates.append(SpotifyAlbumCandidate(**a, tracks=tracks))
+    return SpotifySearchResponse(results=candidates)
+
+
+@router.post("/user/", response_model=RecordResponse, status_code=status.HTTP_201_CREATED)
+async def create_user_submitted_record(
+    data: UserRecordCreate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Создать запись source='user' (пластинки нет ни в Discogs, ни в Маркете).
+    Повторный preflight на бэке (фронт-чек не доверяем) → заливка фото →
+    enrichment-merge Spotify → Record(pending) → в коллекцию создателя. §4.
+    """
+    import base64
+    from app.services.user_record import preflight_dedup, create_user_record, PreflightStatus
+    from app.services.spotify import spotify_service
+    from app.services.cover_storage import CoverStorageService
+    from app.services.gifts import get_or_create_default_collection
+    from app.models.collection import CollectionItem
+
+    # 1) повторный дабл-чек на бэке
+    pf = await preflight_dedup(
+        artist=data.artist,
+        title=data.title,
+        year=data.year,
+        barcode=data.barcode,
+        catalog=data.catalog_number,
+        db=db,
+    )
+    if pf.status in (PreflightStatus.DUPLICATE, PreflightStatus.FOUND_IN_DISCOGS):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "status": pf.status,
+                "match_id": str(pf.match.id) if pf.match else None,
+                "discogs_id": pf.discogs_id,
+                "message": "Эта пластинка уже есть — добавьте её из найденного.",
+            },
+        )
+    # LIKELY_DUPLICATE не блокируем жёстко — фронт уже показал юзеру кандидата
+    # на этапе preflight, и раз дошли до создания — юзер настоял (human-in-loop).
+
+    # 2) enrichment-merge: Spotify-данные (если есть album_id и треклист пуст)
+    user_data: dict = {"manual": data.model_dump(exclude={"cover_photo_base64", "spine_photo_base64"})}
+    tracklist = data.tracklist
+    year = data.year
+    if data.spotify_album_id:
+        album = await spotify_service.get_album(data.spotify_album_id)
+        if album:
+            user_data["spotify"] = album
+            if not tracklist:
+                tracklist = await spotify_service.get_album_tracks(data.spotify_album_id)
+            if not year:
+                rel = album.get("release_date") or ""
+                if rel[:4].isdigit():
+                    year = int(rel[:4])
+
+    # 3) создаём запись (pending)
+    rec = await create_user_record(
+        db=db,
+        created_by_user_id=current_user.id,
+        artist=data.artist,
+        title=data.title,
+        year=year,
+        label=data.label,
+        catalog_number=data.catalog_number,
+        country=data.country,
+        format_type=data.format_type,
+        barcode=data.barcode,
+        tracklist=tracklist,
+        spotify_album_id=data.spotify_album_id,
+        user_submitted_data=user_data,
+    )
+
+    # 4) заливка фото обложки (приоритет у юзерского фото над Spotify-обложкой)
+    if data.cover_photo_base64:
+        try:
+            raw = base64.b64decode(data.cover_photo_base64)
+            rel_path = CoverStorageService().store_user_cover(f"user_{rec.id}", raw)
+            if rel_path:
+                rec.cover_local_path = rel_path
+                rec.cover_cached_at = datetime.utcnow()
+        except Exception:
+            logger.warning("user-record cover store failed for %s", rec.id)
+    # Spotify-обложка как fallback (cover_image_url), если юзер фото не дал
+    if not data.cover_photo_base64 and data.spotify_album_id:
+        sp = user_data.get("spotify") or {}
+        imgs = sp.get("images") or []
+        if imgs:
+            rec.cover_image_url = imgs[0].get("url")
+
+    # 5) в коллекцию создателя
+    collection = await get_or_create_default_collection(current_user, db)
+    db.add(CollectionItem(collection_id=collection.id, record_id=rec.id))
+
+    await db.commit()
+    await db.refresh(rec)
+    return RecordResponse.model_validate(rec)
+
+
 @router.get("/{record_id}", response_model=RecordResponse)
 async def get_record(
     record_id: UUID,
@@ -1171,6 +1326,21 @@ async def get_record(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Пластинка не найдена"
+        )
+
+    # §6 Visibility: pending user-record приватна — видит только создатель
+    # (и staff). Для остальных — 404, как будто записи нет.
+    if (
+        record.source == "user"
+        and record.moderation_status == "pending"
+        and not (
+            current_user
+            and (current_user.id == record.created_by_user_id or current_user.is_staff)
+        )
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Пластинка не найдена",
         )
 
     # Follow merged_into_id: если эту запись уже слили в Discogs-аналог,

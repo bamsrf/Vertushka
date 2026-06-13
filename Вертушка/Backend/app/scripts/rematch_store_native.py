@@ -35,7 +35,7 @@ import sys
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import select, text
+from sqlalchemy import select, text, or_, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 # Make sure app package is importable when run as -m app.scripts.rematch_store_native
@@ -381,9 +381,19 @@ async def run_rematch(
                 counters["skipped_dump_unavailable"] = 1
                 break
 
+            # source='store' + аппрувнутые source='user' (§7). Pending/rejected
+            # user-записи в Discogs не ищем — только общие.
             res = await db.execute(
                 select(Record)
-                .where(Record.source == "store")
+                .where(
+                    or_(
+                        Record.source == "store",
+                        and_(
+                            Record.source == "user",
+                            Record.moderation_status == "approved",
+                        ),
+                    )
+                )
                 .where(Record.merged_into_id.is_(None))
                 .order_by(Record.updated_at.asc())
                 .offset(offset)

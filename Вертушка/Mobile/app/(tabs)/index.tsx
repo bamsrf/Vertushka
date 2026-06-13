@@ -241,7 +241,13 @@ export default function ScannerScreen() {
       <View style={[styles.overlay, { paddingTop: insets.top }]}>
         {/* Заголовок + переключатель режимов */}
         <View style={styles.header}>
-          <Text style={styles.headerTitle}>Сканирование</Text>
+          {/* TODO temp: вход в gooey-playground — удалить после теста */}
+          <Text
+            style={styles.headerTitle}
+            onPress={() => router.push('/dev/gooey')}
+          >
+            Сканирование
+          </Text>
           <View
             ref={segmentsTarget.ref}
             onLayout={segmentsTarget.onLayout}
@@ -355,6 +361,19 @@ export default function ScannerScreen() {
             ListEmptyComponent={
               <View style={styles.emptyResults}>
                 <Text style={styles.emptyText}>Ничего не найдено</Text>
+                <Text style={styles.emptyHint}>
+                  Нет в Discogs и Маркете? Добавьте пластинку вручную.
+                </Text>
+                <TouchableOpacity
+                  style={styles.manualBtn}
+                  onPress={() => {
+                    setShowResults(false);
+                    router.push('/record/manual');
+                  }}
+                >
+                  <Icon name="plus-circle" size={18} color={Colors.royalBlue} />
+                  <Text style={styles.manualBtnText}>Добавить вручную</Text>
+                </TouchableOpacity>
               </View>
             }
           />
@@ -559,5 +578,26 @@ const styles = StyleSheet.create({
   emptyText: {
     ...Typography.body,
     color: Colors.textMuted,
+  },
+  emptyHint: {
+    ...Typography.bodySmall,
+    color: Colors.textSecondary,
+    textAlign: 'center',
+    marginTop: Spacing.xs,
+  },
+  manualBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.xs,
+    marginTop: Spacing.md,
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.md,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    borderColor: Colors.royalBlue,
+  },
+  manualBtnText: {
+    ...Typography.buttonSmall,
+    color: Colors.royalBlue,
   },
 });

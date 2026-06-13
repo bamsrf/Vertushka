@@ -275,6 +275,54 @@ export interface CoverScanResponse {
   low_confidence?: boolean;
 }
 
+// ==================== User-submitted records ====================
+// Пластинка, которой нет ни в Discogs, ни в Маркете — юзер добавляет вручную.
+// См. docs/plans/USER_SUBMITTED_RECORDS.md.
+
+export interface SpotifyAlbumCandidate {
+  id: string;
+  name: string;
+  artist: string;
+  year?: number | null;
+  cover_url?: string | null;
+  image_url?: string | null;
+  tracks: TrackItem[];
+}
+
+export interface TrackItem {
+  position?: string | null;
+  title?: string | null;
+  duration?: string | null;
+}
+
+export type PreflightStatus =
+  | 'DUPLICATE'
+  | 'LIKELY_DUPLICATE'
+  | 'FOUND_IN_DISCOGS'
+  | 'ALLOW_CREATE';
+
+export interface PreflightResponse {
+  status: PreflightStatus;
+  match?: VinylRecord | null;
+  discogs_id?: string | null;
+  score?: number | null;
+}
+
+export interface UserRecordPayload {
+  artist: string;
+  title: string;
+  year?: number | null;
+  label?: string | null;
+  catalog_number?: string | null;
+  country?: string | null;
+  format_type?: string | null;
+  barcode?: string | null;
+  spotify_album_id?: string | null;
+  tracklist?: TrackItem[] | null;
+  cover_photo_base64?: string | null;
+  spine_photo_base64?: string | null;
+}
+
 // ==================== Master Releases ====================
 
 export interface MasterSearchResult {

@@ -65,6 +65,13 @@ def _record_to_public(
     )
 
 
+def _is_publicly_visible(record: Record) -> bool:
+    """§6: user-record виден в публичном профиле только после аппрува."""
+    if record.source == "user" and record.moderation_status != "approved":
+        return False
+    return True
+
+
 async def _get_top_expensive(user_id: UUID, db: AsyncSession, limit: int = 12) -> list[PublicProfileRecord]:
     """Самые дорогие пластинки коллекции, отсортированные по цене убыванию."""
     result = await db.execute(
@@ -79,6 +86,8 @@ async def _get_top_expensive(user_id: UUID, db: AsyncSession, limit: int = 12) -
     records: list[Record] = []
     for item in items:
         if not item.record or item.record.id in seen:
+            continue
+        if not _is_publicly_visible(item.record):
             continue
         seen.add(item.record.id)
         records.append(item.record)
@@ -104,6 +113,8 @@ async def _get_full_collection(user_id: UUID, db: AsyncSession, limit: int = 200
     out: list[PublicProfileRecord] = []
     for item in items:
         if not item.record or item.record.id in seen:
+            continue
+        if not _is_publicly_visible(item.record):
             continue
         seen.add(item.record.id)
         out.append(_record_to_public(item.record, added_at=item.added_at))

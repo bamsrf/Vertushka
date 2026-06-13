@@ -1153,4 +1153,8 @@ async def safe_merge_store_native_into(
     )
 
     source.merged_into_id = target.id
+    # User-record слита в Discogs-аналог → статус 'merged' (§6/§7). Покрывает
+    # оба пути rematch (dump + live API), т.к. merge всегда идёт через сюда.
+    if source.source == "user":
+        source.moderation_status = "merged"
     return counters
