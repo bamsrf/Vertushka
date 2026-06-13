@@ -16,3 +16,4 @@ from app.services.scrapers.shops import korobkavinyla  # noqa: F401
 from app.services.scrapers.shops import plastinka_com  # noqa: F401
 from app.services.scrapers.shops import vinyl_ru  # noqa: F401
 from app.services.scrapers.shops import stoprobotvinyl  # noqa: F401
+from app.services.scrapers.shops import found  # noqa: F401
