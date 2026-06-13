@@ -5,7 +5,7 @@ import logging
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select, func
+from sqlalchemy import select, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -70,6 +70,14 @@ def _is_publicly_visible(record: Record) -> bool:
     if record.source == "user" and record.moderation_status != "approved":
         return False
     return True
+
+
+# SQL-предикат того же правила для агрегатов (count/value): discogs/store видны
+# всегда, user — только approved. Не-user всегда проходит.
+_PUBLIC_VISIBLE_CLAUSE = or_(
+    Record.source != "user",
+    Record.moderation_status == "approved",
+)
 
 
 async def _get_top_expensive(user_id: UUID, db: AsyncSession, limit: int = 12) -> list[PublicProfileRecord]:
@@ -236,7 +244,8 @@ async def get_public_profile_payload(user: User, profile: ProfileShare, db: Asyn
     collection_count = await db.scalar(
         select(func.count(func.distinct(CollectionItem.record_id)))
         .join(Collection)
-        .where(Collection.user_id == user.id)
+        .join(Record, Record.id == CollectionItem.record_id)
+        .where(Collection.user_id == user.id, _PUBLIC_VISIBLE_CLAUSE)
     ) or 0
 
     wishlist_count = await db.scalar(
@@ -257,7 +266,8 @@ async def get_public_profile_payload(user: User, profile: ProfileShare, db: Asyn
         distinct_records = (
             select(func.distinct(CollectionItem.record_id))
             .join(Collection)
-            .where(Collection.user_id == user.id)
+            .join(Record, Record.id == CollectionItem.record_id)
+            .where(Collection.user_id == user.id, _PUBLIC_VISIBLE_CLAUSE)
             .subquery()
         )
         value_result = await db.scalar(
@@ -275,7 +285,7 @@ async def get_public_profile_payload(user: User, profile: ProfileShare, db: Asyn
     if profile.highlight_record_ids:
         for record_id in profile.highlight_record_ids:
             rec = await db.scalar(select(Record).where(Record.id == record_id))
-            if rec:
+            if rec and _is_publicly_visible(rec):
                 highlights.append(_record_to_public(rec))
 
     top_expensive = await _get_top_expensive(user.id, db, limit=12) if profile.show_collection else []
