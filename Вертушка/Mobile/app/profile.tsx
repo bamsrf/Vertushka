@@ -92,7 +92,7 @@ export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
   const shareTarget = useTourTarget('profile-share');
   const { user, logout, setUser } = useAuthStore();
-  const { collectionItems, wishlistItems, setActiveTab, fetchCollectionItems, fetchWishlistItems } = useCollectionStore();
+  const { collectionItems, wishlistItems, stats, setActiveTab, fetchCollectionItems, fetchWishlistItems, fetchStats } = useCollectionStore();
   const onboarding = useOnboardingStore();
   const { followers, following, fetchFollowers, fetchFollowing } = useFollowStore();
   const { given: givenGifts, isLoaded: giftsLoaded, loadAll: loadGifts } = useGiftStore();
@@ -214,7 +214,8 @@ export default function ProfileScreen() {
     if (!giftsLoaded) loadGifts();
     fetchFollowers();
     fetchFollowing();
-  }, [giftsLoaded, loadGifts, fetchFollowers, fetchFollowing]);
+    fetchStats().catch(() => {});
+  }, [giftsLoaded, loadGifts, fetchFollowers, fetchFollowing, fetchStats]);
 
   const handleGivenPress = useCallback(
     (gift: GiftGivenItem) => {
@@ -304,10 +305,10 @@ export default function ProfileScreen() {
     }
   }, [handleExport]);
 
-  const stats = [
+  const statCards = [
     {
       label: 'В коллекции',
-      value: collectionItems.length,
+      value: stats?.total_records ?? collectionItems.length,
       icon: 'disc-outline' as const,
       onPress: () => handleStatPress('collection'),
     },
@@ -381,7 +382,7 @@ export default function ProfileScreen() {
 
         {/* Статистика 2×2 */}
         <View style={styles.statsGrid}>
-          {stats.map((stat, index) => (
+          {statCards.map((stat, index) => (
             <TouchableOpacity
               key={index}
               style={[styles.statCard, Shadows.lg]}
