@@ -47,7 +47,7 @@ services:
       - DATABASE_URL=postgresql+asyncpg://${DB_USER}:${DB_PASSWORD}@db:5432/vertushka
       - REDIS_URL=redis://redis:6379/0
       - IS_SCHEDULER=false
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 2
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 2 --proxy-headers --forwarded-allow-ips '*'
     volumes:
       - uploads_data:/app/uploads
     depends_on:
@@ -69,7 +69,7 @@ services:
       - DATABASE_URL=postgresql+asyncpg://${DB_USER}:${DB_PASSWORD}@db:5432/vertushka
       - REDIS_URL=redis://redis:6379/0
       - IS_SCHEDULER=true
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8001 --workers 1
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8001 --workers 1 --proxy-headers --forwarded-allow-ips '*'
     volumes:
       - uploads_data:/app/uploads
     depends_on:

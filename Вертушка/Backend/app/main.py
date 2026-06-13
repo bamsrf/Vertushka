@@ -17,7 +17,7 @@ from fastapi.templating import Jinja2Templates
 from pythonjsonlogger import jsonlogger
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
-from slowapi.util import get_remote_address
+from app.utils.request_ip import get_client_ip
 from sqlalchemy import text
 
 from app.config import get_settings
@@ -181,7 +181,7 @@ app = FastAPI(
 )
 
 # Rate limiter
-limiter = Limiter(key_func=get_remote_address)
+limiter = Limiter(key_func=get_client_ip)
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 

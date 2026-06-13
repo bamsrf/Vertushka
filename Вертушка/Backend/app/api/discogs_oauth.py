@@ -178,8 +178,8 @@ async def callback(
             _NS_TICKET,
             ticket,
             {
-                "access_token": create_access_token(user.id),
-                "refresh_token": create_refresh_token(user.id),
+                "access_token": create_access_token(user.id, user.token_version),
+                "refresh_token": create_refresh_token(user.id, user.token_version),
             },
             ttl=_TICKET_TTL,
         )

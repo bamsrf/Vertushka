@@ -22,7 +22,7 @@ from fastapi import (
     status,
 )
 from slowapi import Limiter
-from slowapi.util import get_remote_address
+from app.utils.request_ip import get_client_ip
 from sqlalchemy import select, and_, or_, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -73,7 +73,7 @@ from app.utils.security import verify_token_type
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
-limiter = Limiter(key_func=get_remote_address)
+limiter = Limiter(key_func=get_client_ip)
 
 
 PAGE_LIMIT_DEFAULT = 50
@@ -1145,6 +1145,15 @@ async def messages_ws(websocket: WebSocket, token: str = Query(...)):
         return
 
     user_id = payload["sub"]
+
+    # Ревокация: токен с устаревшим tv (после смены пароля) или неактивный аккаунт
+    # не должны открывать realtime-канал.
+    async with async_session_maker() as _db:
+        _user = await _db.get(User, _UUID(user_id))
+    if not _user or not _user.is_active or payload.get("tv", 0) != _user.token_version:
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        return
+
     await websocket.accept()
     await messages_ws_hub.register(user_id, websocket)
     try:

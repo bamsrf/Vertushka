@@ -14,7 +14,7 @@ import sentry_sdk
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from slowapi import Limiter
-from slowapi.util import get_remote_address
+from app.utils.request_ip import get_client_ip
 from jose import jwt as jose_jwt, JWTError, jwk
 from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
@@ -44,7 +44,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 security = HTTPBearer()
-limiter = Limiter(key_func=get_remote_address)
+limiter = Limiter(key_func=get_client_ip)
 
 # ---------- Apple Sign In verification ----------
 
@@ -257,6 +257,14 @@ async def get_current_user(
             detail="Пользователь не найден",
         )
 
+    # Ревокация: токен с устаревшим tv (после смены пароля / logout-all) невалиден.
+    if payload.get("tv", 0) != user.token_version:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Сессия недействительна, войдите заново",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
     if not user.is_active:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -362,8 +370,8 @@ async def register(
     logger.info("user_registered", extra={"user_id": str(user.id), "email": user.email, "username": user.username})
 
     # Создание токенов
-    access_token = create_access_token(user.id)
-    refresh_token = create_refresh_token(user.id)
+    access_token = create_access_token(user.id, user.token_version)
+    refresh_token = create_refresh_token(user.id, user.token_version)
 
     return Token(
         access_token=access_token,
@@ -445,8 +453,8 @@ async def login(
 
     logger.info("user_login", extra={"user_id": str(user.id), "email": user.email})
 
-    access_token = create_access_token(user.id)
-    refresh_token = create_refresh_token(user.id)
+    access_token = create_access_token(user.id, user.token_version)
+    refresh_token = create_refresh_token(user.id, user.token_version)
 
     return Token(
         access_token=access_token,
@@ -477,9 +485,16 @@ async def refresh_token(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Пользователь не найден или деактивирован"
         )
-    
-    access_token = create_access_token(user.id)
-    new_refresh_token = create_refresh_token(user.id)
+
+    # Ревокация: отклоняем refresh-токен с устаревшим tv (после смены пароля).
+    if payload.get("tv", 0) != user.token_version:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Сессия недействительна, войдите заново"
+        )
+
+    access_token = create_access_token(user.id, user.token_version)
+    new_refresh_token = create_refresh_token(user.id, user.token_version)
     
     return Token(
         access_token=access_token,
@@ -568,8 +583,8 @@ async def apple_sign_in(
 
     logger.info("apple_sign_in", extra={"user_id": str(user.id), "email": user.email})
 
-    access_token = create_access_token(user.id)
-    refresh_token = create_refresh_token(user.id)
+    access_token = create_access_token(user.id, user.token_version)
+    refresh_token = create_refresh_token(user.id, user.token_version)
 
     return Token(
         access_token=access_token,
@@ -606,8 +621,17 @@ async def google_sign_in(
         result = await db.execute(select(User).where(User.email == email))
         existing = result.scalar_one_or_none()
         if existing:
+            # Привязываем google_id к существующему аккаунту ТОЛЬКО если Google
+            # подтвердил владение email. Без проверки email_verified владелец
+            # Workspace-домена мог бы выпустить токен с чужим email и захватить
+            # аккаунт. Неподтверждённый email с занятым адресом — отказ.
+            if not email_verified:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Аккаунт с этим email уже существует. Войдите паролем."
+                )
             existing.google_id = google_sub
-            if email_verified and not existing.is_verified:
+            if not existing.is_verified:
                 existing.is_verified = True
             user = existing
 
@@ -657,8 +681,8 @@ async def google_sign_in(
 
     logger.info("google_sign_in", extra={"user_id": str(user.id), "email": user.email})
 
-    access_token = create_access_token(user.id)
-    refresh_token = create_refresh_token(user.id)
+    access_token = create_access_token(user.id, user.token_version)
+    refresh_token = create_refresh_token(user.id, user.token_version)
 
     return Token(
         access_token=access_token,
@@ -793,13 +817,15 @@ async def reset_password(
 
     user.password_hash = hash_password(data.new_password)
     user.last_login_at = datetime.utcnow()
+    # Инвалидируем все ранее выданные сессии (украденный/старый токен умирает).
+    user.token_version += 1
     await db.commit()
 
     logger.info("password_reset", extra={"user_id": str(user.id), "email": user.email})
 
-    # Сразу выдаём токены для автологина
-    access_token = create_access_token(user.id)
-    refresh_token = create_refresh_token(user.id)
+    # Сразу выдаём токены для автологина — уже с новым token_version.
+    access_token = create_access_token(user.id, user.token_version)
+    refresh_token = create_refresh_token(user.id, user.token_version)
 
     return Token(
         access_token=access_token,
@@ -844,8 +870,8 @@ async def restore_account(
     user.last_login_at = datetime.utcnow()
     await db.commit()
 
-    access_token = create_access_token(user.id)
-    refresh_token = create_refresh_token(user.id)
+    access_token = create_access_token(user.id, user.token_version)
+    refresh_token = create_refresh_token(user.id, user.token_version)
 
     return Token(
         access_token=access_token,

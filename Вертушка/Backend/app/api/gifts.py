@@ -16,6 +16,7 @@ from sqlalchemy.orm import selectinload
 
 from app.config import get_settings
 from app.database import get_db
+from app.utils.request_ip import get_client_ip
 from app.models.blocked_contact import BlockedContact, BlockedContactKind
 from app.models.user import User
 from app.models.wishlist import Wishlist, WishlistItem
@@ -35,16 +36,15 @@ router = APIRouter()
 
 
 def _extract_client_ip(request: Request) -> str | None:
-    """Достаёт IP клиента, учитывая X-Forwarded-For (если за nginx)."""
-    xff = request.headers.get("x-forwarded-for")
-    if xff:
-        # Первый IP в цепочке — оригинальный клиент
-        ip = xff.split(",")[0].strip()
-        if ip:
-            return ip[:45]
-    if request.client:
-        return request.client.host[:45]
-    return None
+    """Реальный IP клиента за nginx (не подделываемый через X-Forwarded-For).
+
+    Раньше брался первый хоп XFF — он формируется клиентом и тривиально
+    подменяется, что обходило анти-фрод лимит на бронирование. Теперь IP берётся
+    из X-Real-IP (его nginx перезаписывает реальным $remote_addr). См.
+    app/utils/request_ip.py.
+    """
+    ip = get_client_ip(request)
+    return ip if ip != "unknown" else None
 
 
 def _hash_user_agent(request: Request) -> str | None:

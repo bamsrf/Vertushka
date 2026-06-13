@@ -98,7 +98,16 @@ class User(Base):
         default=False,
         nullable=False
     )
-    
+
+    # Версия токенов для ревокации сессий. Кладётся в JWT (claim "tv") и
+    # сверяется в get_current_user/refresh. Инкремент (смена пароля, logout-all)
+    # мгновенно инвалидирует все ранее выданные access/refresh токены.
+    token_version: Mapped[int] = mapped_column(
+        default=0,
+        nullable=False,
+        server_default="0"
+    )
+
     # Сброс пароля
     reset_code_hash: Mapped[str | None] = mapped_column(
         String(255),
