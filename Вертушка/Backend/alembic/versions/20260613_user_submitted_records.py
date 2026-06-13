@@ -1,7 +1,7 @@
 """User-submitted records (source='user')
 
 Revision ID: 20260613_user_records
-Revises: 20260602_discogs_login
+Revises: 20260613_token_version
 Create Date: 2026-06-13
 
 Третий источник записей — 'user'. Пластинка, которой нет ни в Discogs, ни в
@@ -24,7 +24,7 @@ from sqlalchemy.dialects.postgresql import UUID, JSONB
 
 
 revision = "20260613_user_records"
-down_revision = "20260602_discogs_login"
+down_revision = "20260613_token_version"
 branch_labels = None
 depends_on = None
 
