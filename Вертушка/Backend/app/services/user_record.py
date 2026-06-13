@@ -1,0 +1,199 @@
+"""
+User-submitted records (source='user') — дабл-чек и создание.
+
+preflight_dedup — ядро фичи: перед созданием user-record прогоняем каскад, чтобы
+не плодить дубли того, что уже есть в Маркете/Discogs. Переиспользуем готовые
+кирпичи listing_matcher (barcode/catalog/fuzzy/dump-index) + normalize из
+scrapers.extractors. См. docs/plans/USER_SUBMITTED_RECORDS.md §2.
+
+Каскад:
+    1. barcode  → exact в records           → DUPLICATE
+    2. catalog  → norm в records             → DUPLICATE
+    3. fuzzy(artist+title+year) в records    → LIKELY_DUPLICATE (score ≥ thr)
+    4. Discogs: dump-index (оффлайн) или live → FOUND_IN_DISCOGS
+    5. чисто                                  → ALLOW_CREATE
+"""
+import logging
+import uuid
+from dataclasses import dataclass
+
+from rapidfuzz import fuzz
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.record import Record
+from app.services.discogs import DiscogsService
+from app.services.listing_matcher import (
+    _find_by_barcode,
+    _find_by_catalog,
+    _fuzzy_candidates,
+    _is_dump_available,
+    _lookup_in_dump_index,
+)
+from app.services.scrapers.extractors import normalize_barcode, normalize_catalog
+
+logger = logging.getLogger(__name__)
+
+
+# Порог fuzzy на шкале 0..1 (title*0.6 + artist*0.3 + year-bonus 0.1), как у
+# listing_matcher._fuzzy_score. Мягче store-порога (0.85), т.к. тут human-in-loop:
+# юзер подтверждает «да, это она» или настаивает на создании.
+LIKELY_DUPLICATE_THRESHOLD = 0.72
+
+
+class PreflightStatus:
+    DUPLICATE = "DUPLICATE"            # точный матч (barcode/catalog) в records
+    LIKELY_DUPLICATE = "LIKELY_DUPLICATE"  # fuzzy-матч в records
+    FOUND_IN_DISCOGS = "FOUND_IN_DISCOGS"  # есть в Discogs → обычный флоу
+    ALLOW_CREATE = "ALLOW_CREATE"     # чисто, пускаем в форму
+
+
+@dataclass
+class PreflightResult:
+    status: str
+    # Для DUPLICATE/LIKELY_DUPLICATE — найденный Record (наш).
+    match: Record | None = None
+    # Для FOUND_IN_DISCOGS — discogs_id, чтобы фронт ушёл в Discogs-флоу.
+    discogs_id: str | None = None
+    score: float | None = None
+
+
+def _preflight_fuzzy_score(
+    rec: Record, artist: str | None, title: str | None, year: int | None
+) -> float:
+    """0..1 score по user-payload (без StoreListing). Зеркалит _fuzzy_score."""
+    title_score = fuzz.token_sort_ratio(rec.title or "", title or "") / 100.0
+    artist_score = (
+        fuzz.token_sort_ratio(rec.artist or "", artist or "") / 100.0
+        if artist else 0.5
+    )
+    year_bonus = 0.1 if (rec.year and year and rec.year == year) else 0.0
+    return min(1.0, title_score * 0.6 + artist_score * 0.3 + year_bonus)
+
+
+async def preflight_dedup(
+    *,
+    artist: str,
+    title: str,
+    year: int | None = None,
+    barcode: str | None = None,
+    catalog: str | None = None,
+    db: AsyncSession,
+    check_discogs: bool = True,
+) -> PreflightResult:
+    """Дабл-чек перед созданием user-record. Не делает commit."""
+    # 1) barcode exact
+    bc = normalize_barcode(barcode)
+    if bc:
+        rec = await _find_by_barcode(db, bc)
+        if rec is not None:
+            return PreflightResult(PreflightStatus.DUPLICATE, match=rec, score=1.0)
+
+    # 2) catalog norm
+    cat = normalize_catalog(catalog)
+    if cat:
+        rec = await _find_by_catalog(db, cat)
+        if rec is not None:
+            return PreflightResult(PreflightStatus.DUPLICATE, match=rec, score=0.9)
+
+    # 3) fuzzy(artist+title+year) против records (любой source)
+    candidates = await _fuzzy_candidates(db, artist, title)
+    best, best_score = None, 0.0
+    for rec in candidates:
+        s = _preflight_fuzzy_score(rec, artist, title, year)
+        if s > best_score:
+            best, best_score = rec, s
+    if best is not None and best_score >= LIKELY_DUPLICATE_THRESHOLD:
+        return PreflightResult(
+            PreflightStatus.LIKELY_DUPLICATE, match=best, score=round(best_score, 3)
+        )
+
+    # 4) Discogs check
+    if check_discogs:
+        discogs_id = await _check_discogs(
+            db, artist=artist, title=title, year=year, barcode=bc, catalog=cat
+        )
+        if discogs_id:
+            return PreflightResult(
+                PreflightStatus.FOUND_IN_DISCOGS, discogs_id=discogs_id
+            )
+
+    # 5) чисто
+    return PreflightResult(PreflightStatus.ALLOW_CREATE)
+
+
+async def _check_discogs(
+    db: AsyncSession,
+    *,
+    artist: str,
+    title: str,
+    year: int | None,
+    barcode: str | None,
+    catalog: str | None,
+) -> str | None:
+    """Discogs-проверка: сначала оффлайн dump-индекс, иначе live search API."""
+    # a) dump-индекс (быстро, оффлайн)
+    if await _is_dump_available(db):
+        hit = await _lookup_in_dump_index(
+            db,
+            barcode=barcode,
+            catalog=catalog,
+            artist=artist,
+            title=title,
+            year=year,
+        )
+        if hit is not None:
+            row, _method, _conf = hit
+            return str(row.get("discogs_id")) if row.get("discogs_id") else None
+        return None
+
+    # b) live Discogs search (fallback, если дамп не залит)
+    try:
+        svc = DiscogsService()
+        query = f"{artist} {title}".strip()
+        resp = await svc.search(query=query, artist=artist or None, year=year, per_page=5)
+        if resp and resp.results:
+            top = resp.results[0]
+            return str(top.discogs_id) if getattr(top, "discogs_id", None) else None
+    except Exception as e:  # noqa: BLE001 — live discogs не должен ронять preflight
+        logger.warning("preflight live discogs check failed: %s", e)
+    return None
+
+
+async def create_user_record(
+    *,
+    db: AsyncSession,
+    created_by_user_id: uuid.UUID,
+    artist: str,
+    title: str,
+    year: int | None = None,
+    label: str | None = None,
+    catalog_number: str | None = None,
+    country: str | None = None,
+    format_type: str | None = None,
+    barcode: str | None = None,
+    tracklist: list | None = None,
+    cover_image_url: str | None = None,
+    spotify_album_id: str | None = None,
+    user_submitted_data: dict | None = None,
+) -> Record:
+    """Создать source='user' запись в статусе pending. Не делает commit."""
+    rec = Record(
+        source="user",
+        created_by_user_id=created_by_user_id,
+        moderation_status="pending",
+        artist=artist,
+        title=title,
+        year=year,
+        label=label,
+        catalog_number=catalog_number,
+        country=country,
+        format_type=format_type,
+        barcode=normalize_barcode(barcode) or barcode,
+        tracklist=tracklist,
+        cover_image_url=cover_image_url,
+        spotify_album_id=spotify_album_id,
+        user_submitted_data=user_submitted_data,
+    )
+    db.add(rec)
+    await db.flush()
+    return rec

@@ -37,6 +37,9 @@ import {
   GiftGivenItem,
   GiftReceivedItem,
   CoverScanResponse,
+  SpotifyAlbumCandidate,
+  PreflightResponse,
+  UserRecordPayload,
   NotificationSettings,
   NotificationListResponse,
   UnreadCountResponse,
@@ -493,6 +496,40 @@ class ApiClient {
 
   async getRecord(id: string): Promise<VinylRecord> {
     return this.deduplicatedGet<VinylRecord>(`/records/${id}`);
+  }
+
+  // ── User-submitted records (source='user') ──────────────────────────────
+  // Дабл-чек: нет ли пластинки уже в Маркете/Discogs перед ручным созданием.
+  async preflightRecord(payload: {
+    artist: string;
+    title: string;
+    year?: number | null;
+    barcode?: string | null;
+    catalog?: string | null;
+  }): Promise<PreflightResponse> {
+    const response = await this.client.post<PreflightResponse>(
+      '/records/preflight/',
+      payload
+    );
+    return response.data;
+  }
+
+  // Автозаполнение из Spotify (артист/альбом → кандидаты с треклистом).
+  async spotifySearchAlbums(q: string): Promise<SpotifyAlbumCandidate[]> {
+    const response = await this.client.get<{ results: SpotifyAlbumCandidate[] }>(
+      '/records/spotify-search/',
+      { params: { q } }
+    );
+    return response.data.results;
+  }
+
+  // Создать source='user' запись (фото base64 + поля). Возвращает запись.
+  async createUserRecord(payload: UserRecordPayload): Promise<VinylRecord> {
+    const response = await this.client.post<VinylRecord>(
+      '/records/user/',
+      payload
+    );
+    return response.data;
   }
 
   async getRecordByDiscogsId(discogsId: string): Promise<VinylRecord> {

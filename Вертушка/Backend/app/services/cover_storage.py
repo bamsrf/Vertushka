@@ -159,6 +159,36 @@ class CoverStorageService:
                     pass
             await self._release_lock(discogs_id)
 
+    def store_user_cover(self, key: str, raw: bytes) -> str | None:
+        """
+        Сохраняет user-uploaded обложку (raw bytes) на диск с тем же resize/качеством,
+        что и discogs-обложки. key — стабильный идентификатор (напр. 'user_{record_id}').
+
+        Возвращает относительный путь 'covers/{key}.jpg' или None при ошибке.
+        Синхронный (Pillow CPU-bound) — вызывать из threadpool или быстрого пути.
+        """
+        tmp_path: Path | None = None
+        try:
+            self._ensure_covers_dir()
+            dest = self._cover_path(key)
+            tmp_path = self._tmp_path(key)
+            img = Image.open(BytesIO(raw)).convert("RGB")
+            if img.width > _MAX_SIDE or img.height > _MAX_SIDE:
+                img.thumbnail((_MAX_SIDE, _MAX_SIDE), Image.LANCZOS)
+            img.save(tmp_path, format="JPEG", quality=_JPEG_QUALITY, optimize=True)
+            os.rename(tmp_path, dest)
+            tmp_path = None
+            return f"covers/{self._cover_filename(key)}"
+        except Exception as exc:
+            logger.warning("cover_storage: failed to store user cover %s: %s", key, exc)
+            return None
+        finally:
+            if tmp_path and tmp_path.exists():
+                try:
+                    tmp_path.unlink()
+                except OSError:
+                    pass
+
     def get_cover_path(self, discogs_id: str) -> Path | None:
         """Возвращает Path к локальной обложке или None если не скачана."""
         p = self._cover_path(discogs_id)

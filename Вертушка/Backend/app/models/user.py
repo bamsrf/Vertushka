@@ -98,6 +98,13 @@ class User(Base):
         default=False,
         nullable=False
     )
+    # Доступ к admin-ленте модерации user-submitted records (§6).
+    is_staff: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        server_default="false",
+        nullable=False
+    )
 
     # Версия токенов для ревокации сессий. Кладётся в JWT (claim "tv") и
     # сверяется в get_current_user/refresh. Инкремент (смена пароля, logout-all)

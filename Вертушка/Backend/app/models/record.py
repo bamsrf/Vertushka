@@ -24,14 +24,45 @@ class Record(Base):
     
     # Источник записи: 'discogs' — пришла из Discogs API; 'store' — создана
     # из листинга магазина (для релизов которых нет на Discogs, см. матчер,
-    # шаг 6 store-native). На 'store' источники нельзя добавлять в коллекции
-    # и вишлисты в Phase 1 (см. /api/collections, /api/wishlists guards).
+    # шаг 6 store-native); 'user' — добавлена юзером вручную (пластинки нет ни
+    # в Discogs, ни в Маркете, см. docs/plans/USER_SUBMITTED_RECORDS.md). На
+    # 'store' источники нельзя добавлять в коллекции/вишлисты; 'discogs' и
+    # 'user' — можно (см. /api/collections, /api/wishlists guards, whitelist).
     source: Mapped[str] = mapped_column(
         String(20),
         nullable=False,
         default="discogs",
         server_default="discogs",
         index=True,
+    )
+
+    # --- User-submitted records (source='user') ---
+    # Автор записи. Нужен для модерации и прав (приватность pending-записей).
+    created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    # pending — приватна, видит только создатель; approved — общая (в Маркете/
+    # ленте); rejected — отклонена модератором; merged — слита в Discogs-релиз
+    # через rematch (см. merged_into_id). Для discogs/store всегда 'approved'.
+    moderation_status: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        default="approved",
+        server_default="approved",
+    )
+    # Spotify album id из enrichment (§3). Прессинги/каталог Spotify не отдаёт —
+    # их юзер вводит руками; отсюда берём год/обложку-кандидат/треклист.
+    spotify_album_id: Mapped[str | None] = mapped_column(
+        String(64),
+        nullable=True,
+    )
+    # Сырой ввод юзера + raw Spotify-ответ (аналог discogs_data).
+    user_submitted_data: Mapped[dict | None] = mapped_column(
+        JSONB,
+        nullable=True,
     )
 
     # Discogs данные

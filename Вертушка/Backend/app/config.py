@@ -39,6 +39,11 @@ class Settings(BaseSettings):
     # OpenAI API (распознавание обложки)
     openai_api_key: str = Field(default="", alias="OPENAI_API_KEY")
 
+    # Spotify API (enrichment user-submitted records, Client Credentials flow).
+    # Пустые креды → enrichment graceful no-op (юзер вводит всё руками).
+    spotify_client_id: str = Field(default="", alias="SPOTIFY_CLIENT_ID")
+    spotify_client_secret: str = Field(default="", alias="SPOTIFY_CLIENT_SECRET")
+
     # Apple Sign In
     apple_client_id: str = Field(default="", alias="APPLE_CLIENT_ID")
     apple_team_id: str = Field(default="", alias="APPLE_TEAM_ID")

@@ -41,7 +41,8 @@ class RecordResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
-    source: str = "discogs"  # 'discogs' | 'store' — store=нет на Discogs, нельзя в коллекцию
+    source: str = "discogs"  # 'discogs' | 'store' | 'user' — store/pending нельзя в коллекцию
+    moderation_status: str = "approved"  # pending/approved/rejected/merged (user-records)
     discogs_id: str | None
     discogs_master_id: str | None
     title: str
@@ -285,4 +286,55 @@ class ArtistSearchResponse(BaseModel):
     total: int
     page: int
     per_page: int
+
+
+# ── User-submitted records (source='user') ─────────────────────────────── #
+
+
+class PreflightRequest(BaseModel):
+    """Дабл-чек перед созданием user-record (см. USER_SUBMITTED_RECORDS.md §2)."""
+    artist: str = Field(..., max_length=500)
+    title: str = Field(..., max_length=500)
+    year: int | None = Field(None, ge=1900, le=2100)
+    barcode: str | None = Field(None, max_length=50)
+    catalog: str | None = Field(None, max_length=100)
+
+
+class PreflightResponse(BaseModel):
+    """DUPLICATE/LIKELY_DUPLICATE/FOUND_IN_DISCOGS/ALLOW_CREATE."""
+    status: str
+    match: RecordResponse | None = None
+    discogs_id: str | None = None
+    score: float | None = None
+
+
+class SpotifyAlbumCandidate(BaseModel):
+    """Кандидат из Spotify-поиска (автозаполнение)."""
+    id: str
+    name: str
+    artist: str
+    year: int | None = None
+    cover_url: str | None = None
+    image_url: str | None = None
+    tracks: list = []
+
+
+class SpotifySearchResponse(BaseModel):
+    results: list[SpotifyAlbumCandidate]
+
+
+class UserRecordCreate(BaseModel):
+    """Создание source='user' записи. Фото — base64 JPEG (как scan/cover)."""
+    artist: str = Field(..., max_length=500)
+    title: str = Field(..., max_length=500)
+    year: int | None = Field(None, ge=1900, le=2100)
+    label: str | None = Field(None, max_length=255)
+    catalog_number: str | None = Field(None, max_length=100)
+    country: str | None = Field(None, max_length=100)
+    format_type: str | None = Field(None, max_length=100)
+    barcode: str | None = Field(None, max_length=50)
+    spotify_album_id: str | None = Field(None, max_length=64)
+    tracklist: list | None = None
+    cover_photo_base64: str | None = None
+    spine_photo_base64: str | None = None
 
