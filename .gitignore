@@ -18,18 +18,14 @@ build/
 
 # Environment variables (ВАЖНО! Тут могут быть пароли)
 .env
-.env.local
-.env.*.local
-.env.prod
-.env.production
-.env.staging
-.env.development
+.env.*
 # Allow committed examples
 !.env.example
 !.env.*.example
 
 # Secrets / signing certs / keys
 *.key
+*.bak
 *.pem
 *.p8
 *.p12
