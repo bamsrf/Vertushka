@@ -51,6 +51,8 @@ DISCOGS_TOKEN=...   # personal access token для marketplace stats
 ```
 Все остальные значения уже подходят для локальной разработки.
 
+> ⚠️ **Проверь `DATABASE_URL`** — должен указывать на supabase-Postgres `127.0.0.1:54322/postgres`. Если в `.env` остался старый `localhost:5432/vertushka` (контейнер `vertushka_db` из ранней docker-compose-эры), `make migrate` упадёт с `DuplicateColumnError: column "estimated_price_rub" already exists` — та БД создана через `create_all` без `alembic_version`, и alembic гонит всю цепочку с нуля.
+
 ## 4. Накатить миграции
 
 ```bash

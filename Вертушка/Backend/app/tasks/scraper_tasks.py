@@ -6,7 +6,9 @@
 """
 from __future__ import annotations
 
+import asyncio
 import logging
+import os
 from datetime import datetime, timedelta
 
 from sqlalchemy import select, update
@@ -16,7 +18,7 @@ from app.database import async_session_maker
 from app.models.record import Record
 from app.models.store import Store
 from app.models.store_listing import StoreListing, ListingStatus
-from app.services.scrapers.runner import crawl_store
+from app.services.scrapers.runner import crawl_store, refresh_store_listings
 from app.services.scrapers.shops import *  # noqa: F401,F403  — auto-register parsers
 from app.services.listing_matcher import (
     match_unmatched_batch,
@@ -32,8 +34,16 @@ logger = logging.getLogger(__name__)
 # ---- Полный обход (раскидан по дням недели для не перегрузки сети) ---- #
 
 
+# Сколько магазинов обходим одновременно. Rate-limit per-domain живёт в
+# http_client, так что параллельные магазины друг другу не мешают.
+SCRAPER_CONCURRENCY = int(os.environ.get("SCRAPER_CONCURRENCY", "5"))
+
+
 async def _crawl_active_stores(filter_browser: bool | None = None, mode: str = "full") -> dict:
-    """Прогнать все активные магазины. filter_browser: True/False/None — фильтр."""
+    """Прогнать все активные магазины параллельно (Semaphore=SCRAPER_CONCURRENCY).
+
+    filter_browser: True/False/None — фильтр по requires_browser.
+    """
     counters = {"stores": 0, "ok": 0, "failed": 0, "total_upserted": 0}
     async with async_session_maker() as db:
         stmt = select(Store).where(Store.is_active.is_(True))
@@ -42,14 +52,24 @@ async def _crawl_active_stores(filter_browser: bool | None = None, mode: str = "
         stores = list((await db.execute(stmt)).scalars().all())
 
     counters["stores"] = len(stores)
-    for store in stores:
-        try:
-            res = await crawl_store(store.slug, mode=mode)
-            counters["ok"] += 1
-            counters["total_upserted"] += res.get("upserted", 0)
-        except Exception:
+    sem = asyncio.Semaphore(SCRAPER_CONCURRENCY)
+
+    async def _one(slug: str) -> int | None:
+        async with sem:
+            try:
+                res = await crawl_store(slug, mode=mode)
+                return res.get("upserted", 0)
+            except Exception:
+                logger.exception("crawl_store failed for %s", slug)
+                return None
+
+    results = await asyncio.gather(*(_one(s.slug) for s in stores))
+    for upserted in results:
+        if upserted is None:
             counters["failed"] += 1
-            logger.exception("crawl_store failed for %s", store.slug)
+        else:
+            counters["ok"] += 1
+            counters["total_upserted"] += upserted
 
     logger.info("scraper batch done: %s", counters)
     return counters
@@ -73,42 +93,105 @@ async def daily_incremental_crawl() -> dict:
     return await _crawl_active_stores(filter_browser=False, mode="incremental")
 
 
+async def daily_incremental_crawl_browser() -> dict:
+    """Ежедневно — инкрементальный обход browser-магазинов.
+
+    Полный браузерный обход остаётся еженедельным (тяжёлый), но новинки
+    и так доезжают каждый день — иначе browser-магазины отставали на неделю.
+    """
+    return await _crawl_active_stores(filter_browser=True, mode="incremental")
+
+
+# ---- Цепочка «crawl → match → invalidate → covers» --------------------- #
+
+
+async def _market_sync(filter_browser: bool, mode: str) -> dict:
+    """Один прогон всего пайплайна маркета без межзадачных лагов.
+
+    Раньше матчинг ждал hourly-задачу, обложки — interval 2h: новинка доезжала
+    до маркета за 1–3 часа после crawl. Цепочка убирает лаг — каждый шаг
+    стартует сразу после предыдущего; ошибка шага не валит остальные.
+    """
+    out: dict = {"crawl": await _crawl_active_stores(filter_browser=filter_browser, mode=mode)}
+    try:
+        out["match"] = await match_unmatched_batch(batch_size=2000)
+    except Exception:
+        logger.exception("market sync: match_unmatched failed")
+    try:
+        out["offers_invalidated"] = await invalidate_offers_for_recently_updated(window_minutes=240)
+    except Exception:
+        logger.exception("market sync: invalidate offers failed")
+    try:
+        from app.tasks.discogs_tasks import enrich_market_covers
+        out["covers"] = await enrich_market_covers()
+    except Exception:
+        logger.exception("market sync: enrich covers failed")
+    logger.info("market sync done: %s", out)
+    return out
+
+
+async def daily_market_sync() -> dict:
+    """Ночной полный цикл HTTP-магазинов: crawl → match → offers → covers."""
+    return await _market_sync(filter_browser=False, mode="full")
+
+
+async def incremental_market_sync() -> dict:
+    """Дневной цикл новинок HTTP-магазинов той же цепочкой."""
+    return await _market_sync(filter_browser=False, mode="incremental")
+
+
 # ---- Stock-refresh для активных матчей --------------------------------- #
 
 
-async def stock_refresh_active(per_store_limit: int = 100) -> dict:
-    """Обновить stock+цены листингов, привязанных к Record и показанных юзерам.
+async def stock_refresh_active(per_store_limit: int = 200, stale_hours: int = 6) -> dict:
+    """Точечно перепроверить листинги, привязанные к Record и протухшие > stale_hours.
 
-    Берёт листинги с last_seen_at > 6h, проходит per-store через crawl_full
-    но с ограниченным лимитом — это упрощённо. Для production-grade лучше
-    отдельный «refresh by URL» режим — но пока MVP.
+    Берёт именно stale-листинги (oldest first), группирует по магазину и
+    перепарсивает их URL через parser.refresh_urls(). 404/410 → removed.
+    Магазины обходятся параллельно (SCRAPER_CONCURRENCY).
     """
-    cutoff = datetime.utcnow() - timedelta(hours=6)
-    counters = {"stores": 0, "stale_count": 0}
+    cutoff = datetime.utcnow() - timedelta(hours=stale_hours)
+    counters = {"stores": 0, "checked": 0, "removed": 0, "errors": 0}
     async with async_session_maker() as db:
-        # Считаем сколько устаревших матчей
-        stale_q = await db.execute(
-            select(StoreListing.id)
+        res = await db.execute(
+            select(Store.slug, StoreListing.id, StoreListing.url)
+            .join(Store, Store.id == StoreListing.store_id)
+            .where(Store.is_active.is_(True))
+            .where(Store.requires_browser.is_(False))
             .where(StoreListing.matched_record_id.is_not(None))
             .where(StoreListing.status == ListingStatus.IN_STOCK)
             .where(StoreListing.last_seen_at < cutoff)
-            .limit(1)
+            .order_by(StoreListing.last_seen_at.asc())
         )
-        if stale_q.first() is None:
-            return counters
-        counters["stale_count"] = 1
+        rows = res.all()
 
-        stores_q = await db.execute(
-            select(Store).where(Store.is_active.is_(True), Store.requires_browser.is_(False))
-        )
-        stores = list(stores_q.scalars().all())
+    by_store: dict[str, list[tuple]] = {}
+    for slug, listing_id, url in rows:
+        bucket = by_store.setdefault(slug, [])
+        if len(bucket) < per_store_limit:
+            bucket.append((listing_id, url))
 
-    counters["stores"] = len(stores)
-    for store in stores:
-        try:
-            await crawl_store(store.slug, mode="full", limit=per_store_limit)
-        except Exception:
-            logger.exception("stock_refresh failed for %s", store.slug)
+    counters["stores"] = len(by_store)
+    sem = asyncio.Semaphore(SCRAPER_CONCURRENCY)
+
+    async def _one(slug: str, items: list[tuple]) -> dict | None:
+        async with sem:
+            try:
+                return await refresh_store_listings(slug, items)
+            except Exception:
+                logger.exception("stock_refresh failed for %s", slug)
+                return None
+
+    results = await asyncio.gather(*(_one(s, items) for s, items in by_store.items()))
+    for res_one in results:
+        if res_one is None:
+            counters["errors"] += 1
+        else:
+            counters["checked"] += res_one.get("checked", 0)
+            counters["removed"] += res_one.get("removed", 0)
+            counters["errors"] += res_one.get("errors", 0)
+
+    logger.info("stock refresh done: %s", counters)
     return counters
 
 

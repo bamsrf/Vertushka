@@ -305,7 +305,7 @@ export default function ProfileScreen() {
     }
   }, [handleExport]);
 
-  const stats = [
+  const statCards = [
     {
       label: 'В коллекции',
       value: stats?.total_records ?? collectionItems.length,
@@ -382,7 +382,7 @@ export default function ProfileScreen() {
 
         {/* Статистика 2×2 */}
         <View style={styles.statsGrid}>
-          {stats.map((stat, index) => (
+          {statCards.map((stat, index) => (
             <TouchableOpacity
               key={index}
               style={[styles.statCard, Shadows.lg]}

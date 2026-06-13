@@ -11,7 +11,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Literal
 
-from sqlalchemy import select
+from sqlalchemy import func, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -73,7 +73,12 @@ async def crawl_store(slug: str, *, mode: CrawlMode = "full", limit: int | None 
                     break
 
             await db.commit()
-            await _mark_success(db, store)
+            smoke_msg = await _smoke_check(db, store, counters, mode, limit)
+            if smoke_msg:
+                logger.error("[%s] smoke check failed: %s", slug, smoke_msg)
+                await _mark_error(db, store, smoke_msg)
+            else:
+                await _mark_success(db, store)
         except ParserNeedsBrowser as e:
             await _mark_needs_browser(db, store, str(e))
             counters["errors"] += 1
@@ -88,6 +93,60 @@ async def crawl_store(slug: str, *, mode: CrawlMode = "full", limit: int | None 
             await db.commit()
 
     logger.info("[%s] crawl(%s) done: %s", slug, mode, counters)
+    return counters
+
+
+async def refresh_store_listings(slug: str, items: list[tuple[object, str]]) -> dict:
+    """Точечный refresh конкретных листингов: перепарсить их URL, обновить
+    цену/наличие. items = [(listing_id, url)]. 404/410 → status='removed'.
+
+    В отличие от crawl_full с limit — обновляет именно протухшие листинги,
+    а не первые попавшиеся из sitemap.
+    """
+    counters = {"checked": 0, "removed": 0, "errors": 0}
+    async with async_session_maker() as db:
+        store = await _get_active_store(db, slug)
+        if not store:
+            logger.warning("Store %s: not found or inactive", slug)
+            return counters
+
+        parser = _make_parser(store)
+        http_client.configure_domain(
+            store.domain,
+            rate_per_sec=parser.rate_limit_per_sec,
+            burst=parser.rate_burst,
+        )
+        url_to_id = {url: listing_id for listing_id, url in items}
+
+        try:
+            async for url, dto in parser.refresh_urls(list(url_to_id)):
+                counters["checked"] += 1
+                try:
+                    if dto is None:
+                        await db.execute(
+                            update(StoreListing)
+                            .where(StoreListing.id == url_to_id[url])
+                            .values(status=ListingStatus.REMOVED, updated_at=datetime.utcnow())
+                        )
+                        counters["removed"] += 1
+                    else:
+                        await _upsert_listing(db, store.id, dto)
+                except SQLAlchemyError:
+                    counters["errors"] += 1
+                    logger.exception("[%s] refresh upsert failed for %s", slug, url)
+                    await db.rollback()
+            await db.commit()
+        except ParserBlocked as e:
+            await _mark_error(db, store, f"blocked: {e}")
+            counters["errors"] += 1
+            await db.commit()
+        except Exception as e:
+            await _mark_error(db, store, f"refresh crash: {e}")
+            counters["errors"] += 1
+            logger.exception("[%s] refresh failed", slug)
+            await db.commit()
+
+    logger.info("[%s] refresh done: %s", slug, counters)
     return counters
 
 
@@ -173,6 +232,31 @@ def _serialize_raw(dto: ListingDTO) -> dict:
     if dto.variants:
         out["variants_count"] = len(dto.variants)
     return out
+
+
+async def _smoke_check(
+    db, store: Store, counters: dict, mode: CrawlMode, limit: int | None = None
+) -> str | None:
+    """None = crawl выглядит здоровым. Иначе текст проблемы.
+
+    Ловит «магазин сменил HTML → парсер тихо отдаёт ноль/мусор»: сравниваем
+    результат прохода с историей листингов в БД. Для incremental пустой
+    результат — норма (новинок нет), деградацию там не детектим. Прогон с
+    limit искусственно обрезан — объёмные проверки для него тоже пропускаем.
+    """
+    existing = await db.scalar(
+        select(func.count()).select_from(StoreListing).where(StoreListing.store_id == store.id)
+    )
+    if not existing:
+        return None
+    if mode != "incremental" and limit is None:
+        if counters["discovered"] == 0:
+            return f"smoke: 0 discovered при {existing} листингах в БД"
+        if counters["discovered"] < existing * 0.1:
+            return f"smoke: discovered {counters['discovered']} < 10% от {existing} в БД"
+    if counters["discovered"] >= 10 and counters["errors"] > counters["discovered"] * 0.5:
+        return f"smoke: errors {counters['errors']}/{counters['discovered']}"
+    return None
 
 
 async def _mark_success(db, store: Store) -> None:

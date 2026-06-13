@@ -156,7 +156,9 @@ export function SocialAuthButtons({ mode }: Props) {
   };
 
   const showApple = Platform.OS === 'ios' && appleAvailable && AppleAuthentication;
-  const showGoogle = Boolean(GoogleSignin && googleWebClientId);
+  // Google Sign In скрыт: ФЗ о запрете авторизации через иностранные сервисы (ГД, 09.06.2026).
+  // Код входа сохранён — снять флаг, чтобы вернуть кнопку.
+  const showGoogle = false && Boolean(GoogleSignin && googleWebClientId);
   const showDiscogs = true; // OAuth через WebBrowser — без нативных модулей
 
   if (!showApple && !showGoogle && !showDiscogs) return null;

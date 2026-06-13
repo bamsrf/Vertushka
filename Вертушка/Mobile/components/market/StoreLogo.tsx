@@ -59,6 +59,12 @@ const STORE_REGISTRY: Record<string, {
     bgColor: '#1B1B1B',
     logoSource: require('../../assets/store-logos/stoprobotvinyl.png'),
   },
+  found: {
+    name: 'Found',
+    monogram: 'F',
+    bgColor: '#FFFFFF',
+    logoSource: require('../../assets/store-logos/found.png'),
+  },
 };
 
 interface StoreLogoProps {

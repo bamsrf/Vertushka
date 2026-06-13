@@ -79,6 +79,19 @@ STORES: list[dict] = [
         "avg_shipping_rub": Decimal("400.00"),
         "affiliate_program": None,
     },
+    {
+        "slug": "found",
+        "name": "Found",
+        "domain": "pizza.foundmoscow.com",
+        "base_url": "https://pizza.foundmoscow.com",
+        "parser_class": "found",
+        "logo_url": None,  # Mobile рендерит локальный assets/found.png по slug
+        "rating": Decimal("4.5"),  # Tilda store-API, ~1.6k товаров, винил/CD
+        "is_active": True,
+        "requires_browser": False,
+        "avg_shipping_rub": Decimal("400.00"),
+        "affiliate_program": None,
+    },
 ]
 
 

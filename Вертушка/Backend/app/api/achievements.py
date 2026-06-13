@@ -168,6 +168,9 @@ def _group_series(
     for defn in defs:
         if defn.series == "random" and not include_hidden:
             continue
+        # Реферальной программы пока нет — серия «Глас наружу» скрыта из выдачи.
+        if defn.series == "invitations":
+            continue
         ua = by_code.get(defn.code)
         grouped.setdefault(defn.series, []).append((defn, ua))
 

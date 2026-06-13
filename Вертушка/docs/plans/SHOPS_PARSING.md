@@ -20,20 +20,23 @@
 
 | Задача | Когда | Что делает | Файл |
 |---|---|---|---|
-| `daily_full_crawl_http` | **каждый день в 02:00** | Полный обход всех HTTP-магазинов (без JS) | `tasks/scraper_tasks.py` |
+| `daily_market_sync` | **каждый день в 02:00** | Цепочка: полный обход HTTP-магазинов → матчинг → сброс offers-кэша → обложки. Магазины параллельно (`SCRAPER_CONCURRENCY`, дефолт 5) | `tasks/scraper_tasks.py` |
 | `weekly_full_crawl_browser` | каждую **субботу в 02:00** | Полный обход магазинов с Cloudflare (через Playwright) | там же |
-| `daily_incremental_crawl` | **каждый день в 14:00** | Только новинки (по lastmod из sitemap) | там же |
-| `stock_refresh_active` | **каждые 6 часов** | Перепроверяет цены/наличие только тех листингов что показываются юзерам | там же |
-| `hourly_match_unmatched` | **каждый час**, batch 200 | Привязывает свежие листинги к Record | там же |
+| `daily_incremental_crawl_browser` | **каждый день в 05:30** | Новинки browser-магазинов (по lastmod из sitemap) | там же |
+| `incremental_market_sync` | **каждый день в 14:00** | Новинки HTTP-магазинов той же цепочкой crawl→match→offers→covers | там же |
+| `stock_refresh_active` | **каждые 6 часов** | Точечно перепарсивает URL протухших (>6ч) листингов, привязанных к Record. 404/410 → `removed` | там же |
+| `hourly_match_unmatched` | **каждый час**, batch 2000 | Привязывает свежие листинги к Record | там же |
 | `weekly_cleanup_stale` | каждое **воскресенье в 04:00** | Удаляет листинги с `last_seen_at > 30 дней` | там же |
 | `invalidate_offers_for_recently_updated` | **каждые 15 минут** | Сбрасывает Redis-кэш `/offers` для свежих изменений | там же |
 
 **Включается флагом** `SCRAPERS_ENABLED=true` в env прод-инстанса. На dev держим `false` — парсим вручную через CLI.
 
+**Smoke-check после каждого crawl** (`runner._smoke_check`): если магазин с историей листингов внезапно отдал 0 discovered (или <10% от истории при full-обходе, или >50% ошибок) — `last_successful_scrape_at` не обновляется, в `store.last_error` пишется диагноз, в лог летит ERROR (попадает в GlitchTip). Ловит «магазин сменил HTML → парсер тихо умер».
+
 **Что это значит для юзера:**
-- Цена в магазине поменялась → у юзера в приложении актуальная **в течение 6 часов**
-- Новая пластинка появилась в продаже → видна **в течение суток**
-- Снятая с продажи → исчезает **через 30 дней** (стабильно, не моргает на временных недоступностях)
+- Цена в магазине поменялась → у юзера в приложении актуальная **в течение 6 часов** (точечный refresh именно протухших листингов)
+- Новая пластинка появилась в продаже → видна **в маркете сразу после обхода** (02:00 / 14:00 — матчинг и обложки в той же цепочке, без межзадачного лага 1–3 ч)
+- Снятая с продажи → 404/410 ловится stock-refresh'ем → исчезает за часы; страховочный cleanup по `last_seen_at > 30 дней` остаётся
 
 ---
 
@@ -135,13 +138,14 @@
 - [x] **Сидинг магазинов**: `python -m app.scripts.seed_stores`
 - [x] **Dev-среда**: локальный Supabase + Redis в Docker, Makefile-команды
 - [x] **Пилотный парсер**: `korobkavinyla` — Tilda-магазин, ~3500 товаров. **Проверено на 200 — 199 matched (99.5%)**
+- [x] **Store-API принцип** (`shops/_tilda_store.py`): `TildaStoreParser` — весь каталог Tilda одним API вместо per-page. Первый магазин — **Found** (`shops/found.py`): live-проверка 1652 товара за ~17 запросов, parse-rate 98/100 (§9.1)
 - [x] **Mobile**: типы Offer/Store, `api.getRecordOffers()`, `<OffersBlock />`, analytics
 - [x] **Affiliate Phase A** (коммит `86d3526`): таблица `offer_clicks`, `POST /api/offers/{id}/click`, UTM-обёртка для всех ссылок, каркас под Admitad/direct
 - [x] Документация: [DEV_SETUP_LOCAL.md](dev/DEV_SETUP_LOCAL.md), этот файл, [AFFILIATE_OUTREACH_TEMPLATE.md](AFFILIATE_OUTREACH_TEMPLATE.md)
 
 ### ⚠️ В работе / не закоммичено
 - [ ] **Встройка `<OffersBlock />` в `Mobile/app/record/[id].tsx`** — лежит в твоём working tree, отделена от твоей параллельной работы над preview-mode. Закоммить когда сольёшь preview-mode.
-- [ ] **Фикс `rate_limiter` для `Priority.ENRICHMENT`** — застревает на 30s timeout, on-demand Discogs fetch фейлится. Сейчас обход через CLI-скрипт. Перед включением `SCRAPERS_ENABLED=true` на проде — обязательно фикс.
+- [x] **Фикс `rate_limiter` для `Priority.ENRICHMENT`** — закрыт коммитом `b4f09eb` (ленивый старт processor task в `acquire()`). Проверено 12.06: 5 acquires с ENRICHMENT из голого скрипта без lifespan — мгновенно, без 30s-таймаута. Блокер на `SCRAPERS_ENABLED=true` снят.
 
 ### ⏳ Не начато
 - [ ] Сидинг следующих магазинов (см. §8)
@@ -151,7 +155,7 @@
 - [ ] **Affiliate Phase B-CPA** — регистрация в Admitad (только если будут маркетплейсы)
 - [ ] **Affiliate Phase C** — cron `fetch_affiliate_conversions` + дашборд
 - [ ] Админ-страница `/admin/unmatched` для ручной привязки
-- [ ] Smoke-tests парсеров (заметить когда сайт магазина поменял HTML)
+- [x] Smoke-tests парсеров — `runner._smoke_check` после каждого crawl (0 discovered / <10% от истории / >50% ошибок → ERROR-лог + `store.last_error`, см. §2)
 - [ ] Кнопка «Не нашёл? Запросить парсинг» — для отсутствующих магазинов
 - [ ] Расширение «source=store Record» (релизы которых нет в Discogs) — **только если будет нужно** после реальных цифр
 
@@ -163,7 +167,7 @@
 Парсер-фреймворк + 1 пилотный магазин + Mobile блок. Доказано что цепочка работает.
 
 ### Фаза 1 — 5-10 магазинов (2-3 недели) ← **СЛЕДУЮЩИЙ ШАГ**
-1. Фиксануть `rate_limiter` (Priority.ENRICHMENT timeout)
+1. ~~Фиксануть `rate_limiter` (Priority.ENRICHMENT timeout)~~ ✅ `b4f09eb`
 2. Добавить 5-9 парсеров для магазинов **с sitemap + JSON-LD** (это самые простые)
 3. Локальный smoke-тест каждого
 4. Включить `SCRAPERS_ENABLED=true` на staging
@@ -234,6 +238,7 @@
 | 11 | Союз | soyuz.ru | ⏳ | medium (Bitrix?) | utm/direct | крупный, винил — небольшая категория |
 | 12 | Stereozona (СПб) | stereozona.ru | ⏳ | ? | direct | СПб-аудитория |
 | 13 | Мир Винила | mirvinila.com | ⏳ | ? | direct | |
+| 14 | Found | pizza.foundmoscow.com/vinyl | ✅ парсер готов, 98/100 parse-rate | easy (Tilda store-API) | direct | **новый принцип** — весь каталог 1 API, ~1.6k товаров; barcode нет, матч по artist+title |
 | — | OZON (винил) | ozon.ru | потом | — | **admitad** | если будут пользовательские запросы |
 | — | Wildberries (винил) | wildberries.ru | потом | — | **admitad** | то же самое |
 
@@ -273,6 +278,26 @@
 7. **Проверить match-rate**: `make scrape-match`.
 
 8. **Если match-rate < 90%** — посмотреть какие поля плохо извлекаются (barcode? catalog?).
+
+### 9.1 Два принципа harvest'а каталога
+
+**Старый принцип (sitemap + per-page):** `discover_urls()` из sitemap → `parse_listing(url)` на каждый товар. N запросов на N товаров (korobkavinyla ≈ 3500). Подходит магазинам без публичного data-API.
+
+**Новый принцип (store-API):** магазин отдаёт весь каталог одним JSON-эндпоинтом, парсер тянет его постранично — десятки запросов вместо тысяч. Вежливее, быстрее, данные структурированы.
+
+**Tilda-магазины** (Found, и korobkavinyla тоже может мигрировать) — реализован в `shops/_tilda_store.py` (`TildaStoreParser`):
+
+```
+GET https://store.tildaapi.com/api/getproductslist/
+    ?storepartuid=<storepart>&recid=<recid>&getparts=true&slice=<page>&size=100
+→ {"total": N, "products": [{uid,title,price,priceold,quantity,gallery,url,...}, ...]}
+```
+
+`recid` / `storepart` берутся из HTML витрины — в вызове `t_store_init('<recid>', {... storepart:'<storepart>' ...})`. Подкласс задаёт `store_recid`/`store_partuid` и реализует только `parse_product(dict) → ListingDTO | None` (None = пропустить нон-медиа). `crawl_full`/`refresh_urls` переопределены в базе (refresh — один проход каталога + map по `uid` из url).
+
+Пример Found: `title` = `«Виниловая пластинка {Artist} – {Album} (формат, год) [Лейбл, год] Style: жанры»`, sku/characteristics пусты → barcode нет, матч по artist+title (fuzzy + on-demand Discogs). Парсинг title в `shops/found.py:_parse_title`.
+
+**Чек-лист для Tilda-магазина** (вместо шагов 1–4 выше): `curl` витрину → найти `t_store_init(...)` → скопировать recid+storepart → `shops/{slug}.py(TildaStoreParser)` с `parse_product()`.
 
 ---
 
@@ -467,7 +492,7 @@ Admitad в РФ работает (Mitgo-холдинг переехал в Лю�
 
 1. **Слить твою preview-mode правку** в `Mobile/app/record/[id].tsx` + закоммитить вместе с добавленной строкой `<OffersBlock />`.
 2. **Прислать мне список магазинов** (топ-10 которые хочешь подключить первыми) — для каждого пройду чек-лист §9 (по 30 мин).
-3. **Решить про rate_limiter фикс** — взять отдельной задачей до включения cron на проде.
+3. ~~**Решить про rate_limiter фикс**~~ — ✅ закрыт `b4f09eb` (ленивый старт processor).
 4. **Подумать про affiliate** — есть ли уже договорённости с кем-то? Параметры Admitad/EPN?
 5. **Когда будут 5+ магазинов** — задеплоить и неделю наблюдать (фаза 1).
 

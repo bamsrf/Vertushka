@@ -125,9 +125,10 @@ async def lifespan(app: FastAPI):
             # ---- Парсеры магазинов винила (под env SCRAPERS_ENABLED) ----
             if os.environ.get("SCRAPERS_ENABLED", "false").lower() == "true":
                 from app.tasks.scraper_tasks import (
-                    daily_full_crawl_http,
+                    daily_market_sync,
+                    incremental_market_sync,
                     weekly_full_crawl_browser,
-                    daily_incremental_crawl,
+                    daily_incremental_crawl_browser,
                     stock_refresh_active,
                     hourly_match_unmatched,
                     weekly_cleanup_stale,
@@ -136,9 +137,11 @@ async def lifespan(app: FastAPI):
                     daily_rematch_format_conflicts,
                     hourly_enrich_artist_thumbs,
                 )
-                scheduler.add_job(daily_full_crawl_http, 'cron', hour=2, minute=0, id='scrape_full_http')
+                # Цепочки crawl→match→offers→covers: новинки в маркете сразу после обхода
+                scheduler.add_job(daily_market_sync, 'cron', hour=2, minute=0, id='scrape_full_http')
                 scheduler.add_job(weekly_full_crawl_browser, 'cron', day_of_week='sat', hour=2, minute=0, id='scrape_full_browser')
-                scheduler.add_job(daily_incremental_crawl, 'cron', hour=14, minute=0, id='scrape_incremental')
+                scheduler.add_job(daily_incremental_crawl_browser, 'cron', hour=5, minute=30, id='scrape_incremental_browser')
+                scheduler.add_job(incremental_market_sync, 'cron', hour=14, minute=0, id='scrape_incremental')
                 scheduler.add_job(stock_refresh_active, 'interval', hours=6, id='scrape_stock_refresh')
                 scheduler.add_job(hourly_match_unmatched, 'interval', minutes=60, id='scrape_match_unmatched')
                 scheduler.add_job(weekly_cleanup_stale, 'cron', day_of_week='sun', hour=4, minute=0, id='scrape_cleanup_stale')
