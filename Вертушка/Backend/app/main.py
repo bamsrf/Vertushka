@@ -135,6 +135,7 @@ async def lifespan(app: FastAPI):
                     invalidate_offers_for_recently_updated,
                     daily_rematch_store_native,
                     daily_rematch_format_conflicts,
+                    daily_rematch_album_with_barcode,
                     hourly_enrich_artist_thumbs,
                 )
                 # Цепочки crawl→match→offers→covers: новинки в маркете сразу после обхода
@@ -148,6 +149,7 @@ async def lifespan(app: FastAPI):
                 scheduler.add_job(invalidate_offers_for_recently_updated, 'interval', minutes=15, id='scrape_invalidate_offers')
                 scheduler.add_job(daily_rematch_store_native, 'cron', hour=3, minute=30, id='scrape_rematch_store_native')
                 scheduler.add_job(daily_rematch_format_conflicts, 'cron', hour=3, minute=45, id='scrape_rematch_format_conflicts')
+                scheduler.add_job(daily_rematch_album_with_barcode, 'cron', hour=4, minute=15, id='scrape_rematch_album_barcode')
                 scheduler.add_job(hourly_enrich_artist_thumbs, 'interval', minutes=60, id='enrich_artist_thumbs')
                 logger.info("✅ Scraper jobs зарегистрированы (SCRAPERS_ENABLED=true)")
 

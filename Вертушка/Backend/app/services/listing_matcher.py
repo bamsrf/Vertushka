@@ -24,7 +24,7 @@ from typing import Iterable
 import re
 
 from rapidfuzz import fuzz
-from sqlalchemy import select, text
+from sqlalchemy import select, text, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import async_session_maker
@@ -34,6 +34,7 @@ from app.services.scrapers.extractors import (
     normalize_barcode,
     normalize_catalog,
     infer_format,
+    barcode_variants,
 )
 from app.services.vinyl_color import color_family
 
@@ -180,19 +181,23 @@ async def _lookup_in_dump_index(
     if not await _is_dump_available(db):
         return None
 
-    # 1) barcode — точный
+    # 1) barcode — точный. Пробуем UPC↔EAN-13 варианты (§A WS-A4): дамп хранит
+    # один товар то как UPC-A(12), то как EAN-13('0'+UPC), ~20% с лидирующим
+    # нулём — без вариантов матч зависел бы от формы.
     if barcode:
-        row = (await db.execute(
-            text(
-                "SELECT discogs_id, master_id, artist, title, year, country, "
-                "       format_type, label, cover_image_url "
-                "FROM discogs_releases_index "
-                "WHERE barcode_norm = :b LIMIT 1"
-            ),
-            {"b": barcode},
-        )).mappings().first()
-        if row:
-            return dict(row), MatchMethod.DUMP_INDEX, Decimal("1.000")
+        variants = barcode_variants(barcode)
+        if variants:
+            row = (await db.execute(
+                text(
+                    "SELECT discogs_id, master_id, artist, title, year, country, "
+                    "       format_type, label, cover_image_url "
+                    "FROM discogs_releases_index "
+                    "WHERE barcode_norm = ANY(:bs) LIMIT 1"
+                ),
+                {"bs": variants},
+            )).mappings().first()
+            if row:
+                return dict(row), MatchMethod.DUMP_INDEX, Decimal("1.000")
 
     # 2) catalog — точный
     if catalog:
@@ -295,8 +300,12 @@ async def _find_by_discogs_id(db: AsyncSession, discogs_id: str) -> Record | Non
 
 
 async def _find_by_barcode(db: AsyncSession, barcode: str) -> Record | None:
-    res = await db.execute(select(Record).where(Record.barcode == barcode))
-    return res.scalar_one_or_none()
+    # UPC↔EAN-13 варианты (§A WS-A4) — запись могла быть создана с другой формой.
+    variants = barcode_variants(barcode)
+    if not variants:
+        return None
+    res = await db.execute(select(Record).where(Record.barcode.in_(variants)))
+    return res.scalars().first()
 
 
 async def _find_by_catalog(db: AsyncSession, catalog_norm: str) -> Record | None:
@@ -1008,6 +1017,112 @@ async def rematch_format_conflicts_batch(batch_size: int = 500) -> dict[str, int
             logger.exception("offers cache invalidation failed after format rematch")
 
     logger.info("format-conflict rematch: %s", counters)
+    return counters
+
+
+async def rematch_album_with_barcode_batch(batch_size: int = 300) -> dict[str, int]:
+    """Перематчить album-tier листинги, у которых появился barcode (§A WS-A4.5).
+
+    Кейс: чёрный In Utero исторически привязан fuzzy к зелёной записи. После
+    A4 (фикс normalize_barcode для SKU-паддинга) у листинга в raw_payload теперь
+    есть barcode, опознающий КОНКРЕТНЫЙ пресс. Но match_unmatched_batch такие не
+    трогает (matched_record_id IS NOT NULL), поэтому чиним точечно.
+
+    Берём листинги, сматченные слабым методом (fuzzy / dump_index / discogs_fetch
+    с confidence < 0.95 = album-tier), у которых в raw_payload есть barcode.
+    Делаем rematch ИНЛАЙН со сравнением: пробуем match_listing заново; оставляем
+    новый матч только если он успешен (иначе восстанавливаем старую связь —
+    оффер не должен пропасть). Если новый record отличается — инвалидируем кэш
+    обеих записей. Inline-сравнение исключает loop/churn: barcode-матч даёт
+    dump_index conf 1.0 → в следующий заход уже не попадает.
+
+    Возвращает: scanned, remapped, unchanged, errors.
+    """
+    counters = {"scanned": 0, "remapped": 0, "unchanged": 0, "errors": 0}
+    affected_discogs_ids: set[str] = set()
+    async with async_session_maker() as db:
+        res = await db.execute(
+            select(StoreListing)
+            .where(StoreListing.matched_record_id.is_not(None))
+            .where(StoreListing.status.in_(("in_stock", "preorder")))
+            .where(StoreListing.match_method.in_(
+                (MatchMethod.FUZZY, MatchMethod.DUMP_INDEX, MatchMethod.DISCOGS_FETCH)
+            ))
+            .where(or_(
+                StoreListing.match_confidence.is_(None),
+                StoreListing.match_confidence < Decimal("0.95"),
+            ))
+            .where(func.jsonb_exists(StoreListing.raw_payload, "barcode"))
+            .order_by(StoreListing.matched_at.asc())
+            .limit(batch_size)
+        )
+        listings = list(res.scalars().all())
+
+        for listing in listings:
+            counters["scanned"] += 1
+            old_id = listing.matched_record_id
+            old_method = listing.match_method
+            old_conf = listing.match_confidence
+            old_at = listing.matched_at
+            old_rec = await db.get(Record, old_id) if old_id else None
+            old_did = old_rec.discogs_id if old_rec else None
+
+            sp = await db.begin_nested()
+            try:
+                listing.matched_record_id = None
+                listing.match_confidence = None
+                listing.match_method = None
+                listing.matched_at = None
+                ok = await match_listing(listing, db)
+                await sp.commit()
+            except Exception:
+                await sp.rollback()
+                # Восстанавливаем старую связь — не оставляем оффер висеть.
+                listing.matched_record_id = old_id
+                listing.match_method = old_method
+                listing.match_confidence = old_conf
+                listing.matched_at = old_at
+                counters["errors"] += 1
+                logger.exception("rematch-barcode failed for listing %s", listing.id)
+                continue
+
+            new_id = listing.matched_record_id
+            if ok and new_id is not None:
+                if new_id != old_id:
+                    counters["remapped"] += 1
+                    if old_did:
+                        affected_discogs_ids.add(old_did)
+                    new_rec = await db.get(Record, new_id)
+                    if new_rec and new_rec.discogs_id:
+                        affected_discogs_ids.add(new_rec.discogs_id)
+                else:
+                    counters["unchanged"] += 1
+            else:
+                # Rematch не нашёл — восстанавливаем прежнюю связь (оффер не теряем).
+                listing.matched_record_id = old_id
+                listing.match_method = old_method
+                listing.match_confidence = old_conf
+                listing.matched_at = old_at
+                counters["unchanged"] += 1
+
+        try:
+            await db.commit()
+        except Exception:
+            await db.rollback()
+            counters["errors"] += counters["remapped"]
+            counters["remapped"] = 0
+            logger.exception("commit failed in rematch_album_with_barcode_batch")
+            return counters
+
+    if affected_discogs_ids:
+        try:
+            from app.api.offers import invalidate_record_offers
+            for did in affected_discogs_ids:
+                await invalidate_record_offers(did)
+        except Exception:
+            logger.exception("offers cache invalidation failed after barcode rematch")
+
+    logger.info("album-barcode rematch: %s", counters)
     return counters
 
 

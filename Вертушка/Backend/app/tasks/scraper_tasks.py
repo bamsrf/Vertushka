@@ -24,6 +24,7 @@ from app.services.listing_matcher import (
     match_unmatched_batch,
     rematch_store_native_batch,
     rematch_format_conflicts_batch,
+    rematch_album_with_barcode_batch,
 )
 from app.api.offers import invalidate_record_offers
 from app.api.records import _ensure_record_artist_data
@@ -280,6 +281,18 @@ async def daily_rematch_format_conflicts() -> dict:
     (~5500 листингов) за ≤2 недели; конфликтов кратно меньше.
     """
     return await rematch_format_conflicts_batch(batch_size=500)
+
+
+async def daily_rematch_album_with_barcode() -> dict:
+    """Раз в сутки — перематч album-tier листингов, у которых появился barcode.
+
+    §A WS-A4.5: после фикса normalize_barcode (SKU-паддинг) у листингов в
+    raw_payload появляется barcode, опознающий конкретный пресс. Слабые
+    (fuzzy/dump/discogs_fetch <0.95) исторические матчи перепривязываются на
+    верный пресс по barcode. Inline-rematch со сравнением → без loop/churn.
+    batch 300/день покрывает каталог за ≤2 недели.
+    """
+    return await rematch_album_with_barcode_batch(batch_size=300)
 
 
 # ---- Чистка stale ------------------------------------------------------ #

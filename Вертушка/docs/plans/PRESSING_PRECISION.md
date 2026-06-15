@@ -60,8 +60,22 @@ bulk-бэкфилл не окупается — отложено.
 офферы → [master/versions](../../Mobile/app/master/[id]/versions.tsx).
 
 ## Порядок
-`A1 (штраф)` → `A2 (приоритет exact)` → `A4 (barcode в скраперах)` →
-`A3 (цвет при детали)` → `A5 (UX)` → потом reset-sweep конфликтов.
+`A1 (штраф)` → `A2 (приоритет exact)` → `A4 (barcode)` → `A4.5 (reset-sweep)` →
+`A3 (цвет при детали)` → `A5 (UX)`.
 
-A1+A2 = безопасный изолированный backend-слайс (precision, без удаления офферов).
-A4 = главный рычаг но рискованнее (скраперы). A5 = фронт.
+## Статус (реализовано)
+- ✅ **Фаза 0** — `pressing_match` tier в offers (commit `fe7d193`, в проде).
+- ✅ **A1** — цвето-штраф в `_fuzzy_score` (commit `67621a1`).
+- ✅ **A2** — exact dump (barcode/catalog) до fuzzy (commit `8da93ec`).
+- ✅ **A4** — `normalize_barcode` чинит SKU-паддинг (`000`+EAN→EAN); `barcode_variants`
+  (UPC↔EAN-13) в dump + local lookup. Корень: 15-значный SKU ронялся → терялся
+  barcode → fuzzy. In Utero SKU `000720642453612` → `720642453612` → винил-пресс
+  master 13859 (не зелёный).
+- ✅ **A4.5** — `rematch_album_with_barcode_batch` + `daily_rematch_album_with_barcode`
+  (cron 04:15): перематч album-tier листингов с появившимся barcode, inline-rematch
+  со сравнением (без loop/churn, оффер не теряется). Чинит существующие (In Utero
+  переедет с зелёной на чёрную запись после ре-скрейпа+sweep).
+- ⏸️ **A3** — отложено (потолок низкий, см. выше).
+- ✅ **A5** — покрыто Фазой 0 (секция «Пресс может отличаться» + Market-CTA +
+  навигация alt-строк на верный пресс) и кнопкой «Смотреть другие версии релиза»
+  → master/versions. Доп-UI не делаем без конкретного гэпа.

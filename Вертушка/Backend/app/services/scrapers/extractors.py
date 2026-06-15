@@ -182,10 +182,45 @@ _DISCOGS_MASTER_RE = re.compile(r"discogs\.com/(?:[\w\-]+/)?master/(\d+)", re.I)
 
 
 def normalize_barcode(value: str | None) -> str | None:
+    """Очистить штрихкод до 8-14 цифр.
+
+    §A WS-A4: магазины часто паддят SKU лидирующими нулями (Tilda даёт
+    '000'+EAN, напр. '000720642453612' для In Utero). Раньше это >14 цифр →
+    отбрасывалось → листинг терял barcode → fuzzy-коллизия на чужой пресс.
+    Теперь при >14 снимаем лидирующие нули (паддинг), затем — если всё ещё
+    >14 — берём правые 14 (хвост несёт код). UPC↔EAN-13 эквивалентность
+    разрешается на этапе матча через barcode_variants(), а не здесь.
+    """
     if not value:
         return None
     cleaned = _BARCODE_CLEAN.sub("", str(value))
+    if len(cleaned) > 14:
+        cleaned = cleaned.lstrip("0")
+        if len(cleaned) > 14:
+            cleaned = cleaned[-14:]
     return cleaned if 8 <= len(cleaned) <= 14 else None
+
+
+def barcode_variants(barcode: str | None) -> list[str]:
+    """Эквивалентные формы штрихкода для матча (UPC-A ↔ EAN-13 + паддинг).
+
+    Discogs-дамп хранит один и тот же товар то как UPC-A (12 цифр,
+    '720642453612'), то как EAN-13 ('0'+UPC). ~20% записей дампа с лидирующим
+    нулём. Чтобы матч не зависел от формы, при lookup'е пробуем набор:
+    сам barcode, без лидирующих нулей, и UPC↔EAN-13 конверсию. Все кандидаты
+    отфильтрованы по длине 8-14.
+    """
+    if not barcode:
+        return []
+    out = {barcode}
+    stripped = barcode.lstrip("0")
+    if stripped:
+        out.add(stripped)
+    if len(barcode) == 12:
+        out.add("0" + barcode)  # UPC-A → EAN-13
+    elif len(barcode) == 13 and barcode.startswith("0"):
+        out.add(barcode[1:])  # EAN-13 → UPC-A
+    return [b for b in out if 8 <= len(b) <= 14]
 
 
 def normalize_catalog(value: str | None) -> str | None:
