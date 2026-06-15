@@ -23,7 +23,6 @@ import * as Haptics from 'expo-haptics';
 
 import { MarketPalette } from '../../constants/theme';
 import MarketBackground from '../../components/market/MarketBackground';
-import MarketCurtain from '../../components/market/MarketCurtain';
 import MarketMain from '../../components/market/MarketMain';
 import { useMarketStore } from '../../lib/marketStore';
 
@@ -73,9 +72,15 @@ export default function MarketIndexScreen() {
   const handleCurtainExit = useCallback(() => {
     if (committingRef.current) return;
     committingRef.current = true;
-    if (router.canGoBack()) router.back();
-    else router.replace('/(tabs)/search');
-  }, [router]);
+    // Жест называется pull-to-search → всегда ведём в Поиск, а не back()
+    // к экрану, что запушил Маркет (запись/коллекция).
+    //
+    // /market — root-route поверх (tabs). replace монтирует СВЕЖИЙ search-
+    // таб, который читает committed из persisted marketStore. Сбрасываем
+    // committed=false ДО навигации, иначе search re-открывает Маркет-слой.
+    setMarketCommitted(false);
+    router.replace('/(tabs)/search');
+  }, [router, setMarketCommitted]);
 
   const onScroll = useAnimatedScrollHandler({
     onScroll: (e) => {
@@ -106,7 +111,6 @@ export default function MarketIndexScreen() {
     <View style={styles.root}>
       <MarketBackground forcedMode="market" />
       <MarketMain onScroll={onScroll} paddingTop={insets.top + 16} pullFraction={exitProgress} />
-      <MarketCurtain mode="market" progress={exitProgress} />
     </View>
   );
 }
