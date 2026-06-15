@@ -28,6 +28,7 @@ import { api } from '../lib/api';
 import { Colors, Spacing, BorderRadius } from '../constants/theme';
 import { ms } from '../lib/responsive';
 import { AchievementPin } from '../components/AchievementPin';
+import { prewarmAchievementPins, prefetchAchievementAsset } from '../lib/achievementAssets';
 import { AchievementsHero } from '../components/AchievementsHero';
 import { AchievementsTourOverlay } from '../components/AchievementsTourOverlay';
 import { MetaTrophyShelf } from '../components/MetaTrophyShelf';
@@ -83,6 +84,11 @@ export default function AchievementsScreen() {
     setLoading(true);
     load().finally(() => setLoading(false));
   }, [load]);
+
+  // Прогрев декода PNG-пинов в фоне — иконки в шите/шере готовы мгновенно.
+  useEffect(() => {
+    prewarmAchievementPins();
+  }, []);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -412,10 +418,11 @@ function DetailsSheet({
       // ниже и шаринг деградирует до текстового.
       const { captureRef } = require('react-native-view-shot');
       const opts = { format: 'png' as const, quality: 1, result: 'tmpfile' as const };
-      // Дизайн-пин рендерится через async <Image>. Без прогрева view-shot
-      // успевает снять кадр до декодирования картинки → пустой пин.
-      // Даём кадру отрисоваться и снимаем дважды (первый снимок — тёплый).
-      await new Promise((r) => setTimeout(r, 350));
+      // Дизайн-пин рендерится через async <Image>. Без готового битмапа view-shot
+      // снимает пустой пин. Детерминированно ждём декода именно этого пина
+      // (мгновенно, если уже прогрет prewarm'ом), затем даём кадру осесть в layout.
+      await prefetchAchievementAsset(item);
+      await new Promise((r) => requestAnimationFrame(() => r(null)));
       await captureRef(shareCardRef, opts);
       const uri = await captureRef(shareCardRef, opts);
       const available = await Sharing.isAvailableAsync();

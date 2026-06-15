@@ -24,7 +24,6 @@ import { useEffect, useRef } from 'react';
 import {
   Animated,
   Easing,
-  Image,
   ImageSourcePropType,
   StyleProp,
   StyleSheet,
@@ -32,6 +31,7 @@ import {
   View,
   ViewStyle,
 } from 'react-native';
+import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { SvgXml } from 'react-native-svg';
 
@@ -72,6 +72,8 @@ interface Props {
   style?: StyleProp<ViewStyle>;
   /** Подсветить пин ауры при анлок-анимации (используется в overlay). */
   glowOverride?: boolean;
+  /** Колбэк, когда PNG-пин декодирован и отрисован (для гейта снимка шер-карточки). */
+  onAssetLoad?: () => void;
 }
 
 const NEAR_UNLOCK_THRESHOLD = 0.75;
@@ -115,7 +117,7 @@ function pickAsset(item: AchievementItem, locked: boolean, isMystery: boolean): 
   return null;
 }
 
-export function AchievementPin({ item, size = 72, style, glowOverride = false }: Props) {
+export function AchievementPin({ item, size = 72, style, glowOverride = false, onAssetLoad }: Props) {
   const tierPalette = TIER_AURA[item.tier.key] || TIER_AURA.simple;
   const isMystery = item.is_hidden && !item.is_unlocked;
   const locked = !item.is_unlocked;
@@ -181,7 +183,9 @@ export function AchievementPin({ item, size = 72, style, glowOverride = false }:
       <Image
         source={asset.source}
         style={{ width: size, height: size }}
-        resizeMode="contain"
+        contentFit="contain"
+        cachePolicy="memory-disk"
+        onLoad={onAssetLoad}
       />
     );
   } else if (renderer) {

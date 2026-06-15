@@ -28,6 +28,7 @@ import { NotificationItem } from '@/components/notifications/NotificationItem';
 import { SocialFeedRow } from '@/components/notifications/SocialFeedRow';
 import { NotificationsEmpty } from '@/components/notifications/NotificationsEmpty';
 import { useNotificationsStore } from '@/lib/notificationsStore';
+import { prewarmAchievementPins } from '@/lib/achievementAssets';
 import { groupByDateBucket } from '@/lib/notificationsGrouping';
 import { api } from '@/lib/api';
 import { toast } from '@/lib/toast';
@@ -117,6 +118,12 @@ export default function NotificationsScreen() {
   useEffect(() => {
     loadPersonal();
   }, [loadPersonal]);
+
+  // Прогрев PNG-пинов ачивок: из уведомлений часто проваливаются в ачивку,
+  // прогретый декод даёт мгновенную иконку и непустой шер.
+  useEffect(() => {
+    prewarmAchievementPins();
+  }, []);
 
   useEffect(() => {
     if (tab === 'social' && socialItems.length === 0) {
