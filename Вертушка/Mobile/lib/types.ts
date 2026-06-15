@@ -130,6 +130,11 @@ export interface Offer {
   // Phase 5 fields — для OfferDetailCard в bottom-sheet (Backend Phase 6):
   catalog_number?: string | null;
   is_alt_version?: boolean;
+  /** Уверенность что это ИМЕННО этот пресс ('exact') или просто тот же альбом
+   * ('album' — fuzzy/низкая confidence/конфликт цвета). is_alt_version всегда
+   * подразумевает 'album'. Mobile рисует 'album' в секции «пресс может
+   * отличаться» + дисклеймер + увод в магазин. */
+  pressing_match?: 'exact' | 'album';
   image_url?: string | null;
   /** discogs_id записи к которой матчен листинг. Может отличаться от
    * запроса при is_alt_version=true. Используется для navigation

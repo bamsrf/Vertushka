@@ -3,7 +3,7 @@
  * Горизонтальный скролл карточек + кнопка создания новой папки
  * Показывает галочку на папках, где уже лежат выбранные WishlistItem'ы
  */
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -14,6 +14,8 @@ import {
   Image,
   Alert,
   ActivityIndicator,
+  Animated,
+  Easing,
 } from 'react-native';
 import { toast } from '../lib/toast';
 import { Icon } from '@/components/ui';
@@ -45,6 +47,33 @@ export function WishlistFolderPickerModal({
   const { wishlistFolders, createWishlistFolder } = useCollectionStore();
   const [isCreating, setIsCreating] = useState(false);
   const [folderItemIds, setFolderItemIds] = useState<Record<string, Set<string>>>({});
+
+  // Кастомная анимация: фон фейдится, лист выезжает снизу.
+  // animationType="slide" тянул вместе с листом и затемнение — выглядело коряво.
+  const [mounted, setMounted] = useState(visible);
+  const progress = useRef(new Animated.Value(0)).current;
+  const sheetHeight = useRef(0);
+
+  useEffect(() => {
+    if (visible) {
+      setMounted(true);
+      Animated.timing(progress, {
+        toValue: 1,
+        duration: 260,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }).start();
+    } else if (mounted) {
+      Animated.timing(progress, {
+        toValue: 0,
+        duration: 200,
+        easing: Easing.in(Easing.cubic),
+        useNativeDriver: true,
+      }).start(({ finished }) => {
+        if (finished) setMounted(false);
+      });
+    }
+  }, [visible]);
 
   const visibleFolders = wishlistFolders.filter(f => f.id !== excludeFolderId);
 
@@ -106,15 +135,25 @@ export function WishlistFolderPickerModal({
     );
   };
 
+  const translateY = progress.interpolate({
+    inputRange: [0, 1],
+    outputRange: [sheetHeight.current || 400, 0],
+  });
+
   return (
     <Modal
-      visible={visible}
+      visible={mounted}
       transparent
-      animationType="slide"
+      animationType="none"
       onRequestClose={onClose}
     >
-      <TouchableOpacity style={styles.overlay} activeOpacity={1} onPress={onClose}>
-        <View style={styles.sheet} onStartShouldSetResponder={() => true}>
+      <Animated.View style={[styles.overlay, { opacity: progress }]}>
+        <TouchableOpacity style={styles.overlayTouch} activeOpacity={1} onPress={onClose} />
+        <Animated.View
+          style={[styles.sheet, { transform: [{ translateY }] }]}
+          onStartShouldSetResponder={() => true}
+          onLayout={(e) => { sheetHeight.current = e.nativeEvent.layout.height; }}
+        >
           <View style={styles.header}>
             <Text style={styles.title}>Выбрать папку</Text>
             <TouchableOpacity onPress={onClose} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
@@ -162,8 +201,8 @@ export function WishlistFolderPickerModal({
               })}
             </ScrollView>
           )}
-        </View>
-      </TouchableOpacity>
+        </Animated.View>
+      </Animated.View>
       <Toast config={toastConfig} topOffset={56} />
     </Modal>
   );
@@ -174,6 +213,9 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: Colors.overlay,
     justifyContent: 'flex-end',
+  },
+  overlayTouch: {
+    ...StyleSheet.absoluteFillObject,
   },
   sheet: {
     backgroundColor: Colors.background,

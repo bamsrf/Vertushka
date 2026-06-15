@@ -22,7 +22,7 @@ import { useCollectionStore, useAuthStore } from '../../lib/store';
 import { ms } from '../../lib/responsive';
 import { useTourTarget } from '../../lib/useTourTarget';
 import { api, resolveMediaUrl } from '../../lib/api';
-import { CollectionItem, WishlistItem, CollectionTab, RecordOffersSummary } from '../../lib/types';
+import { CollectionItem, WishlistItem, CollectionTab, RecordOffersSummary, Offer } from '../../lib/types';
 import { Colors, Spacing, Typography, BorderRadius, Gradients, Shadows } from '../../constants/theme';
 import { summaryToHotStock, type ResolvedHotStock } from '../../components/HotStockTag';
 import WishlistListSwipe from '../../components/market/WishlistListSwipe';
@@ -185,12 +185,17 @@ export default function CollectionScreen() {
         // record_discogs_id — это discogs_id ДРУГОГО пресса (не из вишлиста).
         recordDiscogsId: o.record_discogs_id ?? null,
       });
+      // Album-level (другой пресс мастера ИЛИ неуверенный матч) → нижняя секция.
+      // isAlt (2-й арг mapOffer) = навигация на другой пресс — только для
+      // настоящего is_alt_version; album-той-же-записи покупается напрямую.
+      const isAlbum = (o: Offer): boolean =>
+        !!o.is_alt_version || o.pressing_match === 'album';
       const exact: OfferDetailData[] = offers
-        .filter((o) => !o.is_alt_version)
+        .filter((o) => !isAlbum(o))
         .map((o) => mapOffer(o, false));
       const alt: OfferDetailData[] = offers
-        .filter((o) => o.is_alt_version)
-        .map((o) => mapOffer(o, true));
+        .filter((o) => isAlbum(o))
+        .map((o) => mapOffer(o, !!o.is_alt_version));
       const minPrice = exact[0]?.priceRub ?? alt[0]?.priceRub ?? 0;
       offersSheetRef.current?.present({
         artist: wi.record.artist,

@@ -44,6 +44,18 @@ class OfferResponse(BaseModel):
         False,
         description="True если другой pressing того же master_id (для бейджа «АЛТ»)",
     )
+    pressing_match: Literal["exact", "album"] = Field(
+        "exact",
+        description=(
+            "Уверенность что листинг — ИМЕННО этот пресс, а не просто тот же "
+            "альбом. 'exact' — матч по barcode/discogs_url/catalog или "
+            "store-native (точная идентичность пресса). 'album' — матч по "
+            "fuzzy(artist+title) / низкой confidence ИЛИ конфликт цвета: "
+            "альбом тот, но цвет/издание может отличаться. Mobile рисует такие "
+            "офферы в секции «пресс может отличаться» + дисклеймер + увод в "
+            "магазин. is_alt_version=true всегда подразумевает album."
+        ),
+    )
     image_url: str | None = Field(
         None, description="Обложка из листинга (fallback для record.cover_image_url)"
     )
@@ -85,13 +97,22 @@ class RecordOffersSummary(BaseModel):
       - всё ноль                                  → 'none' (рендерим null)
     """
 
-    in_stock_count: int = Field(0, description="Листинги exact-match со status=in_stock")
+    in_stock_count: int = Field(
+        0,
+        description=(
+            "Листинги ИМЕННО этого пресса (pressing_match='exact') со "
+            "status=in_stock. Album-level матчи (fuzzy/конфликт цвета) сюда НЕ "
+            "входят — они в alt_version_count, чтобы pill «N в наличии» не врал."
+        ),
+    )
     preorder_count: int = Field(0, description="Листинги со status=preorder")
     alt_version_count: int = Field(
         0,
         description=(
-            "Листинги с тем же discogs_master_id, но другим discogs_id (другой пресс). "
-            "Используется только если in_stock_count == 0 — для variant=altVersion."
+            "Листинги «другого/неуверенного пресса»: другой discogs_id того же "
+            "master_id ЛИБО album-level матч на этой же записи "
+            "(pressing_match='album'). Используется если in_stock_count == 0 — "
+            "для variant=altVersion."
         ),
     )
     min_price_rub: Decimal | None = Field(

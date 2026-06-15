@@ -25,6 +25,8 @@ import {
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BlurView } from 'expo-blur';
+import { LinearGradient } from 'expo-linear-gradient';
+import MaskedView from '@react-native-masked-view/masked-view';
 
 import { Icon } from '@/components/ui';
 import { api, resolveMediaUrl } from '../../../lib/api';
@@ -234,13 +236,26 @@ export default function StorePage() {
       <MarketBackground forcedMode="market" />
 
       {/* Top safe-area blur strip — закрывает контент под статус-баром
-          при скролле. zIndex выше FlatList. */}
-      <BlurView
-        intensity={24}
-        tint="dark"
-        style={[styles.topSafeBlur, { height: insets.top }]}
+          при скролле. zIndex выше FlatList. Нижний край размыт в
+          прозрачность через MaskedView — без резкой линии-среза. */}
+      <MaskedView
+        style={[styles.topSafeBlur, { height: insets.top + 24 }]}
         pointerEvents="none"
-      />
+        maskElement={
+          <LinearGradient
+            colors={['#000', '#000', 'transparent']}
+            locations={[0, 0.6, 1]}
+            style={{ flex: 1 }}
+          />
+        }
+      >
+        <BlurView intensity={24} tint="dark" style={{ flex: 1 }} />
+        <LinearGradient
+          colors={['rgba(14,7,38,0.55)', 'rgba(14,7,38,0)']}
+          locations={[0, 1]}
+          style={StyleSheet.absoluteFill}
+        />
+      </MaskedView>
 
       {/* Header ВНЕ FlatList — иначе re-render списка на каждый refetch
           re-mount'ает MarketSearchInput → клавиатура дисмиссится на
@@ -377,7 +392,6 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 0, left: 0, right: 0,
     zIndex: 50,
-    backgroundColor: 'rgba(14,7,38,0.55)',
   },
   coverWrap: {
     width: '100%',
