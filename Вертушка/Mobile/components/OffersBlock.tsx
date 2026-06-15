@@ -76,13 +76,19 @@ export function OffersBlock({ discogsId, recordId }: OffersBlockProps) {
     };
   }, [discogsId, recordId, analyticsId]);
 
-  // Разделяем exact и alt-version для двух блоков с разными заголовками
-  const exactOffers = useMemo(
-    () => (offers ?? []).filter((o) => !o.is_alt_version),
+  // Album-level = другой пресс мастера (is_alt_version) ИЛИ неуверенный матч
+  // на этой же записи (pressing_match='album': fuzzy/низкая confidence/цвет).
+  // Оба идут в нижнюю секцию «пресс может отличаться». НО навигация строки
+  // (переход на другой пресс) остаётся только у is_alt_version — album-той-же-
+  // записи покупается напрямую.
+  const isAlbumLevel = (o: Offer): boolean =>
+    !!o.is_alt_version || o.pressing_match === 'album';
+  const pressingOffers = useMemo(
+    () => (offers ?? []).filter((o) => !isAlbumLevel(o)),
     [offers],
   );
-  const altOffers = useMemo(
-    () => (offers ?? []).filter((o) => o.is_alt_version),
+  const albumOffers = useMemo(
+    () => (offers ?? []).filter((o) => isAlbumLevel(o)),
     [offers],
   );
 
@@ -117,46 +123,54 @@ export function OffersBlock({ discogsId, recordId }: OffersBlockProps) {
     <View style={styles.shell}>
       <View style={styles.headerRow}>
         <Text style={styles.title}>Купить сейчас</Text>
-        {exactOffers.length > 0 && (
+        {pressingOffers.length > 0 && (
           <View style={styles.headerBadge}>
             <Icon name="disc" size={10} color="onBrand" style={{ opacity: 0.85 }} />
-            <Text style={styles.headerBadgeText}>{exactOffers.length} в наличии</Text>
+            <Text style={styles.headerBadgeText}>{pressingOffers.length} в наличии</Text>
           </View>
         )}
       </View>
 
-      {/* Exact-match блок — точное совпадение pressing'а */}
-      {exactOffers.length > 0 && (
+      {/* Pressing-блок — точно ЭТОТ пресс (barcode/discogs_url/catalog/store-native) */}
+      {pressingOffers.length > 0 && (
         <View style={styles.list}>
-          {exactOffers.map((offer) => (
+          {pressingOffers.map((offer) => (
             <OfferRow
               key={offer.listing_id}
               offer={offer}
               discogsId={discogsId}
               router={router}
+              isAlt={!!offer.is_alt_version}
             />
           ))}
         </View>
       )}
 
-      {/* Alt-version блок — другой пресс того же мастера. Юзер просил:
-          «когда проваливаюсь в версию релиза с альтернативной ценой —
-          её нет». Теперь рендерим с заголовком-разделителем. */}
-      {altOffers.length > 0 && (
+      {/* Album-level блок — тот же альбом, но пресс/цвет/издание может
+          отличаться (fuzzy-матч или другой пресс мастера). Не выдаём за
+          «этот пресс»; дисклеймер + ниже увод в магазин проверить вживую. */}
+      {albumOffers.length > 0 && (
         <>
           <View style={styles.altDivider}>
             <View style={styles.altDividerLine} />
-            <Text style={styles.altDividerText}>Другая версия мастера</Text>
+            <Text style={styles.altDividerText}>Пресс может отличаться</Text>
             <View style={styles.altDividerLine} />
           </View>
+          {pressingOffers.length === 0 && (
+            <Text style={styles.albumHint}>
+              Точно этого пресса в наличии нет. Ниже — тот же альбом в других
+              изданиях; цвет и версия могут отличаться, проверьте на странице
+              магазина.
+            </Text>
+          )}
           <View style={styles.list}>
-            {altOffers.map((offer) => (
+            {albumOffers.map((offer) => (
               <OfferRow
                 key={offer.listing_id}
                 offer={offer}
                 discogsId={discogsId}
                 router={router}
-                isAlt
+                isAlt={!!offer.is_alt_version}
               />
             ))}
           </View>
@@ -205,7 +219,8 @@ export function OffersBlock({ discogsId, recordId }: OffersBlockProps) {
 
 interface OfferRowProps {
   offer: Offer;
-  discogsId: string;
+  /** discogs_id записи — для analytics. undefined у store-native (recordId-путь). */
+  discogsId?: string;
   router: ReturnType<typeof useRouter>;
   isAlt?: boolean;
 }
@@ -224,7 +239,7 @@ function OfferRow({ offer, discogsId, router, isAlt }: OfferRowProps) {
       listing_id: offer.listing_id,
       store_slug: offer.store.slug,
       price_rub: Number(offer.price_rub),
-      discogs_id: discogsId,
+      discogs_id: discogsId ?? '',
     });
 
     // 1. Регистрируем клик и получаем финальный URL с affiliate-subid.
@@ -361,6 +376,12 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.55)',
     letterSpacing: 1.2,
     textTransform: 'uppercase',
+  },
+  albumHint: {
+    ...Typography.caption,
+    color: 'rgba(255,255,255,0.6)',
+    marginBottom: Spacing.sm,
+    lineHeight: 17,
   },
   loadingRow: {
     paddingVertical: Spacing.md,

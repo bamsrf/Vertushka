@@ -140,7 +140,7 @@ export const OffersBottomSheet = forwardRef<OffersBottomSheetRef, OffersBottomSh
                 <>
                   <View style={styles.separator}>
                     <View style={styles.separatorLine} />
-                    <Text style={styles.separatorText}>Другая версия мастера</Text>
+                    <Text style={styles.separatorText}>Пресс может отличаться</Text>
                     <View style={styles.separatorLine} />
                   </View>
                   <View style={styles.list}>

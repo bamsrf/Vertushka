@@ -36,6 +36,11 @@ from app.schemas.offer import (
 )
 from app.services.affiliate import wrap_url
 from app.services.cache import cache
+from app.services.vinyl_color import (
+    PRESSING_EXACT_METHODS,
+    color_family,
+    sql_pressing_tier,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -65,10 +70,16 @@ async def get_record_offers(
     if cached is not None:
         return [OfferResponse.model_validate(item) for item in cached]
 
-    rec_res = await db.execute(select(Record.id).where(Record.discogs_id == discogs_id))
-    record_id = rec_res.scalar_one_or_none()
-    if record_id is None:
+    rec_res = await db.execute(
+        select(Record.id, Record.discogs_data["vinyl_color_raw"].astext).where(
+            Record.discogs_id == discogs_id
+        )
+    )
+    rec_row = rec_res.first()
+    if rec_row is None:
         return []
+    record_id, record_color_raw = rec_row
+    record_color_fam = color_family(record_color_raw)
 
     cutoff = datetime.utcnow() - timedelta(days=STALE_AFTER_DAYS)
 
@@ -91,7 +102,11 @@ async def get_record_offers(
     res = await db.execute(stmt)
     listings = list(res.unique().scalars().all())
 
-    offers = [_to_response(li) for li in listings if li.store and li.store.is_active]
+    offers = [
+        _to_response(li, pressing_match=pressing_tier(li, record_color_fam))
+        for li in listings
+        if li.store and li.store.is_active
+    ]
 
     await cache.set(
         OFFERS_CACHE_NS,
@@ -102,12 +117,42 @@ async def get_record_offers(
     return offers
 
 
-def _to_response(listing: StoreListing, *, is_alt_version: bool = False) -> OfferResponse:
+def pressing_tier(listing: StoreListing, record_color_fam: str | None) -> str:
+    """'exact' | 'album' — тот ли это пресс или просто тот же альбом.
+
+    Зеркало sql_pressing_tier() (vinyl_color.py). Конфликт семьи цвета (обе
+    стороны известны и разные) перебивает всё → 'album'. Иначе exact-методы →
+    'exact', fuzzy → 'album', остальные (dump/discogs_fetch) — по confidence.
+    """
+    lf = color_family(listing.vinyl_color_raw)
+    if lf and record_color_fam and lf != record_color_fam:
+        return "album"
+    method = listing.match_method
+    if method in PRESSING_EXACT_METHODS:
+        return "exact"
+    if method == "fuzzy":
+        return "album"
+    try:
+        conf = float(listing.match_confidence or 0)
+    except (TypeError, ValueError):
+        conf = 0.0
+    return "exact" if conf >= 0.95 else "album"
+
+
+def _to_response(
+    listing: StoreListing,
+    *,
+    is_alt_version: bool = False,
+    pressing_match: str = "exact",
+) -> OfferResponse:
     """Preview-URL для GET /offers — без subid (он создаётся при клике).
 
     `is_alt_version` — пробрасывается в response для бейджа «АЛТ» в
     Mobile OfferDetailCard (Phase 5). True если у listing'а тот же
     discogs_master_id, что у запрошенной записи, но другой discogs_id.
+
+    `pressing_match` — 'exact'/'album' (см. pressing_tier). alt-version всегда
+    'album'.
     """
     store = listing.store
     return OfferResponse(
@@ -131,6 +176,7 @@ def _to_response(listing: StoreListing, *, is_alt_version: bool = False) -> Offe
         # парсеры кладут их в raw_payload JSONB. Достаём оттуда safe-fallback'ом.
         catalog_number=_get_payload_str(listing, 'catalog_number'),
         is_alt_version=is_alt_version,
+        pressing_match="album" if is_alt_version else pressing_match,
         image_url=_get_payload_str(listing, 'image_url'),
         # discogs_id записи, к которой матчен листинг (для navigation на
         # детальную alt-pressing'а). relationship называется `record`.
@@ -382,12 +428,23 @@ async def get_records_offers_summary(
 
     cutoff = datetime.utcnow() - timedelta(days=STALE_AFTER_DAYS)
 
+    # Tier-выражение (exact/album) — зеркало pressing_tier() в SQL. tr.rcolor =
+    # цвет записи из discogs_data, sl.* — листинг. Static-строка (нет user input).
+    tier = sql_pressing_tier(
+        method_col="sl.match_method",
+        confidence_col="sl.match_confidence",
+        listing_color_col="sl.vinyl_color_raw",
+        record_color_expr="tr.rcolor",
+    )
+
     # Один SQL — JOIN records → store_listings, agg по discogs_id, GROUP BY.
-    # Параллельно considering alt-versions через master_id self-join.
+    # in_stock_count = ТОЛЬКО exact-pressing; album-level (fuzzy/конфликт цвета)
+    # на этой записи + alt-version'ы другого мастера → alt_version_count.
     sql = text(
-        """
+        f"""
         WITH target_records AS (
-            SELECT id, discogs_id, discogs_master_id
+            SELECT id, discogs_id, discogs_master_id,
+                   discogs_data->>'vinyl_color_raw' AS rcolor
             FROM records
             WHERE discogs_id = ANY(:discogs_ids)
         ),
@@ -396,16 +453,26 @@ async def get_records_offers_summary(
                 tr.discogs_id,
                 COUNT(*) FILTER (
                     WHERE sl.status = 'in_stock' AND sl.last_seen_at >= :cutoff
+                      AND ({tier}) = 'exact'
                 ) AS in_stock_count,
+                COUNT(*) FILTER (
+                    WHERE sl.status = 'in_stock' AND sl.last_seen_at >= :cutoff
+                      AND ({tier}) = 'album'
+                ) AS album_in_stock_count,
                 COUNT(*) FILTER (
                     WHERE sl.status = 'preorder' AND sl.last_seen_at >= :cutoff
                 ) AS preorder_count,
                 MIN(sl.price_rub) FILTER (
                     WHERE sl.status = 'in_stock' AND sl.last_seen_at >= :cutoff
-                      AND sl.price_rub IS NOT NULL
+                      AND sl.price_rub IS NOT NULL AND ({tier}) = 'exact'
                 ) AS min_price_rub,
+                MIN(sl.price_rub) FILTER (
+                    WHERE sl.status = 'in_stock' AND sl.last_seen_at >= :cutoff
+                      AND sl.price_rub IS NOT NULL AND ({tier}) = 'album'
+                ) AS min_price_album_rub,
                 COUNT(DISTINCT sl.store_id) FILTER (
                     WHERE sl.status = 'in_stock' AND sl.last_seen_at >= :cutoff
+                      AND ({tier}) = 'exact'
                 ) AS stores_with_stock
             FROM target_records tr
             LEFT JOIN store_listings sl ON sl.matched_record_id = tr.id
@@ -435,9 +502,11 @@ async def get_records_offers_summary(
             es.discogs_id,
             COALESCE(es.in_stock_count, 0)      AS in_stock_count,
             COALESCE(es.preorder_count, 0)      AS preorder_count,
-            COALESCE(als.alt_version_count, 0)  AS alt_version_count,
+            -- alt = другой пресс мастера + album-level на этой записи
+            COALESCE(als.alt_version_count, 0)
+              + COALESCE(es.album_in_stock_count, 0)  AS alt_version_count,
             es.min_price_rub,
-            als.min_price_alt_rub,
+            LEAST(als.min_price_alt_rub, es.min_price_album_rub) AS min_price_alt_rub,
             FALSE AS has_last_one,
             COALESCE(es.stores_with_stock, 0)   AS stores_with_stock
         FROM exact_stats es
@@ -486,7 +555,11 @@ async def get_record_offers_full(
     cutoff = datetime.utcnow() - timedelta(days=STALE_AFTER_DAYS)
 
     rec_res = await db.execute(
-        select(Record.id, Record.discogs_master_id).where(Record.discogs_id == discogs_id)
+        select(
+            Record.id,
+            Record.discogs_master_id,
+            Record.discogs_data["vinyl_color_raw"].astext,
+        ).where(Record.discogs_id == discogs_id)
     )
     rec_row = rec_res.first()
     if rec_row is None:
@@ -494,7 +567,8 @@ async def get_record_offers_full(
             summary=RecordOffersSummary(),
             offers=[],
         )
-    record_id, master_id = rec_row
+    record_id, master_id, record_color_raw = rec_row
+    record_color_fam = color_family(record_color_raw)
 
     # Exact offers
     exact_stmt = (
@@ -530,27 +604,46 @@ async def get_record_offers_full(
         )
         alt_listings = list((await db.execute(alt_stmt)).unique().scalars().all())
 
+    # Тиры для exact-листингов (на этой же записи). alt-листинги всегда album.
+    exact_tier = {li.id: pressing_tier(li, record_color_fam) for li in exact_listings}
+
     offers = [
-        _to_response(li) for li in exact_listings if li.store and li.store.is_active
+        _to_response(li, pressing_match=exact_tier[li.id])
+        for li in exact_listings
+        if li.store and li.store.is_active
     ] + [
         _to_response(li, is_alt_version=True)
         for li in alt_listings
         if li.store and li.store.is_active
     ]
 
-    # Summary
-    in_stock = [li for li in exact_listings if li.status == ListingStatus.IN_STOCK]
+    # Summary — pill «N в наличии» считает ТОЛЬКО exact-pressing. Album-level
+    # (fuzzy/конфликт цвета) на этой записи + alt-version'ы другого пресса
+    # сворачиваются в alt_version_count, чтобы не врать про «этот пресс».
+    pressing_in_stock = [
+        li for li in exact_listings
+        if li.status == ListingStatus.IN_STOCK and exact_tier[li.id] == "exact"
+    ]
+    album_in_stock = [
+        li for li in exact_listings
+        if li.status == ListingStatus.IN_STOCK and exact_tier[li.id] == "album"
+    ] + [li for li in alt_listings if li.status == ListingStatus.IN_STOCK]
     preorder = [li for li in exact_listings if li.status == ListingStatus.PREORDER]
-    alt_in_stock = [li for li in alt_listings if li.status == ListingStatus.IN_STOCK]
 
     summary = RecordOffersSummary(
-        in_stock_count=len(in_stock),
+        in_stock_count=len(pressing_in_stock),
         preorder_count=len(preorder),
-        alt_version_count=len(alt_in_stock),
-        min_price_rub=min((li.price_rub for li in in_stock if li.price_rub is not None), default=None),
-        min_price_alt_rub=min((li.price_rub for li in alt_in_stock if li.price_rub is not None), default=None),
+        alt_version_count=len(album_in_stock),
+        min_price_rub=min(
+            (li.price_rub for li in pressing_in_stock if li.price_rub is not None),
+            default=None,
+        ),
+        min_price_alt_rub=min(
+            (li.price_rub for li in album_in_stock if li.price_rub is not None),
+            default=None,
+        ),
         has_last_one=False,
-        stores_with_stock=len({li.store_id for li in in_stock}),
+        stores_with_stock=len({li.store_id for li in pressing_in_stock}),
     )
 
     return RecordOffersFullResponse(summary=summary, offers=offers)
@@ -578,9 +671,15 @@ async def get_record_offers_full_by_id(
 
     # Проверяем существование записи (по UUID, без фильтра по source —
     # endpoint можно дёргать и для discogs-записей если уж нашли по id).
-    rec_res = await db.execute(select(Record.id).where(Record.id == record_id))
-    if rec_res.first() is None:
+    rec_res = await db.execute(
+        select(Record.id, Record.discogs_data["vinyl_color_raw"].astext).where(
+            Record.id == record_id
+        )
+    )
+    rec_row = rec_res.first()
+    if rec_row is None:
         return RecordOffersFullResponse(summary=RecordOffersSummary(), offers=[])
+    record_color_fam = color_family(rec_row[1])
 
     exact_stmt = (
         select(StoreListing)
@@ -595,21 +694,40 @@ async def get_record_offers_full_by_id(
     )
     exact_listings = list((await db.execute(exact_stmt)).unique().scalars().all())
 
+    tier = {li.id: pressing_tier(li, record_color_fam) for li in exact_listings}
+
     offers = [
-        _to_response(li) for li in exact_listings if li.store and li.store.is_active
+        _to_response(li, pressing_match=tier[li.id])
+        for li in exact_listings
+        if li.store and li.store.is_active
     ]
 
-    in_stock = [li for li in exact_listings if li.status == ListingStatus.IN_STOCK]
+    pressing_in_stock = [
+        li for li in exact_listings
+        if li.status == ListingStatus.IN_STOCK and tier[li.id] == "exact"
+    ]
+    album_in_stock = [
+        li for li in exact_listings
+        if li.status == ListingStatus.IN_STOCK and tier[li.id] == "album"
+    ]
     preorder = [li for li in exact_listings if li.status == ListingStatus.PREORDER]
 
     summary = RecordOffersSummary(
-        in_stock_count=len(in_stock),
+        in_stock_count=len(pressing_in_stock),
         preorder_count=len(preorder),
-        alt_version_count=0,  # store-native: master_id неизвестен, alt'ов нет
-        min_price_rub=min((li.price_rub for li in in_stock if li.price_rub is not None), default=None),
-        min_price_alt_rub=None,
+        # store-native: master_id нет → alt'ов другого пресса нет, но album-level
+        # на этой же записи (низкая confidence) всё равно демоутим из «в наличии».
+        alt_version_count=len(album_in_stock),
+        min_price_rub=min(
+            (li.price_rub for li in pressing_in_stock if li.price_rub is not None),
+            default=None,
+        ),
+        min_price_alt_rub=min(
+            (li.price_rub for li in album_in_stock if li.price_rub is not None),
+            default=None,
+        ),
         has_last_one=False,
-        stores_with_stock=len({li.store_id for li in in_stock}),
+        stores_with_stock=len({li.store_id for li in pressing_in_stock}),
     )
 
     return RecordOffersFullResponse(summary=summary, offers=offers)
