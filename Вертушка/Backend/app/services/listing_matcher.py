@@ -35,6 +35,7 @@ from app.services.scrapers.extractors import (
     normalize_catalog,
     infer_format,
 )
+from app.services.vinyl_color import color_family
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +46,13 @@ FUZZY_CANDIDATES_LIMIT = 50
 # Штраф fuzzy-score при конфликте носителя (винил-листинг ↔ CD-релиз и т.п.).
 # 1.0 * 0.3 = 0.3 < FUZZY_THRESHOLD → конфликтный кандидат отсекается.
 FORMAT_MISMATCH_PENALTY = 0.3
+
+# Штраф fuzzy-score при конфликте семьи цвета винила (чёрный листинг ↔ зелёный
+# релиз и т.п.). §A WS-A1: fuzzy опознаёт альбом, не пресс — без штрафа чёрный
+# In Utero липнет к зелёной записи. Применяем ТОЛЬКО когда обе семьи известны
+# (см. vinyl_color.color_family) — отсутствие цвета не штрафуем. 0.3 симметрично
+# FORMAT_MISMATCH_PENALTY: уводит кандидата ниже FUZZY_THRESHOLD.
+COLOR_MISMATCH_PENALTY = 0.3
 
 
 def _format_family(raw: str | None) -> str | None:
@@ -343,6 +351,16 @@ async def _fuzzy_candidates(
     return list(res2.scalars().all())
 
 
+def _record_color_family(rec: Record) -> str | None:
+    """Семья цвета записи из discogs_data->vinyl_color_raw (=formats[0].text).
+
+    color_family чистит шум (180 Gram / Jewel Case / Cinram → None), так что
+    сюда попадает только реальный цвет.
+    """
+    data = rec.discogs_data or {}
+    return color_family(data.get("vinyl_color_raw"))
+
+
 def _fuzzy_score(rec: Record, listing: StoreListing) -> float:
     title_score = fuzz.token_sort_ratio(rec.title or "", listing.title_raw or "") / 100.0
     artist_score = (
@@ -357,6 +375,13 @@ def _fuzzy_score(rec: Record, listing: StoreListing) -> float:
     lf, rf = _format_family(listing.format_raw), _format_family(rec.format_type)
     if lf and rf and lf != rf:
         score *= FORMAT_MISMATCH_PENALTY
+    # Color-aware (§A WS-A1): обе семьи цвета известны и различны → давим ниже
+    # порога. Без этого fuzzy привязывает чёрный листинг к зелёной записи и
+    # выдаёт чужой пресс за «этот». Неизвестный цвет (одна из сторон) — не
+    # штрафуем, чтобы не отсекать легитимные матчи без данных о цвете.
+    lcf, rcf = color_family(listing.vinyl_color_raw), _record_color_family(rec)
+    if lcf and rcf and lcf != rcf:
+        score *= COLOR_MISMATCH_PENALTY
     return score
 
 
