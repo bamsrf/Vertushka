@@ -424,6 +424,30 @@ async def match_listing(listing: StoreListing, db: AsyncSession) -> bool:
             _apply_match(listing, rec, Decimal("0.900"), MatchMethod.CATALOG)
             return True
 
+    # 3.5) Exact dump lookup (barcode/catalog) ДО fuzzy — §A WS-A2.
+    # barcode/catalog опознают КОНКРЕТНЫЙ пресс; локальный fuzzy (шаг 4)
+    # опознаёт только альбом и может схлопнуть листинг на чужой пресс раньше,
+    # чем мы найдём верный по barcode. Прогоняем exact-сигнал дампа вперёд.
+    # artist/title=None → внутри _lookup_in_dump_index срабатывают только
+    # barcode/catalog ветки (fuzzy-блок требует artist AND title). Создаёт
+    # верный per-pressing Record если его ещё нет в БД.
+    if barcode or catalog:
+        exact_dump = await _lookup_in_dump_index(
+            db,
+            barcode=barcode,
+            catalog=catalog,
+            artist=None,
+            title=None,
+            year=listing.year_raw,
+            listing_format=listing.format_raw,
+        )
+        if exact_dump:
+            entry, method, conf = exact_dump
+            rec = await _get_or_create_record_from_dump(db, entry)
+            if rec:
+                _apply_match(listing, rec, conf, method)
+                return True
+
     # 4) Fuzzy
     candidates = await _fuzzy_candidates(db, listing.artist_raw, listing.title_raw)
     if candidates:
