@@ -2244,18 +2244,33 @@ async def get_artist_masters(
     При load_all=true загружает все страницы за один вызов.
     Не требует авторизации.
     """
-    response.headers["Cache-Control"] = "public, max-age=1800"
+    # Короткий edge-кэш: обложки части мастеров могут догружаться фоном
+    # (watchdog в get_artist_masters), max-age=300 даёт им зажить за пару заходов.
+    response.headers["Cache-Control"] = "public, max-age=300"
     discogs = DiscogsService()
 
     try:
-        masters = await discogs.get_artist_masters(
-            artist_id=artist_id,
-            page=page,
-            per_page=per_page,
-            load_all=load_all,
-            sort_order=sort_order,
+        # Watchdog 25с — backstop, чтобы клиент не висел в axios timeout 60с,
+        # если Discogs деградирует. Внутренний bound на cover-fallback уже
+        # держит ответ в ~10с; creds юзера уводят вызовы на его личный bucket.
+        masters = await asyncio.wait_for(
+            discogs.get_artist_masters(
+                artist_id=artist_id,
+                page=page,
+                per_page=per_page,
+                load_all=load_all,
+                sort_order=sort_order,
+                creds=user_creds(current_user),
+            ),
+            timeout=25,
         )
         return masters
+    except asyncio.TimeoutError:
+        response.headers["Cache-Control"] = "no-store"
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Discogs API отвечает медленно — попробуйте ещё раз через минуту",
+        )
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
