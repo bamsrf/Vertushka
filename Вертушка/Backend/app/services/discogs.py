@@ -1384,6 +1384,7 @@ class DiscogsService:
         per_page: int = 100,
         load_all: bool = False,
         sort_order: str = "desc",
+        creds: "tuple[str, str] | None" = None,
     ) -> MasterSearchResponse:
         """Master releases артиста по `docs/plans/PRINCIPLES.md`.
 
@@ -1434,6 +1435,7 @@ class DiscogsService:
                 "sort_order": sort_order,
             },
             priority=Priority.SEARCH,
+            creds=creds,
         )
 
         masters: list[dict] = []
@@ -1463,6 +1465,7 @@ class DiscogsService:
                         "per_page": 100,
                     },
                     priority=Priority.SEARCH,
+                    creds=creds,
                 )
                 for s in search_data.get("results", []):
                     sid = str(s.get("id", ""))
@@ -1472,16 +1475,35 @@ class DiscogsService:
                 logger.exception("Search API for artist masters covers failed: %s", artist_id)
 
         # 3) Параллельный fallback /masters/{id} для тех, кого Search не покрыл.
+        # Раньше этот gather блокировал весь ответ на N×/masters/{id} (до ~100
+        # вызовов, ENRICHMENT-приоритет, до 120с в очереди каждый). Под нагрузкой
+        # app-bucket'а эндпоинт висел >60с → axios timeout на клиенте, экран
+        # артиста падал в «Ошибка загрузки релизов».
+        # Теперь ограничиваем общим watchdog'ом: вернувшиеся обложки используем,
+        # остаток — None (добьётся при следующем заходе, каждый _get_master_info
+        # кэшируется индивидуально на 7 дней). covers_complete управляет TTL,
+        # чтобы частичный ответ не залип надолго.
         missing_ids = [str(m["id"]) for m in masters if str(m["id"]) not in search_by_id]
         info_by_id: dict[str, dict] = {}
+        covers_complete = True
         if missing_ids:
-            results = await asyncio.gather(
-                *[self._get_master_info(mid) for mid in missing_ids],
-                return_exceptions=True,
-            )
-            for mid, res in zip(missing_ids, results):
-                if isinstance(res, dict):
-                    info_by_id[mid] = res
+            tasks = {
+                mid: asyncio.create_task(self._get_master_info(mid))
+                for mid in missing_ids
+            }
+            done, pending = await asyncio.wait(tasks.values(), timeout=6)
+            for mid, t in tasks.items():
+                if t in done and not t.cancelled():
+                    try:
+                        res = t.result()
+                        if isinstance(res, dict):
+                            info_by_id[mid] = res
+                    except Exception:
+                        pass
+            if pending:
+                covers_complete = False
+                for t in pending:
+                    t.cancel()
 
         # 4) Сборка результатов: cover приоритет Search → master_info → None.
         all_results: list[MasterSearchResult] = []
@@ -1549,7 +1571,10 @@ class DiscogsService:
             has_more=has_more,
             next_cursor=next_cursor,
         )
-        await cache.set("artist_masters", ck, response.model_dump(), TTL_ARTIST_MASTERS)
+        # Частичный ответ (covers ещё догружаются) кэшируем коротко, чтобы
+        # следующий заход добрал недостающие обложки из per-master кэша.
+        ttl = TTL_ARTIST_MASTERS if covers_complete else 90
+        await cache.set("artist_masters", ck, response.model_dump(), ttl)
         return response
 
     # ------------------------------------------------------------------
