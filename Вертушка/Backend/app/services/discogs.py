@@ -1042,9 +1042,15 @@ class DiscogsService:
         self,
         master_id: str,
         page: int = 1,
-        per_page: int = 50
+        per_page: int = 50,
+        creds: "tuple[str, str] | None" = None,
     ) -> MasterVersionsResponse:
-        """Получение всех версий (изданий) мастер-релиза. Кэшируется в Redis."""
+        """Получение всех версий (изданий) мастер-релиза. Кэшируется в Redis.
+
+        creds — OAuth юзера: запрос идёт через его персональный bucket (60/min),
+        а не общий app-bucket. Критично для inline-фетча обложек на экране версий:
+        под нагрузкой app-bucket дренится и inline таймаутится → список без обложек.
+        """
         ck = f"v2:{master_id}:p{page}:pp{per_page}"
         cached = await cache.get("master_versions", ck)
         if cached is not None:
@@ -1055,7 +1061,7 @@ class DiscogsService:
             "per_page": per_page,
         }
 
-        data = await self._get(f"{self.BASE_URL}/masters/{master_id}/versions", params=params, priority=Priority.DETAIL)
+        data = await self._get(f"{self.BASE_URL}/masters/{master_id}/versions", params=params, priority=Priority.DETAIL, creds=creds)
 
         results = []
         for item in data.get("versions", []):

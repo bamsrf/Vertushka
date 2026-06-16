@@ -1723,7 +1723,8 @@ async def get_master_versions(
             try:
                 api_resp = await asyncio.wait_for(
                     DiscogsService().get_master_versions(
-                        master_id=master_id, page=page, per_page=per_page
+                        master_id=master_id, page=page, per_page=per_page,
+                        creds=user_creds(current_user),
                     ),
                     timeout=4,
                 )
