@@ -1711,16 +1711,57 @@ async def get_master_versions(
     if local_versions is not None and local_versions.total > 0:
         versions = local_versions
         main_release_id = None
-        # Фоновый 1-вызов к Discogs: подтягиваем thumbs для всех версий страницы.
-        # get_master_versions кэшируется на TTL_MASTER_VERSIONS — повторные заходы
-        # попадут в Redis-кэш discogs-service без нового HTTP запроса.
+
+        # P3: inline short-watchdog. Если у большинства версий нет обложки —
+        # пробуем 1 вызов Discogs прямо сейчас (≤4с) и мёржим thumbs в ответ.
+        # get_master_versions Redis-кэшируется → фоновый таск ниже добьёт остаток
+        # из кэша без второго токена. На таймаут/ошибку — тихий fallback на retry.
+        covered = sum(
+            1 for v in versions.results if v.cover_image_url or v.thumb_image_url
+        )
+        if covered < len(versions.results) / 2:
+            try:
+                api_resp = await asyncio.wait_for(
+                    DiscogsService().get_master_versions(
+                        master_id=master_id, page=page, per_page=per_page
+                    ),
+                    timeout=4,
+                )
+                cover_by_id = {
+                    v.release_id: (v.cover_image_url or v.thumb_image_url)
+                    for v in api_resp.results
+                    if v.cover_image_url or v.thumb_image_url
+                }
+                for v in versions.results:
+                    if not v.cover_image_url and not v.thumb_image_url:
+                        c = cover_by_id.get(v.release_id)
+                        if c:
+                            v.cover_image_url = c
+            except Exception:
+                pass
+
+        # Фоновый таск: персист обложек в PG (durable, мимо Redis-TTL), мёрж
+        # версий, отсутствующих в дампе, и запись enriched-кэша. Вызов
+        # get_master_versions попадёт в Redis-кэш после inline-фетча → без токена.
         background_tasks.add_task(
             _enrich_covers_from_api,
             master_id=master_id,
             page=page,
             per_page=per_page,
-            versions_dump=local_versions.model_dump(),
+            versions_dump=versions.model_dump(),
             enriched_ck=enriched_ck,
+        )
+
+        # P2: бесплатный прогрев обложек через CAA (по barcode, мимо Discogs
+        # rate-limit) для версий всё ещё без cover. Пишет в
+        # discogs_releases_index.cover_image_url → следующий заход берёт из PG.
+        from app.services.cover_warm import schedule_warm_dump_covers
+        schedule_warm_dump_covers(
+            [
+                v.release_id
+                for v in versions.results
+                if v.release_id and not (v.cover_image_url or v.thumb_image_url)
+            ]
         )
     else:
         discogs = DiscogsService()
@@ -1939,17 +1980,37 @@ async def _enrich_covers_from_api(
         changed = False
 
         # 1) Обложки для версий, уже присутствующих в локальном списке.
-        thumb_by_id = {
-            v.release_id: (v.thumb_image_url or v.cover_image_url)
+        # Берём полную cover (600px), не thumb — её же персистим в PG.
+        cover_by_id = {
+            v.release_id: (v.cover_image_url or v.thumb_image_url)
             for v in api_resp.results
-            if v.thumb_image_url or v.cover_image_url
+            if v.cover_image_url or v.thumb_image_url
         }
         for v in versions.results:
             if not v.cover_image_url and not v.thumb_image_url:
-                t = thumb_by_id.get(v.release_id)
-                if t:
-                    v.thumb_image_url = t
+                c = cover_by_id.get(v.release_id)
+                if c:
+                    v.cover_image_url = c
                     changed = True
+
+        # P1: персистим обложки в discogs_releases_index.cover_image_url —
+        # переживает Redis-TTL, виден всем юзерам и detail-stub'у через COALESCE.
+        # Пишем только в NULL-строки, чтобы не затереть уже прогретое (CAA/cover_warm).
+        if cover_by_id:
+            from app.database import async_session_maker
+            async with async_session_maker() as session:
+                for rid, url in cover_by_id.items():
+                    if rid and rid.isdigit():
+                        await session.execute(
+                            text(
+                                "UPDATE discogs_releases_index "
+                                "SET cover_image_url = :url "
+                                "WHERE discogs_id = :did "
+                                "AND cover_image_url IS NULL"
+                            ),
+                            {"url": url, "did": int(rid)},
+                        )
+                await session.commit()
 
         # 2) Версии из API, которых нет в дампе (дедуп по release_id).
         local_ids = {v.release_id for v in versions.results}
