@@ -86,9 +86,12 @@ export function WishlistListSwipe({
   const markHintSeen = useMarketStore((s) => s.markSwipeHintSeen);
   const [didTease, setDidTease] = useState(false);
 
-  // dragX: 0 (rest) → -DELTA (full open). Двигает И карточку И баннер.
+  // dragX: 0 (rest) → -DELTA (full open). Двигает карточку и задаёт elastic.
   const dragX = useSharedValue(0);
   const startX = useSharedValue(0);
+  // visualOpen: 0→1, вычисляется из RAW next (до elastic damping).
+  // В overscroll clamp'ится на 1 — не убывает, баннер остаётся полностью открытым.
+  const visualOpen = useSharedValue(0);
 
   const triggerOpen = useCallback(() => {
     onOpen();
@@ -102,13 +105,17 @@ export function WishlistListSwipe({
         withTiming(-DELTA * 0.45, { duration: 520, easing: Easing.out(Easing.cubic) }),
         withDelay(TEASE_DURATION_MS, withTiming(0, { duration: 360, easing: Easing.in(Easing.cubic) })),
       );
+      visualOpen.value = withSequence(
+        withTiming(0.45, { duration: 520, easing: Easing.out(Easing.cubic) }),
+        withDelay(TEASE_DURATION_MS, withTiming(0, { duration: 360, easing: Easing.in(Easing.cubic) })),
+      );
       setTimeout(() => {
         markHintSeen();
         setDidTease(true);
       }, TEASE_DURATION_MS + 520 + 360);
     }, 900);
     return () => clearTimeout(t);
-  }, [hasOffers, hasSeenHint, didTease, markHintSeen, dragX]);
+  }, [hasOffers, hasSeenHint, didTease, markHintSeen, dragX, visualOpen]);
 
   // Pan gesture
   const panGesture = Gesture.Pan()
@@ -116,9 +123,12 @@ export function WishlistListSwipe({
     .failOffsetY([-FAIL_OFFSET_Y, FAIL_OFFSET_Y])
     .onStart(() => {
       startX.value = dragX.value;
+      visualOpen.value = Math.min(1, Math.max(0, -dragX.value / DELTA));
     })
     .onUpdate((e) => {
       const next = startX.value + e.translationX;
+      // visualOpen из RAW next — в overscroll clamp'ится на 1, не убывает
+      visualOpen.value = Math.min(1, Math.max(0, -next / DELTA));
       // Clamp [-DELTA, 0] с elastic overscroll
       if (next > 0) {
         dragX.value = next * 0.15;
@@ -129,15 +139,20 @@ export function WishlistListSwipe({
       }
     })
     .onEnd((e) => {
-      const shouldOpen = dragX.value < -DELTA * 0.45 || e.velocityX < -500;
+      const shouldOpen = visualOpen.value > 0.45 || e.velocityX < -500;
       if (shouldOpen) {
         dragX.value = withSequence(
           withTiming(-DELTA, { duration: 200, easing: Easing.out(Easing.cubic) }),
           withDelay(180, withTiming(0, { duration: 280, easing: Easing.in(Easing.cubic) })),
         );
+        visualOpen.value = withSequence(
+          withTiming(1, { duration: 200, easing: Easing.out(Easing.cubic) }),
+          withDelay(180, withTiming(0, { duration: 280, easing: Easing.in(Easing.cubic) })),
+        );
         runOnJS(triggerOpen)();
       } else {
         dragX.value = withTiming(0, { duration: 220, easing: Easing.out(Easing.cubic) });
+        visualOpen.value = withTiming(0, { duration: 220, easing: Easing.out(Easing.cubic) });
       }
     });
 
@@ -146,19 +161,15 @@ export function WishlistListSwipe({
     transform: [{ translateX: dragX.value }],
   }));
 
-  // БАННЕР — width = PEEK + |dragX|. Прибит right:0, растёт leftward.
-  const bannerStyle = useAnimatedStyle(() => {
-    const w = PEEK_WIDTH + Math.min(DELTA, Math.max(0, -dragX.value));
-    return { width: w };
-  });
+  // БАННЕР — width от visualOpen (не от dragX) → в overscroll не убывает
+  const bannerStyle = useAnimatedStyle(() => ({
+    width: PEEK_WIDTH + visualOpen.value * DELTA,
+  }));
 
-  // CTA «Купить» — opacity fade in по мере раскрытия баннера
-  const ctaStyle = useAnimatedStyle(() => {
-    const openness = Math.min(1, Math.max(0, -dragX.value / DELTA));
-    return {
-      opacity: interpolate(openness, [0, 0.55, 1], [0, 0.4, 1], Extrapolation.CLAMP),
-    };
-  });
+  // CTA «Купить» — opacity от visualOpen
+  const ctaStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(visualOpen.value, [0, 0.55, 1], [0, 0.4, 1], Extrapolation.CLAMP),
+  }));
 
   if (!hasOffers) {
     return <View style={style}>{children}</View>;
