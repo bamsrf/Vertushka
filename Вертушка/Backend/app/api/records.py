@@ -1698,9 +1698,29 @@ async def get_master_versions(
     enriched_ck = f"{master_id}:p{page}:pp{per_page}"
     cached_enriched = await cache.get("master_versions_enriched", enriched_ck)
     if cached_enriched:
-        # Полностью обогащённый ответ (с обложками) — можно кэшировать на nginx.
-        response.headers["Cache-Control"] = "public, max-age=3600"
-        return MasterVersionsResponse(**cached_enriched)
+        resp_obj = MasterVersionsResponse(**cached_enriched)
+        # Если в кэше остались версии без обложки (master/versions thumb пуст) —
+        # один раз в 6ч добираем их через get_release фоном и переписываем кэш
+        # (durable-персист в дамп). no-store на этот ответ, чтобы следующий заход
+        # дошёл до уже залеченного кэша, а не до часового nginx-кэша пустого.
+        has_uncovered = any(
+            not (v.cover_image_url or v.thumb_image_url) for v in resp_obj.results
+        )
+        if has_uncovered and await cache.set_nx(
+            "master_versions_straggler", enriched_ck, "1", ttl=21600
+        ):
+            background_tasks.add_task(
+                _enrich_covers_from_api,
+                master_id=master_id,
+                page=page,
+                per_page=per_page,
+                versions_dump=cached_enriched,
+                enriched_ck=enriched_ck,
+            )
+            response.headers["Cache-Control"] = "no-store"
+        else:
+            response.headers["Cache-Control"] = "public, max-age=3600"
+        return resp_obj
 
     # Local-first: discogs_releases_index содержит все 13M releases с master_id.
     # Полный SELECT покрывает большинство мастер-релизов без обращения к Discogs
