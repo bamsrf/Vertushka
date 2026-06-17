@@ -31,7 +31,7 @@ import { Header } from '../../components/Header';
 import { GradientText } from '../../components/GradientText';
 import { FolderPickerModal } from '../../components/FolderPickerModal';
 import { Button, Card, ActionSheet, ActionSheetAction } from '../../components/ui';
-import { api } from '../../lib/api';
+import { api, getCoverUrl } from '../../lib/api';
 import { cleanArtistName } from '../../lib/format';
 import { useCollectionStore, useAuthStore } from '../../lib/store';
 import { VinylRecord, CollectionItem } from '../../lib/types';
@@ -495,7 +495,7 @@ export default function RecordDetailScreen() {
     );
   }
 
-  const imageUrl = record.cover_image_url || record.thumb_image_url;
+  const imageUrl = getCoverUrl(record);
 
   return (
     <View style={styles.container}>

@@ -34,7 +34,7 @@ import * as ImageManipulator from 'expo-image-manipulator';
 import { Icon } from '@/components/ui';
 import { Button, Input, Card } from '../../components/ui';
 import { toast } from '../../lib/toast';
-import { api } from '../../lib/api';
+import { api, getCoverUrl } from '../../lib/api';
 import { useCollectionStore } from '../../lib/store';
 import type { SpotifyAlbumCandidate, VinylRecord, PreflightResponse } from '../../lib/types';
 import { Colors, Typography, Spacing, BorderRadius } from '../../constants/theme';
@@ -140,6 +140,13 @@ export default function ManualRecordScreen() {
     []
   );
 
+  // Замена обложки в edit-режиме (§11). Тап по слоту → камера/галерея.
+  const pickCover = useCallback(async () => {
+    Haptics.selectionAsync();
+    const picked = await pickPhotoBase64(true);
+    if (picked) patch({ coverPhoto: picked.uri, coverBase64: picked.base64 });
+  }, [patch]);
+
   // Edit-режим (§11): подтягиваем запись и префиллим черновик.
   useEffect(() => {
     if (!editId) return;
@@ -149,7 +156,7 @@ export default function ManualRecordScreen() {
         const rec = await api.getRecord(editId);
         if (!alive) return;
         setDraft({
-          coverPhoto: rec.cover_image_url ?? null,
+          coverPhoto: getCoverUrl(rec) ?? null,
           coverBase64: null,
           spinePhoto: null,
           spineBase64: null,
@@ -350,7 +357,14 @@ export default function ManualRecordScreen() {
             keyboardShouldPersistTaps="handled"
           >
             {isEdit ? (
-              <DetailsStep draft={draft} patch={patch} />
+              <View style={styles.stepGap}>
+                <Text style={styles.stepTitle}>Обложка</Text>
+                <View style={styles.editCoverRow}>
+                  <PhotoSlot label="Обложка" uri={draft.coverPhoto} onPress={pickCover} />
+                  <View style={styles.flex} />
+                </View>
+                <DetailsStep draft={draft} patch={patch} />
+              </View>
             ) : (
               <>
                 {step === 0 && <PhotoStep draft={draft} patch={patch} />}
@@ -800,6 +814,7 @@ const styles = StyleSheet.create({
   skip: { alignItems: 'center', paddingVertical: Spacing.xs },
   skipText: { ...Typography.bodySmall, color: Colors.textMuted },
   loadingWrap: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  editCoverRow: { flexDirection: 'row', gap: Spacing.md },
   // format-сегмент (§9)
   fieldLabel: { ...Typography.bodySmall, color: Colors.textSecondary, marginBottom: Spacing.xs },
   segment: {
