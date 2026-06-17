@@ -87,14 +87,23 @@ export default function VersionsScreen() {
         const coveredCount = response.results.filter(
           (v) => v.cover_image_url || v.thumb_image_url
         ).length;
-        const mostlyCovered = coveredCount >= response.results.length / 2;
-        if (!mostlyCovered && coverRetryAttempt.current < COVER_RETRY_DELAYS.length) {
+        // Ретраим пока есть хоть одна версия без обложки: бэк добирает stragglers
+        // через get_release (~10с) и пишет enriched — следующий retry их подхватит.
+        const allCovered = coveredCount >= response.results.length;
+        if (!allCovered && coverRetryAttempt.current < COVER_RETRY_DELAYS.length) {
           const delay = COVER_RETRY_DELAYS[coverRetryAttempt.current];
           coverRetryAttempt.current += 1;
           coverRetryTimer.current = setTimeout(() => loadVersions(1), delay);
         }
       } else {
-        setVersions([...versions, ...response.results]);
+        // Дедуп по release_id: enriched-пагинация может вернуть на стр. N версию,
+        // уже отданную на стр. N-1 → дубль ключа в FlatList ("two children with
+        // the same key"). Фильтруем уже виденные перед append.
+        setVersions((prev) => {
+          const seen = new Set(prev.map((v) => v.release_id));
+          const fresh = response.results.filter((v) => !seen.has(v.release_id));
+          return [...prev, ...fresh];
+        });
       }
       setPage(pageNum);
       setHasMore(existingLength + response.results.length < response.total);

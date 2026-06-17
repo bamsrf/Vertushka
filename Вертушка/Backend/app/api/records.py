@@ -1994,6 +1994,52 @@ async def _enrich_covers_from_api(
                     v.cover_image_url = c
                     changed = True
 
+        # 1b) Для версий всё ещё без cover добираем обложку из get_release.
+        # master/versions отдаёт thumb=null для части переизданий (винил-репрессы),
+        # но у самого релиза images есть (это и видно при тапе в деталь). Bounded
+        # cap+watchdog — чтобы не повторить 60s-фан-аут экрана артиста.
+        still = [
+            v for v in versions.results
+            if not v.cover_image_url and not v.thumb_image_url
+        ][:15]
+        if still:
+            sem = asyncio.Semaphore(5)
+
+            async def _one_cover(v):
+                async with sem:
+                    try:
+                        data = await discogs.get_release(
+                            v.release_id, priority=Priority.ENRICHMENT
+                        )
+                        return v.release_id, (
+                            data.get("cover_image") or data.get("cover_image_url")
+                            or data.get("thumb_image") or data.get("thumb_image_url")
+                        )
+                    except Exception:
+                        return v.release_id, None
+
+            tasks = [asyncio.create_task(_one_cover(v)) for v in still]
+            done, pending = await asyncio.wait(tasks, timeout=10)
+            for t in pending:
+                t.cancel()
+            release_covers: dict[str, str] = {}
+            for t in done:
+                try:
+                    rid, cov = t.result()
+                    if cov:
+                        release_covers[rid] = cov
+                except Exception:
+                    pass
+            if release_covers:
+                for v in versions.results:
+                    if (
+                        not v.cover_image_url and not v.thumb_image_url
+                        and v.release_id in release_covers
+                    ):
+                        v.cover_image_url = release_covers[v.release_id]
+                        changed = True
+                cover_by_id.update(release_covers)
+
         # P1: персистим обложки в discogs_releases_index.cover_image_url —
         # переживает Redis-TTL, виден всем юзерам и detail-stub'у через COALESCE.
         # Пишем только в NULL-строки, чтобы не затереть уже прогретое (CAA/cover_warm).
