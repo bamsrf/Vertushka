@@ -33,7 +33,7 @@ import { FolderPickerModal } from '../../components/FolderPickerModal';
 import { Button, Card, ActionSheet, ActionSheetAction } from '../../components/ui';
 import { api } from '../../lib/api';
 import { cleanArtistName } from '../../lib/format';
-import { useCollectionStore } from '../../lib/store';
+import { useCollectionStore, useAuthStore } from '../../lib/store';
 import { VinylRecord, CollectionItem } from '../../lib/types';
 import { Colors, Typography, Spacing, BorderRadius, Gradients } from '../../constants/theme';
 import { ms } from '../../lib/responsive';
@@ -381,6 +381,19 @@ export default function RecordDetailScreen() {
   const getActionSheetActions = (): ActionSheetAction[] => {
     const recordStatus = getRecordStatus();
     const actions: ActionSheetAction[] = [];
+
+    // §11: править можно только свою user-record.
+    const myId = useAuthStore.getState().user?.id;
+    if (record?.source === 'user' && record.created_by_user_id && record.created_by_user_id === myId) {
+      actions.push({
+        label: 'Отредактировать',
+        icon: 'create-outline',
+        onPress: () => {
+          setShowActionSheet(false);
+          router.push(`/record/manual?editId=${record.id}` as any);
+        },
+      });
+    }
 
     if (recordStatus.status === 'in_collection') {
       // Добавить в папку

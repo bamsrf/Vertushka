@@ -43,6 +43,7 @@ class RecordResponse(BaseModel):
     id: UUID
     source: str = "discogs"  # 'discogs' | 'store' | 'user' — store/pending нельзя в коллекцию
     moderation_status: str = "approved"  # pending/approved/rejected/merged (user-records)
+    created_by_user_id: UUID | None = None  # автор user-record (§11 edit-gate на фронте)
     discogs_id: str | None
     discogs_master_id: str | None
     title: str
@@ -298,6 +299,7 @@ class PreflightRequest(BaseModel):
     year: int | None = Field(None, ge=1900, le=2100)
     barcode: str | None = Field(None, max_length=50)
     catalog: str | None = Field(None, max_length=100)
+    format_type: str | None = Field(None, max_length=100)  # §9 format-aware dedup
 
 
 class PreflightResponse(BaseModel):
@@ -337,4 +339,18 @@ class UserRecordCreate(BaseModel):
     tracklist: list | None = None
     cover_photo_base64: str | None = None
     spine_photo_base64: str | None = None
+
+
+class UserRecordUpdate(BaseModel):
+    """Правка своей user-record автором (§11). Все поля опциональны (PATCH)."""
+    artist: str | None = Field(None, max_length=500)
+    title: str | None = Field(None, max_length=500)
+    year: int | None = Field(None, ge=1900, le=2100)
+    label: str | None = Field(None, max_length=255)
+    catalog_number: str | None = Field(None, max_length=100)
+    country: str | None = Field(None, max_length=100)
+    format_type: str | None = Field(None, max_length=100)
+    barcode: str | None = Field(None, max_length=50)
+    tracklist: list | None = None
+    cover_photo_base64: str | None = None
 

@@ -23,8 +23,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.record import Record
 from app.services.discogs import DiscogsService
 from app.services.listing_matcher import (
+    FORMAT_MISMATCH_PENALTY,
     _find_by_barcode,
     _find_by_catalog,
+    _format_family,
     _fuzzy_candidates,
     _is_dump_available,
     _lookup_in_dump_index,
@@ -58,7 +60,11 @@ class PreflightResult:
 
 
 def _preflight_fuzzy_score(
-    rec: Record, artist: str | None, title: str | None, year: int | None
+    rec: Record,
+    artist: str | None,
+    title: str | None,
+    year: int | None,
+    format_type: str | None = None,
 ) -> float:
     """0..1 score по user-payload (без StoreListing). Зеркалит _fuzzy_score."""
     title_score = fuzz.token_sort_ratio(rec.title or "", title or "") / 100.0
@@ -67,7 +73,13 @@ def _preflight_fuzzy_score(
         if artist else 0.5
     )
     year_bonus = 0.1 if (rec.year and year and rec.year == year) else 0.0
-    return min(1.0, title_score * 0.6 + artist_score * 0.3 + year_bonus)
+    score = min(1.0, title_score * 0.6 + artist_score * 0.3 + year_bonus)
+    # Format-aware (§9): известные и различные носители (винил-ввод → CD-релиз)
+    # давим ниже порога, чтобы fuzzy не путал форматы. Как в _fuzzy_score.
+    uf, rf = _format_family(format_type), _format_family(rec.format_type)
+    if uf and rf and uf != rf:
+        score *= FORMAT_MISMATCH_PENALTY
+    return score
 
 
 async def preflight_dedup(
@@ -77,6 +89,7 @@ async def preflight_dedup(
     year: int | None = None,
     barcode: str | None = None,
     catalog: str | None = None,
+    format_type: str | None = None,
     db: AsyncSession,
     check_discogs: bool = True,
 ) -> PreflightResult:
@@ -99,7 +112,7 @@ async def preflight_dedup(
     candidates = await _fuzzy_candidates(db, artist, title)
     best, best_score = None, 0.0
     for rec in candidates:
-        s = _preflight_fuzzy_score(rec, artist, title, year)
+        s = _preflight_fuzzy_score(rec, artist, title, year, format_type)
         if s > best_score:
             best, best_score = rec, s
     if best is not None and best_score >= LIKELY_DUPLICATE_THRESHOLD:
@@ -176,11 +189,15 @@ async def create_user_record(
     spotify_album_id: str | None = None,
     user_submitted_data: dict | None = None,
 ) -> Record:
-    """Создать source='user' запись в статусе pending. Не делает commit."""
+    """Создать source='user' запись. Модерация отменена (§6) — сразу approved.
+
+    Запись сразу видна всем и растёт в коллекцию создателя. Дедуп (preflight)
+    отсекает дубли до создания; ручной модерации/админки нет.
+    """
     rec = Record(
         source="user",
         created_by_user_id=created_by_user_id,
-        moderation_status="pending",
+        moderation_status="approved",
         artist=artist,
         title=title,
         year=year,
@@ -197,3 +214,37 @@ async def create_user_record(
     db.add(rec)
     await db.flush()
     return rec
+
+
+# Поля, которые автор может править у своей user-record (§11).
+_EDITABLE_FIELDS = (
+    "artist",
+    "title",
+    "year",
+    "label",
+    "catalog_number",
+    "country",
+    "format_type",
+    "tracklist",
+)
+
+
+async def update_user_record(
+    *,
+    db: AsyncSession,
+    record: Record,
+    changes: dict,
+) -> Record:
+    """Применить правки автора к его user-record. Не делает commit.
+
+    Guard (source/owner) проверяет вызывающий код. Здесь — только применение
+    разрешённых полей из `changes` (None-значения пропускаем, кроме явного
+    сброса не делаем). Barcode нормализуем, если пришёл.
+    """
+    for field in _EDITABLE_FIELDS:
+        if field in changes and changes[field] is not None:
+            setattr(record, field, changes[field])
+    if changes.get("barcode") is not None:
+        record.barcode = normalize_barcode(changes["barcode"]) or changes["barcode"]
+    await db.flush()
+    return record

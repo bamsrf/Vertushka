@@ -128,6 +128,21 @@ export default function ProfileScreen() {
   const [copied, setCopied] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [avatarUploading, setAvatarUploading] = useState(false);
+  // §11: раздел «Мои релизы» появляется после первого ручного релиза.
+  const [hasUserRecords, setHasUserRecords] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    api
+      .listMyUserRecords()
+      .then((recs) => {
+        if (alive) setHasUserRecords(recs.length > 0);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   const pickImage = useCallback(async (source: 'library' | 'camera') => {
     const launcher = source === 'library'
@@ -552,6 +567,16 @@ export default function ProfileScreen() {
             <Icon name="disc-outline" size={24} color={Colors.royalBlue} />
             <Text style={styles.settingsItemText}>Discogs</Text>
           </TouchableOpacity>
+
+          {hasUserRecords && (
+            <TouchableOpacity
+              style={styles.settingsItem}
+              onPress={() => router.push('/records/mine' as any)}
+            >
+              <Ionicons name="create-outline" size={24} color={Colors.royalBlue} />
+              <Text style={styles.settingsItemText}>Мои релизы</Text>
+            </TouchableOpacity>
+          )}
 
           <TouchableOpacity
             style={styles.settingsItem}

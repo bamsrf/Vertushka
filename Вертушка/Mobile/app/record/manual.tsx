@@ -1,16 +1,20 @@
 /**
- * Ручное добавление пластинки (source='user').
+ * Ручное добавление / редактирование релиза (source='user').
  *
- * Визард из 3 шагов для кейса: пластинки нет ни в Discogs (баркод/фото),
+ * Визард из 3 шагов для кейса: релиза нет ни в Discogs (баркод/фото),
  * ни в Маркете. Юзер фоткает, автозаполняет из Spotify, дополняет руками.
- * Запись проходит preflight-дедуп и уходит на модерацию (pending).
+ * Запись проходит preflight-дедуп и сразу попадает в коллекцию (§6: модерации нет).
+ *
+ * Форматы: винил / CD / кассета (§9). Edit-режим через ?editId= (§11).
+ * Дедуп-перехват: если релиз уже есть — предлагаем добавить найденный (§10).
  *
  * Бэкенд: docs/plans/USER_SUBMITTED_RECORDS.md
- *   - POST /records/preflight/      (дабл-чек Discogs + Маркет)
- *   - GET  /records/spotify-search/ (автозаполнение)
- *   - POST /records/user/           (создание)
+ *   - POST  /records/preflight/      (дабл-чек Discogs + Маркет)
+ *   - GET   /records/spotify-search/ (автозаполнение)
+ *   - POST  /records/user/           (создание)
+ *   - PATCH /records/user/{id}       (правка автором)
  */
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import {
   View,
   Text,
@@ -22,7 +26,7 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
-import { useRouter, Stack } from 'expo-router';
+import { useRouter, Stack, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import * as ImagePicker from 'expo-image-picker';
@@ -31,8 +35,25 @@ import { Icon } from '@/components/ui';
 import { Button, Input, Card } from '../../components/ui';
 import { toast } from '../../lib/toast';
 import { api } from '../../lib/api';
-import type { SpotifyAlbumCandidate } from '../../lib/types';
+import { useCollectionStore } from '../../lib/store';
+import type { SpotifyAlbumCandidate, VinylRecord, PreflightResponse } from '../../lib/types';
 import { Colors, Typography, Spacing, BorderRadius } from '../../constants/theme';
+
+// Форматы носителя (§9). value → format_type на бэке.
+const FORMAT_OPTIONS = [
+  { label: 'Винил', value: 'vinyl' },
+  { label: 'CD', value: 'cd' },
+  { label: 'Кассета', value: 'cassette' },
+] as const;
+
+// Нормализуем произвольный format_type записи (LP / Vinyl / Cassette / …) в один
+// из трёх сегментов. Дефолт — винил.
+function normalizeFormat(raw: string | null | undefined): string {
+  const f = (raw || '').toLowerCase();
+  if (f.includes('cd') || f.includes('compact')) return 'cd';
+  if (f.includes('cass') || f.includes('tape') || f.includes('кассет')) return 'cassette';
+  return 'vinyl';
+}
 
 // Сжать фото с camera/library → base64 JPEG (≤1024px), как в режиме скана.
 async function pickPhotoBase64(fromCamera: boolean): Promise<{ uri: string; base64: string } | null> {
@@ -90,7 +111,7 @@ const EMPTY_DRAFT: Draft = {
   label: '',
   catalog: '',
   country: '',
-  format: 'LP',
+  format: 'vinyl',
 };
 
 type Step = 0 | 1 | 2;
@@ -101,15 +122,58 @@ const STEP_LABELS = ['Фото', 'Из Spotify', 'Детали'];
 export default function ManualRecordScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { editId } = useLocalSearchParams<{ editId?: string }>();
+  const isEdit = !!editId;
+  const addToCollection = useCollectionStore((s) => s.addToCollection);
+  const addToCollectionByRecordId = useCollectionStore((s) => s.addToCollectionByRecordId);
 
   const [step, setStep] = useState<Step>(0);
   const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT);
   const [submitting, setSubmitting] = useState(false);
+  const [loadingEdit, setLoadingEdit] = useState(isEdit);
+  // Дедуп-перехват (§10): найденный релиз + статус preflight.
+  const [intercept, setIntercept] = useState<PreflightResponse | null>(null);
+  const [adding, setAdding] = useState(false);
 
   const patch = useCallback(
     (p: Partial<Draft>) => setDraft((d) => ({ ...d, ...p })),
     []
   );
+
+  // Edit-режим (§11): подтягиваем запись и префиллим черновик.
+  useEffect(() => {
+    if (!editId) return;
+    let alive = true;
+    (async () => {
+      try {
+        const rec = await api.getRecord(editId);
+        if (!alive) return;
+        setDraft({
+          coverPhoto: rec.cover_image_url ?? null,
+          coverBase64: null,
+          spinePhoto: null,
+          spineBase64: null,
+          spotify: null,
+          artist: rec.artist ?? '',
+          title: rec.title ?? '',
+          year: rec.year != null ? String(rec.year) : '',
+          label: rec.label ?? '',
+          catalog: rec.catalog_number ?? '',
+          country: rec.country ?? '',
+          format: normalizeFormat(rec.format_type),
+        });
+        setStep(2); // в edit сразу к деталям
+      } catch {
+        toast.error('Не удалось загрузить', 'Попробуйте ещё раз', { position: 'bottom' });
+        router.back();
+      } finally {
+        if (alive) setLoadingEdit(false);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [editId, router]);
 
   const goNext = () => {
     Haptics.selectionAsync();
@@ -120,69 +184,142 @@ export default function ManualRecordScreen() {
     setStep((s) => Math.max(0, s - 1) as Step);
   };
 
-  const handleSubmit = async () => {
+  const yearNum = () => {
+    const n = draft.year.trim() ? parseInt(draft.year, 10) : null;
+    return Number.isFinite(n as number) ? n : null;
+  };
+
+  // Создать source='user' (после чистого preflight или «всё равно создать своё»).
+  const doCreate = async () => {
     setSubmitting(true);
     try {
-      const yearNum = draft.year.trim() ? parseInt(draft.year, 10) : null;
-      // 1) Дабл-чек
-      const pf = await api.preflightRecord({
-        artist: draft.artist.trim(),
-        title: draft.title.trim(),
-        year: Number.isFinite(yearNum as number) ? yearNum : null,
-        catalog: draft.catalog.trim() || null,
-      });
-      if (pf.status === 'FOUND_IN_DISCOGS') {
-        toast.info('Нашлось в Discogs', 'Эта пластинка уже есть — добавьте её из обычного поиска', {
-          position: 'bottom',
-        });
-        return;
-      }
-      if (pf.status === 'DUPLICATE' || pf.status === 'LIKELY_DUPLICATE') {
-        const m = pf.match;
-        toast.info(
-          'Похоже, она уже есть',
-          m ? `${m.artist} — ${m.title}. Откройте её карточку.` : 'Такая пластинка уже в базе',
-          { position: 'bottom' }
-        );
-        return;
-      }
-      // 2) ALLOW_CREATE → создаём source='user'
       await api.createUserRecord({
         artist: draft.artist.trim(),
         title: draft.title.trim(),
-        year: Number.isFinite(yearNum as number) ? yearNum : null,
+        year: yearNum(),
         label: draft.label.trim() || null,
         catalog_number: draft.catalog.trim() || null,
         country: draft.country.trim() || null,
-        format_type: draft.format.trim() || null,
+        format_type: draft.format || null,
         spotify_album_id: draft.spotify?.id ?? null,
         tracklist: draft.spotify?.tracks ?? null,
         cover_photo_base64: draft.coverBase64,
         spine_photo_base64: draft.spineBase64,
       });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      toast.success('Добавлено', 'Пластинка в вашей коллекции, отправлена на модерацию', {
-        position: 'bottom',
-      });
+      toast.success('Добавлено', 'Релиз в вашей коллекции', { position: 'bottom' });
       router.back();
     } catch (e: any) {
       const detail = e?.response?.data?.detail;
-      if (e?.response?.status === 409) {
-        toast.info('Похоже, она уже есть', 'Эта пластинка уже в базе — добавьте из поиска', {
-          position: 'bottom',
-        });
-      } else {
-        toast.error('Не удалось добавить', typeof detail === 'string' ? detail : 'Попробуйте ещё раз', {
-          position: 'bottom',
-        });
-      }
+      toast.error('Не удалось добавить', typeof detail === 'string' ? detail : 'Попробуйте ещё раз', {
+        position: 'bottom',
+      });
     } finally {
       setSubmitting(false);
     }
   };
 
+  const handleSubmit = async () => {
+    // Edit-режим (§11): без preflight, просто PATCH.
+    if (isEdit && editId) {
+      setSubmitting(true);
+      try {
+        await api.updateUserRecord(editId, {
+          artist: draft.artist.trim(),
+          title: draft.title.trim(),
+          year: yearNum(),
+          label: draft.label.trim() || null,
+          catalog_number: draft.catalog.trim() || null,
+          country: draft.country.trim() || null,
+          format_type: draft.format || null,
+          cover_photo_base64: draft.coverBase64,
+        });
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        toast.success('Сохранено', 'Релиз обновлён', { position: 'bottom' });
+        router.back();
+      } catch (e: any) {
+        const detail = e?.response?.data?.detail;
+        toast.error('Не удалось сохранить', typeof detail === 'string' ? detail : 'Попробуйте ещё раз', {
+          position: 'bottom',
+        });
+      } finally {
+        setSubmitting(false);
+      }
+      return;
+    }
+
+    // Create-режим: preflight → перехват дубля (§10) или создание.
+    setSubmitting(true);
+    try {
+      const pf = await api.preflightRecord({
+        artist: draft.artist.trim(),
+        title: draft.title.trim(),
+        year: yearNum(),
+        catalog: draft.catalog.trim() || null,
+        format_type: draft.format || null,
+      });
+      if (pf.status === 'ALLOW_CREATE') {
+        await doCreate();
+        return;
+      }
+      // Дубль найден → показываем перехват-экран (§10).
+      setIntercept(pf);
+    } catch (e: any) {
+      const detail = e?.response?.data?.detail;
+      toast.error('Не удалось добавить', typeof detail === 'string' ? detail : 'Попробуйте ещё раз', {
+        position: 'bottom',
+      });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  // §10: добавить НАЙДЕННЫЙ релиз в коллекцию (не создаём дубль).
+  const addFound = async () => {
+    if (!intercept) return;
+    setAdding(true);
+    try {
+      if (intercept.match?.id) {
+        await addToCollectionByRecordId(intercept.match.id);
+      } else if (intercept.discogs_id) {
+        await addToCollection(intercept.discogs_id);
+      }
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      toast.success('Добавлено', 'Релиз в вашей коллекции', { position: 'bottom' });
+      router.back();
+    } catch (e: any) {
+      const detail = e?.response?.data?.detail;
+      toast.error('Не удалось добавить', typeof detail === 'string' ? detail : 'Попробуйте ещё раз', {
+        position: 'bottom',
+      });
+    } finally {
+      setAdding(false);
+    }
+  };
+
   const canLeaveStep0 = !!draft.coverPhoto;
-  const canSubmit = draft.artist.trim() && draft.title.trim() && draft.coverPhoto;
+  // В edit фото опционально (обложка уже есть). В create — обязательна.
+  const canSubmit = draft.artist.trim() && draft.title.trim() && (isEdit || draft.coverPhoto);
+
+  const headerTitle = isEdit ? 'Редактировать релиз' : 'Свой релиз';
+
+  // Экран-перехват дубля (§10) поверх визарда.
+  if (intercept) {
+    return (
+      <InterceptScreen
+        pf={intercept}
+        adding={adding}
+        onAddFound={addFound}
+        onCreateAnyway={() => {
+          setIntercept(null);
+          doCreate();
+        }}
+        onClose={() => setIntercept(null)}
+        insetsTop={insets.top}
+        insetsBottom={insets.bottom}
+      />
+    );
+  }
 
   return (
     <View style={styles.root}>
@@ -193,48 +330,134 @@ export default function ManualRecordScreen() {
         <Pressable onPress={goBack} hitSlop={12} style={styles.headerBtn}>
           <Icon name="arrow-left" size={24} color="default" />
         </Pressable>
-        <Text style={styles.headerTitle}>Своя пластинка</Text>
+        <Text style={styles.headerTitle}>{headerTitle}</Text>
         <View style={styles.headerBtn} />
       </View>
 
-      <StepIndicator step={step} />
+      {!isEdit && <StepIndicator step={step} />}
 
-      <KeyboardAvoidingView
-        style={styles.flex}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      >
-        <ScrollView
-          contentContainerStyle={styles.scroll}
-          keyboardShouldPersistTaps="handled"
-        >
-          {step === 0 && <PhotoStep draft={draft} patch={patch} />}
-          {step === 1 && <SpotifyStep draft={draft} patch={patch} />}
-          {step === 2 && <DetailsStep draft={draft} patch={patch} />}
-        </ScrollView>
-
-        {/* Нижняя кнопка */}
-        <View style={[styles.footer, { paddingBottom: insets.bottom + Spacing.md }]}>
-          {step < 2 ? (
-            <Button
-              title="Далее"
-              onPress={goNext}
-              disabled={step === 0 && !canLeaveStep0}
-            />
-          ) : (
-            <Button
-              title="Добавить пластинку"
-              onPress={handleSubmit}
-              loading={submitting}
-              disabled={!canSubmit}
-            />
-          )}
-          {step === 1 && (
-            <Pressable onPress={goNext} style={styles.skip}>
-              <Text style={styles.skipText}>Пропустить — заполню руками</Text>
-            </Pressable>
-          )}
+      {loadingEdit ? (
+        <View style={styles.loadingWrap}>
+          <ActivityIndicator color={Colors.royalBlue} />
         </View>
-      </KeyboardAvoidingView>
+      ) : (
+        <KeyboardAvoidingView
+          style={styles.flex}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+          <ScrollView
+            contentContainerStyle={styles.scroll}
+            keyboardShouldPersistTaps="handled"
+          >
+            {isEdit ? (
+              <DetailsStep draft={draft} patch={patch} />
+            ) : (
+              <>
+                {step === 0 && <PhotoStep draft={draft} patch={patch} />}
+                {step === 1 && <SpotifyStep draft={draft} patch={patch} />}
+                {step === 2 && <DetailsStep draft={draft} patch={patch} />}
+              </>
+            )}
+          </ScrollView>
+
+          {/* Нижняя кнопка */}
+          <View style={[styles.footer, { paddingBottom: insets.bottom + Spacing.md }]}>
+            {!isEdit && step < 2 ? (
+              <Button
+                title="Далее"
+                onPress={goNext}
+                disabled={step === 0 && !canLeaveStep0}
+              />
+            ) : (
+              <Button
+                title={isEdit ? 'Сохранить' : 'Добавить релиз'}
+                onPress={handleSubmit}
+                loading={submitting}
+                disabled={!canSubmit}
+              />
+            )}
+            {!isEdit && step === 1 && (
+              <Pressable onPress={goNext} style={styles.skip}>
+                <Text style={styles.skipText}>Пропустить — заполню руками</Text>
+              </Pressable>
+            )}
+          </View>
+        </KeyboardAvoidingView>
+      )}
+    </View>
+  );
+}
+
+// ─── Экран-перехват дубля (§10) ────────────────────────────────────────────────
+
+function InterceptScreen({
+  pf,
+  adding,
+  onAddFound,
+  onCreateAnyway,
+  onClose,
+  insetsTop,
+  insetsBottom,
+}: {
+  pf: PreflightResponse;
+  adding: boolean;
+  onAddFound: () => void;
+  onCreateAnyway: () => void;
+  onClose: () => void;
+  insetsTop: number;
+  insetsBottom: number;
+}) {
+  const m = pf.match;
+  const soft = pf.status === 'LIKELY_DUPLICATE';
+  const title = soft ? 'Возможно, это оно' : 'Чел, такой релиз уже есть';
+  const subtitle = soft
+    ? 'Похоже на то, что вы добавляете. Добавить найденное — или всё равно создать своё?'
+    : 'Вот он. Добавить в коллекцию?';
+
+  return (
+    <View style={styles.root}>
+      <Stack.Screen options={{ headerShown: false }} />
+      <View style={[styles.header, { paddingTop: insetsTop + Spacing.sm }]}>
+        <Pressable onPress={onClose} hitSlop={12} style={styles.headerBtn}>
+          <Icon name="arrow-left" size={24} color="default" />
+        </Pressable>
+        <Text style={styles.headerTitle}>Уже есть</Text>
+        <View style={styles.headerBtn} />
+      </View>
+
+      <ScrollView contentContainerStyle={styles.scroll}>
+        <View style={styles.stepGap}>
+          <Text style={styles.stepTitle}>{title}</Text>
+          <Text style={styles.stepHint}>{subtitle}</Text>
+
+          <Card style={styles.foundCard}>
+            <View style={styles.foundThumb}>
+              {m?.cover_image_url ? (
+                <Image source={{ uri: m.cover_image_url }} style={styles.foundThumbImg} resizeMode="cover" />
+              ) : (
+                <Icon name="disc-outline" size={28} color="secondary" />
+              )}
+            </View>
+            <View style={styles.flex}>
+              <Text style={styles.albumTitle} numberOfLines={2}>
+                {m ? m.title : 'Релиз в Discogs'}
+              </Text>
+              <Text style={styles.albumMeta} numberOfLines={1}>
+                {m ? `${m.artist}${m.year ? ` · ${m.year}` : ''}` : 'Добавится из Discogs'}
+              </Text>
+            </View>
+          </Card>
+        </View>
+      </ScrollView>
+
+      <View style={[styles.footer, { paddingBottom: insetsBottom + Spacing.md }]}>
+        <Button title="Добавить в коллекцию" onPress={onAddFound} loading={adding} />
+        {soft && (
+          <Pressable onPress={onCreateAnyway} style={styles.skip}>
+            <Text style={styles.skipText}>Всё равно создать своё</Text>
+          </Pressable>
+        )}
+      </View>
     </View>
   );
 }
@@ -259,7 +482,7 @@ function PhotoStep({ draft, patch }: StepProps) {
 
   return (
     <View style={styles.stepGap}>
-      <Text style={styles.stepTitle}>Сфотографируй пластинку</Text>
+      <Text style={styles.stepTitle}>Сфотографируй релиз</Text>
       <Text style={styles.stepHint}>
         Обложка обязательна. Корешок — по желанию, помогает распознать издание.
       </Text>
@@ -419,7 +642,29 @@ function DetailsStep({ draft, patch }: StepProps) {
       <Input label="Лейбл" value={draft.label} onChangeText={(v) => patch({ label: v })} placeholder="Самиздат" />
       <Input label="Каталожный №" value={draft.catalog} onChangeText={(v) => patch({ catalog: v })} placeholder="—" />
       <Input label="Страна" value={draft.country} onChangeText={(v) => patch({ country: v })} placeholder="Россия" />
-      <Input label="Формат" value={draft.format} onChangeText={(v) => patch({ format: v })} placeholder="LP" />
+
+      <View>
+        <Text style={styles.fieldLabel}>Формат</Text>
+        <View style={styles.segment}>
+          {FORMAT_OPTIONS.map((opt) => {
+            const active = draft.format === opt.value;
+            return (
+              <Pressable
+                key={opt.value}
+                onPress={() => {
+                  Haptics.selectionAsync();
+                  patch({ format: opt.value });
+                }}
+                style={[styles.segmentItem, active && styles.segmentItemActive]}
+              >
+                <Text style={[styles.segmentText, active && styles.segmentTextActive]}>
+                  {opt.label}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      </View>
     </View>
   );
 }
@@ -554,4 +799,41 @@ const styles = StyleSheet.create({
   },
   skip: { alignItems: 'center', paddingVertical: Spacing.xs },
   skipText: { ...Typography.bodySmall, color: Colors.textMuted },
+  loadingWrap: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  // format-сегмент (§9)
+  fieldLabel: { ...Typography.bodySmall, color: Colors.textSecondary, marginBottom: Spacing.xs },
+  segment: {
+    flexDirection: 'row',
+    gap: Spacing.xs,
+    backgroundColor: Colors.surface,
+    borderRadius: BorderRadius.md,
+    padding: 4,
+  },
+  segmentItem: {
+    flex: 1,
+    paddingVertical: Spacing.sm,
+    borderRadius: BorderRadius.sm,
+    alignItems: 'center',
+  },
+  segmentItemActive: { backgroundColor: Colors.royalBlue },
+  segmentText: { ...Typography.buttonSmall, color: Colors.textSecondary },
+  segmentTextActive: { color: '#fff' },
+  // перехват дубля (§10)
+  foundCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.md,
+    padding: Spacing.md,
+    marginTop: Spacing.sm,
+  },
+  foundThumb: {
+    width: 56,
+    height: 56,
+    borderRadius: BorderRadius.sm,
+    backgroundColor: Colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  foundThumbImg: { width: '100%', height: '100%' },
 });

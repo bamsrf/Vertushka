@@ -45,6 +45,7 @@ from app.schemas.record import (
     SpotifyAlbumCandidate,
     SpotifySearchResponse,
     UserRecordCreate,
+    UserRecordUpdate,
 )
 from app.services.discogs import DiscogsService
 from app.services.discogs_oauth import user_creds
@@ -1224,7 +1225,7 @@ async def create_user_submitted_record(
     """
     Создать запись source='user' (пластинки нет ни в Discogs, ни в Маркете).
     Повторный preflight на бэке (фронт-чек не доверяем) → заливка фото →
-    enrichment-merge Spotify → Record(pending) → в коллекцию создателя. §4.
+    enrichment-merge Spotify → Record(approved, §6) → в коллекцию создателя. §4.
     """
     import base64
     from app.services.user_record import preflight_dedup, create_user_record, PreflightStatus
@@ -1314,6 +1315,72 @@ async def create_user_submitted_record(
     return RecordResponse.model_validate(rec)
 
 
+@router.get("/user/mine", response_model=list[RecordResponse])
+async def list_my_user_records(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Свои ручные релизы (source='user', created_by_user_id == me). §11.
+
+    Для раздела «Мои релизы» в профиле и редактирования.
+    """
+    res = await db.execute(
+        select(Record)
+        .where(
+            Record.source == "user",
+            Record.created_by_user_id == current_user.id,
+            Record.merged_into_id.is_(None),
+        )
+        .order_by(Record.created_at.desc())
+    )
+    records = res.scalars().all()
+    return [RecordResponse.model_validate(r) for r in records]
+
+
+@router.patch("/user/{record_id}", response_model=RecordResponse)
+async def update_user_submitted_record(
+    record_id: UUID,
+    data: UserRecordUpdate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Править свою user-record (§11). Только source='user' и только автор.
+
+    Discogs/store записи не редактируются (403). Чужие user-records — 403.
+    """
+    import base64
+    from app.services.user_record import update_user_record
+    from app.services.cover_storage import CoverStorageService
+
+    res = await db.execute(select(Record).where(Record.id == record_id))
+    record = res.scalar_one_or_none()
+    if record is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Пластинка не найдена")
+    if record.source != "user" or record.created_by_user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Можно редактировать только свои добавленные релизы",
+        )
+
+    changes = data.model_dump(exclude_unset=True, exclude={"cover_photo_base64"})
+    await update_user_record(db=db, record=record, changes=changes)
+
+    # Новое фото обложки (приоритет у юзерского фото).
+    if data.cover_photo_base64:
+        try:
+            raw = base64.b64decode(data.cover_photo_base64)
+            rel_path = CoverStorageService().store_user_cover(f"user_{record.id}", raw)
+            if rel_path:
+                record.cover_local_path = rel_path
+                record.cover_cached_at = datetime.utcnow()
+        except Exception:
+            logger.warning("user-record cover update failed for %s", record.id)
+
+    await db.commit()
+    await db.refresh(record)
+    return RecordResponse.model_validate(record)
+
+
 @router.get("/{record_id}", response_model=RecordResponse)
 async def get_record(
     record_id: UUID,
@@ -1330,20 +1397,9 @@ async def get_record(
             detail="Пластинка не найдена"
         )
 
-    # §6 Visibility: pending user-record приватна — видит только создатель
-    # (и staff). Для остальных — 404, как будто записи нет.
-    if (
-        record.source == "user"
-        and record.moderation_status == "pending"
-        and not (
-            current_user
-            and (current_user.id == record.created_by_user_id or current_user.is_staff)
-        )
-    ):
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Пластинка не найдена",
-        )
+    # §6 (revised 2026-06-17): модерация отменена — user-records сразу approved
+    # и видны всем. Pending-гейт убран. Поле moderation_status оставлено для
+    # 'merged' (rematch) и на будущее.
 
     # Follow merged_into_id: если эту запись уже слили в Discogs-аналог,
     # отдаём данные целевой записи. Старые ссылки/push'и на исходный uuid

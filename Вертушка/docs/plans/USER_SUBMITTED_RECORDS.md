@@ -1,19 +1,42 @@
 # User-Submitted Records (`source='user'`)
 
-> Статус: PLAN · Создан 2026-06-04
-> Кейс: пластинка, которой нет ни в Discogs (баркод/фото), ни в Маркете.
-> Решение продукта: юзер добавляет вручную, запись становится **общей** после
-> дабл-чека на отсутствие в Discogs + Маркете. Enrichment из Spotify.
+> Статус: **SHIPPED (full)** · Создан 2026-06-04 · Обновлён 2026-06-17
+> (§6 clean-up + §9 мульти-формат + §10 friendly-перехват + §11 edit — done)
+> Кейс: релиз, которого нет ни в Discogs (баркод/фото), ни в Маркете.
+> Решение продукта: юзер добавляет вручную, запись **сразу попадает в его
+> коллекцию** после дабл-чека на отсутствие в Discogs + Маркете. Enrichment из Spotify.
+
+## Что сделано (бэкенд + фронт)
+
+- ✅ §1 Миграция: `records.created_by_user_id / moderation_status /
+  spotify_album_id / user_submitted_data` + индекс `(source,moderation_status)`;
+  `users.is_staff`. Чейн `discogs_login → token_version → user_records`.
+- ✅ §2 `services/user_record.py::preflight_dedup` (barcode→catalog→fuzzy→Discogs).
+- ✅ §3 `services/spotify.py` (Client Credentials, no-op без кредов; креды НЕ
+  настроены — enrichment молчит, ручной ввод работает).
+- ✅ §4 API: `POST /records/preflight/`, `GET /records/spotify-search/`,
+  `POST /records/user/`. + `cover_storage.store_user_cover`.
+- ✅ §5 Guards collections/wishlists: whitelist `('discogs','user')`.
+- ✅ §7 rematch расширен на approved user-records (merge → `moderation_status='merged'`).
+- ✅ UI: `record/manual.tsx` визард + `ManualAddVinylToggle` (floating винил-тоггл
+  на сканере, slide-to-open, рандом-цвет). PR #53 + manual-add-toggle PR — merged.
+- ✅ Прод: миграция накатана, фича живая.
+
+## ⚠️ Изменения решения (2026-06-17)
+
+1. **Модерация выключена. Админки нет.** Владелец не сможет вручную
+   модерировать все релизы. User-record **сразу общий / растёт в коллекцию** —
+   без `pending`-гейта. См. §6 (revised).
+2. **Мульти-формат.** Не только винил: добавляем **CD и кассеты**. См. §9 (new).
 
 ## TL;DR архитектуры
 
-`records.source` уже имеет `discogs` и `store`. Добавляем **третий источник
-`user`** и вешаем его на существующую store-native инфру:
-- дедуп/дабл-чек → переиспользуем `services/listing_matcher.py`
-- авто-merge в Discogs позже → `discogs_id_candidate` + `confirmations` + `merged_into_id`
+`records.source` имеет `discogs`, `store`, `user`. Дедуп/дабл-чек →
+переиспользуем `services/listing_matcher.py`; авто-merge в Discogs позже →
+`discogs_id_candidate` + `confirmations` + `merged_into_id`.
 
-Новой таблицы НЕ заводим. User-record — это `Record` с `source='user'`,
-`created_by_user_id`, `moderation_status`.
+Новой таблицы НЕТ. User-record — это `Record` с `source='user'`,
+`created_by_user_id`, `format_type` (vinyl/cd/cassette).
 
 ---
 
@@ -118,17 +141,27 @@ if record.source not in ("discogs", "user"):
 
 ---
 
-## 6. Модерация + общий пул (полный скоуп)
+## 6. Модерация — ОТМЕНЕНА (revised 2026-06-17)
 
-- `moderation_status='pending'` → запись приватна (видит только создатель)
-  до аппрува. В Маркете/ленте фильтр `moderation_status='approved'`.
-- Лента модерации: `GET /admin/records/pending/` (переиспользуем существующую
-  admin-инфру, если есть; иначе флаг `is_staff` на user).
-- Аппрув → `approved`, запись становится общей.
-- **rematch** (еженедельный джоб, как у store-native): ищет аппрувнутые
-  user-records в Discogs → пишет `discogs_id_candidate`, при ≥2 confirmations
-  авто-merge через `merged_into_id`. Код джоба уже существует для store —
-  расширяем фильтр `source IN ('store','user')`.
+**Решение: модерации нет, админки нет.** Владелец не будет руками проверять
+релизы. User-record сразу «прорастает» в коллекцию создателя и в общий пул.
+
+Что меняем относительно текущего кода (был `pending`-гейт):
+- `create_user_record` ставит `moderation_status='approved'` (не `pending`).
+- Снять visibility-гейты `pending` в `get_record` и публичном профиле
+  (`_is_publicly_visible` / `_PUBLIC_VISIBLE_CLAUSE`) — user-records видны всем.
+- `app/api/admin.py` (лента/approve/reject) и `users.is_staff` — **больше не
+  нужны** для этого флоу. Можно оставить «спящими» (вреда нет) или удалить
+  в отдельном clean-up. Поле `moderation_status` оставляем (нужно для
+  `merged` из rematch + на будущее, если вернём ручную модерацию).
+- **rematch** по-прежнему ищет user-records в Discogs → `discogs_id_candidate`,
+  при ≥2 confirmations авто-merge → `merged_into_id` + `moderation_status='merged'`.
+  Фильтр меняем на `source IN ('store','user')` БЕЗ условия `approved`
+  (все user-records теперь approved по умолчанию).
+
+Анти-спам/качество без модерации (бэклог): дедуп уже отсекает дубли; при росте
+мусора — лёгкие сигналы (rate-limit на создание, флаг-репорт от юзеров,
+авто-скрытие при N репортах). Не сейчас.
 
 ---
 
@@ -152,12 +185,86 @@ Store: расширить `useScannerStore` методами `preflight`, `spoti
 
 ## 8. Порядок работ
 
-1. Миграция (поля §1).
-2. `services/spotify.py` + env + config.
-3. `services/user_record.py::preflight_dedup` (обёртка над listing_matcher).
-4. API §4 + guard §5.
-5. UI визард §7.
-6. Модерация §6 (admin-лента + фильтры видимости).
-7. Расширить rematch-джоб на `source='user'`.
+1. ✅ Миграция (поля §1).
+2. ✅ `services/spotify.py` + env + config.
+3. ✅ `services/user_record.py::preflight_dedup`.
+4. ✅ API §4 + guard §5.
+5. ✅ UI визард §7 + `ManualAddVinylToggle`.
+6. ✅ Модерация §6 — **отменена**. Clean-up сделан: `create_user_record` →
+   `approved`, pending-гейт в `get_record` убран, data-миграция
+   `20260617_approve_user_records` для старых pending-строк.
+7. ✅ Расширить rematch-джоб на `source='user'`.
+8. ✅ §9 мульти-формат, §10 friendly-перехват дубля, §11 редактирование.
 
-Шаги 1–5 = MVP в прод. 6–7 = полный скоуп (общий пул).
+MVP в проде. Все §6/§9/§10/§11 реализованы — осталось задеплоить + Spotify-креды.
+
+---
+
+## 9. Мульти-формат: выбор формата в форме (new 2026-06-17)
+
+Поддерживаем **vinyl / CD / cassette** на уровне ДАННЫХ и ФОРМЫ. Отдельных
+визуалов носителя НЕ делаем — винил остаётся единой точкой входа и бренд-объектом.
+
+- **Точка входа** — `ManualAddVinylToggle` (винил), без изменений.
+- **Визард** (`record/manual.tsx`): добавить **выбор формата** `Винил | CD | Кассета`
+  (сегмент), нормализуем в `format_type` (`vinyl`/`cd`/`cassette`). Тексты убрать
+  винил-центричные: не «добавить винил», а «добавить пластинку/релиз».
+- **Карточка** созданной записи: формат показывается текстом (`format_type`),
+  кастомного арта под CD/кассету НЕ рисуем (пока).
+- **Дедуп**: `listing_matcher` уже format-aware (`_format_family`,
+  `FORMAT_MISMATCH_PENALTY`). Прокинуть `format_type` из визарда в
+  `preflight_dedup` (сейчас не передаётся), чтобы fuzzy не путал носители.
+
+Объём: бэкенд — 1 параметр в preflight; фронт — сегмент формата + правка текстов.
+
+---
+
+## 10. Дедуп при добавлении → «уже есть, добавим к нему» (new 2026-06-17)
+
+Сейчас preflight на `DUPLICATE`/`LIKELY_DUPLICATE`/`FOUND_IN_DISCOGS` просто
+блокирует (409 / тост). Меняем на дружелюбный перехват:
+
+- Юзер заполняет визард → submit → `preflight`.
+- Если найден существующий релиз (наш `Record` или Discogs):
+  «**Чел, такой релиз уже есть — вот он**» → показать карточку найденного →
+  кнопка **«Добавить в коллекцию»**.
+- Тап → добавляем НАЙДЕННУЮ запись в коллекцию (не создаём дубль `source='user'`).
+  - наш `Record` → обычный add-to-collection по `record_id`.
+  - Discogs (`FOUND_IN_DISCOGS`) → add по `discogs_id` (как из поиска).
+- `LIKELY_DUPLICATE` (fuzzy) — мягко: «возможно это оно» + обе опции
+  («добавить найденное» / «всё равно создать своё»).
+
+Бэкенд готов (preflight уже возвращает `match`/`discogs_id`). Работа — на фронте:
+экран-перехват в визарде + ветка add-to-collection вместо create.
+
+---
+
+## 11. Редактирование user-records (new 2026-06-17)
+
+Сейчас добавленную запись нельзя отредактировать. Добавляем edit (только для
+`source='user'` и только создателю — `created_by_user_id == me`).
+
+### 11.1 Бэкенд
+- `PATCH /records/user/{id}` — поля artist/title/year/label/catalog/country/
+  format_type/tracklist/cover. Guard: `source=='user'` И `created_by_user_id==me`
+  (иначе 403). Discogs/store записи — не редактируются.
+
+### 11.2 Точки входа (UI)
+1. **Карточка версии релиза** → меню «3 точки» → пункт **«Отредактировать»** с
+   иконкой-карандашом. Виден только если запись `source=='user'` и юзер — автор.
+2. **Настройки профиля** → как только добавлен ПЕРВЫЙ ручной релиз, появляется
+   строка-раздел «своя коллекция вручную» (управление своими добавленными).
+
+### 11.3 Название раздела профиля — варианты (выбрать)
+- **«Мои релизы»** — ёмко, нейтрально к формату. *(рекоменд.)*
+- «Добавленные вручную» — точно по смыслу, длиннее.
+- «Моя картотека» — образно, бренд-нотка.
+- «Свои пластинки» — но мы уходим от винил-центричности (есть CD/кассеты).
+
+### 11.4 Иконка — варианты
+- **карандаш-на-пластинке / винил + pencil** — связь «своё + правка» *(рекоменд.)*
+- `square.and.pencil` (iOS-метафора «список+правка»)
+- `pencil-simple` (нейтральная правка)
+- винил с плюсом (вход в добавление, но это скорее про create)
+
+Решение по названию+иконке — за продуктом; дефолт: «Мои релизы» + винил-карандаш.

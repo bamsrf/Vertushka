@@ -56,7 +56,10 @@ export interface VinylRecord {
    *           Виден в Маркете, но добавить в коллекцию/вишлист пока нельзя
    *           (см. бэкенд-guard в collections/wishlists POST).
    */
-  source?: 'discogs' | 'store';
+  source?: 'discogs' | 'store' | 'user';
+  // user-record (§11): автор и статус модерации (модерация отменена → approved).
+  created_by_user_id?: string | null;
+  moderation_status?: string;
   discogs_id?: string;
   discogs_master_id?: string;
   title: string;

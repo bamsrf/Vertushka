@@ -566,6 +566,7 @@ interface CollectionState {
   fetchStats: () => Promise<void>;
   setSortBy: (sort: 'added_at' | 'price_desc' | 'price_asc') => void;
   addToCollection: (discogsId: string) => Promise<void>;
+  addToCollectionByRecordId: (recordId: string) => Promise<void>;
   addToWishlist: (discogsId: string) => Promise<void>;
   removeFromCollection: (itemId: string, skipRefetch?: boolean) => Promise<void>;
   removeFromWishlist: (itemId: string, skipRefetch?: boolean) => Promise<void>;
@@ -709,6 +710,26 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
         fetchWishlistItems()
       ]);
       // Возможные анлоки: A1, B*, R_* (числовые/самореферентные)
+      detectAchievementUnlocks();
+    });
+  },
+
+  addToCollectionByRecordId: async (recordId) => {
+    return dedupeAction(`addToCollectionByRecordId:${recordId}`, async () => {
+      let { defaultCollection, collections, fetchCollectionItems, fetchWishlistItems } = get();
+      if (!defaultCollection) {
+        if (collections.length === 0) {
+          await api.createCollection({ name: 'Моя коллекция' });
+          await get().fetchCollections();
+          defaultCollection = get().defaultCollection;
+        }
+        if (!defaultCollection) {
+          throw new Error('Не удалось создать коллекцию');
+        }
+      }
+      await api.addToCollectionByRecordId(defaultCollection.id, recordId);
+      useCacheStore.getState().invalidateAll();
+      await Promise.all([fetchCollectionItems(), fetchWishlistItems()]);
       detectAchievementUnlocks();
     });
   },

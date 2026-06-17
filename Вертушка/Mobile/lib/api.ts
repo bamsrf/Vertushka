@@ -506,6 +506,7 @@ class ApiClient {
     year?: number | null;
     barcode?: string | null;
     catalog?: string | null;
+    format_type?: string | null;
   }): Promise<PreflightResponse> {
     const response = await this.client.post<PreflightResponse>(
       '/records/preflight/',
@@ -529,6 +530,24 @@ class ApiClient {
       '/records/user/',
       payload
     );
+    return response.data;
+  }
+
+  // Правка своей user-record (§11). Только автор, только source='user'.
+  async updateUserRecord(
+    id: string,
+    payload: Partial<UserRecordPayload>
+  ): Promise<VinylRecord> {
+    const response = await this.client.patch<VinylRecord>(
+      `/records/user/${id}`,
+      payload
+    );
+    return response.data;
+  }
+
+  // Свои ручные релизы (для раздела «Мои релизы» в профиле). §11.
+  async listMyUserRecords(): Promise<VinylRecord[]> {
+    const response = await this.client.get<VinylRecord[]>('/records/user/mine');
     return response.data;
   }
 
@@ -842,6 +861,18 @@ class ApiClient {
     const response = await this.client.post<CollectionItem>(
       `/collections/${collectionId}/items`,
       { discogs_id: discogsId, ...data }
+    );
+    return response.data;
+  }
+
+  // Добавить по UUID записи (для user-records и найденных дублей §10).
+  async addToCollectionByRecordId(
+    collectionId: string,
+    recordId: string
+  ): Promise<CollectionItem> {
+    const response = await this.client.post<CollectionItem>(
+      `/collections/${collectionId}/items`,
+      { record_id: recordId }
     );
     return response.data;
   }
