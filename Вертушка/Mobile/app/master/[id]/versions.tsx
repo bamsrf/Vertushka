@@ -48,21 +48,57 @@ export default function VersionsScreen() {
   const [hasMore, setHasMore] = useState(true);
   const [total, setTotal] = useState(0);
   const [activeFilter, setActiveFilter] = useState<FormatFilter>('all');
-  // Retry для обложек: сервер обогащает enriched-кэш фоном (вызов Discogs),
-  // занимает ~5-8с. Перезапрашиваем страницу 1 несколько раз с нарастающей
-  // задержкой, пока не появятся обложки. nginx local-first ответ отдаёт с
-  // no-store, поэтому retry доходит до бэка, а не до кэша.
+  // Retry обложек: бэк добирает covers фоном (thumbs + get_release ~10-15с) и
+  // пишет enriched-кэш. Перезапрашиваем КАЖДУЮ загруженную страницу — не только
+  // первую: пагинация (page 2+) тоже приходит без части обложек (винил-репрессы
+  // с пустым thumb), а старый retry дёргал только page 1, поэтому они навсегда
+  // оставались закрывашками. Мёржим covers по release_id, пока на странице есть
+  // непокрытые. nginx local-first отдаёт no-store → retry доходит до бэка.
   const COVER_RETRY_DELAYS = [3000, 4000, 6000, 8000];
-  const coverRetryAttempt = useRef(0);
-  const coverRetryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const coverRetryAttempts = useRef<Record<number, number>>({});
+  const coverRetryTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
 
   useEffect(() => {
-    coverRetryAttempt.current = 0;
+    coverRetryAttempts.current = {};
     loadVersions();
     return () => {
-      if (coverRetryTimer.current) clearTimeout(coverRetryTimer.current);
+      coverRetryTimers.current.forEach(clearTimeout);
+      coverRetryTimers.current = [];
     };
   }, [id]);
+
+  // Обновляет обложки уже загруженных версий по release_id, не трогая порядок,
+  // длину списка и уже покрытые карточки.
+  const mergeCovers = (results: MasterVersion[]) => {
+    const byId = new Map(results.map((v) => [v.release_id, v] as const));
+    setVersions((prev) =>
+      prev.map((v) => {
+        if (v.cover_image_url || v.thumb_image_url) return v;
+        const u = byId.get(v.release_id);
+        if (u && (u.cover_image_url || u.thumb_image_url)) {
+          return { ...v, cover_image_url: u.cover_image_url, thumb_image_url: u.thumb_image_url };
+        }
+        return v;
+      }),
+    );
+  };
+
+  const scheduleCoverRetry = (pageNum: number, results: MasterVersion[]) => {
+    const hasUncovered = results.some((v) => !(v.cover_image_url || v.thumb_image_url));
+    const attempt = coverRetryAttempts.current[pageNum] ?? 0;
+    if (!hasUncovered || attempt >= COVER_RETRY_DELAYS.length) return;
+    coverRetryAttempts.current[pageNum] = attempt + 1;
+    const timer = setTimeout(async () => {
+      try {
+        const resp = await api.getMasterVersions(id, pageNum, 50);
+        mergeCovers(resp.results);
+        scheduleCoverRetry(pageNum, resp.results);
+      } catch {
+        /* covers подтянутся при следующем заходе */
+      }
+    }, COVER_RETRY_DELAYS[attempt]);
+    coverRetryTimers.current.push(timer);
+  };
 
   const loadVersions = async (pageNum = 1) => {
     if (!id) return;
@@ -77,24 +113,6 @@ export default function VersionsScreen() {
       if (pageNum === 1) {
         setVersions(response.results);
         setTotal(response.total);
-
-        // Если ни у одной версии нет обложки — значит пришли из дампа без cover.
-        // Планируем следующий retry: фоновый _enrich_covers_from_api заполнит
-        // Redis-кэш thumb'ами через несколько секунд.
-        // enriched-ответ покрывает обложками почти все версии; local-first —
-        // лишь те, что уже видели (часто 0-1). Retry'им пока покрыта меньшая
-        // часть, чтобы не остановиться на частичном local-first ответе.
-        const coveredCount = response.results.filter(
-          (v) => v.cover_image_url || v.thumb_image_url
-        ).length;
-        // Ретраим пока есть хоть одна версия без обложки: бэк добирает stragglers
-        // через get_release (~10с) и пишет enriched — следующий retry их подхватит.
-        const allCovered = coveredCount >= response.results.length;
-        if (!allCovered && coverRetryAttempt.current < COVER_RETRY_DELAYS.length) {
-          const delay = COVER_RETRY_DELAYS[coverRetryAttempt.current];
-          coverRetryAttempt.current += 1;
-          coverRetryTimer.current = setTimeout(() => loadVersions(1), delay);
-        }
       } else {
         // Дедуп по release_id: enriched-пагинация может вернуть на стр. N версию,
         // уже отданную на стр. N-1 → дубль ключа в FlatList ("two children with
@@ -105,6 +123,8 @@ export default function VersionsScreen() {
           return [...prev, ...fresh];
         });
       }
+      // Догрузка обложек для ЭТОЙ страницы (page 1 и пагинация — одинаково).
+      scheduleCoverRetry(pageNum, response.results);
       setPage(pageNum);
       setHasMore(existingLength + response.results.length < response.total);
     } catch (err) {
