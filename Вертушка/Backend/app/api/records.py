@@ -1185,6 +1185,7 @@ async def preflight(
         year=data.year,
         barcode=data.barcode,
         catalog=data.catalog,
+        format_type=data.format_type,
         db=db,
     )
     return PreflightResponse(
@@ -1239,6 +1240,7 @@ async def create_user_submitted_record(
         year=data.year,
         barcode=data.barcode,
         catalog=data.catalog_number,
+        format_type=data.format_type,
         db=db,
     )
     if pf.status in (PreflightStatus.DUPLICATE, PreflightStatus.FOUND_IN_DISCOGS):
@@ -1706,18 +1708,25 @@ async def get_master_versions(
         has_uncovered = any(
             not (v.cover_image_url or v.thumb_image_url) for v in resp_obj.results
         )
-        if has_uncovered and await cache.set_nx(
-            "master_versions_straggler", enriched_ck, "1", ttl=21600
-        ):
-            background_tasks.add_task(
-                _enrich_covers_from_api,
-                master_id=master_id,
-                page=page,
-                per_page=per_page,
-                versions_dump=cached_enriched,
-                enriched_ck=enriched_ck,
-            )
+        if has_uncovered:
+            # КРИТИЧНО: пока в ответе есть версии без обложки — НИКОГДА не отдаём
+            # max-age, иначе nginx закэширует частичный (с закрывашками) ответ на
+            # час, и телефон будет ловить x-cache-status:HIT со старыми пустотами,
+            # даже после того как Redis-enriched долечился. no-store → запрос
+            # всегда доходит до бэка и берёт свежий (долеченный) Redis-кэш.
             response.headers["Cache-Control"] = "no-store"
+            # Заодно раз в 6ч пинаем фоновую дозагрузку обложек (get_release).
+            if await cache.set_nx(
+                "master_versions_straggler", enriched_ck, "1", ttl=21600
+            ):
+                background_tasks.add_task(
+                    _enrich_covers_from_api,
+                    master_id=master_id,
+                    page=page,
+                    per_page=per_page,
+                    versions_dump=cached_enriched,
+                    enriched_ck=enriched_ck,
+                )
         else:
             response.headers["Cache-Control"] = "public, max-age=3600"
         return resp_obj
