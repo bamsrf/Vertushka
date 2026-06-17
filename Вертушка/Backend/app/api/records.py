@@ -2018,10 +2018,12 @@ async def _enrich_covers_from_api(
         # master/versions отдаёт thumb=null для части переизданий (винил-репрессы),
         # но у самого релиза images есть (это и видно при тапе в деталь). Bounded
         # cap+watchdog — чтобы не повторить 60s-фан-аут экрана артиста.
+        # cap 30: одна heal-волна закрывает и крупные мастера; 10s-watchdog ниже
+        # всё равно держит время, sem 5 ограничивает параллельность к Discogs.
         still = [
             v for v in versions.results
             if not v.cover_image_url and not v.thumb_image_url
-        ][:15]
+        ][:30]
         if still:
             sem = asyncio.Semaphore(5)
 
