@@ -21,6 +21,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImageManipulator from 'expo-image-manipulator';
 import { Button, SegmentedControl } from '../../components/ui';
 import { RecordCard } from '../../components/RecordCard';
+import { ManualAddVinylToggle } from '../../components/ManualAddVinylToggle';
 import { useScannerStore, useCollectionStore } from '../../lib/store';
 import { useTourTarget } from '../../lib/useTourTarget';
 import { analytics } from '../../lib/analytics';
@@ -305,6 +306,15 @@ export default function ScannerScreen() {
               </Text>
             </View>
           </View>
+        )}
+
+        {/* Ручное добавление — floating винил-тоггл (нет в Discogs/Маркете).
+            Якорь правый-низ, над таб-баром; в режиме обложки выше затвора. */}
+        {!showResults && (
+          <ManualAddVinylToggle
+            onOpen={() => router.push('/record/manual')}
+            bottom="14%"
+          />
         )}
       </View>
 
