@@ -50,9 +50,14 @@ class SpotifyService:
     @classmethod
     def _get_shared_client(cls) -> httpx.AsyncClient:
         if cls._client is None:
+            # Spotify гео-блокирует api.spotify.com по IP (РФ → 403 "Spotify is
+            # unavailable in this country"). SPOTIFY_PROXY_URL пускает запросы
+            # через прокси в разрешённой стране. Пусто → прямое соединение.
+            proxy = get_settings().spotify_proxy_url or None
             cls._client = httpx.AsyncClient(
-                timeout=httpx.Timeout(10.0),
+                timeout=httpx.Timeout(15.0),
                 limits=httpx.Limits(max_connections=10, max_keepalive_connections=5),
+                proxy=proxy,
             )
         return cls._client
 

@@ -43,6 +43,9 @@ class Settings(BaseSettings):
     # Пустые креды → enrichment graceful no-op (юзер вводит всё руками).
     spotify_client_id: str = Field(default="", alias="SPOTIFY_CLIENT_ID")
     spotify_client_secret: str = Field(default="", alias="SPOTIFY_CLIENT_SECRET")
+    # api.spotify.com гео-блокирует РФ-IP (403). Прокси в разрешённой стране.
+    # Формат: http://user:pass@host:port или socks5://host:port. Пусто → напрямую.
+    spotify_proxy_url: str = Field(default="", alias="SPOTIFY_PROXY_URL")
 
     # Apple Sign In
     apple_client_id: str = Field(default="", alias="APPLE_CLIENT_ID")
