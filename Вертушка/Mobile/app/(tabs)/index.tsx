@@ -166,7 +166,7 @@ export default function ScannerScreen() {
     if (alreadyInCollection) {
       Alert.alert(
         'Уже в коллекции',
-        `"${record.title}" уже есть в вашей коллекции. Добавить ещё одну копию?`,
+        `«${record.title}» уже есть в вашей коллекции. Добавить ещё одну копию?`,
         [
           { text: 'Отмена', style: 'cancel' },
           { text: 'Добавить', onPress: doAdd },

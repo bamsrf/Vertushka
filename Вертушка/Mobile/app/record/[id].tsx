@@ -260,6 +260,19 @@ export default function RecordDetailScreen() {
     }
   };
 
+  const handleAddAnotherCopy = () => {
+    if (!record) return;
+    setShowActionSheet(false);
+    Alert.alert(
+      'Уже в коллекции',
+      `«${record.title}» уже есть в вашей коллекции. Добавить ещё одну копию?`,
+      [
+        { text: 'Отмена', style: 'cancel' },
+        { text: 'Добавить', onPress: handleAddToCollection },
+      ]
+    );
+  };
+
   const handleAddToWishlist = async () => {
     if (!record) return;
 
@@ -396,6 +409,12 @@ export default function RecordDetailScreen() {
     }
 
     if (recordStatus.status === 'in_collection') {
+      // Добавить ещё одну копию (с подтверждением)
+      actions.push({
+        label: 'Добавить ещё копию',
+        icon: 'duplicate-outline',
+        onPress: handleAddAnotherCopy,
+      });
       // Добавить в папку
       actions.push({
         label: 'Добавить в папку',
