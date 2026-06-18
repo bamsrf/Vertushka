@@ -36,7 +36,7 @@ import { Button, Input, Card } from '../../components/ui';
 import { toast } from '../../lib/toast';
 import { api, getCoverUrl } from '../../lib/api';
 import { useCollectionStore } from '../../lib/store';
-import type { SpotifyAlbumCandidate, VinylRecord, PreflightResponse } from '../../lib/types';
+import type { SpotifyAlbumCandidate, VinylRecord, PreflightResponse, RecordSearchResult } from '../../lib/types';
 import { Colors, Typography, Spacing, BorderRadius } from '../../constants/theme';
 
 // Форматы носителя (§9). value → format_type на бэке.
@@ -115,7 +115,7 @@ const EMPTY_DRAFT: Draft = {
 };
 
 type Step = 0 | 1 | 2;
-const STEP_LABELS = ['Фото', 'Из Spotify', 'Детали'];
+const STEP_LABELS = ['Фото', 'Discogs', 'Детали'];
 
 // ─── Экран ───────────────────────────────────────────────────────────────────
 
@@ -134,6 +134,8 @@ export default function ManualRecordScreen() {
   // Дедуп-перехват (§10): найденный релиз + статус preflight.
   const [intercept, setIntercept] = useState<PreflightResponse | null>(null);
   const [adding, setAdding] = useState(false);
+  // Discogs-поиск в шаге 2: id записи, которую сейчас добавляем.
+  const [addingDiscogsId, setAddingDiscogsId] = useState<string | null>(null);
 
   const patch = useCallback(
     (p: Partial<Draft>) => setDraft((d) => ({ ...d, ...p })),
@@ -223,6 +225,25 @@ export default function ManualRecordScreen() {
       });
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  // §4: выбор Discogs-результата в шаге 2 → добавляем настоящую Discogs-запись
+  // (по discogs_id). Она оседает в БД + search-индексе (бэкенд-хук). Не user-record.
+  const addDiscogsRecord = async (discogsId: string) => {
+    setAddingDiscogsId(discogsId);
+    try {
+      await addToCollection(discogsId);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      toast.success('Добавлено', 'Релиз в вашей коллекции', { position: 'bottom' });
+      router.back();
+    } catch (e: any) {
+      const detail = e?.response?.data?.detail;
+      toast.error('Не удалось добавить', typeof detail === 'string' ? detail : 'Попробуйте ещё раз', {
+        position: 'bottom',
+      });
+    } finally {
+      setAddingDiscogsId(null);
     }
   };
 
@@ -368,7 +389,9 @@ export default function ManualRecordScreen() {
             ) : (
               <>
                 {step === 0 && <PhotoStep draft={draft} patch={patch} />}
-                {step === 1 && <SpotifyStep draft={draft} patch={patch} />}
+                {step === 1 && (
+                  <DiscogsStep onAdd={addDiscogsRecord} addingId={addingDiscogsId} />
+                )}
                 {step === 2 && <DetailsStep draft={draft} patch={patch} />}
               </>
             )}
@@ -547,56 +570,50 @@ function PhotoSlot({
   );
 }
 
-// ─── Шаг 1: Spotify ──────────────────────────────────────────────────────────
+// ─── Шаг 1: поиск в Discogs ────────────────────────────────────────────────────
 
-function SpotifyStep({ draft, patch }: StepProps) {
+function DiscogsStep({
+  onAdd,
+  addingId,
+}: {
+  onAdd: (discogsId: string) => void;
+  addingId: string | null;
+}) {
   const [q, setQ] = useState('');
   const [loading, setLoading] = useState(false);
-  const [results, setResults] = useState<SpotifyAlbumCandidate[]>([]);
+  const [results, setResults] = useState<RecordSearchResult[]>([]);
+  const [searched, setSearched] = useState(false);
 
   const search = async () => {
     if (!q.trim()) return;
     setLoading(true);
+    setSearched(true);
     try {
-      const r = await api.spotifySearchAlbums(q.trim());
-      setResults(r);
-      if (r.length === 0) {
+      const r = await api.searchRecords(q.trim());
+      setResults(r.results);
+      if (r.results.length === 0) {
         toast.info('Ничего не нашлось', 'Заполните данные вручную на следующем шаге', {
           position: 'bottom',
         });
       }
     } catch {
-      toast.error('Spotify недоступен', 'Заполните данные вручную', { position: 'bottom' });
+      toast.error('Discogs недоступен', 'Заполните данные вручную', { position: 'bottom' });
     } finally {
       setLoading(false);
     }
   };
 
-  const pick = (a: SpotifyAlbumCandidate) => {
-    Haptics.selectionAsync();
-    patch({
-      spotify: a,
-      artist: a.artist,
-      title: a.name,
-      year: a.year != null ? String(a.year) : '',
-    });
-  };
-
   return (
     <View style={styles.stepGap}>
-      <Text style={styles.stepTitle}>Подтянуть данные из Spotify</Text>
+      <Text style={styles.stepTitle}>Найти в Discogs</Text>
       <Text style={styles.stepHint}>
-        Артист, треклист и год заполнятся автоматически. Прессинг и каталог
-        добавишь на следующем шаге.
+        Если релиз уже есть в Discogs — выбери его, добавим со всеми данными.
+        Нет в списке — пропусти и заполни вручную.
       </Text>
 
       <View style={styles.searchRow}>
         <View style={styles.flex}>
-          <Input
-            value={q}
-            onChangeText={setQ}
-            placeholder="Антоха МС — Родня"
-          />
+          <Input value={q} onChangeText={setQ} placeholder="Kendrick Lamar — DAMN" />
         </View>
         <Pressable onPress={search} style={styles.searchBtn}>
           <Icon name="magnifying-glass" size={20} color="onBrand" />
@@ -605,33 +622,44 @@ function SpotifyStep({ draft, patch }: StepProps) {
 
       {loading && <ActivityIndicator color={Colors.royalBlue} style={styles.mt16} />}
 
-      {results.map((a) => {
-        const active = draft.spotify?.id === a.id;
+      {results.map((r) => {
+        const cover = getCoverUrl(r);
+        const busy = addingId === r.discogs_id;
         return (
-          <Pressable key={a.id} onPress={() => pick(a)}>
-            <Card style={StyleSheet.flatten([styles.albumCard, active && styles.albumCardActive])}>
+          <Pressable key={r.discogs_id} onPress={() => !addingId && onAdd(r.discogs_id)}>
+            <Card style={styles.albumCard}>
               <View style={styles.albumThumb}>
-                <Icon name="music-notes" size={22} color="secondary" />
+                {cover ? (
+                  <Image source={{ uri: cover }} style={styles.albumThumbImg} resizeMode="cover" />
+                ) : (
+                  <Icon name="disc-outline" size={22} color="secondary" />
+                )}
               </View>
               <View style={styles.flex}>
                 <Text style={styles.albumTitle} numberOfLines={1}>
-                  {a.name}
+                  {r.title}
                 </Text>
                 <Text style={styles.albumMeta} numberOfLines={1}>
-                  {a.artist}{a.year ? ` · ${a.year}` : ''} · {a.tracks.length} треков
+                  {r.artist}
+                  {r.year ? ` · ${r.year}` : ''}
+                  {r.format_type ? ` · ${r.format_type}` : ''}
                 </Text>
               </View>
-              {active && <Icon name="check-circle" size={22} color="accent" />}
+              {busy ? (
+                <ActivityIndicator color={Colors.royalBlue} />
+              ) : (
+                <Icon name="plus" size={22} color="accent" />
+              )}
             </Card>
           </Pressable>
         );
       })}
 
-      {draft.spotify && (
+      {searched && !loading && results.length === 0 && (
         <View style={styles.sparkleNote}>
           <Icon name="sparkles" size={16} color="accent" />
           <Text style={styles.sparkleText}>
-            Заполнено: {draft.spotify.tracks.length} треков, {draft.year} год
+            Не нашлось — нажми «Пропустить» и заполни вручную.
           </Text>
         </View>
       )}
@@ -791,7 +819,9 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.surface,
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
   },
+  albumThumbImg: { width: '100%', height: '100%' },
   albumTitle: { ...Typography.bodyBold, color: Colors.text },
   albumMeta: { ...Typography.caption, color: Colors.textMuted },
   sparkleNote: {

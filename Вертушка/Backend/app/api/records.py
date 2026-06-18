@@ -518,6 +518,13 @@ async def get_or_create_record_by_discogs_id(
             )
         record = existing
 
+    # Self-enriching search-индекс: релиз, добытый из live Discogs (нет в дампе),
+    # кладём в discogs_releases_index → /records/search найдёт его в следующий раз.
+    # Идемпотентно (ON CONFLICT DO NOTHING), ошибки глотает сам helper.
+    from app.services.discogs_index import upsert_release_into_index
+    await upsert_release_into_index(db, record_data)
+    await db.commit()
+
     # Fire-and-forget mirror обложки на наш сервер: следующие запросы Mobile
     # получат cover_url='/uploads/covers/{id}.jpg' и грузят с nginx мгновенно,
     # минуя нестабильный Discogs CDN (часть пресс-обложек 403 без referer).
@@ -1288,6 +1295,27 @@ async def create_user_submitted_record(
         spotify_album_id=data.spotify_album_id,
         user_submitted_data=user_data,
     )
+
+    # 3.5) Артист-линковка: пробуем найти Discogs-артиста по имени и привязать
+    # artist_id (читается из discogs_data property) → карточка артиста оживает.
+    # Уверенный матч = точное совпадение имени (case-insensitive). Не нашли —
+    # оставляем артиста текстом.
+    try:
+        from app.services.discogs import DiscogsService
+
+        ar = await DiscogsService().search_artists(data.artist, per_page=5)
+        want = data.artist.strip().casefold()
+        match = next(
+            (a for a in ar.results if (a.name or "").strip().casefold() == want),
+            None,
+        )
+        if match and match.artist_id:
+            rec.discogs_data = {
+                "artist_id": str(match.artist_id),
+                "artist_thumb_image_url": match.thumb_image_url or match.cover_image_url,
+            }
+    except Exception:
+        logger.warning("user-record artist link failed for %s", rec.id)
 
     # 4) заливка фото обложки (приоритет у юзерского фото над Spotify-обложкой)
     if data.cover_photo_base64:

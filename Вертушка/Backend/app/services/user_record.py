@@ -143,7 +143,12 @@ async def _check_discogs(
     barcode: str | None,
     catalog: str | None,
 ) -> str | None:
-    """Discogs-проверка: сначала оффлайн dump-индекс, иначе live search API."""
+    """Discogs-проверка: сначала оффлайн dump-индекс, при промахе — live API.
+
+    Дамп устаревает: свежий релиз в нём может отсутствовать, хотя в живом Discogs
+    он есть. Поэтому при промахе дампа ВСЁ РАВНО проверяем live — иначе плодим
+    лишние user-records на релизы, которые на самом деле в Discogs есть.
+    """
     # a) dump-индекс (быстро, оффлайн)
     if await _is_dump_available(db):
         hit = await _lookup_in_dump_index(
@@ -157,9 +162,9 @@ async def _check_discogs(
         if hit is not None:
             row, _method, _conf = hit
             return str(row.get("discogs_id")) if row.get("discogs_id") else None
-        return None
+        # промах дампа → проваливаемся в live (свежие/нишевые релизы)
 
-    # b) live Discogs search (fallback, если дамп не залит)
+    # b) live Discogs search (дамп не залит ИЛИ промах дампа)
     try:
         svc = DiscogsService()
         query = f"{artist} {title}".strip()
