@@ -45,6 +45,11 @@ const HORIZONTAL_PADDING = 20;
 const RAIL_COVER = 108;
 const ITEM_GAP = 12;
 const FULL_LOOP_DURATION_MS = 30000;
+// Абсолютная скорость авто-скролла (px/ms) — НЕ зависит от числа карточек.
+// Калибрована под прежний рейл из 24 карточек (полный цикл ≈30с при 24 шт).
+// Иначе при коротком рейле (топ-10) визуальная скорость падала, т.к. петля
+// фиксирована в 30с независимо от ширины ряда.
+const SCROLL_PX_PER_MS = (24 * (RAIL_COVER + ITEM_GAP)) / FULL_LOOP_DURATION_MS;
 const HOVER_PAUSE_DELAY_MS = 200;
 const IS_WEB = Platform.OS === 'web';
 
@@ -143,8 +148,7 @@ export function AutoRail({
     const w = halfWidthSV.value;
     if (!w) return;
     const dt = frame.timeSincePreviousFrame ?? 16;
-    const speed = w / FULL_LOOP_DURATION_MS;
-    tx.value = tx.value - speed * dt;
+    tx.value = tx.value - SCROLL_PX_PER_MS * dt;
   });
 
   // Визуальная нормализация в [-w, 0] — даёт бесшовный цикл и работает
@@ -253,11 +257,15 @@ export function AutoRail({
         // Заменяет дефолтный «year · format · ♥ want».
         <View style={{ marginTop: 2 }}>{itemBadgeRenderer(r)}</View>
       ) : showYear && r.year ? (
-        <Text style={styles.railYear}>
-          {r.year}
-          {r.format_type ? ` · ${r.format_type}` : ''}
-          {r.discogs_want ? ` · ♥ ${r.discogs_want}` : ''}
-        </Text>
+        <>
+          <Text style={styles.railYear}>
+            {r.year}
+            {r.format_type ? ` · ${r.format_type}` : ''}
+          </Text>
+          {r.discogs_want ? (
+            <Text style={styles.railWant}>♥ {r.discogs_want}</Text>
+          ) : null}
+        </>
       ) : null}
     </TouchableOpacity>
   );
@@ -385,4 +393,5 @@ const styles = StyleSheet.create({
   },
   railTitleSmall: { fontSize: ms(12), fontWeight: '600', color: PALETTE.ink, marginTop: 2 },
   railYear: { fontSize: ms(12), color: PALETTE.periwinkle, marginTop: 2 },
+  railWant: { fontSize: ms(12), color: PALETTE.periwinkle, marginTop: 1, fontWeight: '600' },
 });
