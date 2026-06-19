@@ -189,13 +189,25 @@ async def add_to_wishlist(
 
     # Эмиссия события ачивок
     from app.services.achievements import emit_event
-    from app.services.achievements.events import WISHLIST_ITEM_ADDED
+    from app.services.achievements.events import RECORD_WANTED, WISHLIST_ITEM_ADDED
     await emit_event(
         db,
         current_user.id,
         WISHLIST_ITEM_ADDED,
         {"wishlist_item_id": item.id, "record_id": record.id},
     )
+
+    # Триггерим K14–K16 у владельцев этой пластинки (она у них в коллекции).
+    # Сам себе не считается. Кол-во «хотельщиков» evaluator берёт из БД.
+    from sqlalchemy import distinct as _distinct
+    from app.models.collection import Collection as _Collection, CollectionItem as _CI
+    owner_rows = await db.execute(
+        select(_distinct(_Collection.user_id))
+        .join(_CI, _CI.collection_id == _Collection.id)
+        .where(_CI.record_id == record.id, _Collection.user_id != current_user.id)
+    )
+    for (owner_id,) in owner_rows.all():
+        await emit_event(db, owner_id, RECORD_WANTED, {"record_id": record.id})
 
     return WishlistItemResponse(
         id=item.id,

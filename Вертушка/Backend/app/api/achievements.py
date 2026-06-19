@@ -168,6 +168,10 @@ def _group_series(
     for defn in defs:
         if defn.series == "random" and not include_hidden:
             continue
+        # Скрытые ачивки НЕ-рандомных серий (напр. K5/K6 — просмотры профиля,
+        # выпилены с v2.1) полностью убираем из грида и счётчиков, а не маскируем.
+        if defn.is_hidden and defn.series != "random" and not include_hidden:
+            continue
         # Реферальной программы пока нет — серия «Глас наружу» скрыта из выдачи.
         if defn.series == "invitations":
             continue

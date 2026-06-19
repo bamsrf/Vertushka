@@ -1340,6 +1340,22 @@ async def create_user_submitted_record(
 
     await db.commit()
     await db.refresh(rec)
+
+    # Эмиссия ачивок: вклад (K8–K10) + добавление в коллекцию (B-серия,
+    # пионер K17–K20 — ручной релиз почти всегда первый на платформе).
+    from app.services.achievements import emit_event
+    from app.services.achievements.events import (
+        COLLECTION_ITEM_ADDED,
+        USER_RECORD_CREATED,
+    )
+    await emit_event(db, current_user.id, USER_RECORD_CREATED, {"record_id": rec.id})
+    await emit_event(
+        db,
+        current_user.id,
+        COLLECTION_ITEM_ADDED,
+        {"record_id": rec.id, "record": rec},
+    )
+
     return RecordResponse.model_validate(rec)
 
 

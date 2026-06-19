@@ -20,6 +20,13 @@ PROFILE_VIEW = "profile_view"  # инкремент view_count чужим юзе
 FOLLOW_CREATED = "follow_created"      # юзер подписался на кого-то
 FOLLOW_RECEIVED = "follow_received"    # на юзера кто-то подписался
 
+# Сообщения (K-серия, трек 3)
+MESSAGE_SENT = "message_sent"          # юзер отправил сообщение в чат
+
+# Вклад / спрос / первопроходец (K-серия, треки 2/4/5)
+USER_RECORD_CREATED = "user_record_created"  # юзер добавил ручной релиз (source='user')
+RECORD_WANTED = "record_wanted"              # пластинку из коллекции юзера кто-то добавил в вишлист
+
 # Рефералы (Phase 2 / INV-серия)
 REFERRED_USER_REGISTERED = "referred_user_registered"   # кто-то зарегался по реф-ссылке текущего юзера
 REFERRED_USER_ACTIVATED = "referred_user_activated"     # приведённый дошёл до состояния «активен» (≥10 пластинок, ≥30 дней)

@@ -513,6 +513,11 @@ async def send_message(
     await messages_ws_hub.push_event(current_user.id, event)
     await messages_ws_hub.push_event(partner_id, event)
 
+    # Эмиссия события ачивок (K11–K13). Счётчик берётся из БД, событие — триггер.
+    from app.services.achievements import emit_event
+    from app.services.achievements.events import MESSAGE_SENT
+    await emit_event(db, current_user.id, MESSAGE_SENT, {"message_id": message.id})
+
     return hydrated[0]
 
 
