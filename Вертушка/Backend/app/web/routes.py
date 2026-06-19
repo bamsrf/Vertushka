@@ -24,7 +24,7 @@ from app.models.profile_share import ProfileShare
 from app.models.gift_booking import GiftBooking, GiftStatus
 from app.models.store import Store
 from app.models.store_listing import StoreListing, ListingStatus
-from app.api.profile import get_public_profile_payload, _get_top_expensive, _get_new_releases
+from app.api.profile import get_public_profile_payload, _get_top_expensive, _get_market_storefront
 from app.services.exchange import get_usd_rub_rate
 from app.services.pricing import PricingParams, estimate_rub
 from app.services.valuation import get_monthly_delta
@@ -346,7 +346,7 @@ async def public_profile_page(
 
     # Рейлы
     top_expensive = await _get_top_expensive(user.id, db, limit=12) if profile.show_collection else []
-    new_releases = await _get_new_releases(db, limit=24, user_id=user.id)
+    market_releases = await _get_market_storefront(db, limit=24, user_id=user.id)
 
     # === Fun stats — ротирующие фишки коллекции ===
     # Все агрегации идут поверх DISTINCT record_id, чтобы один и тот же релиз
@@ -721,7 +721,7 @@ async def public_profile_page(
         _track(it.record)
     for r in top_expensive:
         _track(r)
-    for r in new_releases:
+    for r in market_releases:
         _track(r)
     for r in highlights:
         _track(r)
@@ -746,7 +746,7 @@ async def public_profile_page(
         "monthly_delta": monthly_delta,
         "fun_stats": fun_stats,
         "top_expensive": top_expensive,
-        "new_releases": new_releases,
+        "market_releases": market_releases,
         "highlights": highlights,
         "collection_items": collection_items,
         "wishlist_items": wishlist_items,

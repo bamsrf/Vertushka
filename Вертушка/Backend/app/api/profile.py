@@ -2,10 +2,11 @@
 API для управления публичным профилем
 """
 import logging
+from datetime import datetime, timedelta
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select, func, or_
+from sqlalchemy import select, func, or_, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -233,6 +234,92 @@ async def _get_new_releases(
             logger.exception("Failed to commit new_releases upserts")
             await db.rollback()
 
+    return out
+
+
+async def _get_market_storefront(
+    db: AsyncSession,
+    limit: int = 12,
+    user_id: UUID | None = None,
+) -> list[PublicProfileRecord]:
+    """Витрина «Маркет / В наличии» для публичного профиля.
+
+    Те же in-stock листинги магазинов-партнёров, что и сторфронт `/market/search`
+    (пустой q): дедуп по master_id, самый свежий сверху, только записи с обложкой.
+    Карточки — реальные Record с matched-листингами, поэтому `offers_for` в шаблоне
+    отдаёт по ним кнопки «Купить сейчас» (клик → модалка с офферами и Discogs).
+
+    Исключаем релизы, уже лежащие в коллекции владельца профиля — витрина для
+    покупки, нет смысла рекламировать то, что у него есть.
+    """
+    cutoff = datetime.utcnow() - timedelta(days=7)
+
+    # chosen_record_id на master-группу = самый дешёвый прессинг; сортировка
+    # групп по свежести листинга. Берём с запасом, чтобы после отсева owned
+    # осталось >= limit карточек.
+    sql = text(
+        """
+        WITH agg AS (
+            SELECT
+                COALESCE(r.discogs_master_id, r.id::text) AS dedup_key,
+                MAX(sl.first_seen_at) AS first_seen_at,
+                (ARRAY_AGG(r.id ORDER BY sl.price_rub ASC NULLS LAST))[1] AS chosen_record_id
+            FROM store_listings sl
+            JOIN stores s ON s.id = sl.store_id
+            JOIN records r ON r.id = sl.matched_record_id
+            WHERE s.is_active = true
+              AND sl.status = 'in_stock'
+              AND sl.matched_record_id IS NOT NULL
+              AND sl.price_rub IS NOT NULL
+              AND sl.last_seen_at >= :cutoff
+              AND r.merged_into_id IS NULL
+              AND COALESCE(r.cover_local_path, r.cover_image_url, sl.raw_payload->>'image_url') IS NOT NULL
+            GROUP BY COALESCE(r.discogs_master_id, r.id::text)
+        )
+        SELECT chosen_record_id
+        FROM agg
+        ORDER BY first_seen_at DESC NULLS LAST
+        LIMIT :limit
+        """
+    )
+    rows = (await db.execute(sql, {"cutoff": cutoff, "limit": limit * 3})).all()
+    record_ids = [row[0] for row in rows]
+    if not record_ids:
+        return []
+
+    excluded_master_ids: set[str] = set()
+    excluded_record_ids: set[UUID] = set()
+    if user_id is not None:
+        owned = await db.execute(
+            select(Record.id, Record.discogs_master_id)
+            .join(CollectionItem, CollectionItem.record_id == Record.id)
+            .join(Collection)
+            .where(Collection.user_id == user_id)
+        )
+        for rid, mid in owned.all():
+            excluded_record_ids.add(rid)
+            if mid:
+                excluded_master_ids.add(str(mid))
+
+    records = (
+        (await db.execute(select(Record).where(Record.id.in_(record_ids))))
+        .scalars()
+        .all()
+    )
+    by_id = {r.id: r for r in records}
+
+    out: list[PublicProfileRecord] = []
+    for rid in record_ids:  # сохраняем порядок «свежести» из SQL
+        if len(out) >= limit:
+            break
+        record = by_id.get(rid)
+        if record is None:
+            continue
+        if record.id in excluded_record_ids:
+            continue
+        if record.discogs_master_id and str(record.discogs_master_id) in excluded_master_ids:
+            continue
+        out.append(_record_to_public(record))
     return out
 
 

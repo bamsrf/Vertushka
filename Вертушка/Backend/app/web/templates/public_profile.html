@@ -1000,33 +1000,35 @@
             </div>
 
             <div class="rail-slot rail-wishlist {% if active_tab != 'wishlist' %}hidden{% endif %}" data-rail="wishlist">
-                {% if new_releases %}
+                {% if market_releases %}
                 <div class="rail-head">
-                    <span class="rail-title slate">Новинки</span>
-                    <span class="rail-sub">Свежие релизы · Discogs</span>
+                    <span class="rail-title slate">Маркет</span>
+                    <span class="rail-sub">В наличии · купить</span>
                 </div>
-                <div class="rail rail-infinite" id="rail-new-releases">
+                <div class="rail rail-infinite" id="rail-market">
                     <div class="rail-track">
-                        {% for r in new_releases %}
-                        <div class="rail-card muted"
+                        {% for r in market_releases %}
+                        {% set r_offers = offers_for(r) %}
+                        {% set r_min = (r_offers | map(attribute='price_rub') | min) if r_offers else None %}
+                        <div class="rail-card"
                              data-record-id="{{ r.id }}"
                              data-artist="{{ r.artist|e }}"
                              data-title="{{ r.title|e }}"
                              data-year="{{ r.year or '' }}"
                              data-format="{{ (r.format_type or '')|e }}"
                              data-cover="{{ r.cover_image_url or '' }}"
-                             data-price="{{ compute_rub(r) or '' }}"
+                             data-price="{{ r_min or compute_rub(r) or '' }}"
                              data-discogs="{{ r.discogs_id or '' }}"
-                             data-want="{{ r.discogs_want or '' }}"
-                             data-have="{{ r.discogs_have or '' }}"
-                             data-offers="{{ offers_for(r)|tojson|forceescape }}"
+                             data-offers="{{ r_offers|tojson|forceescape }}"
                              onclick="openRecordPreview(this)">
                             <div class="rail-cover">
                                 {% if r.cover_image_url %}<img src="{{ r.cover_image_url }}" alt="{{ r.title }}" loading="lazy">{% endif %}
                             </div>
                             <div class="rail-meta-artist">{{ r.artist }}</div>
                             <div class="rail-meta-title">{{ r.title }}</div>
-                            <div class="rail-meta-year tnum">{{ r.year or '' }}{% if r.format_type %} · {{ r.format_type }}{% endif %}{% if r.discogs_want %} · ♥ {{ r.discogs_want }}{% endif %}</div>
+                            {% if r_min %}
+                            <div class="rail-meta-year tnum">от {{ "{:,.0f}".format(r_min).replace(",", " ") }} ₽{% if r_offers|length > 1 %} · {{ r_offers|length }} маг.{% endif %}</div>
+                            {% endif %}
                         </div>
                         {% endfor %}
                     </div>
