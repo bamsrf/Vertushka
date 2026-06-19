@@ -57,7 +57,7 @@ export default function ScannerScreen() {
     searchByCover,
     clearScan,
   } = useScannerStore();
-  const { addToCollection, addToWishlist, collectionItems, wishlistItems } = useCollectionStore();
+  const { addToCollection, addToWishlist, collectionItems, wishlistItems, isOwned } = useCollectionStore();
 
   const handleBarCodeScanned = async ({ data }: { data: string }) => {
     if (!isScanning || isLoading) return;
@@ -147,9 +147,7 @@ export default function ScannerScreen() {
   };
 
   const handleAddToCollection = async (record: RecordSearchResult) => {
-    const alreadyInCollection = collectionItems.some(
-      (item) => item.record.discogs_id === record.discogs_id
-    );
+    const alreadyInCollection = isOwned({ discogsId: record.discogs_id });
 
     const doAdd = async () => {
       try {

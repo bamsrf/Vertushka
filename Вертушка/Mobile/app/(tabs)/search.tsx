@@ -173,7 +173,7 @@ export default function SearchScreen() {
   const { suggestions, fetchSuggestions, clear: clearSuggestions } = useSuggestStore();
   const suggestTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const { addToCollection, addToWishlist, collectionItems } = useCollectionStore();
+  const { addToCollection, addToWishlist, isOwned } = useCollectionStore();
 
   const {
     results: userResults,
@@ -702,9 +702,7 @@ export default function SearchScreen() {
   const handleAddToCollection = async (record: MasterSearchResult | ReleaseSearchResult) => {
     const discogsId = 'main_release_id' in record ? record.main_release_id : record.release_id;
 
-    const alreadyInCollection = collectionItems.some(
-      (item) => item.record.discogs_id === discogsId
-    );
+    const alreadyInCollection = isOwned({ discogsId });
 
     const doAdd = async () => {
       try {

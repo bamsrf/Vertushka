@@ -853,6 +853,15 @@ class ApiClient {
     return response.data;
   }
 
+  // Все id пластинок во всех коллекциях юзера — для надёжного дедупа,
+  // не ограниченного page-1 collectionItems.
+  async getOwnedIds(): Promise<{ discogs_ids: string[]; record_ids: string[] }> {
+    const response = await this.client.get<{ discogs_ids: string[]; record_ids: string[] }>(
+      '/collections/owned-ids'
+    );
+    return response.data;
+  }
+
   async addToCollection(
     collectionId: string,
     discogsId: string,

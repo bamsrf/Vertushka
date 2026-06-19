@@ -550,6 +550,9 @@ interface CollectionState {
   collectionPage: number;
   collectionHasMore: boolean;
   isLoadingMore: boolean;
+  // Полный сет владения (все коллекции, не только page 1) — для дедупа.
+  ownedDiscogsIds: Set<string>;
+  ownedRecordIds: Set<string>;
   wishlistItems: WishlistItem[];
   wishlistFolders: WishlistFolder[];
   isLoading: boolean;
@@ -561,6 +564,8 @@ interface CollectionState {
   setActiveTab: (tab: CollectionTab) => void;
   fetchCollections: () => Promise<void>;
   fetchCollectionItems: () => Promise<void>;
+  fetchOwnedIds: () => Promise<void>;
+  isOwned: (opts: { discogsId?: string | null; recordId?: string | null }) => boolean;
   loadMoreCollectionItems: () => Promise<void>;
   fetchWishlistItems: () => Promise<void>;
   fetchStats: () => Promise<void>;
@@ -592,6 +597,8 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
   defaultCollection: null,
   folders: [],
   collectionItems: [],
+  ownedDiscogsIds: new Set<string>(),
+  ownedRecordIds: new Set<string>(),
   collectionPage: 1,
   collectionHasMore: false,
   isLoadingMore: false,
@@ -626,10 +633,36 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
     try {
       const { items, hasMore } = await api.getCollectionItems(defaultCollection.id, sortBy, 1);
       set({ collectionItems: items, collectionPage: 1, collectionHasMore: hasMore, isLoading: false });
+      // Полный сет владения держим в синхроне с любым refetch коллекции.
+      get().fetchOwnedIds();
     } catch (error) {
       set({ isLoading: false });
       throw error;
     }
+  },
+
+  fetchOwnedIds: async () => {
+    try {
+      const { discogs_ids, record_ids } = await api.getOwnedIds();
+      set({
+        ownedDiscogsIds: new Set(discogs_ids),
+        ownedRecordIds: new Set(record_ids),
+      });
+    } catch {
+      // Тихо: дедуп — не критичный путь, не роняем загрузку коллекции.
+    }
+  },
+
+  isOwned: ({ discogsId, recordId }) => {
+    const { ownedDiscogsIds, ownedRecordIds, collectionItems } = get();
+    if (discogsId && ownedDiscogsIds.has(String(discogsId))) return true;
+    if (recordId && ownedRecordIds.has(String(recordId))) return true;
+    // Fallback на page-1 (на случай, если owned-ids ещё не подгрузились/недоступны).
+    return collectionItems.some(
+      (item) =>
+        (!!discogsId && item.record.discogs_id === String(discogsId)) ||
+        (!!recordId && item.record.id === String(recordId))
+    );
   },
 
   loadMoreCollectionItems: async () => {
@@ -1415,6 +1448,8 @@ export function resetUserStores(): void {
     defaultCollection: null,
     folders: [],
     collectionItems: [],
+    ownedDiscogsIds: new Set<string>(),
+    ownedRecordIds: new Set<string>(),
     collectionPage: 1,
     collectionHasMore: false,
     isLoadingMore: false,

@@ -142,6 +142,7 @@ export default function RecordDetailScreen() {
     fetchWishlistItems,
     fetchCollections,
     addItemsToFolder,
+    isOwned,
   } = useCollectionStore();
 
   useEffect(() => {
@@ -184,6 +185,18 @@ export default function RecordDetailScreen() {
         status: 'in_collection' as const,
         copiesCount: collectionCopies.length,
         collectionItemId: collectionCopies[0].id,
+        wishlistItemId: null,
+      };
+    }
+
+    // Fallback: владение за пределами page-1 collectionItems (большая коллекция,
+    // переход с чужой карточки по UUID). collectionItemId неизвестен — действия,
+    // которым он нужен (папка/удаление), скрываются в action sheet.
+    if (isOwned({ discogsId, recordId })) {
+      return {
+        status: 'in_collection' as const,
+        copiesCount: 1,
+        collectionItemId: null,
         wishlistItemId: null,
       };
     }
@@ -415,29 +428,34 @@ export default function RecordDetailScreen() {
         icon: 'duplicate-outline',
         onPress: handleAddAnotherCopy,
       });
-      // Добавить в папку
-      actions.push({
-        label: 'Добавить в папку',
-        icon: 'folder-outline',
-        onPress: () => setShowFolderPicker(true),
-      });
+      // Папка/удаление требуют collectionItemId. Если владение определено
+      // только через owned-set (collectionItemId === null), эти действия
+      // скрываем — доступно лишь «Добавить ещё копию».
+      if (recordStatus.collectionItemId) {
+        // Добавить в папку
+        actions.push({
+          label: 'Добавить в папку',
+          icon: 'folder-outline',
+          onPress: () => setShowFolderPicker(true),
+        });
 
-      if (folderId && folderItemId) {
-        // Открыли из папки — показываем «Убрать из папки»
-        actions.push({
-          label: 'Убрать из папки',
-          icon: 'folder-open-outline',
-          onPress: handleRemoveFromFolder,
-          destructive: true,
-        });
-      } else {
-        // Открыли из основной коллекции — показываем «Удалить из коллекции»
-        actions.push({
-          label: 'Удалить',
-          icon: 'trash-outline',
-          onPress: handleRemoveFromCollection,
-          destructive: true,
-        });
+        if (folderId && folderItemId) {
+          // Открыли из папки — показываем «Убрать из папки»
+          actions.push({
+            label: 'Убрать из папки',
+            icon: 'folder-open-outline',
+            onPress: handleRemoveFromFolder,
+            destructive: true,
+          });
+        } else {
+          // Открыли из основной коллекции — показываем «Удалить из коллекции»
+          actions.push({
+            label: 'Удалить',
+            icon: 'trash-outline',
+            onPress: handleRemoveFromCollection,
+            destructive: true,
+          });
+        }
       }
     }
 

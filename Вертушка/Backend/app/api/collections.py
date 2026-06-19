@@ -125,6 +125,29 @@ async def recalculate_prices(
     }
 
 
+@router.get("/owned-ids")
+async def get_owned_ids(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Все идентификаторы пластинок, которые есть у пользователя — во всех его
+    коллекциях (основная + папки). Лёгкий запрос (только две колонки), нужен
+    для надёжного дедупа на клиенте: page-1 collectionItems видит лишь первую
+    страницу, а этот сет — всё. Возвращаем и discogs_id (для discogs-релизов),
+    и record_id (для user-records без discogs_id и для перехода с UUID-карточек).
+    """
+    result = await db.execute(
+        select(Record.discogs_id, Record.id)
+        .join(CollectionItem, CollectionItem.record_id == Record.id)
+        .join(Collection, CollectionItem.collection_id == Collection.id)
+        .where(Collection.user_id == current_user.id)
+    )
+    rows = result.all()
+    discogs_ids = sorted({r[0] for r in rows if r[0]})
+    record_ids = sorted({str(r[1]) for r in rows})
+    return {"discogs_ids": discogs_ids, "record_ids": record_ids}
+
+
 @router.get("/", response_model=list[CollectionResponse])
 async def get_collections(
     current_user: User = Depends(get_current_user),
