@@ -1,6 +1,6 @@
 # Вертушка 🎵
 
-Мобильное приложение для коллекционеров винила: каталог пластинок, поиск через Discogs, рарити-теги, рублёвые цены, публичные профили и gift-booking.
+Мобильное приложение для коллекционеров винила: каталог пластинок, поиск через Discogs, рарити-теги, рублёвые цены, маркет РФ-магазинов, личные сообщения, достижения, публичные профили и gift-booking.
 
 > Главный living document — [ROADMAP.md](ROADMAP.md) (Snapshot, Milestones M1–M10, Changelog). Прод-API: `https://api.vinyl-vertushka.ru/api`.
 
@@ -22,9 +22,37 @@
 
 ### Поиск
 - Текстовый поиск с транслитерацией кириллицы, suggest-автодополнение, история (5 + «показать ещё»).
-- Витрина новинок (24 релиза) с pause-on-touch.
-- Страницы артистов и мастер-релизов с «Все версии».
-- Цвет винила из Discogs — `VinylColorTag` + анимированный `VinylSpinner`.
+- **Local-first**: suggest, barcode-lookup, обложки и «Все версии» сначала бьют по локальному slim-индексу Discogs-дампа, и только на промах уходят в Discogs API — без зависимости от их rate-limit.
+- Гибридная витрина новинок (top-10, recency × want, 90-дневное окно), ежемесячный refresh-job, `AutoRail` с pause-on-touch.
+- Страницы артистов и мастер-релизов с «Все версии» (self-healing обложки через user-bucket + CAA).
+- Цвет винила из Discogs — `VinylColorTag` + анимированный `VinylSpinner` (крутится даже под Reduce Motion).
+
+### Маркет (РФ-магазины)
+- Карусель «В наличии сейчас» на экране Поиск + отдельный экран `/market` через overdrag-curtain переход.
+- Свой scraping-стек: 5 магазинов (Коробка Винила, Plastinka.com, Vinyl.ru, StopRobotVinyl, Found) — sitemap/AJAX/Tilda-API discovery, все носители (LP/CD/кассеты/бокс-сеты).
+- Листинги матчатся на наши `records` каскадом из 5 шагов (Discogs URL → barcode → catalog → fuzzy pg_trgm → on-demand Discogs), pressing-trust тиры офферов.
+- **Store-native записи** для релизов, которых нет на Discogs (`source='store'`), с weekly re-match.
+- Hot Stock pill, swipe-сравнение цен в вишлисте, страница магазина `/market/store/[slug]`, маркет-офферы на публичном профиле.
+
+### Сообщения и социалка
+- Личные сообщения в стиле Telegram: realtime через WebSocket, typing-индикатор, presence «в сети / был N мин назад», read-receipts ✓✓.
+- Reply, forward, edit (15-мин окно), реакции-эмодзи, закрепление сообщений и диалогов, mute, media-вложения, «поделиться пластинкой».
+- Message requests (accept/reject), block-лист, рекомендация из вишлиста собеседника.
+- Публичный профиль с `share_token`, видимостью (collection / wishlist / prices / year / format), highlight-пластинками и OG-картинкой.
+- Подписки (Follow) + follow-requests, лента активности `social/list`, fun-stats (14 шт).
+
+### Уведомления
+- Лента «Ты» и «Подписки», Expo push, deep-links по типам событий.
+- v2: dedup-ключи (bump-or-create), snooze, weekly digest, quiet hours, badge с числом, swipe-to-delete.
+
+### Достижения
+- XP-ladder архетипы «Физика звука»: серии Foundation / Collection / Rarity / Сообщество / Market / Пасхалки.
+- PNG/SVG-пины, per-achievement описания, share-карточка, push при анлоке, locked-плейсхолдеры по сериям.
+- Опираются на готовые рарити-флаги (`is_collectible / is_limited / is_hot`) и формат-серии (кассета/CD/бокс-сет).
+
+### Свои пластинки (user-submitted)
+- Добавление релиза, которого нет на Discogs (`source='user'`), через Discogs-first мастер-визард, который сам обогащает запись и self-enriching search-индекс.
+- Модерация с auto-approve по доверию, multi-format, dedup-intercept при добавлении дубля версии, правка обложки/полей автором.
 
 ### Вишлист и подарки
 - Вишлист с приоритетами и пометкой «куплено», экран **«Я дарю / Мне дарят»**.
@@ -32,15 +60,14 @@
 - Анти-фрод: блок-лист контактов (`blocked_contacts`), email-верификация дарителя, опциональный `reveal_gifter`.
 - Веб-страница `/cancel` для отмены бронирования + success sheet.
 
-### Социалка
-- Публичный профиль с `share_token`, выбором видимости (collection / wishlist / prices / year / format), highlight-пластинками и OG-картинкой.
+### Веб-профиль
+- Веб-версия профиля (Jinja-шаблоны) с фильтром формата, grid/list, sticky CTA, превью пластинки, alt-version офферами в модалках.
 - Fun-stats (14 шт) с русскими склонениями, fade-ротацией, правилом 0=hide.
-- Подписки (Follow), лента активности `social/list`.
-- Веб-версия профиля (Jinja-шаблоны) с фильтром формата, grid/list, sticky CTA, превью пластинки.
 
 ### Авторизация
-- Email + пароль, **Apple Sign In**, **Google OAuth**.
-- Восстановление пароля через коды на email.
+- Email + пароль, **Apple Sign In**, **Login via Discogs** (OAuth + one-time импорт коллекции).
+- Google OAuth есть в бэке, кнопка сейчас скрыта в UI.
+- Восстановление пароля через коды на email; trusted client IP, email_verified gate, token-revocation.
 - Soft delete + 30-дневное окно восстановления аккаунта.
 
 ### UX
@@ -55,24 +82,28 @@
 
 ### Mobile (`Mobile/`)
 - **Expo SDK 54**, **React Native 0.81.5**, **React 19.1**, **Expo Router 6**, TypeScript.
-- **Zustand 5** (5 сторов: auth, collection, scanner, searchHistory, onboarding).
-- **Axios 1.13** с retry и token-refresh интерцепторами.
-- `expo-image` (disk cache), `expo-camera`, `expo-barcode-scanner`, `react-native-reanimated 4`, `phosphor-react-native`, `react-native-svg`.
-- `@react-native-google-signin/google-signin`, `expo-apple-authentication`, `@amplitude/analytics-react-native`.
+- **Zustand 5** — 16 сторов: auth, collection, scanner, search, suggest, searchHistory, sections, market, messages, notifications, follow, gift, profile, userSearch, cache, onboarding.
+- **Axios 1.13** с retry и token-refresh интерцепторами; глобальный clamp font-scale до 1.15 + `ms()` на reading-text.
+- `expo-image` (disk cache), `expo-camera`, `expo-barcode-scanner`, `expo-notifications` (push), `react-native-reanimated 4`, WebSocket для realtime-чата, `phosphor-react-native`, `react-native-svg`.
+- `expo-apple-authentication`, Discogs OAuth, `@amplitude/analytics-react-native`.
 - EAS configured, bundle id `com.vertushka.app`.
 
 ### Backend (`Backend/`)
 - **FastAPI 0.109** + **SQLAlchemy 2 (asyncpg)** + **PostgreSQL** + **Redis** + **Alembic**.
-- **APScheduler** — фоновые задачи (обновление цен 04:00, обогащение артистов 05:00, очистка booking-токенов, search_cache cleanup).
-- **httpx / aiohttp**, **Pillow**, **Jinja2** (веб-страницы), **bcrypt + jose**, **aiosmtplib** (Yandex SMTP).
-- Token-bucket rate-limiter Discogs (60 tokens, 1/sec, capacity 55) + приоритетная очередь SEARCH→DETAIL→SCAN→ENRICHMENT→BATCH + circuit breaker.
-- Docker Compose, Nginx, Sentry, structured JSON logging, Supabase mirror для аналитики.
+- **19 роутеров** (auth, records, collections, wishlists, users, gifts, profile, export, covers, user_photos, waitlist, market, offers, messages, notifications, achievements, discogs_oauth, admin).
+- **WebSocket-хаб** для realtime-сообщений (`messages_ws_hub`), Expo push (`push`), distributed rate-limiter Discogs.
+- **APScheduler** — обновление цен 04:00, обогащение артистов 05:00, ночной crawl магазинов, stock-refresh 6ч, matcher batch, weekly re-match store-native, monthly new-releases refresh, очистка booking-токенов, search_cache cleanup, weekly digest.
+- **Локальный slim Discogs-дамп** (`discogs_index`) — обложки, suggest, barcode, master-versions без обращения к API.
+- **httpx / aiohttp / BeautifulSoup** (scraping), **Pillow** + CLIP ONNX (визуальный re-rank обложек при скане), **Jinja2** (веб-страницы), **bcrypt + jose**, **aiosmtplib** (Yandex SMTP) + Resend fallback.
+- Token-bucket rate-limiter Discogs + приоритетная очередь SEARCH→DETAIL→SCAN→ENRICHMENT→BATCH + circuit breaker.
+- Docker Compose, Nginx, **self-hosted GlitchTip** (sentry.vinyl-vertushka.ru) для крэш-репортинга, structured JSON logging, Supabase mirror для аналитики.
 
 ### Внешние интеграции
-- **Discogs API** (search / releases / masters / marketplace stats, кэш 7 дней).
-- **OpenAI Vision** (распознавание обложек).
+- **Discogs API** (search / releases / masters / marketplace stats, кэш 7 дней) + **локальный slim-дамп** (local-first).
+- **OpenAI Vision** (GPT-4o, распознавание обложек) + CLIP ONNX визуальный re-rank.
+- **Spotify** (через `SPOTIFY_PROXY_URL` для обхода RU geo-block).
 - **ЦБ РФ** (курс USD/RUB, кэш).
-- **Yandex SMTP** (восстановление пароля, gift-booking).
+- **Yandex SMTP** + **Resend** fallback (восстановление пароля, gift-booking, уведомления).
 
 ---
 
@@ -82,39 +113,53 @@
 Вертушка/                  # git root, github.com/bamsrf/Vertushka
 ├── Backend/               # FastAPI
 │   ├── app/
-│   │   ├── api/           # 12 роутеров: auth, records, collections, wishlists,
+│   │   ├── api/           # 19 роутеров: auth, records, collections, wishlists,
 │   │   │                  # users, gifts, profile, export, covers, user_photos,
-│   │   │                  # waitlist, masters
-│   │   ├── models/        # 12 моделей: user, record, collection, wishlist,
-│   │   │                  # gift_booking, blocked_contact, follow, profile_share,
-│   │   │                  # collection_value_snapshot, user_photo, waitlist,
-│   │   │                  # search_cache
-│   │   ├── services/      # 14 сервисов: discogs, pricing, valuation, exchange,
-│   │   │                  # cache, cover_storage, openai_vision, email,
-│   │   │                  # notifications, rate_limiter, search_cache_db,
-│   │   │                  # gifts, og_image
+│   │   │                  # waitlist, market, offers, messages, notifications,
+│   │   │                  # achievements, discogs_oauth, admin
+│   │   ├── models/        # 23 модели: user, record, collection, wishlist,
+│   │   │                  # gift_booking, blocked_contact, follow, follow_request,
+│   │   │                  # profile_share, collection_value_snapshot, user_photo,
+│   │   │                  # waitlist, search_cache, store, store_listing,
+│   │   │                  # conversation, message_reaction, message_hidden,
+│   │   │                  # notification, offer_click, user_achievement, user_block
+│   │   ├── services/      # 30+ сервисов: discogs, discogs_index (local dump),
+│   │   │                  # pricing, valuation, marketplace_pricing, exchange,
+│   │   │                  # cache, cover_storage/_fallback/_matcher/_warm,
+│   │   │                  # openai_vision, listing_matcher, messaging,
+│   │   │                  # messages_ws_hub, notification_service, push, feed,
+│   │   │                  # affiliate, spotify, user_record, vinyl_color, …
+│   │   ├── services/scrapers/  # base, registry, sitemap, robots, http_client,
+│   │   │                  # browser + shops/ (korobkavinyla, plastinka_com,
+│   │   │                  # vinyl_ru, stoprobotvinyl, found)
 │   │   ├── tasks/         # booking_tasks, discogs_tasks, valuation_tasks
 │   │   ├── web/           # routes.py + Jinja-шаблоны (публичный профиль, /cancel)
 │   │   └── scripts/       # recalc_collection_rub, backfill_rarity_flags,
-│   │                      # backfill_vinyl_colors, mirror_to_supabase, …
+│   │                      # backfill_vinyl_colors, mirror_to_supabase,
+│   │                      # bulk_rematch, build_discogs_index, …
 │   ├── nginx/, scripts/deploy.sh, scripts/backup.sh
 │   └── docker-compose.prod.yml
 │
 ├── Mobile/                # Expo / React Native
-│   ├── app/               # Expo Router
-│   │   ├── (auth)/        # login, register, forgot-password, reset-password,
-│   │   │                  # verify-code
+│   ├── app/               # Expo Router (~43 экрана)
+│   │   ├── (auth)/        # login, register, forgot/reset-password, verify-code
 │   │   ├── (tabs)/        # index, collection, search
-│   │   ├── record/[id]    # детали пластинки + «Все версии релиза»
+│   │   ├── record/[id], record/manual, records/mine  # детали + ручное добавление
 │   │   ├── master/[id]/   # мастер-релиз + версии
 │   │   ├── artist/[id]    # дискография
-│   │   ├── user/[username]# публичный профиль
-│   │   ├── gift/[id]      # детальный экран подарка
-│   │   ├── social/list    # лента активности
-│   │   ├── settings/, folder/[id], onboarding.tsx, profile.tsx
+│   │   ├── market/        # index + store/[slug]
+│   │   ├── messages/      # index, [conversationId], new, share-record
+│   │   ├── notifications.tsx, achievements.tsx
+│   │   ├── user/[username]# публичный профиль + achievements
+│   │   ├── gift/[id], social/list, social/follow-requests
+│   │   ├── collection/value, folder/[id], wishlist-folder/[id]
+│   │   ├── settings/      # discogs, edit-profile, notifications, share-profile,
+│   │   │                  # wishlists
+│   │   └── onboarding.tsx, profile.tsx
 │   ├── components/        # RarityAura, RecordCard/Grid, VinylColorTag,
 │   │                      # VinylSpinner, GlassTabBar, AnimatedGradientText,
-│   │                      # AutoRail, OnboardingOverlay, SocialAuthButtons, …
+│   │                      # AutoRail, AchievementPin, StoreCarousel, MarketSection,
+│   │                      # HotStockTag, OffersBlock, OnboardingOverlay, …
 │   ├── components/ui/     # design-system v2 (Icon)
 │   └── lib/               # api, store, types, analytics, toast, vinylColor
 │
@@ -168,7 +213,7 @@ Discogs hard-cap: **60 req/min** для аутентифицированных �
 
 **Ресурсы для 10 магазинов** (после initial backfill): ~150 МБ постоянной RAM, 3-5% CPU в среднем, ~55 ГБ трафика/мес, ~1 ГБ БД через год.
 
-**Бутылочное горлышко** — не наш сервер, а Discogs API rate-limit (60 req/min). Решается планируемым импортом [Discogs Data Dumps](docs/plans/DISCOGS_DATA_DUMPS.md) (полная локальная копия `records`, без зависимости от их API).
+**Бутылочное горлышко** — не наш сервер, а Discogs API rate-limit (60 req/min). **Решено**: импортирован slim [Discogs Data Dump](docs/plans/DISCOGS_DATA_DUMPS.md) в локальный индекс (`services/discogs_index.py`) — обложки, suggest, barcode-lookup и master-versions резолвятся локально, к API уходим только на промах.
 
 📖 **Детальная операционка**: [docs/plans/PARSING.md](docs/plans/PARSING.md) — архитектура, cron, лимиты, ресурсы, HOWTO добавить новый магазин, troubleshooting.
 📋 **План локального mirror Discogs**: [docs/plans/DISCOGS_DATA_DUMPS.md](docs/plans/DISCOGS_DATA_DUMPS.md).
@@ -283,32 +328,39 @@ docker compose stop metabase  # когда закончил
 
 ---
 
-## Ключевые изменения за последние 2 месяца
+## Ключевые изменения (май–июнь 2026)
 
 Хайлайты по веткам — полный список см. в [ROADMAP.md → Changelog](ROADMAP.md).
 
-**Рарити и цены**
-- 3 тира редкости (Коллекционка / Лимитка / Популярно), `RarityAura` glow + backfill (Канон выпилен из UI).
-- Компонентная формула RUB-цены вместо фиксированного ×2.5; recalc-скрипт.
-- VinylColorTag + анимированный VinylSpinner из Discogs-цвета.
+**Маркет РФ-магазинов (новый раздел продукта)**
+- Scraping-стек на 5 магазинов, листинги → matcher → `store_listings`, store-native записи для не-Discogs релизов.
+- Маркет в Поиске (карусель «В наличии сейчас»), экран `/market` + `/market/store/[slug]`, Hot Stock pill, swipe-сравнение цен.
+- Распределённый rate-limiter, parallel crawl, targeted stock-refresh, smoke-checks ингеста.
 
-**Подарки и социалка**
-- Gift-booking волна 3: анти-фрод, blocked_contacts, email-верификация, reveal_gifter.
-- Экран `gift/[id]`, экран «Я дарю / Мне дарят», timeout 15s + понятный фидбек.
-- Публичный веб-профиль: fun-stats (14 шт), новинки 24 релиза, sticky CTA, waitlist, auto-rail с pause-on-touch (фикс iOS Safari).
+**Личные сообщения (новая фича)**
+- TG-style чат: WebSocket realtime, typing, presence, read-receipts, reply/forward/edit/реакции/pin, media, «поделиться пластинкой».
+- Лента уведомлений «Ты»/«Подписки», Expo push, v2 (dedup, snooze, weekly digest, quiet hours, badge).
 
-**Авторизация и безопасность**
-- Apple Sign In + Google OAuth, circuit breaker для Discogs, Amplitude.
-- P0+P1 фиксы из QA-ревью (волны A–D).
+**Достижения (зашиты в Mobile)**
+- Архетипы «Физика звука» (XP-ladder), PNG/SVG-пины, серии Foundation/Collection/Rarity/Сообщество/Market/Пасхалки, share-карточка.
 
-**UX и дизайн-система**
-- Онбординг v2 (welcome-карусель + 10-шаговый тур).
-- Полная миграция Mobile на Icon из design-system v2; outline-иконки лупы/scan, halo wrapper.
+**Свои пластинки + импорт**
+- User-submitted records (`source='user'`), Discogs-first ручной визард, auto-approve по доверию, dedup-intercept.
+- Login via Discogs + one-time импорт коллекции; стабильная пагинация и hydration цен.
 
-**Инфра**
-- Скрипт зеркалирования БД в Supabase для аналитики, view'ы.
-- ROADMAP.md (M1–M10) + auto-sync changelog через GitHub Actions.
-- Уход от N+1 в `/masters/{id}/versions`: `is_hot` теперь считается из `stats.community` master-versions response, `is_collectible` обогащается фоном через `BackgroundTasks` + single-flight Redis-lock. Холодный путь 60+ сек → < 3 сек.
+**Local-first Discogs**
+- Slim-дамп в локальный индекс: обложки/suggest/barcode/master-versions резолвятся локально, к API — только на промах.
+- Self-healing обложки версий (user-bucket + CAA), bound cover fan-out (нет 60s-зависаний на артистах).
+
+**Цены и редкость**
+- Маркетплейс-цены для RU/USSR, value коллекции через `estimate_rub` fallback, foldered-записи исключены из valuation.
+- 3 тира редкости (Коллекционка / Лимитка / Популярно), `RarityAura`, VinylColorTag + VinylSpinner.
+
+**Инфра и релиз-преп**
+- Self-hosted GlitchTip (sentry.vinyl-vertushka.ru), TestFlight build prep, user-context в Sentry-scope.
+- Security: trusted client IP, Google email_verified gate, token-revocation, broaden `.gitignore`.
+- iOS-билд: modular headers для Google transitive pods; Spotify через прокси (обход RU geo-block).
+- CLIP ONNX визуальный re-rank обложек при скане; font-scale clamp 1.15.
 
 ---
 

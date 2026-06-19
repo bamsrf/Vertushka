@@ -6,10 +6,10 @@
 |---|---|
 | **Репо** | [bamsrf/Vertushka](https://github.com/bamsrf/Vertushka) |
 | **Прод-API** | https://api.vinyl-vertushka.ru/api |
-| **TestFlight / Google Play** | _появится в M2_ |
-| **Последнее обновление** | 2026-05-12 |
-| **Текущий milestone** | M1 (Дизайн-система v2 + Маскот) |
-| **Прогресс** | M0 ✅ · M1 ⬜ · M2 ⬜ · M3–M10 ⬜ |
+| **TestFlight / Google Play** | TestFlight build prep ✅, soak в процессе (M2) |
+| **Последнее обновление** | 2026-06-19 |
+| **Текущий milestone** | M2 (Release prep) параллельно M5/M6 (зашиты в продукт) |
+| **Прогресс** | M0 ✅ · M1 🟨 · M2 🟨 · M3 🟨 · M4 🟨 · M5 🟨 · M6 🟨 · M7 🟨 · M8 ⬜ · M9 ⬜ · M10 🟨 |
 
 ---
 
@@ -65,24 +65,27 @@ Roadmap — это не «что хочется», а «что соответс�
 ### 1.1. Стек
 
 **Backend** — `Backend/`
-- FastAPI + SQLAlchemy(asyncpg) + PostgreSQL + Redis + Alembic
-- 11 API роутеров: auth, records, collections, wishlists, users, gifts, profile, export, covers, user_photos, masters
-- 13 сервисов: discogs, pricing, valuation, exchange, cache, cover_storage, openai_vision, email, notifications, rate_limiter, search_cache_db, auth_oauth, и др.
-- Деплой: Docker Compose на `85.198.85.12`, prod API: `https://api.vinyl-vertushka.ru/api`
-- Скрипты: `recalc_collection_rub.py`, `backfill_rarity_flags.py`, `backfill_vinyl_colors.py`, `migrate_covers.py`, `deploy.sh`, `backup.sh`
+- FastAPI + SQLAlchemy(asyncpg) + PostgreSQL + Redis + Alembic + WebSocket
+- 19 API роутеров: auth, records, collections, wishlists, users, gifts, profile, export, covers, user_photos, waitlist, market, offers, messages, notifications, achievements, discogs_oauth, admin
+- 30+ сервисов: discogs, discogs_index (local dump), pricing, valuation, marketplace_pricing, exchange, cache, cover_storage/_fallback/_matcher/_warm, openai_vision, listing_matcher, messaging, messages_ws_hub, notification_service, push, feed, affiliate, spotify, user_record, vinyl_color, scrapers/* и др.
+- Scraping-стек: `scrapers/shops/` — korobkavinyla, plastinka_com, vinyl_ru, stoprobotvinyl, found
+- Локальный slim Discogs-дамп (`discogs_index`) — local-first обложки/suggest/barcode/versions
+- Деплой: Docker Compose на `85.198.85.12`, prod API: `https://api.vinyl-vertushka.ru/api`, self-hosted GlitchTip (sentry.vinyl-vertushka.ru)
 
 **Mobile** — `Mobile/`
 - Expo SDK 54, React Native 0.81.5, React 19.1, Expo Router 6
-- Zustand 5 (5 сторов: auth, collection, scanner, searchHistory, onboarding) + Axios 1.13 (с retry/refresh-интерсепторами)
-- 22 экрана: `(auth)/*`, `(tabs)/*`, `record/[id]`, `master/[id]/{index,versions}`, `artist/[id]`, `user/[username]`, `social/list`, `settings/*`, `folder/[id]`, `onboarding`
-- 23 компонента: `RarityAura`, `RecordCard/Grid`, `VinylColorTag`, `VinylSpinner`, `GlassTabBar`, `AnimatedGradientText` и др.
+- Zustand 5 (16 сторов: auth, collection, scanner, search, suggest, searchHistory, sections, market, messages, notifications, follow, gift, profile, userSearch, cache, onboarding) + Axios 1.13
+- ~43 экрана: `(auth)/*`, `(tabs)/*`, `record/[id]`, `record/manual`, `records/mine`, `master/[id]/{index,versions}`, `artist/[id]`, `market/{index,store/[slug]}`, `messages/*`, `notifications`, `achievements`, `user/[username]/*`, `gift/[id]`, `social/*`, `collection/value`, `folder/[id]`, `wishlist-folder/[id]`, `settings/*`, `onboarding`
+- Компоненты: `RarityAura`, `RecordCard/Grid`, `VinylColorTag`, `VinylSpinner`, `AchievementPin`, `StoreCarousel`, `MarketSection`, `HotStockTag`, `OffersBlock`, `GlassTabBar` и др.
+- expo-notifications (push), WebSocket realtime-чат
 - EAS configured (projectId `a603ba4b-…`), Bundle ID iOS/Android: `com.vertushka.app`
 
 **Внешние интеграции**
-- Discogs API (search, releases, masters, marketplace stats; rate limiter 0.95 req/s; кэш 7 дней)
-- OpenAI Vision (распознавание обложки через камеру)
-- Yandex SMTP (восстановление пароля, gift-booking уведомления)
-- Apple Sign In + Google OAuth
+- Discogs API (search, releases, masters, marketplace stats) + локальный slim-дамп (local-first)
+- OpenAI Vision (GPT-4o) + CLIP ONNX визуальный re-rank обложек
+- Spotify (через `SPOTIFY_PROXY_URL`, обход RU geo-block)
+- Yandex SMTP + Resend fallback (восстановление пароля, gift-booking, уведомления)
+- Apple Sign In + Login via Discogs (OAuth + импорт коллекции); Google OAuth (кнопка скрыта)
 
 ### 1.2. Реализовано ✅
 
@@ -93,9 +96,32 @@ Roadmap — это не «что хочется», а «что соответс�
 
 **Поиск пластинок**
 - Текстовый поиск с трансслитерацией кириллицы → латиница ([services/discogs.py](Backend/app/services/discogs.py))
-- Сканер штрихкодов и распознавание обложек через GPT-4o Vision ([services/openai_vision.py](Backend/app/services/openai_vision.py))
+- **Local-first**: suggest, barcode, обложки, master-versions сначала бьют по локальному slim Discogs-дампу ([services/discogs_index.py](Backend/app/services/discogs_index.py)), к API — только на промах
+- Сканер штрихкодов + GPT-4o Vision ([services/openai_vision.py](Backend/app/services/openai_vision.py)) + CLIP ONNX визуальный re-rank
 - Suggest с автодополнением, история поиска (первые 5 + «показать ещё»)
-- Витрина новинок (24 релиза) на главной
+- Гибридная витрина новинок (top-10, recency × want, ежемесячный refresh-job)
+
+**Маркет РФ-магазинов** — детали: [PARSING.md](docs/plans/PARSING.md), [SHOPS_PARSING.md](docs/plans/SHOPS_PARSING.md)
+- 5 парсеров: Коробка Винила, Plastinka.com, Vinyl.ru, StopRobotVinyl, Found ([scrapers/shops/](Backend/app/services/scrapers/shops/))
+- 5-шаговый matcher листинг→record ([services/listing_matcher.py](Backend/app/services/listing_matcher.py)), store-native записи (`source='store'`)
+- Маркет в Поиске (карусель «В наличии сейчас»), `/market`, `/market/store/[slug]`, Hot Stock pill, swipe-сравнение цен
+- Distributed rate-limiter, parallel crawl, stock-refresh 6ч, smoke-checks ингеста
+
+**Личные сообщения** — TG-style
+- WebSocket realtime ([services/messages_ws_hub.py](Backend/app/services/messages_ws_hub.py)), typing, presence, read-receipts
+- Reply / forward / edit / реакции / pin / mute / media / «поделиться пластинкой», message requests, block
+
+**Уведомления**
+- Лента «Ты» / «Подписки», Expo push ([services/push.py](Backend/app/services/push.py))
+- v2: dedup-ключи (bump-or-create), snooze, weekly digest, quiet hours, badge, swipe-to-delete
+
+**Достижения** — детали: [PLAN_ACHIEVEMENTS.md](docs/plans/PLAN_ACHIEVEMENTS.md)
+- Архетипы «Физика звука» (XP-ladder), PNG/SVG-пины, серии Foundation/Collection/Rarity/Сообщество/Market/Пасхалки
+- Per-achievement описания, share-карточка, push при анлоке, locked-плейсхолдеры
+
+**Свои пластинки (user-submitted)**
+- `source='user'` ([services/user_record.py](Backend/app/services/user_record.py)), Discogs-first ручной визард, self-enriching индекс
+- Auto-approve по доверию, multi-format, dedup-intercept, правка автором; Login via Discogs + one-time импорт коллекции
 
 **Коллекция и Вишлист**
 - CRUD коллекции с condition, sleeve_condition, notes, shelf_position, фото
@@ -139,13 +165,15 @@ Roadmap — это не «что хочется», а «что соответс�
 
 | Что | Где | Статус |
 |---|---|---|
-| VinylSpinner / VinylColorTag | [`/VINYL_SPINNER_PLAN.md`](docs/plans/VINYL_SPINNER_PLAN.md) | План + бэкфилл-скрипт готовы, не интегрированы. UI-компоненты ждут merge |
-| RarityAura visual polish | `Mobile/components/RarityAura.tsx` | Незакоммиченный diff: усиление opacity, collectible переведён на rotating gradient |
+| M2 Release prep | [PLAN_RELEASE_v2.md](docs/plans/PLAN_RELEASE_v2.md) | TestFlight build prep ✅, GlitchTip live; ждёт soak + store-метаданные (после M1-маскота) |
+| M1 Дизайн-система v2 + Маскот | `Mobile/constants/theme.ts` | Icon v2 мигрирован; маскот ещё не нарисован |
+| Достижения серии D–K | [PLAN_ACHIEVEMENTS.md](docs/plans/PLAN_ACHIEVEMENTS.md) | A/B/C/Market/Сообщество/Пасхалки зашиты; социальные/лор-серии добиваются |
 
 ### 1.4. Метрики
 
-- **PR-velocity:** 10 merged PR за 28 апр – 1 мая (≈10 PR/неделю), 0 открытых
+- **Темп:** ~200 коммитов за 12 мая – 19 июня (Маркет, DM, уведомления, достижения, local-dump, user-records)
 - **Тестовая коллекция:** ~188 записей для калибровки рарити-логики
+- **Магазины:** 5 парсеров в проде, store-native записи + weekly re-match
 - **Аккаунты:** 1 активный разработчик, прод-аккаунт с реальной коллекцией
 
 ---
@@ -158,10 +186,10 @@ ROADMAP.md — это _верхнеуровневый зонтик_. Кажды�
 |---|---|---|
 | M1. Дизайн+Маскот | `docs/plans/PLAN_DESIGN_SYSTEM_V2.md` | 🆕 будет создан в начале M1 |
 | M2. Release | [PLAN_RELEASE_v2.md](docs/plans/PLAN_RELEASE_v2.md) | ✅ есть, ~65% реализовано |
-| M3. Свои пластинки | `docs/plans/PLAN_USER_SUBMITTED_RECORDS.md` | 🆕 |
-| M4. Импорт | `docs/plans/PLAN_COLLECTION_IMPORT.md` | 🆕 |
-| M5. Достижения | [`/plans/PLAN_ACHIEVEMENTS.md`](docs/plans/PLAN_ACHIEVEMENTS.md) | ✅ есть, 84 ачивки в 11 категориях |
-| M6. Парсинг РФ | `docs/plans/PLAN_RU_SHOPS_PARSING.md` | 🆕 |
+| M3. Свои пластинки | [PLAN_USER_SUBMITTED_RECORDS.md](docs/plans/USER_SUBMITTED_RECORDS.md) | ✅ есть, ядро в проде |
+| M4. Импорт | `docs/plans/PLAN_COLLECTION_IMPORT.md` | 🆕 (Discogs OAuth-импорт уже в проде) |
+| M5. Достижения | [`/plans/PLAN_ACHIEVEMENTS.md`](docs/plans/PLAN_ACHIEVEMENTS.md) | ✅ есть, зашиты в продукт |
+| M6. Парсинг РФ | [PARSING.md](docs/plans/PARSING.md) + [SHOPS_PARSING.md](docs/plans/SHOPS_PARSING.md) | ✅ есть, 5 парсеров в проде |
 | M7. Магазины-партнёры | `docs/plans/PLAN_AFFILIATE_FLOW.md` | 🆕 будет в начале M7 (общая стратегия — в [PLAN_MONETIZATION.md](docs/plans/PLAN_MONETIZATION.md)) |
 | M8. P2P | [PLAN_P2P_MARKETPLACE.md](docs/plans/PLAN_P2P_MARKETPLACE.md) | ✅ спек готов (2026-05-12) |
 | M9. Рекомендации | `docs/plans/PLAN_RECOMMENDATIONS.md` | 🆕 |
@@ -307,12 +335,12 @@ ROADMAP.md — это _верхнеуровневый зонтик_. Кажды�
 
 ### M3. Свои пластинки (user-submitted records)
 
-**Статус:** ⬜ Not started
+**Статус:** 🟨 In progress — ядро в проде (`source='user'`, Discogs-first визард, auto-approve, dedup-intercept, правка). Осталось: формальное UGC-moderation SLA под M2-стор.
 **Goal:** Пользователь может добавить пластинку, которой нет в Discogs (самиздат, тираж <500, региональные релизы РФ/СССР), и она появится в его коллекции и в общем поиске после модерации.
 **Why:** РФ/СССР-релизы и underground-самиздат плохо покрыты в Discogs. Без user-submitted мы блокируем самую интересную для коллекционеров часть рынка.
 **Owner:** bamsrf
 **Target:** после M2
-**Detail-spec:** `docs/plans/PLAN_USER_SUBMITTED_RECORDS.md` — будет создан в начале M3
+**Detail-spec:** [PLAN_USER_SUBMITTED_RECORDS.md](docs/plans/USER_SUBMITTED_RECORDS.md) ✅
 
 #### Объём
 
@@ -351,16 +379,18 @@ ROADMAP.md — это _верхнеуровневый зонтик_. Кажды�
 - **Блокируется:** M2 (UGC moderation policy в Store)
 
 #### Связанные артефакты
-- [models/record.py](Backend/app/models/record.py), [services/cover_storage.py](Backend/app/services/cover_storage.py)
+- [models/record.py](Backend/app/models/record.py), [services/cover_storage.py](Backend/app/services/cover_storage.py), [services/user_record.py](Backend/app/services/user_record.py)
 
 #### Changelog
-- _нет записей_
+- **2026-06-18** — Discogs-first manual add + self-enriching search index
+- **2026-06-17** — auto-approve, multi-format, dedup intercept, edit (§6/§9/§10/§11)
+- **2026-06-13** — [#52/#53](https://github.com/bamsrf/Vertushka/pull/53) user-submitted records (`source='user'`), pending исключены из public aggregates
 
 ---
 
 ### M4. Импорт коллекций
 
-**Статус:** ⬜ Not started
+**Статус:** 🟨 In progress — Login via Discogs + one-time импорт коллекции через OAuth в проде ([discogs_oauth.py](Backend/app/api/discogs_oauth.py), `settings/discogs.tsx`). Осталось: CSV-импорт, превью found/not_found/duplicates, прогресс-бар.
 **Goal:** Юзер может импортировать коллекцию из Discogs / CSV / других винил-приложений за <2 минут на 100 записей.
 **Why:** Главный барьер первого использования — «надо вручную добавлять 500 пластинок». Импорт = моментальная ценность.
 **Owner:** bamsrf
@@ -405,16 +435,16 @@ ROADMAP.md — это _верхнеуровневый зонтик_. Кажды�
 
 #### Связанные артефакты
 - [services/discogs.py](Backend/app/services/discogs.py) — batch-резолв
-- [models/collection.py](Backend/app/models/collection.py)
+- [models/collection.py](Backend/app/models/collection.py), [api/discogs_oauth.py](Backend/app/api/discogs_oauth.py)
 
 #### Changelog
-- _нет записей_
+- **2026-06-02** — login via Discogs + one-time collection import; стабильная пагинация, price hydration
 
 ---
 
 ### M5. Достижения
 
-**Статус:** ⬜ Not started — план готов
+**Статус:** 🟨 In progress — зашиты в продукт. Архетипы «Физика звука», серии A/B/C/Market/Сообщество/Пасхалки + формат-серии (кассета/CD/бокс-сет), PNG/SVG-пины, экран профиля, share-карточка, push при анлоке. Осталось: социальные/лор-серии D–K.
 **Goal:** Запустить первые 14 ачивок (категории A + B), интегрировать в профиль, добавить push при анлоке.
 **Why:** Достижения превращают каталог в живой ритуал коллекционера + увеличивают retention без grind-механик.
 **Owner:** bamsrf
@@ -466,16 +496,20 @@ ROADMAP.md — это _верхнеуровневый зонтик_. Кажды�
 - **Блокируется:** M1 (маскот для иконок), M2 (push notifications)
 
 #### Связанные артефакты
-- [`/plans/PLAN_ACHIEVEMENTS.md`](docs/plans/PLAN_ACHIEVEMENTS.md)
+- [`/plans/PLAN_ACHIEVEMENTS.md`](docs/plans/PLAN_ACHIEVEMENTS.md), `Mobile/app/achievements.tsx`, `Mobile/components/AchievementPin.tsx`
 
 #### Changelog
-- _нет записей_
+- **2026-06-19** — rework серии «Сообщество» (v2.1)
+- **2026-06-06** — per-achievement descriptions, new pin designs (C2/C5/C6/meta_scale), past-tense done text
+- **2026-06-02** — finished PNG pin designs для unlocked-бейджей
+- **2026-05-27** — архетипы V3 «Физика звука» (XP-ladder), SVG-пины + официальные пины, «Сюрпризы» → «Пасхалки»
+- **2026-05-13** — [#44](https://github.com/bamsrf/Vertushka/pull/44) каркас серий C/D/E/F/INV/H + Phase 2-5 AC
 
 ---
 
 ### M6. Парсинг магазинов РФ
 
-**Статус:** ⬜ Not started
+**Статус:** 🟨 In progress — по сути в проде. 5 парсеров (Коробка Винила, Plastinka.com, Vinyl.ru, StopRobotVinyl, Found), matcher, store-native записи, Маркет-UI (карусель, `/market`, Hot Stock pill, swipe-цены). Реализовано шире исходного плана (свой `scrapers/`-фреймворк вместо `ru_shops/`). Осталось: добор магазинов, юр-чек robots.txt по каждому.
 **Goal:** Для записей в вишлистах пользователей показываются актуальные офферы из ≥3 РФ-магазинов с ценой в RUB и ссылкой.
 **Why:** Самый частый запрос коллекционеров: «где купить эту пластинку в России». Без этого приложение остаётся каталогом, а не инструментом покупки.
 **Owner:** bamsrf
@@ -524,17 +558,21 @@ ROADMAP.md — это _верхнеуровневый зонтик_. Кажды�
 - **Блокируется:** M2 (релиз)
 
 #### Связанные артефакты
-- [services/discogs.py](Backend/app/services/discogs.py) — паттерн adapter + rate limiter
-- [services/cache.py](Backend/app/services/cache.py) — Redis для кэширования
+- [services/scrapers/](Backend/app/services/scrapers/) — фреймворк парсинга + shops/
+- [services/listing_matcher.py](Backend/app/services/listing_matcher.py), [PARSING.md](docs/plans/PARSING.md), [SHOPS_PARSING.md](docs/plans/SHOPS_PARSING.md)
 
 #### Changelog
-- _нет записей_
+- **2026-06-13** — [#51/#52](https://github.com/bamsrf/Vertushka/pull/52) Found parser (Tilda store-API) + reliable ingest (parallel crawl, stock-refresh, smoke-checks)
+- **2026-06-12** — distributed rate limiter, local-first suggest/barcode, cover warm-up
+- **2026-05-29** — vinyl.ru parser (64k товаров), WS3 matcher (dedup, trusted-store gate, barcode/catalog rematch)
+- **2026-05-19** — Маркет Phase 1–7.5 (Hot Stock pill, MarketSection, `/market/store/[slug]`, swipe-сравнение цен)
+- **2026-05-12** — инфраструктура парсинга РФ-магазинов + пилот korobkavinyla
 
 ---
 
 ### M7. Магазины-партнёры (in-app purchase flow)
 
-**Статус:** ⬜ Not started
+**Статус:** 🟨 In progress (фаза A) — клик-трекинг + UTM + каркас под Admitad в коде ([services/affiliate.py](Backend/app/services/affiliate.py), [models/offer_click.py](Backend/app/models/offer_click.py)). Осталось: подписать партнёрские договоры, дашборд revenue.
 **Goal:** ≥2 партнёрства с РФ-магазинами с tracking кликов; первый rouble revenue.
 **Why:** **Поток A** из трёх-потоковой монетизации — самое короткое time-to-revenue, доказывает партнёрам трафик, фундамент для M8 (P2P) и M10.
 **Owner:** bamsrf + переговоры с магазинами
@@ -577,10 +615,10 @@ ROADMAP.md — это _верхнеуровневый зонтик_. Кажды�
 - **Блокируется:** M6 (нужны офферы)
 
 #### Связанные артефакты
-- M6 PLAN_RU_SHOPS_PARSING
+- [services/affiliate.py](Backend/app/services/affiliate.py), [models/offer_click.py](Backend/app/models/offer_click.py)
 
 #### Changelog
-- _нет записей_
+- **2026-05-17** — фаза A: клик-трекинг + UTM + каркас под Admitad; гибридная стратегия direct + CPA
 
 ---
 
@@ -795,8 +833,27 @@ ROADMAP.md — это _верхнеуровневый зонтик_. Кажды�
 
 Хронологическая лента merged PR. Обновляется автоматически (см. секцию 6) — при каждом merged PR в `main` GitHub Action запускает `scripts/sync_roadmap.py`, который дописывает строку сюда и в Changelog соответствующего M-блока.
 
+### 2026-06
+
+- **2026-06-19** — fix(search): constant rail scroll speed; fix(valuation): value через estimate_rub fallback; feat(discogs): hybrid new-releases rail (recency × want); feat(achievements): rework серии «Сообщество» v2.1 — _M5/M6_
+- **2026-06-18** — feat(discogs): Discogs-first manual add + self-enriching index; fix(spotify): `SPOTIFY_PROXY_URL` обход RU geo-block; fix(ios-build): modular headers для Google pods — _M3_
+- **2026-06-17** — feat(user-records): auto-approve, multi-format, dedup intercept, edit; fix(versions): self-healing straggler covers — _M3_
+- **2026-06-15** — feat(matcher): exact dump barcode/catalog перед fuzzy, vinyl-color penalty, SKU-padded barcode fix; feat(market): pressing-trust тиры офферов — _M6_
+- **2026-06-13** — [#51/#52/#53](https://github.com/bamsrf/Vertushka/pull/53) feat(records): user-submitted (`source='user'`); feat(market): Found parser + reliable ingest; fix(security): trusted client IP, email_verified gate, token revocation — _M3/M6_
+- **2026-06-12** — feat(discogs): distributed rate limiter, local-first suggest/barcode, cover warm-up — _M6_
+- **2026-06-09** — feat(achievements): per-series locked placeholders; feat(auth): скрыть кнопку Google Sign In — _M5_
+- **2026-06-06** — feat(achievements): per-achievement descriptions + new pin designs (C2/C5/C6) — _M5_
+- **2026-06-05** — [#48](https://github.com/bamsrf/Vertushka/pull/48) feat(notifications): seen=read, weekly digest, grouping, deep-links, swipe polish
+- **2026-06-02** — feat(discogs): login via Discogs + one-time collection import; feat(observability): user-context в Sentry/GlitchTip scope — _M4_
+
 ### 2026-05
 
+- **2026-05-31** — chore(release): TestFlight build prep; mobile: self-hosted GlitchTip DSN; nginx: sentry.vinyl-vertushka.ru reverse proxy — _M2_
+- **2026-05-29** — feat(scan): CLIP ONNX визуальный re-rank обложек; perf(scan): vision → gpt-4o; feat(scrapers): vinyl.ru (64k товаров) — _M6_
+- **2026-05-26** — feat(matcher): slim Discogs Releases Dump — локальный индекс + lookup (local-first) — _M6_
+- **2026-05-19** — feat(market): Phase 1–7.5 (Hot Stock, MarketSection, store/[slug]); feat(messages): TG-style чат Phase 1–8; feat(claude): context layer V1 (FTS5)
+- **2026-05-17** — feat(messages): M1 DM router + mobile screens, WebSocket realtime; feat(notifications): лента + Expo push; feat(affiliate): фаза A клик-трекинг + UTM — _M7_
+- **2026-05-13** — [#44/#45](https://github.com/bamsrf/Vertushka/pull/45) feat(achievements): каркас серий C/D/E/F; feat(profile): редизайн чужого профиля + follow-requests — _M5_
 - **2026-05-12** — docs(monetization): утверждена стратегия монетизации A→B→C; добавлены [PLAN_MONETIZATION.md](docs/plans/PLAN_MONETIZATION.md) и [PLAN_P2P_MARKETPLACE.md](docs/plans/PLAN_P2P_MARKETPLACE.md) — _M7/M8/M10_
 - **2026-05-09** — [#39](https://github.com/bamsrf/Vertushka/pull/39) feat(email): отправка через Resend + SMTP fallback
 - **2026-05-07** — [#35](https://github.com/bamsrf/Vertushka/pull/35) feat(analytics): скрипт зеркалирования БД в Supabase — _M10 relevant_
