@@ -181,7 +181,7 @@ async def _get_new_releases(
     from app.services.discogs import DiscogsService
 
     discogs = DiscogsService()
-    pool = await discogs.search_new_releases(per_page=60)
+    pool = await discogs.search_new_releases(limit=40)
     if not pool:
         return []
 

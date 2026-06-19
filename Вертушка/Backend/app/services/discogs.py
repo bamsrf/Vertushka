@@ -1644,81 +1644,165 @@ class DiscogsService:
     # Новинки — глобальный пул свежих релизов с Discogs
     # ------------------------------------------------------------------
 
+    # Параметры гибрида витрины новинок (окно по дате × популярность).
+    NEW_RELEASES_WINDOW_DAYS = 90       # «свежесть»: релизы за последние N дней
+    NEW_RELEASES_POOL_PER_PAGE = 100    # размер want-пула на год (1 страница)
+    NEW_RELEASES_MAX_ENRICH = 60        # cap detail-вызовов на холодный кэш
+    NEW_RELEASES_TTL = 31 * 24 * 3600   # «снимок на месяц»
+
+    @staticmethod
+    def _parse_release_date(raw: str | None) -> "date | None":
+        """Discogs `released`: 'YYYY-MM-DD' | 'YYYY-MM' | 'YYYY' | ''.
+
+        Возвращает date только при ПОЛНОЙ дате (YYYY-MM-DD) — иначе нельзя
+        достоверно сказать, попадает ли релиз в 90-дневное окно.
+        """
+        from datetime import date as _date
+        if not raw:
+            return None
+        parts = raw.split("-")
+        if len(parts) != 3:
+            return None
+        try:
+            y, m, d = int(parts[0]), int(parts[1]), int(parts[2])
+            if m == 0 or d == 0:
+                return None
+            return _date(y, m, d)
+        except (ValueError, TypeError):
+            return None
+
+    @staticmethod
+    def _simplify_search_item(item: dict, fallback_year: int) -> dict | None:
+        """Сырой результат /database/search → упрощённый dict для апсерта."""
+        release_id = item.get("id")
+        if not release_id:
+            return None
+        full_title = item.get("title", "") or ""
+        artist_name, album_title = "Unknown", full_title
+        if " - " in full_title:
+            parts = full_title.split(" - ", 1)
+            artist_name, album_title = parts[0].strip(), parts[1].strip()
+        community = item.get("community") or {}
+        cover = item.get("cover_image") or item.get("thumb")
+        master_id = item.get("master_id")
+        label_list = item.get("label") or []
+        format_list = item.get("format") or []
+        return {
+            "discogs_id": str(release_id),
+            "discogs_master_id": str(master_id) if master_id else None,
+            "title": album_title or full_title or "Unknown",
+            "artist": artist_name or "Unknown",
+            "year": int(item["year"]) if item.get("year") else fallback_year,
+            "label": label_list[0] if label_list else None,
+            "format_type": format_list[0] if format_list else None,
+            "country": item.get("country"),
+            "cover_image_url": cover,
+            "thumb_image_url": item.get("thumb"),
+            "want": int(community.get("want") or 0),
+            "have": int(community.get("have") or 0),
+        }
+
     async def search_new_releases(
         self,
-        year: int | None = None,
-        per_page: int = 60,
+        limit: int = 40,
+        window_days: int | None = None,
     ) -> list[dict]:
-        """Свежие релизы с Discogs, отсортированные по community.want.
+        """Витрина новинок: гибрид «свежесть × популярность».
 
-        Возвращает упрощённые dict для апсерта в локальный Record.
-        Кэшируется в Redis namespace `new_releases` на 12 часов.
+        Шаги:
+          1. Тянем want-пул текущего года (`sort=want desc`), при необходимости
+             добавляем прошлый год — если 90-дневное окно пересекает 1 января.
+          2. Идём по want-порядку, обогащаем release-detail (`released`) и берём
+             релизы, чья ПОЛНАЯ дата попадает в окно `[today - window, today]`.
+             Detail-вызовы кэшируются (TTL_RELEASE), всего ≤ NEW_RELEASES_MAX_ENRICH.
+          3. Fallback: если в окне набралось < limit — добиваем оставшимися по
+             want-порядку, чтобы рейл не пустел (свежесть приоритетна, но не ценой
+             пустой витрины).
+
+        Want-порядок сохраняется внутри обеих групп. Кэш — namespace `new_releases`,
+        TTL 31 день; принудительный сброс делает scheduled-задача refresh_new_releases.
         """
-        from datetime import datetime as _dt
-        if year is None:
-            year = _dt.utcnow().year
+        from datetime import datetime as _dt, timedelta as _td
 
-        cache_key = f"y{year}_p{per_page}"
+        window_days = window_days or self.NEW_RELEASES_WINDOW_DAYS
+        today = _dt.utcnow().date()
+        cutoff = today - _td(days=window_days)
+
+        cache_key = f"hybrid_w{window_days}_l{limit}"
         cached = await cache.get("new_releases", cache_key)
         if cached is not None:
             return cached
 
-        params = {
-            "type": "release",
-            "year": str(year),
-            "format": "Vinyl",
-            "sort": "want",
-            "sort_order": "desc",
-            "per_page": per_page,
-            "page": 1,
-        }
-        try:
-            data = await self._get(
-                f"{self.BASE_URL}/database/search",
-                params=params,
-                headers=self._get_token_headers(),
-                priority=Priority.SEARCH,
-            )
-        except Exception:
-            logger.exception("Failed to fetch new releases from Discogs")
+        years = [today.year] if cutoff.year == today.year else [today.year, cutoff.year]
+
+        candidates: list[dict] = []
+        for yr in years:
+            params = {
+                "type": "release",
+                "year": str(yr),
+                "format": "Vinyl",
+                "sort": "want",
+                "sort_order": "desc",
+                "per_page": self.NEW_RELEASES_POOL_PER_PAGE,
+                "page": 1,
+            }
+            try:
+                data = await self._get(
+                    f"{self.BASE_URL}/database/search",
+                    params=params,
+                    headers=self._get_token_headers(),
+                    priority=Priority.SEARCH,
+                )
+            except Exception:
+                logger.exception("Failed to fetch new-releases pool for year %s", yr)
+                continue
+            for raw in data.get("results", []):
+                simple = self._simplify_search_item(raw, yr)
+                if simple:
+                    candidates.append(simple)
+
+        if not candidates:
             return []
 
-        out: list[dict] = []
-        for item in data.get("results", []):
-            full_title = item.get("title", "") or ""
-            artist_name, album_title = "Unknown", full_title
-            if " - " in full_title:
-                parts = full_title.split(" - ", 1)
-                artist_name, album_title = parts[0].strip(), parts[1].strip()
+        # Единый want-порядок по всему пулу (между годами).
+        candidates.sort(key=lambda x: x["want"], reverse=True)
 
-            community = item.get("community") or {}
-            cover = item.get("cover_image") or item.get("thumb")
-
-            release_id = item.get("id")
-            master_id = item.get("master_id")
-            if not release_id:
+        in_window: list[dict] = []
+        leftovers: list[dict] = []
+        checked = 0
+        for cand in candidates:
+            if len(in_window) >= limit:
+                leftovers.append(cand)
                 continue
+            if checked >= self.NEW_RELEASES_MAX_ENRICH:
+                leftovers.append(cand)
+                continue
+            checked += 1
+            try:
+                detail = await self._get(
+                    f"{self.BASE_URL}/releases/{cand['discogs_id']}",
+                    headers=self._get_token_headers(),
+                    priority=Priority.SEARCH,
+                )
+            except Exception:
+                logger.debug("new-releases: detail fetch failed for %s", cand["discogs_id"])
+                leftovers.append(cand)
+                continue
+            released = self._parse_release_date(detail.get("released"))
+            if released is not None and cutoff <= released <= today:
+                cand["released"] = released.isoformat()
+                in_window.append(cand)
+            else:
+                leftovers.append(cand)
 
-            label_list = item.get("label") or []
-            format_list = item.get("format") or []
+        # Свежие (в окне) первыми, затем fallback по want — до limit.
+        out = in_window[:limit]
+        if len(out) < limit:
+            out += leftovers[: limit - len(out)]
 
-            out.append({
-                "discogs_id": str(release_id),
-                "discogs_master_id": str(master_id) if master_id else None,
-                "title": album_title or full_title or "Unknown",
-                "artist": artist_name or "Unknown",
-                "year": int(item["year"]) if item.get("year") else year,
-                "label": label_list[0] if label_list else None,
-                "format_type": format_list[0] if format_list else None,
-                "country": item.get("country"),
-                "cover_image_url": cover,
-                "thumb_image_url": item.get("thumb"),
-                "want": int(community.get("want") or 0),
-                "have": int(community.get("have") or 0),
-            })
-
-        # 31 день — рейл «снимок на месяц», общий для всех viewers.
-        # Принудительный сброс/прогрев делает scheduled-задача refresh_new_releases
-        # (1-го числа каждого месяца, см. main.py).
-        await cache.set("new_releases", cache_key, out, 31 * 24 * 3600)
+        await cache.set("new_releases", cache_key, out, self.NEW_RELEASES_TTL)
+        logger.info(
+            "search_new_releases: %d in-window, %d total (window=%dd, checked=%d)",
+            len(in_window), len(out), window_days, checked,
+        )
         return out

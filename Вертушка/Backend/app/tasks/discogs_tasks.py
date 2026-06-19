@@ -306,24 +306,21 @@ async def refresh_market_store_stats():
 
 
 async def refresh_new_releases():
-    """Месячный сброс рейла новинок (sort=want) — 1-го числа каждого месяца.
+    """Месячный сброс витрины новинок (гибрид свежесть×want) — 1-го числа.
 
-    Удаляет Redis-ключ namespace `new_releases` за текущий год и сразу
-    прогревает заново, чтобы первый зашедший юзер получил уже свежий топ.
-    Ключ совпадает с DiscogsService.search_new_releases: `y{year}_p{per_page}`.
-    Приложение зовёт per_page=60, поэтому сбрасываем именно этот ключ.
+    Удаляет Redis-ключ namespace `new_releases` и сразу прогревает заново
+    (тяжёлый detail-enrich идёт здесь, в scheduler, а не у первого юзера).
+    Ключ совпадает с DiscogsService.search_new_releases: `hybrid_w{window}_l{limit}`.
+    Приложение зовёт limit=40 с дефолтным окном.
     """
-    from datetime import datetime as _dt
     from app.services.cache import cache
     from app.services.discogs import DiscogsService
 
     try:
-        year = _dt.utcnow().year
-        await cache.delete("new_releases", f"y{year}_p60")
         discogs = DiscogsService()
-        pool = await discogs.search_new_releases(per_page=60)
-        logger.info(
-            "refresh_new_releases: warmed %d items for y%d", len(pool), year
-        )
+        window = discogs.NEW_RELEASES_WINDOW_DAYS
+        await cache.delete("new_releases", f"hybrid_w{window}_l40")
+        pool = await discogs.search_new_releases(limit=40)
+        logger.info("refresh_new_releases: warmed %d items (window=%dd)", len(pool), window)
     except Exception:
         logger.exception("refresh_new_releases failed")
