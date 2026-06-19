@@ -8,24 +8,62 @@ from uuid import UUID
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import get_settings
 from app.models.collection import Collection, CollectionItem
 from app.models.collection_value_snapshot import CollectionValueSnapshot
 from app.models.record import Record
 from app.services.exchange import get_usd_rub_rate
+from app.services.pricing import PricingParams, estimate_rub
+
+
+def record_value_rub(record: Record, rate: float, params: PricingParams) -> float:
+    """Рублёвая стоимость одной записи — единая формула с карточкой профиля.
+
+    Discogs отдаёт median_price только при ≥2 продажах, у редких пластинок он
+    NULL → берём fallback на estimated_price_min (как `_record_to_public`/
+    `compute_rub` в публичном профиле). Голый SUM(median) обнулял оценку и ломал
+    дельту за месяц.
+    """
+    usd = record.estimated_price_median or record.estimated_price_min
+    if not usd:
+        return 0.0
+    return estimate_rub(
+        float(usd),
+        record.country,
+        rate,
+        params,
+        format_type=record.format_type,
+        format_description=record.format_description,
+        discogs_data=record.discogs_data,
+    )
 
 
 async def get_current_collection_value_rub(user_id: UUID, db: AsyncSession) -> Decimal:
-    """Текущая стоимость коллекции пользователя в рублях."""
-    value_usd = await db.scalar(
-        select(func.sum(Record.estimated_price_median))
-        .join(CollectionItem, CollectionItem.record_id == Record.id)
-        .join(Collection)
-        .where(Collection.user_id == user_id)
+    """Текущая стоимость коллекции пользователя в рублях.
+
+    DISTINCT по record_id: пластинка может лежать в общей коллекции и в папке
+    одновременно — не дублируем её в стоимости.
+    """
+    records = (
+        (
+            await db.execute(
+                select(Record)
+                .join(CollectionItem, CollectionItem.record_id == Record.id)
+                .join(Collection)
+                .where(Collection.user_id == user_id)
+            )
+        )
+        .scalars()
+        .all()
     )
-    if not value_usd:
+    # Дедуп по record.id в Python (DISTINCT по строке ломается на JSON discogs_data).
+    by_id = {r.id: r for r in records}
+    if not by_id:
         return Decimal("0")
     rate = await get_usd_rub_rate()
-    return Decimal(str(float(value_usd) * rate)).quantize(Decimal("0.01"))
+    params = PricingParams.from_settings(get_settings())
+    total = sum(record_value_rub(r, rate, params) for r in by_id.values())
+    return Decimal(str(total)).quantize(Decimal("0.01"))
 
 
 async def get_monthly_delta(user_id: UUID, db: AsyncSession) -> Decimal | None:
@@ -52,7 +90,10 @@ async def get_monthly_delta(user_id: UUID, db: AsyncSession) -> Decimal | None:
         .order_by(CollectionValueSnapshot.snapshot_date.desc())
         .limit(1)
     )
-    if past_value is None:
+    # `not past_value` ловит и None, и 0. Снапшоты до фикса формулы писали 0 (SUM
+    # пустого median) — такой baseline невалиден, дельту показываем None (pill
+    # скрыт), пока не накопится реальный ненулевой снапшот 30-дневной давности.
+    if not past_value:
         return None
 
     today_value = await get_current_collection_value_rub(user_id, db)
