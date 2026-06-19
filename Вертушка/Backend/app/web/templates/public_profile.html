@@ -1794,12 +1794,7 @@
                 el.innerHTML = '';
                 return;
             }
-            var word = _pluralRu(offers.length, 'предложение', 'предложения', 'предложений');
-            var head = '<div class="rp-offers-head">' +
-                         '<span class="lbl-title">Купить сейчас</span>' +
-                         '<span class="lbl-count">' + offers.length + ' ' + word + '</span>' +
-                       '</div>';
-            var rows = offers.map(function(o) {
+            function offerRow(o) {
                 var brand = STORE_BRAND[o.store_slug] || { bg: '#2D4FDB', fg: '#FFFFFF', bordered: false };
                 var monogram = (o.store_name || o.store_slug || '?').trim().charAt(0).toUpperCase();
                 var logoStyle = 'background:' + brand.bg + ';color:' + brand.fg + ';';
@@ -1820,8 +1815,32 @@
                             '<path d="M4 2l6 5-6 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>' +
                          '</svg>' +
                        '</a>';
-            }).join('');
-            el.innerHTML = head + rows;
+            }
+
+            // Делим на exact («Купить сейчас») и alt-version («Другая версия»).
+            var exact = offers.filter(function(o) { return !o.is_alt_version; });
+            var alt = offers.filter(function(o) { return o.is_alt_version; });
+            var html = '';
+
+            if (exact.length) {
+                var word = _pluralRu(exact.length, 'предложение', 'предложения', 'предложений');
+                html += '<div class="rp-offers-head">' +
+                          '<span class="lbl-title">Купить сейчас</span>' +
+                          '<span class="lbl-count">' + exact.length + ' ' + word + '</span>' +
+                        '</div>' +
+                        exact.map(offerRow).join('');
+            }
+
+            if (alt.length) {
+                var wordAlt = _pluralRu(alt.length, 'версия', 'версии', 'версий');
+                html += '<div class="rp-offers-head"' + (exact.length ? ' style="margin-top:8px"' : '') + '>' +
+                          '<span class="lbl-title">Другая версия</span>' +
+                          '<span class="lbl-count">' + alt.length + ' ' + wordAlt + '</span>' +
+                        '</div>' +
+                        alt.map(offerRow).join('');
+            }
+
+            el.innerHTML = html;
             el.style.display = '';
         }
 

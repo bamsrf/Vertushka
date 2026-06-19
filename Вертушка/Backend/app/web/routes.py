@@ -96,19 +96,45 @@ _LOCAL_STORE_LOGOS = {"korobkavinyla", "plastinka_com", "vinyl_ru", "stoprobotvi
 _MAX_OFFERS_PER_RECORD = 4
 
 
+def _offer_dict(slug, store_name, logo_url, price_rub, url, status, *, is_alt: bool) -> dict:
+    # logo: приоритет — локальный PNG в статике (мы их положили из мобилки),
+    # затем external logo_url из БД, иначе None → фронт нарисует monogram.
+    if slug in _LOCAL_STORE_LOGOS:
+        logo = f"/static/store-logos/{slug}.png"
+    else:
+        logo = logo_url or None
+    return {
+        "store_slug": slug,
+        "store_name": store_name,
+        "store_logo": logo,
+        "price_rub": int(price_rub),
+        "url": url,
+        "status": status,
+        "is_alt_version": is_alt,
+    }
+
+
 async def _load_offers_by_record(
     record_ids: list[UUID],
+    master_by_record: dict[UUID, str],
     db: AsyncSession,
 ) -> dict[UUID, list[dict]]:
     """Возвращает {record_id: [offer, ...]} — активные in_stock-листинги по магазинам.
 
-    Сортировка внутри записи: по price_rub ASC, до _MAX_OFFERS_PER_RECORD на запись.
-    Каждый offer: store_slug/store_name/store_logo (url или None), price_rub (int),
-    url, status. Цена приведена к целым рублям, чтобы матчилось с подачей в мобилке.
+    Два тира офферов (как в Mobile `/offers/full`):
+      • exact — листинги, замэтченные на сам прессинг (`matched_record_id == rid`);
+      • alt-version (`is_alt_version=True`) — листинги других прессингов того же
+        `discogs_master_id`. Показываются отдельной секцией «Другая версия».
+
+    Сортировка внутри тира: по price_rub ASC, до _MAX_OFFERS_PER_RECORD на тир.
+    Цена приведена к целым рублям, чтобы матчилось с подачей в мобилке.
     """
     if not record_ids:
         return {}
 
+    grouped: dict[UUID, list[dict]] = {}
+
+    # === Exact: листинги на сам прессинг ===
     rows = (
         await db.execute(
             select(
@@ -131,7 +157,6 @@ async def _load_offers_by_record(
         )
     ).all()
 
-    grouped: dict[UUID, list[dict]] = {}
     for rid, url, price_rub, status, slug, store_name, logo_url in rows:
         bucket = grouped.setdefault(rid, [])
         if len(bucket) >= _MAX_OFFERS_PER_RECORD:
@@ -139,20 +164,69 @@ async def _load_offers_by_record(
         # Дедуп по магазину: показываем самое дешёвое предложение от каждого магазина.
         if any(o["store_slug"] == slug for o in bucket):
             continue
-        # logo: приоритет — локальный PNG в статике (мы их положили из мобилки),
-        # затем external logo_url из БД, иначе None → фронт нарисует monogram.
-        if slug in _LOCAL_STORE_LOGOS:
-            logo = f"/static/store-logos/{slug}.png"
-        else:
-            logo = logo_url or None
-        bucket.append({
-            "store_slug": slug,
-            "store_name": store_name,
-            "store_logo": logo,
-            "price_rub": int(price_rub),
-            "url": url,
-            "status": status,
-        })
+        bucket.append(_offer_dict(slug, store_name, logo_url, price_rub, url, status, is_alt=False))
+
+    # === Alt-version: листинги других прессингов того же мастера ===
+    # master '0' / None — мусорный master, пропускаем (иначе склеит несвязанные записи).
+    masters = {m for m in master_by_record.values() if m and m != "0"}
+    if not masters:
+        return grouped
+
+    alt_rows = (
+        await db.execute(
+            select(
+                StoreListing.matched_record_id,   # прессинг, на который замэтчен листинг
+                Record.discogs_master_id,
+                StoreListing.url,
+                StoreListing.price_rub,
+                StoreListing.status,
+                Store.slug,
+                Store.name,
+                Store.logo_url,
+            )
+            .join(Record, Record.id == StoreListing.matched_record_id)
+            .join(Store, Store.id == StoreListing.store_id)
+            .where(
+                Record.discogs_master_id.in_(masters),
+                StoreListing.status == ListingStatus.IN_STOCK,
+                StoreListing.price_rub.isnot(None),
+                Store.is_active == True,  # noqa: E712
+            )
+            .order_by(Record.discogs_master_id, StoreListing.price_rub.asc())
+        )
+    ).all()
+
+    # master → [(listing_record_id, offer_dict)], отсортированы по цене ASC.
+    alt_by_master: dict[str, list[tuple[UUID, dict]]] = {}
+    for src_rid, master_id, url, price_rub, status, slug, store_name, logo_url in alt_rows:
+        alt_by_master.setdefault(master_id, []).append(
+            (src_rid, _offer_dict(slug, store_name, logo_url, price_rub, url, status, is_alt=True))
+        )
+
+    for rid in record_ids:
+        master_id = master_by_record.get(rid)
+        if not master_id or master_id == "0":
+            continue
+        candidates = alt_by_master.get(master_id)
+        if not candidates:
+            continue
+        exact_bucket = grouped.get(rid, [])
+        exact_slugs = {o["store_slug"] for o in exact_bucket}
+        alt_bucket: list[dict] = []
+        for src_rid, offer in candidates:
+            if src_rid == rid:
+                continue  # это сам прессинг — уже в exact-тире
+            if len(alt_bucket) >= _MAX_OFFERS_PER_RECORD:
+                break
+            # Дедуп по магазину внутри alt-тира + не дублируем магазин из exact.
+            if offer["store_slug"] in exact_slugs:
+                continue
+            if any(o["store_slug"] == offer["store_slug"] for o in alt_bucket):
+                continue
+            alt_bucket.append(offer)
+        if alt_bucket:
+            grouped.setdefault(rid, []).extend(alt_bucket)
+
     return grouped
 
 
@@ -631,19 +705,29 @@ async def public_profile_page(
     # сетке, рейлы, highlights). Один query вытягивает по каждой записи топ-4
     # in_stock-листинга — фронт прокинет их через data-offers в JSON.
     _record_id_set: set[UUID] = set()
+    _master_by_record: dict[UUID, str] = {}
+
+    def _track(record) -> None:
+        if not record:
+            return
+        _record_id_set.add(record.id)
+        master = getattr(record, "discogs_master_id", None)
+        if master:
+            _master_by_record[record.id] = master
+
     for it in collection_items:
-        if it.record:
-            _record_id_set.add(it.record.id)
+        _track(it.record)
     for it in wishlist_items:
-        if it.record:
-            _record_id_set.add(it.record.id)
+        _track(it.record)
     for r in top_expensive:
-        _record_id_set.add(r.id)
+        _track(r)
     for r in new_releases:
-        _record_id_set.add(r.id)
+        _track(r)
     for r in highlights:
-        _record_id_set.add(r.id)
-    offers_by_record = await _load_offers_by_record(list(_record_id_set), db)
+        _track(r)
+    offers_by_record = await _load_offers_by_record(
+        list(_record_id_set), _master_by_record, db
+    )
 
     def offers_for(record) -> list[dict]:
         if not record:
