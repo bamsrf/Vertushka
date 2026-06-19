@@ -93,6 +93,12 @@ async def lifespan(app: FastAPI):
     if os.environ.get("IS_SCHEDULER", "false").lower() == "true":
         try:
             from apscheduler.schedulers.asyncio import AsyncIOScheduler
+        except ImportError:
+            logger.warning("APScheduler не установлен, фоновые задачи отключены")
+            AsyncIOScheduler = None
+
+        if AsyncIOScheduler is not None:
+          try:
             from app.tasks.booking_tasks import send_booking_reminders, auto_release_expired_bookings, auto_cancel_unverified_bookings
             from app.tasks.discogs_tasks import cleanup_search_cache, enrich_records_artist_data, update_prices_batch, enrich_market_covers, refresh_market_store_stats, refresh_new_releases
             from app.tasks.valuation_tasks import record_daily_snapshots
@@ -156,10 +162,8 @@ async def lifespan(app: FastAPI):
 
             scheduler.start()
             print("✅ Планировщик задач запущен")
-        except ImportError:
-            logger.warning("APScheduler не установлен, фоновые задачи отключены")
-        except Exception as e:
-            logger.error(f"Ошибка запуска планировщика: {e}")
+          except Exception:
+            logger.exception("Ошибка запуска планировщика")
     else:
         print("ℹ️ Планировщик задач отключён на этом воркере (IS_SCHEDULER != true)")
 
