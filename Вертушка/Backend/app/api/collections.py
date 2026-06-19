@@ -705,7 +705,15 @@ async def get_collection_stats(
         seen_records.add(item.record_id)
         unique_items.append(item)
 
-    total_records = len(unique_items)
+    # «В коллекции» (вариант A): все уникальные владения пользователя по ВСЕМ
+    # коллекциям — папки это группировка, а не вынос с полки, поэтому из счёта
+    # не вычитаются. Breakdown ниже (стоимость/годы/жанры) остаётся по текущей
+    # коллекции через unique_items.
+    total_records = await db.scalar(
+        select(func.count(func.distinct(CollectionItem.record_id)))
+        .join(Collection, CollectionItem.collection_id == Collection.id)
+        .where(Collection.user_id == current_user.id)
+    ) or 0
     total_min = 0.0
     total_max = 0.0
     total_median = 0.0
