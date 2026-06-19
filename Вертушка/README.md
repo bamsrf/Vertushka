@@ -235,6 +235,12 @@ docker-compose up -d                # рекомендуется
 
 API: `http://localhost:8000`.
 
+**Smoke-тесты** (чистые функции, без БД/Redis):
+```bash
+cd Backend && source venv/bin/activate && python -m pytest -q
+# pricing-формула, транслитерация, нормализация, accessory/format-гейты matcher'а
+```
+
 ### Mobile
 
 ```bash
@@ -269,6 +275,19 @@ ssh deploy@85.198.85.12 'bash ~/vertushka/Вертушка/Backend/scripts/deplo
 ```bash
 ssh deploy@85.198.85.12 'bash ~/vertushka/Вертушка/Backend/scripts/backup.sh'
 # дамп → ~/backups/vertushka_YYYYMMDD_HHMMSS.sql.gz, хранится 7 дней
+```
+
+**Off-site (от SPOF).** Локальный бэкап лежит на том же VPS — если умрёт диск, улетят и БД, и бэкапы. `backup.sh` умеет грузить в S3-совместимое хранилище (Yandex Object Storage) — включается env-переменными перед запуском/в cron:
+```bash
+export S3_BUCKET=vertushka-backups S3_ENDPOINT=https://storage.yandexcloud.net
+export AWS_ACCESS_KEY_ID=... AWS_SECRET_ACCESS_KEY=...
+bash backup.sh   # после verify зальёт дамп в s3://$S3_BUCKET/
+```
+
+**Restore-drill (бэкап без проверки = нет бэкапа).** Разворачивает последний дамп в одноразовый Postgres-контейнер, гоняет sanity-проверки (таблицы + строки в users/records/collections/wishlists) и сносит контейнер — прод не трогает:
+```bash
+ssh deploy@85.198.85.12 'bash ~/vertushka/Вертушка/Backend/scripts/restore_drill.sh'
+# опц.: restore_drill.sh /path/to/конкретный_дамп.sql.gz
 ```
 
 ### Откат

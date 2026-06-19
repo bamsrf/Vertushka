@@ -310,6 +310,12 @@ ROADMAP.md — это _верхнеуровневый зонтик_. Кажды�
 - Google Play Developer Policy: data safety form честно отражает сбор камеры/фото/email
 - Условия использования + политика конфиденциальности на сайте (RU + EN)
 
+**Pre-launch риски (выявлено вне исходного плана, 2026-06-19)**
+- 🟥 **UGC-compliance — блокер App Store (Guideline 1.2).** DM и user-submitted records = user-gen контент. В коде есть block, но **нет report-content / report-user и нет rate-limit на сообщения**. Apple требует фильтр + репорт + блок + реакцию ≤24ч. Без этого — реджект. Добавить report-эндпоинт + EULA no-tolerance + rate-limit DM до сабмита.
+- ⚠️ **Legal: ToS scraping + Discogs dump.** Публично показываем scraped-данные магазинов + локальный Discogs-дамп. Проверить Discogs API ToS (массовый дамп + редистрибуция) и per-shop robots/ToS **до** публичного релиза — cease-and-desist прилетает после роста, а не на старте.
+- 💡 **Activation-метрика.** DAU=1, тюнить нечего. Зашить одну activation-метрику (первый added record / первый импорт) в Amplitude и вывести Discogs-импорт (M4, уже в проде) прямо в онбординг.
+- ✅ **Off-site backup + restore-drill — закрыто** (см. Changelog ниже, 2026-06-19).
+
 #### Acceptance criteria
 - [ ] PLAN_RELEASE_v2 фаза 0 завершена (нет блокеров)
 - [ ] PLAN_RELEASE_v2 фаза 1 (Sentry активный с DSN, Telegram-алармы)
@@ -326,10 +332,12 @@ ROADMAP.md — это _верхнеуровневый зонтик_. Кажды�
 
 #### Связанные артефакты
 - [PLAN_RELEASE_v2.md](docs/plans/PLAN_RELEASE_v2.md), [PLAN_RELEASE.md](docs/plans/PLAN_RELEASE.md) (исторический), [BUGS.md](docs/BUGS.md)
-- `Mobile/eas.json`, `Mobile/app.json`
+- `Mobile/eas.json`, `Mobile/app.json`, `Backend/scripts/restore_drill.sh`, `Backend/tests/`
 
 #### Changelog
-- _нет записей_
+- **2026-06-19** — data-safety: restore-drill ([scripts/restore_drill.sh](Backend/scripts/restore_drill.sh)) — одноразовый контейнер + sanity; off-site backup в S3/Yandex активирован env в `backup.sh`. Закрыта галка «restore-drill хотя бы раз руками».
+- **2026-06-19** — quality net: первые smoke-тесты ([Backend/tests/](Backend/tests/), 27 шт) на pricing-формулу, транслитерацию, нормализацию и accessory/format-гейты matcher'а
+- **2026-05-31** — TestFlight build prep; self-hosted GlitchTip (sentry.vinyl-vertushka.ru)
 
 ---
 
@@ -835,6 +843,7 @@ ROADMAP.md — это _верхнеуровневый зонтик_. Кажды�
 
 ### 2026-06
 
+- **2026-06-19** — chore(data-safety): restore-drill скрипт + off-site backup (S3/Yandex); test: первые 27 smoke-тестов бэкенда (pricing/translit/normalize/matcher-гейты) — _M2_
 - **2026-06-19** — fix(search): constant rail scroll speed; fix(valuation): value через estimate_rub fallback; feat(discogs): hybrid new-releases rail (recency × want); feat(achievements): rework серии «Сообщество» v2.1 — _M5/M6_
 - **2026-06-18** — feat(discogs): Discogs-first manual add + self-enriching index; fix(spotify): `SPOTIFY_PROXY_URL` обход RU geo-block; fix(ios-build): modular headers для Google pods — _M3_
 - **2026-06-17** — feat(user-records): auto-approve, multi-format, dedup intercept, edit; fix(versions): self-healing straggler covers — _M3_
@@ -899,7 +908,9 @@ ROADMAP.md — это _верхнеуровневый зонтик_. Кажды�
 
 ### Технические долги
 - Полная типизация Python (mypy strict)
+- Smoke-тесты бэкенда забутстраплены (`Backend/tests/`, pytest) — расширить до integration (matcher на фикстурах БД, auth-refresh, endpoint-контракты)
 - E2E-тесты Mobile (Detox или Maestro)
+- CI: гонять `pytest` на каждый PR (сейчас локально)
 - Storybook для компонентов
 - Миграция Mobile на Tamagui (если перерастём theme.ts)
 
