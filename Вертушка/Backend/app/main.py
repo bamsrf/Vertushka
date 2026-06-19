@@ -94,7 +94,7 @@ async def lifespan(app: FastAPI):
         try:
             from apscheduler.schedulers.asyncio import AsyncIOScheduler
             from app.tasks.booking_tasks import send_booking_reminders, auto_release_expired_bookings, auto_cancel_unverified_bookings
-            from app.tasks.discogs_tasks import cleanup_search_cache, enrich_records_artist_data, update_prices_batch, enrich_market_covers, refresh_market_store_stats
+            from app.tasks.discogs_tasks import cleanup_search_cache, enrich_records_artist_data, update_prices_batch, enrich_market_covers, refresh_market_store_stats, refresh_new_releases
             from app.tasks.valuation_tasks import record_daily_snapshots
             from app.tasks.achievements_tasks import daily_tick_achievements
             from app.tasks.notification_tasks import emit_wishlist_in_stock_notifications, emit_weekly_wishlist_digest
@@ -118,6 +118,7 @@ async def lifespan(app: FastAPI):
             scheduler.add_job(cleanup_covers, 'cron', hour=3, minute=0, id='covers_lru_cleanup')
             scheduler.add_job(enrich_market_covers, 'interval', hours=2, id='enrich_market_covers')
             scheduler.add_job(refresh_market_store_stats, 'interval', minutes=15, id='refresh_market_store_stats')
+            scheduler.add_job(refresh_new_releases, 'cron', day=1, hour=4, minute=45, id='refresh_new_releases')
             scheduler.add_job(daily_tick_achievements, 'cron', hour=6, minute=0, id='achievements_daily_tick')
             scheduler.add_job(emit_wishlist_in_stock_notifications, 'interval', minutes=15, id='wishlist_in_stock_notifications')
             scheduler.add_job(emit_weekly_wishlist_digest, 'cron', day_of_week='mon', hour=10, minute=0, id='weekly_wishlist_digest')

@@ -1717,6 +1717,8 @@ class DiscogsService:
                 "have": int(community.get("have") or 0),
             })
 
-        # 12 часов — рейл общий для всех viewers
-        await cache.set("new_releases", cache_key, out, 12 * 3600)
+        # 31 день — рейл «снимок на месяц», общий для всех viewers.
+        # Принудительный сброс/прогрев делает scheduled-задача refresh_new_releases
+        # (1-го числа каждого месяца, см. main.py).
+        await cache.set("new_releases", cache_key, out, 31 * 24 * 3600)
         return out

@@ -303,3 +303,27 @@ async def refresh_market_store_stats():
         logger.info("refresh_market_store_stats: matview refreshed")
     except Exception:
         logger.exception("refresh_market_store_stats failed")
+
+
+async def refresh_new_releases():
+    """Месячный сброс рейла новинок (sort=want) — 1-го числа каждого месяца.
+
+    Удаляет Redis-ключ namespace `new_releases` за текущий год и сразу
+    прогревает заново, чтобы первый зашедший юзер получил уже свежий топ.
+    Ключ совпадает с DiscogsService.search_new_releases: `y{year}_p{per_page}`.
+    Приложение зовёт per_page=60, поэтому сбрасываем именно этот ключ.
+    """
+    from datetime import datetime as _dt
+    from app.services.cache import cache
+    from app.services.discogs import DiscogsService
+
+    try:
+        year = _dt.utcnow().year
+        await cache.delete("new_releases", f"y{year}_p60")
+        discogs = DiscogsService()
+        pool = await discogs.search_new_releases(per_page=60)
+        logger.info(
+            "refresh_new_releases: warmed %d items for y%d", len(pool), year
+        )
+    except Exception:
+        logger.exception("refresh_new_releases failed")
