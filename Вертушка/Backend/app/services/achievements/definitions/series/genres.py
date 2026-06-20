@@ -178,7 +178,7 @@ DEFINITIONS: list[AchievementDefinition] = [
     ),
     AchievementDefinition(
         code=F3_CODE,
-        title_ru="Селектор",
+        title_ru="Эй, Арнольд",
         description_ru="25 пластинок Jazz.",
         description_done_ru="25 джазовых пластинок собрано.",
         series="genres",
