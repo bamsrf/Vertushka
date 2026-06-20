@@ -51,7 +51,7 @@ async def _stub(
 DEFINITIONS: list[AchievementDefinition] = [
     AchievementDefinition(
         code=F1_CODE,
-        title_ru="Меломаньяк",
+        title_ru="Разносторонний",
         description_ru="5 разных жанров.",
         description_done_ru="5 жанров в коллекции.",
         series="genres",
@@ -87,7 +87,7 @@ DEFINITIONS: list[AchievementDefinition] = [
     ),
     AchievementDefinition(
         code=F4_CODE,
-        title_ru="Машинист",
+        title_ru="Рейв",
         description_ru="25 пластинок Electronic.",
         description_done_ru="25 электронных пластинок собрано.",
         series="genres",

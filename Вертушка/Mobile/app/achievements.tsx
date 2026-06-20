@@ -298,7 +298,7 @@ function SurpriseBlock({
           <View style={styles.seriesHeaderText}>
             <Text style={styles.seriesTitle}>Пасхалки</Text>
             <Text style={[styles.seriesDescription, { fontStyle: 'italic' }]} numberOfLines={1}>
-              Их находят сами. Не подсматривай.
+              Их находят сами.
             </Text>
           </View>
         </View>
