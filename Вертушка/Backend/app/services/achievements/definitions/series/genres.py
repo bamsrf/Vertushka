@@ -1,26 +1,29 @@
 """Серия «Жанры» (F* + META_genres).
 
-⚠️ КАРКАС / SCAFFOLDING. Все evaluator-ы возвращают `unlocked=False`.
-
-Использует `Record.genre` и `Record.style`. Реальная имплементация — Phase 3.
-См. PLAN_ACHIEVEMENTS_V2.md §4.6.
+Phase 3 (реализовано): считает по `Record.genre` (Discogs-жанры, склеены через
+", "). Анти-фарм — тот же 24h-cooldown и только основная коллекция, что в B-серии.
 
 Состав:
-- F1 «Меломаньяк»  — 5 разных жанров
-- F2 «Всеядный»    — 10 разных жанров
-- F3 «Селектор»    — 25 Jazz
-- F4 «Машинист»    — 25 Electronic
-- F5 «Классик»     — 15 Classical
-- F6 «Громко»      — 25 Rock
-- META_genres «Эрудит» — F2 + любые 3 из F3–F6. Награда: title «Эрудит».
+- F1 «Разносторонний» — 5 разных жанров
+- F2 «Всеядный»       — 10 разных жанров
+- F3 «Селектор»       — 25 Jazz
+- F4 «Рейв»           — 25 Electronic
+- F5 «Классик»        — 15 Classical
+- F6 «Громко»         — 25 Rock
+- META_genres «Эрудит» — F2 + любые 3 из F3–F6.
 """
 from __future__ import annotations
 
+from datetime import datetime, timedelta
 from typing import Any
 from uuid import UUID
 
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.collection import Collection, CollectionItem
+from app.models.record import Record
+from app.models.user_achievement import UserAchievement
 from app.services.achievements.events import COLLECTION_ITEM_ADDED, DAILY_TICK
 from app.services.achievements.registry import (
     AchievementDefinition,
@@ -38,14 +41,114 @@ F6_CODE = "F6_rock_x25"
 META_CODE = "META_genres"
 GENRE_CODES = {F1_CODE, F2_CODE, F3_CODE, F4_CODE, F5_CODE, F6_CODE}
 
+ANTIFARM_COOLDOWN = timedelta(hours=24)
 
-async def _stub(
+
+def _default_collection_id(user_id: UUID):
+    """Основная коллекция (минимальный sort_order) — папки не накручивают."""
+    return (
+        select(Collection.id)
+        .where(Collection.user_id == user_id)
+        .order_by(Collection.sort_order, Collection.created_at)
+        .limit(1)
+        .scalar_subquery()
+    )
+
+
+async def _count_genre_substr(db: AsyncSession, user_id: UUID, token: str) -> int:
+    """COUNT(DISTINCT record_id) в основной коллекции (старше 24ч), у которых
+    `genre` содержит token (case-insensitive)."""
+    cutoff = datetime.utcnow() - ANTIFARM_COOLDOWN
+    count = await db.scalar(
+        select(func.count(func.distinct(CollectionItem.record_id)))
+        .join(Record, Record.id == CollectionItem.record_id)
+        .where(
+            CollectionItem.collection_id == _default_collection_id(user_id),
+            CollectionItem.added_at <= cutoff,
+            Record.genre.is_not(None),
+            Record.genre.ilike(f"%{token}%"),
+        )
+    )
+    return int(count or 0)
+
+
+async def _count_distinct_genres(db: AsyncSession, user_id: UUID) -> int:
+    """Число РАЗНЫХ жанров в основной коллекции (старше 24ч).
+
+    `Record.genre` — это склейка Discogs-жанров через ", ", поэтому распуляем
+    их в Python (коллекции ограничены, дешевле, чем SQL-split)."""
+    cutoff = datetime.utcnow() - ANTIFARM_COOLDOWN
+    rows = await db.execute(
+        select(func.distinct(Record.genre))
+        .join(CollectionItem, CollectionItem.record_id == Record.id)
+        .where(
+            CollectionItem.collection_id == _default_collection_id(user_id),
+            CollectionItem.added_at <= cutoff,
+            Record.genre.is_not(None),
+        )
+    )
+    seen: set[str] = set()
+    for (genre_str,) in rows.all():
+        for g in (genre_str or "").split(","):
+            g = g.strip().casefold()
+            if g:
+                seen.add(g)
+    return len(seen)
+
+
+def _make_diversity_evaluator(threshold: int):
+    async def evaluator(
+        db: AsyncSession,
+        user_id: UUID,
+        payload: dict[str, Any],
+        unlocked_now: set[str],
+    ) -> EvalResult:
+        count = await _count_distinct_genres(db, user_id)
+        if count >= threshold:
+            return EvalResult(unlocked=True, progress=count, progress_target=threshold)
+        return EvalResult(progress=count, progress_target=threshold)
+    return evaluator
+
+
+def _make_genre_evaluator(token: str, threshold: int):
+    async def evaluator(
+        db: AsyncSession,
+        user_id: UUID,
+        payload: dict[str, Any],
+        unlocked_now: set[str],
+    ) -> EvalResult:
+        count = await _count_genre_substr(db, user_id, token)
+        if count >= threshold:
+            return EvalResult(unlocked=True, progress=count, progress_target=threshold)
+        return EvalResult(progress=count, progress_target=threshold)
+    return evaluator
+
+
+async def _evaluate_meta_genres(
     db: AsyncSession,
     user_id: UUID,
-    payload: dict[str, Any] | None,
+    payload: dict[str, Any],
     unlocked_now: set[str],
 ) -> EvalResult:
-    return EvalResult(unlocked=False)
+    """F2 + любые 3 из F3–F6."""
+    persisted = await db.execute(
+        select(UserAchievement.code).where(
+            UserAchievement.user_id == user_id,
+            UserAchievement.code.in_(GENRE_CODES),
+            UserAchievement.is_unlocked.is_(True),
+        )
+    )
+    have = set(persisted.scalars().all()) | (unlocked_now & GENRE_CODES)
+    deep = {F3_CODE, F4_CODE, F5_CODE, F6_CODE}
+    ok = (F2_CODE in have) and len(have & deep) >= 3
+    # Прогресс: 0..4 (F2 + до 3 глубоких), таргет 4.
+    progress = (1 if F2_CODE in have else 0) + min(len(have & deep), 3)
+    if ok:
+        return EvalResult(unlocked=True, progress=4, progress_target=4)
+    return EvalResult(progress=progress, progress_target=4)
+
+
+_GENRE_TRIGGERS = (COLLECTION_ITEM_ADDED, DAILY_TICK)
 
 
 DEFINITIONS: list[AchievementDefinition] = [
@@ -57,8 +160,8 @@ DEFINITIONS: list[AchievementDefinition] = [
         series="genres",
         tier=AchievementTier.SIMPLE,
         is_hidden=False,
-        triggers=(COLLECTION_ITEM_ADDED,),
-        evaluator=_stub,
+        triggers=_GENRE_TRIGGERS,
+        evaluator=_make_diversity_evaluator(5),
         icon_slug="f1_diversity_5",
     ),
     AchievementDefinition(
@@ -69,8 +172,8 @@ DEFINITIONS: list[AchievementDefinition] = [
         series="genres",
         tier=AchievementTier.NOTABLE,
         is_hidden=False,
-        triggers=(COLLECTION_ITEM_ADDED,),
-        evaluator=_stub,
+        triggers=_GENRE_TRIGGERS,
+        evaluator=_make_diversity_evaluator(10),
         icon_slug="f2_diversity_10",
     ),
     AchievementDefinition(
@@ -81,8 +184,8 @@ DEFINITIONS: list[AchievementDefinition] = [
         series="genres",
         tier=AchievementTier.RARE,
         is_hidden=False,
-        triggers=(COLLECTION_ITEM_ADDED,),
-        evaluator=_stub,
+        triggers=_GENRE_TRIGGERS,
+        evaluator=_make_genre_evaluator("jazz", 25),
         icon_slug="f3_jazz_x25",
     ),
     AchievementDefinition(
@@ -93,8 +196,8 @@ DEFINITIONS: list[AchievementDefinition] = [
         series="genres",
         tier=AchievementTier.RARE,
         is_hidden=False,
-        triggers=(COLLECTION_ITEM_ADDED,),
-        evaluator=_stub,
+        triggers=_GENRE_TRIGGERS,
+        evaluator=_make_genre_evaluator("electronic", 25),
         icon_slug="f4_electronic_x25",
     ),
     AchievementDefinition(
@@ -105,8 +208,8 @@ DEFINITIONS: list[AchievementDefinition] = [
         series="genres",
         tier=AchievementTier.RARE,
         is_hidden=False,
-        triggers=(COLLECTION_ITEM_ADDED,),
-        evaluator=_stub,
+        triggers=_GENRE_TRIGGERS,
+        evaluator=_make_genre_evaluator("classical", 15),
         icon_slug="f5_classical_x15",
     ),
     AchievementDefinition(
@@ -117,8 +220,8 @@ DEFINITIONS: list[AchievementDefinition] = [
         series="genres",
         tier=AchievementTier.RARE,
         is_hidden=False,
-        triggers=(COLLECTION_ITEM_ADDED,),
-        evaluator=_stub,
+        triggers=_GENRE_TRIGGERS,
+        evaluator=_make_genre_evaluator("rock", 25),
         icon_slug="f6_rock_x25",
     ),
     AchievementDefinition(
@@ -130,7 +233,7 @@ DEFINITIONS: list[AchievementDefinition] = [
         tier=AchievementTier.EPIC,
         is_hidden=False,
         triggers=(COLLECTION_ITEM_ADDED, DAILY_TICK),
-        evaluator=_stub,
+        evaluator=_evaluate_meta_genres,
         is_meta=True,
         flavor_ru="Шире, чем фон в кафе.",
         icon_slug="meta_genres",
