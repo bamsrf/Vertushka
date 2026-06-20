@@ -23,7 +23,7 @@
    - [E — Машина времени](#серия-e--машина-времени) (6)
    - [F — Жанры](#серия-f--жанры) (6)
    - [J — Дарящая рука](#серия-j--дарящая-рука) (5)
-   - [K — Сообщество](#серия-k--сообщество) (18)
+   - [K — Сообщество + Вклад](#серия-k--сообщество) (14)
    - [INV — Глас наружу](#серия-inv--глас-наружу) (6)
    - [H — Дискография](#серия-h--дискография) (5)
    - [R — Рандомные пасхалки](#серия-r--рандомные-пасхалки) (14)
@@ -31,7 +31,7 @@
 5. [Фразы для итерации](#фразы-для-итерации)
 6. [Verification](#verification)
 
-**Всего пинов в новом доке: 87.**
+**Всего пинов в новом доке: 83.**
 
 ---
 
@@ -133,7 +133,7 @@ Output: 1024×1024 PNG, transparent background.
 
 ### Серия B — Размер коллекции
 
-#### `B3_archivist` — Архивариус 🔵
+#### `B3_archivist` — Сотня 🔵
 > Метафора: 100 пластинок — архив с табличкой-инвентарём.
 
 ```text
@@ -404,7 +404,7 @@ Output: 1024×1024 PNG, transparent background.
 
 ### Серия F — Жанры
 
-#### `F1_diversity_5` — Меломаньяк 💧
+#### `F1_diversity_5` — Разносторонний 💧
 > Метафора: 5 разных жанров — круглая «пицца» с инструментами в каждом сегменте.
 
 ```text
@@ -437,7 +437,7 @@ Same enamel pin style as the previous Vertushka pins (gold contour, navy outline
 Output: 1024×1024 PNG, transparent background.
 ```
 
-#### `F4_electronic_x25` — Машинист 🌸
+#### `F4_electronic_x25` — Рейв 🌸
 > Метафора: 25 electronic — синт-клавиши и mod-колесо.
 
 ```text
@@ -691,51 +691,9 @@ Same enamel pin style as the previous Vertushka pins (gold contour, navy outline
 Output: 1024×1024 PNG, transparent background.
 ```
 
-> **Единый вектор серии K, трек 5 — «космос»:** первым добавил релиз = оставил след там, где было пусто. Прогрессия: след → флаг → орбита → созвездие.
+> Трек «Космос» (`K17`–`K20`, «первым добавил релиз») **выпилен с v2.1** — на ранней базе метрика тривиально true. Промпты удалены; вернём при росте базы (см. [PLAN_ACHIEVEMENTS_V2.md §4.8](PLAN_ACHIEVEMENTS_V2.md)).
 
-#### `K17_pioneer_x1` — Маленький шаг 💧
-> Метафора: первым добавил 1 релиз — одинокий след ботинка на лунной пыли, маленький флажок-винил.
-
-```text
-Generate a soft enamel pin: a single astronaut bootprint pressed into lunar dust, a tiny vinyl-disc planted beside it — one small step, the first to leave a mark.
-Composition: center shows one navy bootprint sole-pattern pressed into an ivory dusty surface curve; just beside it, a tiny gold flag stem topped with a small vinyl-record disc (ember center) instead of a flag; a few small gold dust specks; small "1" in serif gold near the print.
-Palette: navy #0B1438, ivory #FBF5EA, vinyl black #1A1A2E, ember #E85A2A, gold #D9A84E.
-Same enamel pin style as the previous Vertushka pins (gold contour, navy outline, recessed enamel, single specular per zone).
-Output: 1024×1024 PNG, transparent background.
-```
-
-#### `K18_pioneer_x5` — Высадка 🔵
-> Метафора: первым добавил 5 релизов — флаг воткнут в маленькую планету, 5 пластинок-кратеров.
-
-```text
-Generate a soft enamel pin: a flag planted on a small planet, the flag's cloth a vinyl record, 5 small craters on the planet surface — the landing and claim.
-Composition: a small navy planet sphere fills the lower 60% of pin with a thin gold horizon curve; planted on top, a gold flagpole whose flag is a small vinyl record (ember center) rippling; 5 small round ivory craters dotting the planet face; the flagpole tip extends past the top frame; small "5" in serif gold on the planet.
-Palette: navy #0B1438, ivory #FBF5EA, vinyl black #1A1A2E, ember #E85A2A, gold #D9A84E.
-Same enamel pin style as the previous Vertushka pins (gold contour, navy outline, recessed enamel, single specular per zone).
-Output: 1024×1024 PNG, transparent background.
-```
-
-#### `K19_pioneer_x10` — На орбите 🌸
-> Метафора: первым добавил 10 релизов — спутник-пластинка на собственной орбите вокруг планеты.
-
-```text
-Generate a soft enamel pin: a satellite shaped like a vinyl record orbiting a small planet along a gold elliptical orbit path, "10" on the orbit — claimed your own orbit.
-Composition: a small cobalt planet in the lower-left; a gold elliptical orbit ring loops around it diagonally, partly extending past the frame; riding the orbit at the upper-right, a small satellite whose body is a vinyl record (ember center) with two tiny gold solar-panel wings; "10" in serif gold sitting on the orbit line; add 2 tiny gold sparkle stars in the background.
-Palette: navy #0B1438, ivory #FBF5EA, vinyl black #1A1A2E, ember #E85A2A, cobalt #2A4BD7, gold #D9A84E.
-Same enamel pin style as the previous Vertushka pins (gold contour, navy outline, recessed enamel, single specular per zone).
-Output: 1024×1024 PNG, transparent background.
-```
-
-#### `K20_pioneer_x50` — Своё созвездие 🌌
-> Метафора: первым добавил 50 релизов — звёзды-пластинки соединяются золотыми линиями в созвездие, "50" в центре.
-
-```text
-Generate a soft enamel pin: a constellation of small vinyl-record stars connected by thin gold lines forming a crown-like shape, "50" glowing at the center — your own constellation in the sky.
-Composition: a dark navy sky field fills the pin; 7-8 small vinyl-record dots (ember/rose-pink centers) act as stars, joined by thin gold connecting lines into a constellation pattern resembling a crown or peak; at the center, "50" in chunky serif gold with a soft gold radiance; add 3 tiny gold sparkle stars scattered in the field.
-Palette: navy #0B1438, vinyl black #1A1A2E, ember #E85A2A, rose pink #E89AC0, gold #D9A84E.
-Same enamel pin style as the previous Vertushka pins (gold contour, navy outline, recessed enamel, single specular per zone).
-Output: 1024×1024 PNG, transparent background.
-```
+> **K8–K10 и K14–K16 переехали в раздел «Вклад» (`contribution`)** — промпты ниже без изменений, но в каталоге это отдельная секция, не «Сообщество».
 
 ---
 
@@ -1099,7 +1057,7 @@ Output: 1024×1024 PNG, transparent background.
 ```
 
 #### `META_community` — Резидент 🌌
-> Метафора: K4 + K7 + K16 — собрал комьюнити вокруг себя.
+> Метафора: K4 + K7 + K13 — собрал комьюнити вокруг себя.
 
 ```text
 Generate a soft enamel pin: a ring of 8 silhouetted figures encircling a central golden microphone — the community resident.

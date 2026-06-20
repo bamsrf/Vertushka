@@ -93,8 +93,13 @@ _SERIES_META: dict[str, dict[str, str]] = {
     },
     "community": {
         "title_ru": "Сообщество",
-        "description_ru": "Подписки и просмотры.",
+        "description_ru": "Подписки и общение.",
         "icon_emoji": "👥",
+    },
+    "contribution": {
+        "title_ru": "Вклад",
+        "description_ru": "Ценность для коммьюнити.",
+        "icon_emoji": "🏗",
     },
     "invitations": {
         "title_ru": "Глас наружу",

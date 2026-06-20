@@ -27,7 +27,6 @@ from app.models.user import User
 from app.models.user_achievement import UserAchievement
 from app.models.wishlist import Wishlist, WishlistItem
 from app.services.achievements.events import (
-    COLLECTION_ITEM_ADDED,
     DAILY_TICK,
     FOLLOW_CREATED,
     FOLLOW_RECEIVED,
@@ -50,28 +49,24 @@ K4_CODE = "K4_followers_x50"
 K5_CODE = "K5_views_x100"
 K6_CODE = "K6_views_x1000"
 K7_CODE = "K7_mutual_x10"
-# Трек 2 — вклад (ручные релизы)
-K8_CODE = "K8_contrib_x1"
-K9_CODE = "K9_contrib_x5"
-K10_CODE = "K10_contrib_x20"
-# Трек 3 — сообщения
+# Сообщения (остаётся в «Сообществе»)
 K11_CODE = "K11_msgs_x10"
 K12_CODE = "K12_msgs_x50"
 K13_CODE = "K13_msgs_x200"
-# Трек 4 — твои записи хотят другие
+# Раздел «Вклад» (series="contribution"): ручные релизы + спрос на коллекцию
+K8_CODE = "K8_contrib_x1"
+K9_CODE = "K9_contrib_x5"
+K10_CODE = "K10_contrib_x20"
 K14_CODE = "K14_wanted_x1"
 K15_CODE = "K15_wanted_x5"
 K16_CODE = "K16_wanted_x10"
-# Трек 5 — первым добавил релиз на платформу
-K17_CODE = "K17_pioneer_x1"
-K18_CODE = "K18_pioneer_x5"
-K19_CODE = "K19_pioneer_x10"
-K20_CODE = "K20_pioneer_x50"
 META_CODE = "META_community"
 COMMUNITY_CODES = {
     K1_CODE, K2_CODE, K3_CODE, K4_CODE, K5_CODE, K6_CODE, K7_CODE,
-    K8_CODE, K9_CODE, K10_CODE, K11_CODE, K12_CODE, K13_CODE,
-    K14_CODE, K15_CODE, K16_CODE, K17_CODE, K18_CODE, K19_CODE, K20_CODE,
+    K11_CODE, K12_CODE, K13_CODE,
+}
+CONTRIBUTION_CODES = {
+    K8_CODE, K9_CODE, K10_CODE, K14_CODE, K15_CODE, K16_CODE,
 }
 
 # K14 — твоя пластинка должна быть в вишлисте у стольких РАЗНЫХ людей
@@ -325,60 +320,18 @@ def _make_wanted_count_evaluator(threshold: int):
     return evaluator
 
 
-def _make_pioneer_evaluator(threshold: int):
-    """Трек 5 — сколько релизов юзер добавил в коллекцию ПЕРВЫМ на платформе.
-
-    Юзер «первый», если его самое раннее добавление record_id не позже
-    глобального самого раннего добавления того же record_id (ties → юзер
-    засчитывается)."""
-    async def evaluator(
-        db: AsyncSession,
-        user_id: UUID,
-        payload: dict[str, Any],
-        unlocked_now: set[str],
-    ) -> EvalResult:
-        user_first = (
-            select(
-                CollectionItem.record_id.label("rid"),
-                func.min(CollectionItem.added_at).label("u_first"),
-            )
-            .join(Collection, Collection.id == CollectionItem.collection_id)
-            .where(Collection.user_id == user_id)
-            .group_by(CollectionItem.record_id)
-            .subquery()
-        )
-        global_first = (
-            select(
-                CollectionItem.record_id.label("rid"),
-                func.min(CollectionItem.added_at).label("g_first"),
-            )
-            .group_by(CollectionItem.record_id)
-            .subquery()
-        )
-        count = await db.scalar(
-            select(func.count())
-            .select_from(user_first)
-            .join(global_first, global_first.c.rid == user_first.c.rid)
-            .where(user_first.c.u_first <= global_first.c.g_first)
-        )
-        count = int(count or 0)
-        if count >= threshold:
-            return EvalResult(unlocked=True, progress=count, progress_target=threshold)
-        return EvalResult(progress=count, progress_target=threshold)
-    return evaluator
-
-
 async def _evaluate_meta_community(
     db: AsyncSession,
     user_id: UUID,
     payload: dict[str, Any],
     unlocked_now: set[str],
 ) -> EvalResult:
-    """Закрывается, когда открыты K4 + K7 + K16 (топовые в трёх ветках:
-    подписчики, взаимность, спрос на коллекцию). Остальные K — бонус.
+    """Закрывается, когда открыты K4 + K7 + K13 (вершины трёх веток самого
+    «Сообщества»: подписчики, взаимность, сообщения). Остальные K — бонус.
 
-    K6 (просмотры) выпилен из требований с v2.1 — просмотры скрыты."""
-    needed = {K4_CODE, K7_CODE, K16_CODE}
+    Раньше требовал K6 (просмотры — скрыты) и K16 (спрос — уехал в раздел
+    «Вклад»). Теперь META опирается только на ачивки внутри своей секции."""
+    needed = {K4_CODE, K7_CODE, K13_CODE}
     persisted = await db.execute(
         select(UserAchievement.code).where(
             UserAchievement.user_id == user_id,
@@ -398,7 +351,7 @@ async def _evaluate_meta_community(
 _COMMUNITY_TRIGGERS = (
     FOLLOW_CREATED,
     FOLLOW_RECEIVED,
-    RECORD_WANTED,
+    MESSAGE_SENT,
     DAILY_TICK,
 )
 
@@ -491,43 +444,6 @@ DEFINITIONS: list[AchievementDefinition] = [
         evaluator=_make_views_evaluator(1000),
         icon_slug="k6_views_x1000",
     ),
-    # ── Трек 2 — вклад (ручные релизы) ────────────────────────────────── #
-    AchievementDefinition(
-        code=K8_CODE,
-        title_ru="Стажёр",
-        description_ru="Добавь первый одобренный релиз вручную.",
-        description_done_ru="Первый ручной релиз доставлен.",
-        series="community",
-        tier=AchievementTier.SIMPLE,
-        is_hidden=False,
-        triggers=(USER_RECORD_CREATED, DAILY_TICK),
-        evaluator=_make_contrib_evaluator(1),
-        icon_slug="k8_contrib_x1",
-    ),
-    AchievementDefinition(
-        code=K9_CODE,
-        title_ru="Поставщик",
-        description_ru="5 одобренных ручных релизов.",
-        description_done_ru="5 ручных релизов доставлено.",
-        series="community",
-        tier=AchievementTier.NOTABLE,
-        is_hidden=False,
-        triggers=(USER_RECORD_CREATED, DAILY_TICK),
-        evaluator=_make_contrib_evaluator(5),
-        icon_slug="k9_contrib_x5",
-    ),
-    AchievementDefinition(
-        code=K10_CODE,
-        title_ru="Да, шеф!",
-        description_ru="20 одобренных ручных релизов.",
-        description_done_ru="20 ручных релизов доставлено.",
-        series="community",
-        tier=AchievementTier.RARE,
-        is_hidden=False,
-        triggers=(USER_RECORD_CREATED, DAILY_TICK),
-        evaluator=_make_contrib_evaluator(20),
-        icon_slug="k10_contrib_x20",
-    ),
     # ── Трек 3 — сообщения ────────────────────────────────────────────── #
     AchievementDefinition(
         code=K11_CODE,
@@ -565,13 +481,67 @@ DEFINITIONS: list[AchievementDefinition] = [
         evaluator=_make_messages_evaluator(200),
         icon_slug="k13_msgs_x200",
     ),
-    # ── Трек 4 — твои записи хотят другие ─────────────────────────────── #
+    # ── META сообщества ───────────────────────────────────────────────── #
+    AchievementDefinition(
+        code=META_CODE,
+        title_ru="Резидент",
+        description_ru="Закрой K4, K7 и K13 — главные ветки сообщества.",
+        description_done_ru="K4, K7 и K13 закрыты.",
+        series="community",
+        tier=AchievementTier.EPIC,
+        is_hidden=False,
+        triggers=_COMMUNITY_TRIGGERS,
+        evaluator=_evaluate_meta_community,
+        is_meta=True,
+        icon_slug="meta_community",
+    ),
+    # ══ Раздел «Вклад» (series="contribution") ════════════════════════════ #
+    # Вынесен из «Сообщества»: это не «кто на кого подписан», а ценность
+    # юзера для каталога — что он добавил и насколько его коллекцию хотят.
+    # ── Вклад в каталог (ручные релизы) ───────────────────────────────── #
+    AchievementDefinition(
+        code=K8_CODE,
+        title_ru="Стажёр",
+        description_ru="Добавь первый одобренный релиз вручную.",
+        description_done_ru="Первый ручной релиз доставлен.",
+        series="contribution",
+        tier=AchievementTier.SIMPLE,
+        is_hidden=False,
+        triggers=(USER_RECORD_CREATED, DAILY_TICK),
+        evaluator=_make_contrib_evaluator(1),
+        icon_slug="k8_contrib_x1",
+    ),
+    AchievementDefinition(
+        code=K9_CODE,
+        title_ru="Поставщик",
+        description_ru="5 одобренных ручных релизов.",
+        description_done_ru="5 ручных релизов доставлено.",
+        series="contribution",
+        tier=AchievementTier.NOTABLE,
+        is_hidden=False,
+        triggers=(USER_RECORD_CREATED, DAILY_TICK),
+        evaluator=_make_contrib_evaluator(5),
+        icon_slug="k9_contrib_x5",
+    ),
+    AchievementDefinition(
+        code=K10_CODE,
+        title_ru="Да, шеф!",
+        description_ru="20 одобренных ручных релизов.",
+        description_done_ru="20 ручных релизов доставлено.",
+        series="contribution",
+        tier=AchievementTier.RARE,
+        is_hidden=False,
+        triggers=(USER_RECORD_CREATED, DAILY_TICK),
+        evaluator=_make_contrib_evaluator(20),
+        icon_slug="k10_contrib_x20",
+    ),
+    # ── Твои записи хотят другие ──────────────────────────────────────── #
     AchievementDefinition(
         code=K14_CODE,
         title_ru="За витриной",
         description_ru="Одна твоя пластинка попала в вишлист к 3 людям.",
         description_done_ru="Твою пластинку хотят сразу трое.",
-        series="community",
+        series="contribution",
         tier=AchievementTier.NOTABLE,
         is_hidden=False,
         triggers=(RECORD_WANTED, DAILY_TICK),
@@ -583,7 +553,7 @@ DEFINITIONS: list[AchievementDefinition] = [
         title_ru="Шоурум",
         description_ru="5 твоих пластинок хотят другие.",
         description_done_ru="5 твоих пластинок в чужих вишлистах.",
-        series="community",
+        series="contribution",
         tier=AchievementTier.RARE,
         is_hidden=False,
         triggers=(RECORD_WANTED, DAILY_TICK),
@@ -595,74 +565,11 @@ DEFINITIONS: list[AchievementDefinition] = [
         title_ru="Личный Санта",
         description_ru="10 твоих пластинок хотят другие.",
         description_done_ru="10 твоих пластинок в чужих вишлистах.",
-        series="community",
+        series="contribution",
         tier=AchievementTier.RARE,
         is_hidden=False,
         triggers=(RECORD_WANTED, DAILY_TICK),
         evaluator=_make_wanted_count_evaluator(10),
         icon_slug="k16_wanted_x10",
-    ),
-    # ── Трек 5 — первым добавил релиз на платформу (космос) ───────────── #
-    AchievementDefinition(
-        code=K17_CODE,
-        title_ru="Маленький шаг",
-        description_ru="Первым на платформе добавь релиз в коллекцию.",
-        description_done_ru="Один релиз ты добавил первым.",
-        series="community",
-        tier=AchievementTier.SIMPLE,
-        is_hidden=False,
-        triggers=(COLLECTION_ITEM_ADDED, DAILY_TICK),
-        evaluator=_make_pioneer_evaluator(1),
-        icon_slug="k17_pioneer_x1",
-    ),
-    AchievementDefinition(
-        code=K18_CODE,
-        title_ru="Высадка",
-        description_ru="Первым на платформе добавь 5 релизов.",
-        description_done_ru="5 релизов ты добавил первым.",
-        series="community",
-        tier=AchievementTier.NOTABLE,
-        is_hidden=False,
-        triggers=(COLLECTION_ITEM_ADDED, DAILY_TICK),
-        evaluator=_make_pioneer_evaluator(5),
-        icon_slug="k18_pioneer_x5",
-    ),
-    AchievementDefinition(
-        code=K19_CODE,
-        title_ru="На орбите",
-        description_ru="Первым на платформе добавь 10 релизов.",
-        description_done_ru="10 релизов ты добавил первым.",
-        series="community",
-        tier=AchievementTier.RARE,
-        is_hidden=False,
-        triggers=(COLLECTION_ITEM_ADDED, DAILY_TICK),
-        evaluator=_make_pioneer_evaluator(10),
-        icon_slug="k19_pioneer_x10",
-    ),
-    AchievementDefinition(
-        code=K20_CODE,
-        title_ru="Своё созвездие",
-        description_ru="Первым на платформе добавь 50 релизов.",
-        description_done_ru="50 релизов ты добавил первым.",
-        series="community",
-        tier=AchievementTier.EPIC,
-        is_hidden=False,
-        triggers=(COLLECTION_ITEM_ADDED, DAILY_TICK),
-        evaluator=_make_pioneer_evaluator(50),
-        icon_slug="k20_pioneer_x50",
-    ),
-    # ── META ──────────────────────────────────────────────────────────── #
-    AchievementDefinition(
-        code=META_CODE,
-        title_ru="Резидент",
-        description_ru="Закрой K4, K7 и K16 — главные ветки сообщества.",
-        description_done_ru="K4, K7 и K16 закрыты.",
-        series="community",
-        tier=AchievementTier.EPIC,
-        is_hidden=False,
-        triggers=_COMMUNITY_TRIGGERS,
-        evaluator=_evaluate_meta_community,
-        is_meta=True,
-        icon_slug="meta_community",
     ),
 ]

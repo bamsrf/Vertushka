@@ -130,7 +130,7 @@ DEFINITIONS: list[AchievementDefinition] = [
     ),
     AchievementDefinition(
         code=B3_CODE,
-        title_ru="Архивариус",
+        title_ru="Сотня",
         description_ru="100 уникальных пластинок.",
         description_done_ru="100 уникальных пластинок собрано.",
         series="scale",
