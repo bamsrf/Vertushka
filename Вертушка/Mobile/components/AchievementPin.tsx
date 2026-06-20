@@ -60,6 +60,7 @@ const SERIES_PLACEHOLDERS: Record<string, ImageSourcePropType> = {
   eras: require('../assets/achievements/placeholders/eras.png'),
   genres: require('../assets/achievements/placeholders/genres.png'),
   community: require('../assets/achievements/placeholders/community.png'),
+  contribution: require('../assets/achievements/placeholders/Contribution.png'),
   discography: require('../assets/achievements/placeholders/discography.png'),
   gifts: PLACEHOLDER_GIFT,
 };
