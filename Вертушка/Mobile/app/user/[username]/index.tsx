@@ -260,13 +260,53 @@ export default function UserProfileScreen() {
   const isOwn = currentUser?.username === username;
 
   const load = useCallback(async () => {
-    if (!username) return;
+    if (!username) {
+      // Без username страница смысла не имеет — не оставляем вечный спиннер.
+      setIsLoading(false);
+      return;
+    }
     try {
+      // Оба запроса терпимы к ошибке: публичный профиль — opt-in и может быть
+      // не активирован (404), но базовый профиль через getUserByUsername есть
+      // у любого активного пользователя. Не роняем экран из-за 404 share.
       const [pub, userMeta] = await Promise.all([
-        api.getPublicProfile(username),
+        api.getPublicProfile(username).catch(() => null),
         api.getUserByUsername(username).catch(() => null),
       ]);
-      setPubProfile(pub);
+
+      if (!pub && !userMeta) {
+        toast.error('Профиль не найден');
+        router.back();
+        return;
+      }
+
+      // Публичный профиль активирован — берём его. Иначе синтезируем
+      // минимальный профиль из метаданных пользователя (вариант A: graceful
+      // degrade), чтобы можно было открыть карточку, подписаться и написать.
+      setPubProfile(
+        pub ??
+          (userMeta
+            ? {
+                username: userMeta.username,
+                display_name: userMeta.display_name,
+                avatar_url: userMeta.avatar_url,
+                bio: userMeta.bio,
+                collection_count: userMeta.collection_count,
+                wishlist_count: 0,
+                followers_count: userMeta.followers_count,
+                show_collection: false,
+                show_wishlist: false,
+                show_record_year: true,
+                show_record_label: true,
+                show_record_format: true,
+                show_record_prices: false,
+                highlights: [],
+                collection: [],
+                recent_additions: [],
+                new_releases: [],
+              }
+            : null),
+      );
       if (userMeta) {
         setProfileUserId(userMeta.id);
         setFollowing(userMeta.is_following);
