@@ -14,7 +14,6 @@ Phase 3 (реализовано): считает по `Record.genre` (Discogs-ж
 """
 from __future__ import annotations
 
-from datetime import datetime, timedelta
 from typing import Any
 from uuid import UUID
 
@@ -41,8 +40,6 @@ F6_CODE = "F6_rock_x25"
 META_CODE = "META_genres"
 GENRE_CODES = {F1_CODE, F2_CODE, F3_CODE, F4_CODE, F5_CODE, F6_CODE}
 
-ANTIFARM_COOLDOWN = timedelta(hours=24)
-
 
 def _default_collection_id(user_id: UUID):
     """Основная коллекция (минимальный sort_order) — папки не накручивают."""
@@ -56,15 +53,13 @@ def _default_collection_id(user_id: UUID):
 
 
 async def _count_genre_substr(db: AsyncSession, user_id: UUID, token: str) -> int:
-    """COUNT(DISTINCT record_id) в основной коллекции (старше 24ч), у которых
-    `genre` содержит token (case-insensitive)."""
-    cutoff = datetime.utcnow() - ANTIFARM_COOLDOWN
+    """COUNT(DISTINCT record_id) в основной коллекции, у которых `genre`
+    содержит token (case-insensitive). Без cooldown — мгновенный отклик."""
     count = await db.scalar(
         select(func.count(func.distinct(CollectionItem.record_id)))
         .join(Record, Record.id == CollectionItem.record_id)
         .where(
             CollectionItem.collection_id == _default_collection_id(user_id),
-            CollectionItem.added_at <= cutoff,
             Record.genre.is_not(None),
             Record.genre.ilike(f"%{token}%"),
         )
@@ -73,17 +68,15 @@ async def _count_genre_substr(db: AsyncSession, user_id: UUID, token: str) -> in
 
 
 async def _count_distinct_genres(db: AsyncSession, user_id: UUID) -> int:
-    """Число РАЗНЫХ жанров в основной коллекции (старше 24ч).
+    """Число РАЗНЫХ жанров в основной коллекции. Без cooldown.
 
     `Record.genre` — это склейка Discogs-жанров через ", ", поэтому распуляем
     их в Python (коллекции ограничены, дешевле, чем SQL-split)."""
-    cutoff = datetime.utcnow() - ANTIFARM_COOLDOWN
     rows = await db.execute(
         select(func.distinct(Record.genre))
         .join(CollectionItem, CollectionItem.record_id == Record.id)
         .where(
             CollectionItem.collection_id == _default_collection_id(user_id),
-            CollectionItem.added_at <= cutoff,
             Record.genre.is_not(None),
         )
     )

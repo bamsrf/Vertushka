@@ -19,7 +19,6 @@ Phase 3 (реализовано): считает по флагам редкос�
 """
 from __future__ import annotations
 
-from datetime import datetime, timedelta
 from typing import Any
 from uuid import UUID
 
@@ -52,8 +51,6 @@ C7_CODE = "C7_hot_in_collection"
 META_CODE = "META_rarity"
 RARITY_CODES = {C1_CODE, C2_CODE, C3_CODE, C4_CODE, C5_CODE, C6_CODE, C7_CODE}
 
-ANTIFARM_COOLDOWN = timedelta(hours=24)
-
 
 def _default_collection_id(user_id: UUID):
     return (
@@ -68,15 +65,16 @@ def _default_collection_id(user_id: UUID):
 async def _count_flagged_in_collection(
     db: AsyncSession, user_id: UUID, flag_col
 ) -> int:
-    """COUNT(DISTINCT record_id) в основной коллекции (старше 24ч), у которых
-    данный флаг редкости = True."""
-    cutoff = datetime.utcnow() - ANTIFARM_COOLDOWN
+    """COUNT(DISTINCT record_id) в основной коллекции, у которых данный флаг
+    редкости = True.
+
+    Без 24ч-cooldown (в отличие от B-серии): редкость — внутренний флаг релиза,
+    его не накрутишь массовым добавлением, поэтому отклик мгновенный."""
     count = await db.scalar(
         select(func.count(func.distinct(CollectionItem.record_id)))
         .join(Record, Record.id == CollectionItem.record_id)
         .where(
             CollectionItem.collection_id == _default_collection_id(user_id),
-            CollectionItem.added_at <= cutoff,
             flag_col.is_(True),
         )
     )
