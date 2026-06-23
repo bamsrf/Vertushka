@@ -130,12 +130,11 @@ async def add_to_wishlist(
             detail="Необходимо указать либо discogs_id, либо record_id"
         )
 
-    # Whitelist: в вишлист пускаем 'discogs' и 'user' (user-record создаётся
-    # вручную, при будущем merge в Discogs переедет через merged_into_id, не
-    # теряя wishlist_items). 'store' блокируем — у него нет discogs_id и при
-    # merge на Discogs мы потеряем wishlist_items через CASCADE FK.
-    # ⚠️ Whitelist намеренно: нельзя случайно открыть 'store'.
-    if record.source not in ("discogs", "user"):
+    # Whitelist: в вишлист пускаем 'discogs', 'user' и 'store'. При будущем merge
+    # в Discogs все переезжают через merged_into_id (soft-delete), а
+    # safe_merge_store_native_into ремапит wishlist_items source→target.
+    # Физического DELETE записей нет → CASCADE FK не теряет items.
+    if record.source not in ("discogs", "user", "store"):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Пока эту пластинку нельзя добавить в вишлист — её ещё нет на Discogs",

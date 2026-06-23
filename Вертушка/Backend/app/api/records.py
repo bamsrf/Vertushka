@@ -31,6 +31,7 @@ from app.schemas.record import (
     RecordResponse,
     RecordSearchResult,
     RecordSearchResponse,
+    ReleaseSearchResult,
     CoverScanRequest,
     CoverScanResponse,
     MasterSearchResponse,
@@ -638,6 +639,87 @@ async def _search_local_index(
             cover_image_url=row["cover_image_url"],
             thumb_image_url=None,
             format_type=row["format_type"],
+        )
+        for row in rows
+    ]
+
+
+async def _search_store_native_releases(
+    db: AsyncSession,
+    q: str,
+    format: str | None,
+    year: int | None,
+    year_min: int | None,
+    year_max: int | None,
+    limit: int,
+) -> list[ReleaseSearchResult]:
+    """Store-native записи (source='store', нет на Discogs) для /releases/search.
+
+    Discogs API про эти релизы не знает — но они живут в нашей БД и уже доступны
+    в Маркете. Подмешиваем их в поиск, чтобы юзер находил то, что лежит в нашей
+    же базе, и мог добавить в коллекцию (см. whitelist в collections/wishlists).
+
+    release_id = record.id (UUID), НЕ discogs_id: фронт открывает карточку через
+    /record/{id}, а get_record резолвит и UUID. Ранжирование/нормализация
+    зеркалят _search_local_index: ILIKE %q% активирует GIN trgm-индекс, similarity
+    используется только для сортировки малого кандидат-сета.
+    """
+    if not q or len(q.strip()) < 3:
+        return []
+
+    conds = ["r.source = 'store'", "r.merged_into_id IS NULL"]
+    params: dict = {"q": q.strip(), "q_pat": f"%{q.strip()}%", "limit": limit}
+    conds.append("(r.artist ILIKE :q_pat OR r.title ILIKE :q_pat)")
+
+    if format:
+        conds.append("r.format_type ILIKE :fmt_like")
+        params["fmt_like"] = f"%{format}%"
+    if year is not None:
+        conds.append("r.year = :year_eq")
+        params["year_eq"] = year
+    else:
+        if year_min is not None:
+            conds.append("r.year >= :year_min")
+            params["year_min"] = year_min
+        if year_max is not None:
+            conds.append("r.year <= :year_max")
+            params["year_max"] = year_max
+
+    where = " AND ".join(conds)
+    sql = text(
+        f"""
+        SELECT
+            r.id::text AS id,
+            r.artist, r.title, r.year, r.country, r.label,
+            r.catalog_number, r.format_type,
+            COALESCE(
+                CASE WHEN r.cover_local_path IS NOT NULL
+                     THEN '/uploads/' || r.cover_local_path END,
+                r.cover_image_url
+            ) AS cover_image_url,
+            (
+              similarity(r.artist, :q) * 2.0
+              + similarity(r.title, :q)
+            ) AS sim
+        FROM records r
+        WHERE {where}
+        ORDER BY sim DESC, r.year DESC NULLS LAST
+        LIMIT :limit
+        """
+    )
+    rows = (await db.execute(sql, params)).mappings().all()
+    return [
+        ReleaseSearchResult(
+            release_id=row["id"],
+            title=row["title"],
+            artist=row["artist"],
+            label=row["label"],
+            catalog_number=row["catalog_number"],
+            country=row["country"],
+            year=row["year"],
+            format=row["format_type"],
+            cover_image_url=row["cover_image_url"],
+            thumb_image_url=None,
         )
         for row in rows
     ]
@@ -1733,6 +1815,21 @@ async def search_releases(
         await _enrich_search_results_with_rarity(
             results.results, db, id_attr="release_id", format_attr="format"
         )
+        # Store-native (нет на Discogs, source='store') подмешиваем СВЕРХУ — это
+        # «наши» свежие релизы из Маркета, которых Discogs API не отдаёт. Только
+        # на первой странице: их единицы, пагинация дальше — чистый Discogs.
+        # Дедуп не нужен: store-native release_id=UUID, Discogs release_id=int.
+        if page == 1:
+            try:
+                native = await _search_store_native_releases(
+                    db, q, format, year, year_min, year_max, limit=20
+                )
+            except Exception:
+                logger.warning("store-native release search failed", exc_info=True)
+                native = []
+            if native:
+                results.results = native + results.results
+                results.total += len(native)
         # Кешируем на CDN только непустую выдачу (см. search_masters).
         if results.results:
             response.headers["Cache-Control"] = "public, max-age=300"

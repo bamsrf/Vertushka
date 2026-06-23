@@ -132,7 +132,9 @@ export default function RecordDetailScreen() {
 
   const {
     addToCollection,
+    addToCollectionByRecordId,
     addToWishlist,
+    addToWishlistByRecordId,
     removeFromCollection,
     removeFromWishlist,
     moveToCollection,
@@ -172,12 +174,20 @@ export default function RecordDetailScreen() {
     const discogsId = record.discogs_id;
     const recordId = record.id;
 
+    // Гард на null/undefined обязателен: у store-native/user-records discogs_id
+    // отсутствует, и `undefined === undefined` ложно слепил бы ВСЕ такие записи
+    // с любой другой беz-discogs записью в коллекции → фантомное «Добавлено».
+    // Матч только по непустым идентификаторам.
     const collectionCopies = collectionItems.filter(
-      (item) => item.record.discogs_id === discogsId || item.record.id === recordId
+      (item) =>
+        (!!discogsId && item.record.discogs_id === discogsId) ||
+        (!!recordId && item.record.id === recordId)
     );
 
     const wishlistItem = wishlistItems.find(
-      (item) => item.record.discogs_id === discogsId || item.record.id === recordId
+      (item) =>
+        (!!discogsId && item.record.discogs_id === discogsId) ||
+        (!!recordId && item.record.id === recordId)
     );
 
     if (collectionCopies.length > 0) {
@@ -255,16 +265,16 @@ export default function RecordDetailScreen() {
       return;
     }
 
-    // Иначе просто добавляем в коллекцию
-    const discogsId = String(record.discogs_id || id);
-    if (!discogsId) {
-      toast.error('Не найден идентификатор пластинки');
-      return;
-    }
-
+    // Иначе просто добавляем в коллекцию. Store-native/user-record без discogs_id
+    // добавляем по record_id (UUID) — addToCollection шлёт discogs_id, который
+    // у этих записей отсутствует.
     try {
-      await addToCollection(discogsId);
-      // addToCollection уже обновляет оба списка
+      if (record.discogs_id) {
+        await addToCollection(String(record.discogs_id));
+      } else {
+        await addToCollectionByRecordId(record.id);
+      }
+      // addToCollection* уже обновляет оба списка
       const fmt = getFormatDisplayInfo(record?.format_type);
       toast.success(`${fmt.label} ${fmt.verb} в коллекцию`);
     } catch (error: any) {
@@ -289,15 +299,12 @@ export default function RecordDetailScreen() {
   const handleAddToWishlist = async () => {
     if (!record) return;
 
-    const discogsId = String(record.discogs_id || id);
-
-    if (!discogsId) {
-      toast.error('Не найден идентификатор пластинки');
-      return;
-    }
-
     try {
-      await addToWishlist(discogsId);
+      if (record.discogs_id) {
+        await addToWishlist(String(record.discogs_id));
+      } else {
+        await addToWishlistByRecordId(record.id);
+      }
       const fmt = getFormatDisplayInfo(record?.format_type);
       toast.success(`${fmt.label} ${fmt.verb} в список желаний`);
     } catch (error: any) {
@@ -785,27 +792,11 @@ export default function RecordDetailScreen() {
       {(() => {
         const recordStatus = getRecordStatus();
 
-        // ========== STORE-NATIVE (нет на Discogs) ==========
-        // Купить можно — офферы магазинов показываются в OffersBlock выше.
-        // Add-to-collection/wishlist пока заблокирован на бэке (collections.py,
-        // wishlists.py): merge с Discogs автоматический (см. cron
-        // daily_rematch_store_native), но запись попадёт в коллекции только
-        // после того как matcher найдёт Discogs-аналог и safe_merge перенесёт
-        // листинги. Пилл объясняет это юзеру.
-        if (record?.source === 'store') {
-          return (
-            <BlurView intensity={60} tint="light" style={[styles.actionsContainer, { paddingBottom: insets.bottom + Spacing.md }]}>
-              <View style={styles.addedButtonContainer}>
-                <View style={styles.addedButton}>
-                  <Icon name="information-circle" size={20} color={Colors.textSecondary} />
-                  <Text style={styles.addedButtonText}>
-                    В коллекцию пока нельзя · скоро будет на Discogs
-                  </Text>
-                </View>
-              </View>
-            </BlurView>
-          );
-        }
+        // STORE-NATIVE (нет на Discogs) ездит по обычному блоку кнопок: добавление
+        // в коллекцию/вишлист идёт по record_id (см. handleAddToCollection), бэк
+        // пускает source='store' в whitelist. Купить — через OffersBlock выше.
+        // При будущем merge с Discogs запись прозрачно переедет (merged_into_id +
+        // ремап items в safe_merge_store_native_into).
 
         // ========== СТАТУС: В КОЛЛЕКЦИИ ==========
         if (recordStatus.status === 'in_collection') {

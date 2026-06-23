@@ -1316,6 +1316,31 @@ async def safe_merge_store_native_into(
         },
     )
 
+    # Ремап коллекций/вишлистов: юзер мог добавить store-native в коллекцию ДО
+    # merge. collection_items.record_id указывает на source — переносим на target,
+    # иначе после soft-delete source запись «зависает» (get_record следует
+    # merged_into_id, но isOwned(discogs_id) дрифтует, возможен дубль). Сначала
+    # DELETE пересечений (target уже в той же коллекции/вишлисте — unique
+    # (collection_id, record_id)), затем UPDATE остатка.
+    for table, parent_col in (
+        ("collection_items", "collection_id"),
+        ("wishlist_items", "wishlist_id"),
+    ):
+        await db.execute(
+            text(
+                f"DELETE FROM {table} src "
+                f"WHERE src.record_id = :src "
+                f"  AND EXISTS (SELECT 1 FROM {table} dst "
+                f"              WHERE dst.record_id = :tgt "
+                f"                AND dst.{parent_col} = src.{parent_col})"
+            ),
+            {"src": source.id, "tgt": target.id},
+        )
+        await db.execute(
+            text(f"UPDATE {table} SET record_id = :tgt WHERE record_id = :src"),
+            {"tgt": target.id, "src": source.id},
+        )
+
     source.merged_into_id = target.id
     # User-record слита в Discogs-аналог → статус 'merged' (§6/§7). Покрывает
     # оба пути rematch (dump + live API), т.к. merge всегда идёт через сюда.

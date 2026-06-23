@@ -1440,16 +1440,24 @@ class DiscogsService:
 
         masters: list[dict] = []
         seen_ids: set[str] = set()
+        # Release-only айтемы (role=Main, type=release) — у артиста нет master-
+        # группировки (частый кейс японского/инди: мелкая дискография, синглы без
+        # master). Без них экран артиста пуст, хотя на Discogs релизы есть.
+        # Собираем отдельно и добавляем фолбэком, дедуп по нормализованному title.
+        release_items: list[dict] = []
+        master_titles: set[str] = set()
         for item in data.get("releases", []):
-            if item.get("type") != "master":
-                continue
             if item.get("role") != "Main":
                 continue
             item_id = str(item.get("id", ""))
             if not item_id or item_id in seen_ids:
                 continue
             seen_ids.add(item_id)
-            masters.append(item)
+            if item.get("type") == "master":
+                masters.append(item)
+                master_titles.add((item.get("title") or "").strip().lower())
+            elif item.get("type") == "release":
+                release_items.append(item)
 
         # 2) Обложки batch через Search API; exact match по master_id.
         search_by_id: dict[str, dict] = {}
@@ -1550,6 +1558,31 @@ class DiscogsService:
                 cover_image_url=cover_image_url,
                 thumb_image_url=thumb_image_url,
                 release_type=release_type,
+            ))
+
+        # Release-only фолбэк: master_id="" сигналит фронту открывать карточку
+        # по main_release_id (discogs release id) через /record/{id}, а не
+        # /master/{id}. Дедуп по title — релиз, уже представленный мастером, не
+        # дублируем. Обложка — thumb из releases (150px): для обскюрных релизов
+        # без master это единственное изображение, лучше пиксельной чем пусто.
+        for item in release_items:
+            title = item.get("title", "")
+            if title.strip().lower() in master_titles:
+                continue
+            item_id = str(item["id"])
+            try:
+                year = int(item["year"]) if item.get("year") else None
+            except (ValueError, TypeError):
+                year = None
+            all_results.append(MasterSearchResult(
+                master_id="",
+                title=title,
+                artist=artist_name,
+                year=year,
+                main_release_id=item_id,
+                cover_image_url=item.get("thumb") or None,
+                thumb_image_url=item.get("thumb") or None,
+                release_type=self._guess_release_type(item.get("format")),
             ))
 
         pagination = data.get("pagination", {})

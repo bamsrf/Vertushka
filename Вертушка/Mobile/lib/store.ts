@@ -573,6 +573,7 @@ interface CollectionState {
   addToCollection: (discogsId: string) => Promise<void>;
   addToCollectionByRecordId: (recordId: string) => Promise<void>;
   addToWishlist: (discogsId: string) => Promise<void>;
+  addToWishlistByRecordId: (recordId: string) => Promise<void>;
   removeFromCollection: (itemId: string, skipRefetch?: boolean) => Promise<void>;
   removeFromWishlist: (itemId: string, skipRefetch?: boolean) => Promise<void>;
   moveToCollection: (wishlistItemId: string) => Promise<void>;
@@ -776,6 +777,18 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
       useCacheStore.getState().invalidateAll();
       await get().fetchWishlistItems();
       // Возможные анлоки: A2
+      detectAchievementUnlocks();
+    });
+  },
+
+  addToWishlistByRecordId: async (recordId) => {
+    if (!recordId) {
+      throw new Error('Не указан ID пластинки');
+    }
+    return dedupeAction(`addToWishlistByRecordId:${recordId}`, async () => {
+      await api.addToWishlistByRecordId(recordId);
+      useCacheStore.getState().invalidateAll();
+      await get().fetchWishlistItems();
       detectAchievementUnlocks();
     });
   },

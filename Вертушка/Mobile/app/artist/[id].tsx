@@ -240,6 +240,13 @@ export default function ArtistDetailScreen() {
   }, [hasMore, isLoadingMasters, hasLoadError]);
 
   const handleMasterPress = useCallback((master: MasterSearchResult) => {
+    // Release-only айтем (нет master-группировки на Discogs) приходит с пустым
+    // master_id → открываем карточку релиза напрямую по main_release_id
+    // (discogs release id, [id].tsx резолвит через getRecordByDiscogsId).
+    if (!master.master_id) {
+      router.push(`/record/${master.main_release_id}`);
+      return;
+    }
     router.push({
       pathname: `/master/${master.master_id}`,
       params: {
