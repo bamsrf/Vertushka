@@ -109,7 +109,7 @@ export function AchievementsBlock({ username, compact = false }: Props) {
         )}
       </View>
 
-      {data.random_unlocked > 0 && (
+      {!username && data.random_unlocked > 0 && (
         <View style={styles.surpriseRow}>
           <Text style={styles.surpriseText}>
             🥚 Пасхалки: открыто {data.random_unlocked}

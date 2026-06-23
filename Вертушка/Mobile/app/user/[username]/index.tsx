@@ -745,34 +745,19 @@ export default function UserProfileScreen() {
             <View style={styles.heroStatsRow}>
               <View style={styles.heroStatItem}>
                 <Text style={styles.heroStatNum}>{pubProfile.collection_count}</Text>
-                <Text
-                  style={styles.heroStatLbl}
-                  numberOfLines={1}
-                  adjustsFontSizeToFit
-                  minimumFontScale={0.85}
-                >
+                <Text style={styles.heroStatLbl} numberOfLines={1}>
                   в наличии
                 </Text>
               </View>
               <View style={styles.heroStatItem}>
                 <Text style={styles.heroStatNum}>{pubProfile.wishlist_count}</Text>
-                <Text
-                  style={styles.heroStatLbl}
-                  numberOfLines={1}
-                  adjustsFontSizeToFit
-                  minimumFontScale={0.85}
-                >
+                <Text style={styles.heroStatLbl} numberOfLines={1}>
                   в вишлисте
                 </Text>
               </View>
               <View style={styles.heroStatItem}>
                 <Text style={styles.heroStatNum}>{pubProfile.followers_count}</Text>
-                <Text
-                  style={styles.heroStatLbl}
-                  numberOfLines={1}
-                  adjustsFontSizeToFit
-                  minimumFontScale={0.75}
-                >
+                <Text style={styles.heroStatLbl} numberOfLines={1}>
                   подписчики
                 </Text>
               </View>
@@ -978,7 +963,7 @@ export default function UserProfileScreen() {
             Под toolbar'ом, не сдвигает sticky-зону при переключении таба. */}
         {activeTab === 'wishlist' && !isOwn ? (
           <View style={styles.bookingHint}>
-            <Text style={styles.bookingHintInline} numberOfLines={1}>
+            <Text style={styles.bookingHintInline}>
               🔒 Анонимно  ·  🎁 60 дней  ·  ⏰ Напомним за 7
             </Text>
             {!following ? (
@@ -1208,7 +1193,7 @@ const styles = StyleSheet.create({
   },
   heroStatItem: { alignItems: 'center', flex: 1 },
   heroStatNum: { fontSize: ms(18), fontWeight: '700', color: PP.ink, letterSpacing: -0.2 },
-  heroStatLbl: { fontSize: ms(11), color: PP.mute, marginTop: 3, letterSpacing: 0.2, textAlign: 'center' },
+  heroStatLbl: { fontSize: ms(10.5), color: PP.mute, marginTop: 3, letterSpacing: 0.1, textAlign: 'center' },
 
   /* Identity (ник, имя, bio) под шапкой */
   identityBlock: {

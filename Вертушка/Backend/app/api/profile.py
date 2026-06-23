@@ -26,8 +26,10 @@ from app.schemas.profile import (
     PublicProfileResponse,
     PublicProfileRecord,
 )
+from app.config import get_settings
 from app.services.exchange import get_usd_rub_rate
-from app.services.valuation import get_monthly_delta
+from app.services.pricing import PricingParams
+from app.services.valuation import get_monthly_delta, record_value_rub
 
 logger = logging.getLogger(__name__)
 
@@ -349,21 +351,36 @@ async def get_public_profile_payload(user: User, profile: ProfileShare, db: Asyn
     collection_value_rub = None
     monthly_delta = None
     if profile.show_collection_value:
-        # Уникальные record_id пользователя (без двойного учёта копий из папок)
-        distinct_records = (
-            select(func.distinct(CollectionItem.record_id))
-            .join(Collection)
-            .join(Record, Record.id == CollectionItem.record_id)
-            .where(Collection.user_id == user.id, _PUBLIC_VISIBLE_CLAUSE)
-            .subquery()
+        # ЕДИНАЯ формула с экраном владельца: median-first + estimate_rub
+        # (country/format/Discogs наценки). Раньше тут был сырой
+        # SUM(coalesce(min, median)) × rate — min-first и БЕЗ наценок, из-за
+        # чего публичная стоимость не совпадала с /collection/value владельца.
+        value_records = (
+            (
+                await db.execute(
+                    select(Record)
+                    .join(CollectionItem, CollectionItem.record_id == Record.id)
+                    .join(Collection)
+                    .where(Collection.user_id == user.id, _PUBLIC_VISIBLE_CLAUSE)
+                )
+            )
+            .scalars()
+            .all()
         )
-        value_result = await db.scalar(
-            select(func.sum(func.coalesce(Record.estimated_price_min, Record.estimated_price_median)))
-            .where(Record.id.in_(select(distinct_records.c[0])))
-        )
-        collection_value = float(value_result) if value_result else 0.0
+        # Дедуп по record.id (DISTINCT по строке ломается на JSON discogs_data).
+        by_id = {r.id: r for r in value_records}
         rate = await get_usd_rub_rate()
-        collection_value_rub = round(collection_value * rate, 2)
+        params = PricingParams.from_settings(get_settings())
+        collection_value_rub = round(
+            sum(record_value_rub(r, rate, params) for r in by_id.values()), 2
+        )
+        # USD — сырая median-first сумма (нужна og-image / API-полю).
+        collection_value = float(
+            sum(
+                float(r.estimated_price_median or r.estimated_price_min or 0)
+                for r in by_id.values()
+            )
+        )
         delta = await get_monthly_delta(user.id, db)
         monthly_delta = float(delta) if delta is not None else None
 
