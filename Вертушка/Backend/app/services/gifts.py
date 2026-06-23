@@ -79,6 +79,10 @@ async def complete_gift_booking(
     # Бронь — COMPLETED, отвязываем от wishlist_item
     booking.status = GiftStatus.COMPLETED
     booking.completed_at = datetime.utcnow()
+    # Фиксируем получателя ДО обнуления связи (нужно для серии «Дарящая рука»:
+    # после wishlist_item_id=None владельца уже не достать).
+    if booking.recipient_user_id is None:
+        booking.recipient_user_id = owner.id
     booking.wishlist_item_id = None
 
     # Удаляем сам пункт вишлиста (поведение симметрично move-to-collection)
@@ -124,3 +128,33 @@ async def send_pending_gift_email(collection_item: CollectionItem) -> None:
         await send_gift_received_to_gifter(**payload)
     except Exception as exc:
         logger.warning(f"Не удалось отправить письмо дарителю: {exc}")
+
+
+async def emit_gift_completion_events(
+    db: AsyncSession,
+    *,
+    gifter_user_id,
+    recipient_user_id,
+    booking_id,
+) -> None:
+    """Эмитит доменные события после завершения подарка.
+
+    Зовётся ПОСЛЕ финального commit обоими путями завершения
+    (PUT /gifts/me/received/{id}/complete и move-to-collection). emit_event
+    открывает собственную транзакцию и никогда не пробрасывает исключения.
+
+    - GIFT_COMPLETED дарителю → J2/J3/J4 + сезонные. Только для зарегистрированных.
+    - GIFT_RECEIVED получателю → J5 + Любимчик.
+    """
+    from app.services.achievements import emit_event
+    from app.services.achievements.events import GIFT_COMPLETED, GIFT_RECEIVED
+
+    payload = {
+        "booking_id": str(booking_id),
+        "gifter_user_id": str(gifter_user_id) if gifter_user_id else None,
+        "recipient_user_id": str(recipient_user_id) if recipient_user_id else None,
+    }
+    if gifter_user_id is not None:
+        await emit_event(db, gifter_user_id, GIFT_COMPLETED, payload)
+    if recipient_user_id is not None:
+        await emit_event(db, recipient_user_id, GIFT_RECEIVED, payload)

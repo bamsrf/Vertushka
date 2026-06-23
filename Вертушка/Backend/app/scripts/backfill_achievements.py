@@ -39,6 +39,7 @@ from app.services.achievements.events import (
     FOLLOW_CREATED,
     FOLLOW_RECEIVED,
     GIFT_BOOKED,
+    GIFT_COMPLETED,
     PROFILE_SHARED_ENABLED,
     PROFILE_VIEW,
     WISHLIST_ITEM_ADDED,
@@ -98,6 +99,21 @@ async def _user_events(db: AsyncSession, user: User) -> list[tuple[str, dict]]:
     )
     if has_gift:
         events.append((GIFT_BOOKED, {}))
+
+    # Завершённые подарки (как даритель) → J2 + сезонные (по completed_at).
+    # J3/J4/J7 и GIFT_RECEIVED НЕ догоняем: историч. COMPLETED имеют
+    # recipient_user_id IS NULL (миграция бэкфилит только активные брони),
+    # поэтому distinct-получатели = 0. Anti-farm стартует с нуля — by design.
+    has_completed_gift = await db.scalar(
+        select(
+            exists().where(
+                GiftBooking.booked_by_user_id == user.id,
+                GiftBooking.status == GiftStatus.COMPLETED,
+            )
+        )
+    )
+    if has_completed_gift:
+        events.append((GIFT_COMPLETED, {}))
 
     # Follow-события — следим только за фактом, остальное соберёт evaluator
     from app.models.follow import Follow

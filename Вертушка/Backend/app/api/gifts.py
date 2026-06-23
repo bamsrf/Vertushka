@@ -225,6 +225,7 @@ async def book_gift(
     booking = GiftBooking(
         wishlist_item_id=item.id,
         booked_by_user_id=current_user.id if current_user else None,
+        recipient_user_id=owner.id if owner else None,
         gifter_name=data.gifter_name,
         gifter_email=data.gifter_email,
         gifter_phone=data.gifter_phone,
@@ -680,10 +681,15 @@ async def complete_booking(
     if booking.status == GiftStatus.COMPLETED:
         return {"status": "completed"}
 
-    from app.services.gifts import complete_gift_booking, send_pending_gift_email
+    from app.services.gifts import (
+        complete_gift_booking,
+        emit_gift_completion_events,
+        send_pending_gift_email,
+    )
 
     record = booking.wishlist_item.record if booking.wishlist_item else None
     gifter_user_id = booking.booked_by_user_id
+    booking_id_done = booking.id
 
     collection_item = await complete_gift_booking(
         booking=booking,
@@ -717,6 +723,14 @@ async def complete_booking(
 
     await db.commit()
     await send_pending_gift_email(collection_item)
+
+    # Ачивки серии «Дарящая рука» + сезонные (после commit, в своей транзакции)
+    await emit_gift_completion_events(
+        db,
+        gifter_user_id=gifter_user_id,
+        recipient_user_id=current_user.id,
+        booking_id=booking_id_done,
+    )
 
     return {"status": "completed"}
 

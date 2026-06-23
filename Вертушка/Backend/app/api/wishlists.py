@@ -663,7 +663,7 @@ async def move_to_collection(
         await db.refresh(collection_item)
         await send_pending_gift_email(collection_item)
 
-        # Ачивки серии «Дарящая рука» + сезонные (после commit)
+        # Ачивки серии «Дарящая рука» (после commit)
         from app.services.gifts import emit_gift_completion_events
         await emit_gift_completion_events(
             db,
@@ -696,6 +696,23 @@ async def move_to_collection(
         await db.delete(item)
         await db.commit()
         await db.refresh(collection_item)
+
+    # Ачивки коллекции (C-серия редкости, scale, genres, eras, geo). Прямое
+    # добавление в коллекцию эмитит это событие; перенос вишлист→коллекция
+    # раньше НЕ эмитил — поэтому коллекционка/лимитка из вишлиста не открывала
+    # ачивку. payload.record даёт evaluator-у свежий объект без доп. запроса.
+    from app.services.achievements import emit_event
+    from app.services.achievements.events import COLLECTION_ITEM_ADDED
+    await emit_event(
+        db,
+        current_user.id,
+        COLLECTION_ITEM_ADDED,
+        {
+            "collection_item_id": collection_item.id,
+            "record_id": record.id,
+            "record": record,
+        },
+    )
 
     return CollectionItemResponse(
         id=collection_item.id,

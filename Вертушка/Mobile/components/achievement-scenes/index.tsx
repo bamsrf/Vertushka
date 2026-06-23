@@ -519,12 +519,14 @@ const REGISTRY: Record<string, SceneRenderer> = {
   R_pi: ScenePi,
   // ── Phase 2–4 scaffold mappings (заглушки, чтобы каркасные пины не были
   // одинаково-серыми; финальные дизайны заменят это поштучно)
-  // J2–J6 + META_gifts
+  // J2–J5 + J7/J8/J9 + META_gifts (J6 удалён)
   J2_gift_done: SceneGiftBox,
   J3_three_recipients: SceneGiftBox,
   J4_ten_recipients: SceneGiftBox,
   J5_first_received: SceneGiftBox,
-  J6_perfect_match: SceneGiftBox,
+  J7_boomerang: SceneGiftBox,
+  J8_loved: SceneGiftBox,
+  J9_santa: SceneGiftBox,
   META_gifts: SceneGiftBox,
   // Rarity (C) — пока используем стопку и витрину
   C1_limited_x5: (p) => <SceneStack {...p} count={3} />,

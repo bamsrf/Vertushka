@@ -47,6 +47,17 @@ class GiftBooking(Base):
         index=True
     )
     
+    # Получатель подарка (владелец вишлиста). Денормализовано, т.к. при
+    # завершении брони wishlist_item_id обнуляется и связь теряется. Нужно
+    # для серии «Дарящая рука»: распределение по разным получателям, Бумеранг,
+    # Любимчик. Заполняется на /book и в complete_gift_booking.
+    recipient_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True
+    )
+
     # Данные дарителя (для незарегистрированных пользователей)
     gifter_name: Mapped[str] = mapped_column(
         String(100),
@@ -133,6 +144,7 @@ class GiftBooking(Base):
     # Отношения
     wishlist_item = relationship("WishlistItem", back_populates="gift_booking")
     booked_by_user = relationship("User", foreign_keys=[booked_by_user_id])
+    recipient_user = relationship("User", foreign_keys=[recipient_user_id])
     
     def __repr__(self) -> str:
         return f"<GiftBooking {self.id} - {self.status}>"
