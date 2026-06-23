@@ -128,6 +128,8 @@ interface Props {
   hotStockMap?: Map<string, { variant: any; price: number } | null>;
   /** Wishlist tile/list badge-режим — см. RecordCard.useOfferBadge. */
   useOfferBadge?: boolean;
+  /** Pinch-зум сетки. false → жёстко отключить (напр. чужой профиль, пока не починим). */
+  pinchEnabled?: boolean;
 }
 
 interface BareCellProps {
@@ -246,6 +248,7 @@ export function ZoomableRecordGrid({
   rarityContext = 'collection',
   hotStockMap,
   useOfferBadge = false,
+  pinchEnabled = true,
 }: Props) {
   const [level, setLevel] = useState<ZoomLevel>(0);
 
@@ -380,6 +383,7 @@ export function ZoomableRecordGrid({
 
   // ─── Pinch ──────────────────────────────────────────────────────────────
   const pinch = Gesture.Pinch()
+    .enabled(pinchEnabled)
     .onStart((event) => {
       'worklet';
       focalX.value = event.focalX;

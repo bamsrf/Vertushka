@@ -688,22 +688,8 @@ export default function UserProfileScreen() {
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
-      {/* Soft tinted background */}
-      <View style={StyleSheet.absoluteFill}>
-        <View style={[StyleSheet.absoluteFill, { backgroundColor: '#F5F0EA' }]} />
-        <LinearGradient
-          colors={['rgba(154,168,255,0.55)', 'rgba(154,168,255,0.12)', 'transparent']}
-          start={{ x: 1, y: 0 }} end={{ x: 0.2, y: 0.6 }}
-          style={StyleSheet.absoluteFill}
-          pointerEvents="none"
-        />
-        <LinearGradient
-          colors={['rgba(189,212,255,0.45)', 'rgba(189,212,255,0.08)', 'transparent']}
-          start={{ x: 0, y: 0 }} end={{ x: 0.7, y: 0.5 }}
-          style={StyleSheet.absoluteFill}
-          pointerEvents="none"
-        />
-      </View>
+      {/* Background — как в коллекции профиля (плоский Colors.background) */}
+      <View style={[StyleSheet.absoluteFill, { backgroundColor: '#FAFBFF' }]} />
 
       {/* Top bar — минимальный */}
       <View style={styles.topbar}>
@@ -961,16 +947,11 @@ export default function UserProfileScreen() {
 
         {/* Booking hint — компактная одна строка вместо тяжёлой карточки.
             Под toolbar'ом, не сдвигает sticky-зону при переключении таба. */}
-        {activeTab === 'wishlist' && !isOwn ? (
+        {activeTab === 'wishlist' && !isOwn && !following ? (
           <View style={styles.bookingHint}>
-            <Text style={styles.bookingHintInline}>
-              🔒 Анонимно  ·  🎁 60 дней  ·  ⏰ Напомним за 7
+            <Text style={styles.bookingHintRow}>
+              🎁  Подпишитесь, чтобы бронировать подарки
             </Text>
-            {!following ? (
-              <Text style={styles.bookingHintSub}>
-                Подпишитесь, чтобы бронировать подарки
-              </Text>
-            ) : null}
           </View>
         ) : null}
 
@@ -1022,6 +1003,7 @@ export default function UserProfileScreen() {
               onRefresh={handleRefresh}
               rarityContext={isWishlistTab ? 'wishlist' : 'collection'}
               contentBottomPad={showStickyCTA ? 140 : 32}
+              pinchEnabled={false}
             />
           );
         }
@@ -1142,7 +1124,7 @@ export default function UserProfileScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: PP.ivory },
+  container: { flex: 1, backgroundColor: '#FAFBFF' },
   center: { alignItems: 'center', justifyContent: 'center' },
 
   topbar: {
@@ -1269,23 +1251,18 @@ const styles = StyleSheet.create({
     marginHorizontal: GRID_PADDING,
     marginTop: 14,
     marginBottom: 6,
-    paddingHorizontal: 12, paddingVertical: 8,
-    borderRadius: 10,
+    paddingHorizontal: 14, paddingVertical: 12,
+    borderRadius: 12,
     backgroundColor: 'rgba(255,255,255,0.55)',
     borderWidth: 1, borderColor: PP.hairline,
+    gap: 10,
   },
-  bookingHintInline: {
-    fontSize: ms(11.5),
+  bookingHintRow: {
+    fontSize: ms(13),
+    lineHeight: ms(19),
     color: PP.slate,
     fontWeight: '500',
     letterSpacing: 0.1,
-    textAlign: 'center',
-  },
-  bookingHintSub: {
-    fontSize: ms(11), color: PP.cobalt, fontWeight: '600',
-    marginTop: 6, paddingTop: 6,
-    borderTopWidth: 1, borderTopColor: PP.hairline,
-    textAlign: 'center',
   },
 
   /* Folders */
