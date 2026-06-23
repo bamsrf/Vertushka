@@ -1405,7 +1405,7 @@ class DiscogsService:
         Кэшируется в Redis на TTL_ARTIST_MASTERS.
         """
         sort_order = "asc" if sort_order == "asc" else "desc"
-        ck = f"{artist_id}:v8:p{page}:pp{per_page}:{sort_order}"
+        ck = f"{artist_id}:v9:p{page}:pp{per_page}:{sort_order}"
         cached = await cache.get("artist_masters", ck)
         if cached is not None:
             return MasterSearchResponse(**cached)
@@ -1560,11 +1560,36 @@ class DiscogsService:
                 release_type=release_type,
             ))
 
+        # Release-only обложки (~500px) одним batch type=release Search, exact
+        # match по release id. thumb из /artists/{id}/releases — 150px (пиксельно),
+        # потому отдельный запрос как для masters. Падение — graceful, остаётся
+        # thumb.
+        release_cover_by_id: dict[str, str] = {}
+        if release_items:
+            try:
+                rsearch = await self._get(
+                    f"{self.BASE_URL}/database/search",
+                    params={
+                        "type": "release",
+                        "artist": clean_artist_name(artist_name),
+                        "page": page,
+                        "per_page": 100,
+                    },
+                    priority=Priority.SEARCH,
+                    creds=creds,
+                )
+                for s in rsearch.get("results", []):
+                    sid = str(s.get("id", ""))
+                    cover = s.get("cover_image")
+                    if sid and cover and "api-img.discogs.com" not in cover:
+                        release_cover_by_id[sid] = cover
+            except Exception:
+                logger.exception("Search API for artist release covers failed: %s", artist_id)
+
         # Release-only фолбэк: master_id="" сигналит фронту открывать карточку
         # по main_release_id (discogs release id) через /record/{id}, а не
         # /master/{id}. Дедуп по title — релиз, уже представленный мастером, не
-        # дублируем. Обложка — thumb из releases (150px): для обскюрных релизов
-        # без master это единственное изображение, лучше пиксельной чем пусто.
+        # дублируем.
         for item in release_items:
             title = item.get("title", "")
             if title.strip().lower() in master_titles:
@@ -1574,14 +1599,15 @@ class DiscogsService:
                 year = int(item["year"]) if item.get("year") else None
             except (ValueError, TypeError):
                 year = None
+            thumb = item.get("thumb") or None
             all_results.append(MasterSearchResult(
                 master_id="",
                 title=title,
                 artist=artist_name,
                 year=year,
                 main_release_id=item_id,
-                cover_image_url=item.get("thumb") or None,
-                thumb_image_url=item.get("thumb") or None,
+                cover_image_url=release_cover_by_id.get(item_id) or thumb,
+                thumb_image_url=thumb,
                 release_type=self._guess_release_type(item.get("format")),
             ))
 

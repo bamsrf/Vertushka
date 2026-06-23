@@ -202,8 +202,9 @@ export default function ArtistDetailScreen() {
         setMasters(data.results);
       } else {
         setMasters((prev) => {
-          const existingIds = new Set(prev.map(m => m.master_id));
-          const newMasters = data.results.filter(m => !existingIds.has(m.master_id));
+          const keyOf = (m: MasterSearchResult) => m.master_id || m.main_release_id;
+          const existingIds = new Set(prev.map(keyOf));
+          const newMasters = data.results.filter(m => !existingIds.has(keyOf(m)));
           return [...prev, ...newMasters];
         });
       }
@@ -302,7 +303,12 @@ export default function ArtistDetailScreen() {
     <MasterRecordCard item={item} onPress={handleMasterPress} />
   ), [handleMasterPress]);
 
-  const keyExtractor = useCallback((item: MasterSearchResult) => item.master_id, []);
+  // Release-only айтемы приходят с пустым master_id → ключуем по main_release_id,
+  // иначе все '' схлопываются в один ключ (React: duplicate key '.$=').
+  const keyExtractor = useCallback(
+    (item: MasterSearchResult) => item.master_id || item.main_release_id,
+    [],
+  );
 
   const listHeader = useMemo(() => (
     <>
