@@ -844,19 +844,24 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
   },
 
   moveToCollection: async (wishlistItemId) => {
-    const { defaultCollection, fetchCollectionItems, fetchWishlistItems } = get();
-    if (!defaultCollection) {
-      throw new Error('Коллекция не найдена');
-    }
+    // dedupeAction: без него двойной тап шлёт move дважды — первый успех
+    // (item перенесён+удалён), второй → 404 «Элемент не найден» на уже
+    // удалённом item.
+    return dedupeAction(`moveToCollection:${wishlistItemId}`, async () => {
+      const { defaultCollection, fetchCollectionItems, fetchWishlistItems } = get();
+      if (!defaultCollection) {
+        throw new Error('Коллекция не найдена');
+      }
 
-    // Используем атомарный endpoint
-    await api.moveToCollection(wishlistItemId, defaultCollection.id);
+      // Используем атомарный endpoint
+      await api.moveToCollection(wishlistItemId, defaultCollection.id);
 
-    // Обновляем оба списка
-    await Promise.all([
-      fetchCollectionItems(),
-      fetchWishlistItems(),
-    ]);
+      // Обновляем оба списка
+      await Promise.all([
+        fetchCollectionItems(),
+        fetchWishlistItems(),
+      ]);
+    });
   },
 
   createFolder: async (name) => {

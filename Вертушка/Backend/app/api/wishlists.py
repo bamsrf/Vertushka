@@ -651,6 +651,8 @@ async def move_to_collection(
     if item.gift_booking and item.gift_booking.status == GiftStatus.BOOKED:
         # Путь «получили подарок» — единый сервис: создаст CollectionItem,
         # завершит бронь, удалит пункт, подготовит письмо дарителю.
+        gifter_user_id = item.gift_booking.booked_by_user_id
+        booking_id_done = item.gift_booking.id
         collection_item = await complete_gift_booking(
             booking=item.gift_booking,
             owner=current_user,
@@ -660,11 +662,35 @@ async def move_to_collection(
         await db.commit()
         await db.refresh(collection_item)
         await send_pending_gift_email(collection_item)
+
+        # Ачивки серии «Дарящая рука» + сезонные (после commit)
+        from app.services.gifts import emit_gift_completion_events
+        await emit_gift_completion_events(
+            db,
+            gifter_user_id=gifter_user_id,
+            recipient_user_id=current_user.id,
+            booking_id=booking_id_done,
+        )
     else:
         # Путь «сам купил» — без брони. Просто перенос.
+        # Цену в рубли считаем как в collections.add_record_to_collection —
+        # иначе CollectionItemResponse.estimated_price_rub (required) роняет
+        # сериализацию 500-кой (item при этом уже закоммичен → юзер видит
+        # «ошибку», но запись добавлена).
+        estimated_price_rub = None
+        if record.estimated_price_min:
+            from app.api.collections import _record_rub
+            from app.services.exchange import get_usd_rub_rate
+            from app.services.pricing import PricingParams
+            from app.config import get_settings
+            usd_rub = await get_usd_rub_rate()
+            params = PricingParams.from_settings(get_settings())
+            estimated_price_rub = _record_rub(record, usd_rub, params)
+
         collection_item = CollectionItem(
             collection_id=target_collection.id,
             record_id=item.record_id,
+            estimated_price_rub=estimated_price_rub,
         )
         db.add(collection_item)
         await db.delete(item)
@@ -679,6 +705,10 @@ async def move_to_collection(
         sleeve_condition=collection_item.sleeve_condition,
         notes=collection_item.notes,
         shelf_position=collection_item.shelf_position,
+        estimated_price_rub=(
+            float(collection_item.estimated_price_rub)
+            if collection_item.estimated_price_rub is not None else None
+        ),
         added_at=collection_item.added_at,
         record=record
     )
