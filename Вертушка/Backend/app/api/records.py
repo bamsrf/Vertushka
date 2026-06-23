@@ -266,6 +266,20 @@ async def _enrich_stub_bg(record_id: UUID, discogs_id: str) -> None:
         logger.exception("_enrich_stub_bg failed for record %s (discogs_id=%s)", record_id, discogs_id)
 
 
+# Various-artists маркеры: compilation, НЕ один артист. Name-search по ним
+# подцепляет случайного Discogs-артиста (напр. 'V/A' → мис-атрибутированный
+# 'A.V. Mittelstedt'), и карточка релиза ведёт на чужого человека. По таким
+# токенам артиста не линкуем вовсе.
+_VA_ARTIST_TOKENS = {
+    "v/a", "va", "v.a", "v.a.", "various", "various artists",
+    "разные исполнители", "сборник",
+}
+
+
+def _is_various_artist(name: str | None) -> bool:
+    return bool(name) and name.strip().lower().rstrip(".") in _VA_ARTIST_TOKENS
+
+
 async def _ensure_record_artist_data(record: Record, db: AsyncSession) -> None:
     """
     Обогащает запись данными артиста (artist_id, artist_thumb_image_url),
@@ -296,8 +310,9 @@ async def _ensure_record_artist_data(record: Record, db: AsyncSession) -> None:
 
     # Store-native fallback: ищем артиста по имени через /database/search?type=artist.
     # Берём первый результат только если имя совпадает после нормализации,
-    # иначе можем подцепить рандомного однофамильца.
-    if not artist_id and record.artist:
+    # иначе можем подцепить рандомного однофамильца. Various-artists (V/A и т.п.)
+    # пропускаем — это compilation, не один артист.
+    if not artist_id and record.artist and not _is_various_artist(record.artist):
         try:
             discogs = DiscogsService()
             search_resp = await discogs.search_artists(record.artist, per_page=5)

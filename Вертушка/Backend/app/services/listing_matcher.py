@@ -108,6 +108,36 @@ def _normalize_text(s: str | None) -> str:
     s = _NORM_PUNCT_RE.sub(" ", s.lower())
     return _NORM_WS_RE.sub(" ", s).strip()
 
+
+# Various-artists маркеры магазинов → каноничное Discogs-имя 'Various'. Discogs
+# search по 'V/A' даёт мусор; 'Various' матчит compilation-релизы.
+_VA_TOKENS = {"v/a", "va", "v.a", "v.a.", "разные исполнители", "сборник"}
+
+# Аннотации магазина в title, которых на Discogs нет: '(цветной винил)',
+# '(винил)', '(color vinyl)', '(2LP)' и т.п. — режем перед Discogs-поиском,
+# иначе release_title не матчит. Только хвостовые скобки с винил/цвет/LP/color.
+_TITLE_ANNOTATION_RE = re.compile(
+    r"\s*\([^)]*(?:винил|цвет|vinyl|color|colou?red|\dlp|reissue|переизда)[^)]*\)\s*$",
+    re.IGNORECASE,
+)
+
+
+def _canon_artist_for_search(artist: str | None) -> str | None:
+    """V/A и синонимы → 'Various'. Иначе исходное имя."""
+    if not artist:
+        return artist
+    if artist.strip().lower().rstrip(".") in _VA_TOKENS:
+        return "Various"
+    return artist
+
+
+def _clean_title_for_search(title: str | None) -> str | None:
+    """Срезает хвостовые store-аннотации ('(цветной винил)' и т.п.)."""
+    if not title:
+        return title
+    cleaned = _TITLE_ANNOTATION_RE.sub("", title).strip()
+    return cleaned or title
+
 # Discogs on-demand: верхняя крышка против burst-нагрузки. Per-minute rate-limit
 # (60 req/min) уже выровнен через discogs_limiter (TokenBucketRateLimiter capacity=55,
 # refill_rate=0.95 = ~57 req/min). Hourly limit — это анти-DDOS для batch matcher'а:
@@ -132,10 +162,12 @@ STORE_NATIVE_DEDUP_SCORE = 1.6
 STORE_NATIVE_CROSS_SHOP_SCORE = 1.4
 
 # Авто-merge store-native → discogs: сколько раз подряд rematch должен
-# подтвердить candidate, чтобы запустить safe-merge. 2 = две недели подряд
-# weekly_rematch_store_native находит тот же discogs_id → объединяем.
-# При смене candidate счётчик сбрасывается до 1.
-STORE_NATIVE_MERGE_MIN_CONFIRMATIONS = 2
+# подтвердить candidate, чтобы запустить safe-merge. При смене candidate
+# счётчик сбрасывается до 1.
+# 3 (а не 2): после matcher-B чистки (V/A→Various, срез аннотаций, без year-
+# reject) text-fetch матчит шире → выше шанс «почти верного» кандидата. Лишнее
+# подтверждение = ещё один день/прогон, прежде чем необратимо перенесём листинги.
+STORE_NATIVE_MERGE_MIN_CONFIRMATIONS = 3
 
 
 # ---- Discogs Releases Dump (slim local index) -------------------------- #
@@ -618,15 +650,20 @@ async def _try_discogs_fetch_by_text(
         from app.services.rate_limiter import Priority
 
         discogs = DiscogsService()
+        # Чистка запроса (matcher B): V/A→Various, срез store-аннотаций title
+        # ('(цветной винил)'). Без неё release_title не матчит каноничный Discogs.
+        search_artist = _canon_artist_for_search(artist)
+        search_title = _clean_title_for_search(title)
         params: dict = {
             "format": "Vinyl",
             "type": "release",
             "per_page": 5,
-            "artist": artist,
-            "release_title": title,
+            "artist": search_artist,
+            "release_title": search_title,
         }
-        if year:
-            params["year"] = year
+        # Year НЕ передаём как фильтр и НЕ режем по нему результат: реиздания
+        # (винил 2025 vs оригинал 2002) легитимно отличаются годом — year-reject
+        # хоронил валидный альбом. Точность держит format=Vinyl + artist + title.
 
         results = await discogs._get(
             f"{discogs.BASE_URL}/database/search",
@@ -638,17 +675,7 @@ async def _try_discogs_fetch_by_text(
             return None
 
         # Берём первый — Discogs обычно выдаёт самый релевантный сверху.
-        # Если есть год, дополнительно проверяем что найденный совпадает ±1 год
-        # (Discogs иногда показывает re-issues с другим годом, нам важна суть).
         first = items[0]
-        if year:
-            found_year = first.get("year")
-            try:
-                if found_year and abs(int(found_year) - year) > 1:
-                    return None
-            except (ValueError, TypeError):
-                pass
-
         return await _save_discogs_result(db, first, barcode=None, catalog=None)
     except Exception:
         logger.exception(
