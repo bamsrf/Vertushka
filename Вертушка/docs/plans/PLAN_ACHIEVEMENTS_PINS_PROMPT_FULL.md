@@ -22,7 +22,7 @@
    - [D — Кругосветка](#серия-d--кругосветка) (6, без D3)
    - [E — Машина времени](#серия-e--машина-времени) (6)
    - [F — Жанры](#серия-f--жанры) (6)
-   - [J — Дарящая рука](#серия-j--дарящая-рука) (5)
+   - [J — Дарящая рука](#серия-j--дарящая-рука) (7, J6 удалена)
    - [K — Сообщество + Вклад](#серия-k--сообщество) (14)
    - [INV — Глас наружу](#серия-inv--глас-наружу) (6)
    - [H — Дискография](#серия-h--дискография) (5)
@@ -31,7 +31,7 @@
 5. [Фразы для итерации](#фразы-для-итерации)
 6. [Verification](#verification)
 
-**Всего пинов в новом доке: 83.**
+**Всего пинов в новом доке: 85** (J6 удалена, добавлены J7/J8/J9).
 
 ---
 
@@ -106,7 +106,7 @@ If you understood the style and are ready for the first pin, reply with just: "R
 | `META_foundation` | На борту | 🔵 | Парусник: корпус-винил на ребре, парус = обложка альбома, флажок «5». |
 | `B1_starter` | Десятка | 💧 | Полка из 10 разноцветных корешков + крупная «10» сверху. |
 | `B2_collector` | Полтинник | 💧 | DJ flight case, корешки внутри, печать «50» в лавровом венке. |
-| `J1_first_gift` | Подарил | 💧 | Коробка перевязана виниловой лентой, бант = центральный лейбл. |
+| `J1_first_gift` | Забронировал | 💧 | Коробка перевязана виниловой лентой, бант = центральный лейбл. |
 | `R_self_titled` | Тёзка | 🌸 | Две зеркальные пластинки, золотой знак «=», розовые лейблы. |
 | `R_thirty_three` | Тридцать три | 🌸 | Винил-медаль, лейбл «33⅓» в венке, 7 лучей. |
 
@@ -518,13 +518,39 @@ Same enamel pin style as the previous Vertushka pins (gold contour, navy outline
 Output: 1024×1024 PNG, transparent background.
 ```
 
-#### `J6_perfect_match` — В точку 🌸
-> Метафора: подарок попал в высший приоритет — стрела в центре мишени-пластинки.
+> ⚠️ `J6_perfect_match` («В точку», priority=high) удалена из каталога — в
+> данных `priority` это int 0..10, у UI-понятия «High» никогда не было
+> реального значения. Заменена на J7/J8/J9 ниже.
+
+#### `J7_boomerang` — Бумеранг 🌸
+> Метафора: подарок вернулся тому, кто его дарил — бумеранг из винила летит по кругу.
 
 ```text
-Generate a soft enamel pin: a vinyl record drawn as a bullseye target, a gold arrow embedded dead center, having pierced the highest-priority wish — perfect match.
-Composition: vinyl record (vinyl black with gold grooves), but the center label is replaced with a target ring pattern — outer ring vinyl black, then ivory, then rose pink, dead-center gold; a gold arrow shaft enters from the upper-right at 45 degrees, the arrowhead embedded in the gold center; arrow fletching extends slightly past the upper-right frame edge; add 2 tiny gold sparkle stars near the impact point.
-Palette: navy #0B1438, vinyl black #1A1A2E, ivory #FBF5EA, rose pink #E89AC0, gold #D9A84E.
+Generate a soft enamel pin: a vinyl-record-shaped boomerang flying in a circular arc, a thin motion-trail looping back to its own tail — the gift that returns to the giver.
+Composition: a curved boomerang shape rendered as a vinyl record (vinyl black with gold grooves, ember center label) bent into a wide arc spanning the pin diagonally; a dotted gold motion-trail follows the arc and curls back toward the starting point, forming a near-closed loop; add 2 tiny gold sparkle stars along the trail.
+Palette: navy #0B1438, vinyl black #1A1A2E, ivory #FBF5EA, ember #E85A2A, gold #D9A84E.
+Same enamel pin style as the previous Vertushka pins (gold contour, navy outline, recessed enamel, single specular per zone).
+Output: 1024×1024 PNG, transparent background.
+```
+
+#### `J8_loved` — Любимчик 🔵
+> Метафора: подарки от трёх разных дарителей — раскрытый веер из трёх лент, сходящихся к одной пластинке.
+
+```text
+Generate a soft enamel pin: three differently-colored ribbons converging from three directions onto a single vinyl record at the center, like spotlights of affection — gifts from three different givers.
+Composition: vinyl record (vinyl black, gold grooves, rose-pink center label) centered in the bottom 60% of pin; three ribbons enter from upper-left (cobalt), top (gold), upper-right (ember), each tied in a small bow where it meets the record edge; small gold sparkle dot at each bow.
+Palette: navy #0B1438, vinyl black #1A1A2E, cobalt #2A4BD7, ember #E85A2A, rose pink #E89AC0, gold #D9A84E.
+Same enamel pin style as the previous Vertushka pins (gold contour, navy outline, recessed enamel, single specular per zone).
+Output: 1024×1024 PNG, transparent background.
+```
+
+#### `J9_santa` — Дед Мороз 🔵
+> Метафора: подарок успел к новогодним праздникам — мешок подарков под еловой веткой со снежинкой.
+
+```text
+Generate a soft enamel pin: a Santa-style gift sack with a vinyl record peeking out, resting beneath a small pine branch with a snowflake above — the gift that made it under the tree in time.
+Composition: ivory gift sack tied with gold cord at the bottom 55% of pin, a vinyl record (vinyl black, ember center label) peeking out the open top; a small navy pine branch with 3 needles curves over the upper-left of the sack; a single 6-point gold snowflake sits in the upper-right corner; add 2 tiny gold sparkle stars near the snowflake.
+Palette: navy #0B1438, ivory #FBF5EA, vinyl black #1A1A2E, ember #E85A2A, gold #D9A84E.
 Same enamel pin style as the previous Vertushka pins (gold contour, navy outline, recessed enamel, single specular per zone).
 Output: 1024×1024 PNG, transparent background.
 ```
@@ -1046,7 +1072,7 @@ Output: 1024×1024 PNG, transparent background.
 ```
 
 #### `META_gifts` — Щедрость 🌌
-> Метафора: J4 + J6 — рог изобилия с подарками.
+> Метафора: ядро серии (J2+J3+J4+J5) — рог изобилия с подарками.
 
 ```text
 Generate a soft enamel pin: a golden cornucopia spilling wrapped gifts and vinyl records — the generosity master.
