@@ -14,9 +14,13 @@ DIRTY=$(git status --short 2>/dev/null | head -10)
 DIRTY_COUNT=$(git status --short 2>/dev/null | wc -l | tr -d ' ')
 
 # gbrain stats (не блокируем если упало)
+# portable timeout: macOS has no `timeout` by default (coreutils).
+if command -v gtimeout >/dev/null 2>&1; then TO="gtimeout 3";
+elif command -v timeout >/dev/null 2>&1; then TO="timeout 3";
+else TO=""; fi
 GBRAIN_STATS=""
 if command -v gbrain >/dev/null 2>&1; then
-  STATS=$(timeout 3 gbrain stats 2>/dev/null | grep -E "(pages|inbox)" | head -3 || echo "")
+  STATS=$($TO gbrain stats 2>/dev/null | grep -E "(pages|inbox)" | head -3 || echo "")
   if [ -n "$STATS" ]; then
     GBRAIN_STATS=$'\n\ngbrain:\n'"$STATS"
   fi

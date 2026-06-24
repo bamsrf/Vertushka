@@ -38,10 +38,14 @@ TODAY=$(date +%Y-%m-%d)
 
 # Записываем в gbrain timeline (не блокируем если упало)
 export PATH="$HOME/.bun/bin:$PATH"
+# portable timeout: macOS has no `timeout` by default (coreutils).
+if command -v gtimeout >/dev/null 2>&1; then TO="gtimeout 5";
+elif command -v timeout >/dev/null 2>&1; then TO="timeout 5";
+else TO=""; fi
 if command -v gbrain >/dev/null 2>&1; then
   # Используем timeline-add: slug = ветка, дата = сегодня, текст = сообщение + статистика
   ENTRY="[$LAST_COMMIT_HASH] $LAST_MSG ($LAST_STAT)"
-  timeout 5 gbrain timeline-add "branch-$BRANCH" "$TODAY" "$ENTRY" >/dev/null 2>&1 || true
+  $TO gbrain timeline-add "branch-$BRANCH" "$TODAY" "$ENTRY" >/dev/null 2>&1 || true
 fi
 
 echo '{}'
