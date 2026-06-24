@@ -861,6 +861,11 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
         fetchCollectionItems(),
         fetchWishlistItems(),
       ]);
+
+      // Перенос в коллекцию может открыть C-серию (коллекционка/лимитка),
+      // scale, genres, eras, geo. Бэкенд анлокает синхронно до ответа 200,
+      // поэтому detect сразу видит новые коды → конфетти без задержки.
+      detectAchievementUnlocks();
     });
   },
 
