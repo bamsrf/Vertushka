@@ -1856,6 +1856,55 @@ async def search_releases(
         )
 
 
+def _release_only_id(master_id: str) -> str | None:
+    """Возвращает discogs release id, если master_id — синтетический префикс
+    release-only айтема (`r{release_id}`), иначе None. Такие id отдаёт
+    get_artist_masters для релизов артиста без master-группировки на Discogs;
+    префикс не коллизирует с реальными master_id (всегда чисто цифровыми)."""
+    if len(master_id) > 1 and master_id[0] == "r" and master_id[1:].isdigit():
+        return master_id[1:]
+    return None
+
+
+async def _synth_master_from_release(release_id: str) -> MasterRelease:
+    """Синтез MasterRelease из обычного релиза. Release-only карточки артиста
+    открываются через /master/r{release_id}; здесь отдаём релиз как мастер
+    (одна версия — он сам). Watchdog 20с — клиент не висит в axios timeout;
+    master-экран сам ретраит 503 дважды."""
+    discogs = DiscogsService()
+    fetch_task = asyncio.create_task(discogs.get_release(release_id))
+    fetch_task.add_done_callback(
+        lambda t: t.exception() if not t.cancelled() else None
+    )
+    try:
+        d = await asyncio.wait_for(asyncio.shield(fetch_task), timeout=20)
+    except asyncio.TimeoutError:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Discogs отвечает медленно. Попробуйте ещё раз через несколько секунд.",
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Ошибка при получении релиза: {str(e)}",
+        )
+    genre = d.get("genre")
+    style = d.get("style")
+    return MasterRelease(
+        master_id=f"r{release_id}",
+        title=d.get("title") or "Unknown",
+        artist=d.get("artist") or "Unknown",
+        artist_id=str(d["artist_id"]) if d.get("artist_id") else None,
+        artist_thumb_image_url=d.get("artist_thumb_image_url"),
+        year=d.get("year"),
+        main_release_id=release_id,
+        genres=[g.strip() for g in genre.split(",")] if genre else [],
+        styles=[s.strip() for s in style.split(",")] if style else [],
+        cover_image_url=d.get("cover_image") or d.get("thumb_image"),
+        tracklist=d.get("tracklist") or [],
+    )
+
+
 @router.get("/masters/{master_id}", response_model=MasterRelease)
 async def get_master(
     master_id: str,
@@ -1867,6 +1916,12 @@ async def get_master(
     Не требует авторизации.
     """
     response.headers["Cache-Control"] = "public, max-age=3600"
+
+    # Release-only айтем (r{release_id}) → синтез из релиза.
+    release_id = _release_only_id(master_id)
+    if release_id is not None:
+        return await _synth_master_from_release(release_id)
+
     discogs = DiscogsService()
 
     try:
@@ -1906,6 +1961,32 @@ async def get_master_versions(
     - Watchdog 25 сек на синхронной части — чтобы клиент не висел в axios
       timeout 60s, если Discogs отвечает медленно.
     """
+    # Release-only айтем (r{release_id}) — мастер-группировки нет, версия одна
+    # (сам релиз). Отдаём её, чтобы master-экран показал «Все версии (1)» и
+    # versions-экран не падал в 503.
+    release_id = _release_only_id(master_id)
+    if release_id is not None:
+        response.headers["Cache-Control"] = "public, max-age=3600"
+        if page > 1:
+            return MasterVersionsResponse(
+                results=[], total=1, page=page, per_page=per_page,
+            )
+        synth = await _synth_master_from_release(release_id)
+        return MasterVersionsResponse(
+            results=[
+                MasterVersion(
+                    release_id=release_id,
+                    title=synth.title,
+                    year=synth.year,
+                    cover_image_url=synth.cover_image_url,
+                    is_canon=True,
+                )
+            ],
+            total=1,
+            page=page,
+            per_page=per_page,
+        )
+
     # Кэш ENRICHED-ответа отдельный — get_master_versions кэширует только сырые
     # данные от Discogs (теперь с is_hot), здесь храним полностью обогащённую
     # версию (с is_collectible), чтобы не делать N×get_release на каждый запрос.

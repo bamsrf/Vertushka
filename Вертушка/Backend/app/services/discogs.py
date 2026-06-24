@@ -1405,7 +1405,7 @@ class DiscogsService:
         Кэшируется в Redis на TTL_ARTIST_MASTERS.
         """
         sort_order = "asc" if sort_order == "asc" else "desc"
-        ck = f"{artist_id}:v9:p{page}:pp{per_page}:{sort_order}"
+        ck = f"{artist_id}:v10:p{page}:pp{per_page}:{sort_order}"
         cached = await cache.get("artist_masters", ck)
         if cached is not None:
             return MasterSearchResponse(**cached)
@@ -1586,10 +1586,12 @@ class DiscogsService:
             except Exception:
                 logger.exception("Search API for artist release covers failed: %s", artist_id)
 
-        # Release-only фолбэк: master_id="" сигналит фронту открывать карточку
-        # по main_release_id (discogs release id) через /record/{id}, а не
-        # /master/{id}. Дедуп по title — релиз, уже представленный мастером, не
-        # дублируем.
+        # Release-only фолбэк: master_id="r{release_id}" (префикс) сигналит
+        # бэкенду /masters/{id} синтезировать карточку из релиза, а main_release_id
+        # несёт чистый discogs release id. Префикс нужен, чтобы СТАРЫЙ билд app
+        # (роутит всё через /master/{master_id}) открывал такие айтемы — пустой
+        # master_id давал путь /master/ → expo-router +not-found. Дедуп по title —
+        # релиз, уже представленный мастером, не дублируем.
         for item in release_items:
             title = item.get("title", "")
             if title.strip().lower() in master_titles:
@@ -1601,7 +1603,7 @@ class DiscogsService:
                 year = None
             thumb = item.get("thumb") or None
             all_results.append(MasterSearchResult(
-                master_id="",
+                master_id=f"r{item_id}",
                 title=title,
                 artist=artist_name,
                 year=year,
