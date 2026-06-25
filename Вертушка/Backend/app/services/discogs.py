@@ -1459,7 +1459,7 @@ class DiscogsService:
         Кэшируется в Redis на TTL_ARTIST_MASTERS.
         """
         sort_order = "asc" if sort_order == "asc" else "desc"
-        ck = f"{artist_id}:v12:p{page}:pp{per_page}:{sort_order}"
+        ck = f"{artist_id}:v13:p{page}:pp{per_page}:{sort_order}"
         cached = await cache.get("artist_masters", ck)
         if cached is not None:
             return MasterSearchResponse(**cached)
@@ -1507,9 +1507,8 @@ class DiscogsService:
             if not item_id or item_id in seen_ids:
                 continue
             seen_ids.add(item_id)
-            # Видео (DVD/VHS/Blu-ray) — не коллекционный винил/CD, пропускаем.
-            if self._is_video(item.get("format")):
-                continue
+            # Видео (DVD/VHS/Blu-ray) НЕ исключаем — ниже помечаем release_type=
+            # "other", чтобы они жили в «Все», но не в фильтре Альбомы.
             if item.get("type") == "master":
                 masters.append(item)
                 master_titles.add((item.get("title") or "").strip().lower())
@@ -1590,12 +1589,16 @@ class DiscogsService:
                 thumb_image_url = s.get("thumb")
                 formats = s.get("format", [])
                 format_str = ", ".join(formats) if formats else None
-                # Видео-master (концертники, DVD): media-формат у master в
-                # /artists/{id}/releases часто пуст, но Search отдаёт реальный
-                # format-список с "DVD"/"Blu-ray" → ловим и исключаем.
-                if self._is_video(format_str):
-                    continue
                 release_type = self._guess_release_type(format_str)
+
+            # Видео-master (концертники, DVD): media-формат у master в
+            # /artists/{id}/releases часто пуст, но Search отдаёт реальный
+            # format-список с "DVD"/"Blu-ray". Помечаем "other" → попадает в «Все»,
+            # но не в фильтр Альбомы.
+            if self._is_video(item.get("format")) or (
+                s and self._is_video(", ".join(s.get("format", [])) or None)
+            ):
+                release_type = "other"
 
             if cover_image_url is None and info is not None:
                 cover_image_url = info.get("cover")
@@ -1701,9 +1704,12 @@ class DiscogsService:
             thumb = item.get("thumb") or None
             card = card_by_id.get(item_id) or {}
             cover = card.get("cover") or release_cover_by_id.get(item_id) or thumb
-            release_type = card.get("release_type") or self._guess_release_type(
-                item.get("format")
-            )
+            if self._is_video(item.get("format")):
+                release_type = "other"
+            else:
+                release_type = card.get("release_type") or self._guess_release_type(
+                    item.get("format")
+                )
             all_results.append(MasterSearchResult(
                 master_id=f"r{item_id}",
                 title=title,
