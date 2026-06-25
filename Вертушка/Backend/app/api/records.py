@@ -1971,14 +1971,38 @@ async def get_master_versions(
             return MasterVersionsResponse(
                 results=[], total=1, page=page, per_page=per_page,
             )
-        synth = await _synth_master_from_release(release_id)
+        # Тянем релиз (кэш прогрет соседним get_master) ради format → чип
+        # Винил/CD на versions-экране работает (иначе major_formats пуст → 0).
+        discogs = DiscogsService()
+        fetch_task = asyncio.create_task(discogs.get_release(release_id))
+        fetch_task.add_done_callback(
+            lambda t: t.exception() if not t.cancelled() else None
+        )
+        try:
+            d = await asyncio.wait_for(asyncio.shield(fetch_task), timeout=20)
+        except asyncio.TimeoutError:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Discogs отвечает медленно. Попробуйте ещё раз через несколько секунд.",
+            )
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=f"Ошибка при получении релиза: {str(e)}",
+            )
+        fmt = d.get("format")
         return MasterVersionsResponse(
             results=[
                 MasterVersion(
                     release_id=release_id,
-                    title=synth.title,
-                    year=synth.year,
-                    cover_image_url=synth.cover_image_url,
+                    title=d.get("title") or "Unknown",
+                    label=d.get("label"),
+                    catalog_number=d.get("catalog_number"),
+                    country=d.get("country"),
+                    year=d.get("year"),
+                    format=fmt,
+                    major_formats=[fmt] if fmt else [],
+                    cover_image_url=d.get("cover_image") or d.get("thumb_image"),
                     is_canon=True,
                 )
             ],

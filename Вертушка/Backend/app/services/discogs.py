@@ -1369,13 +1369,67 @@ class DiscogsService:
         if not format_str:
             return "album"
         fmt = format_str.lower()
-        if "single" in fmt:
+        if "single" in fmt or "maxi" in fmt:
             return "single"
         if "ep" in fmt or "mini" in fmt:
             return "ep"
         if "album" in fmt or "lp" in fmt or "compilation" in fmt:
             return "album"
         return "album"
+
+    @staticmethod
+    def _is_video(format_str: str | None) -> bool:
+        """Видео-носители (DVD/VHS/Blu-ray/LaserDisc) — не винил/CD, на экране
+        артиста им не место. Исключаются из get_artist_masters."""
+        if not format_str:
+            return False
+        f = format_str.lower()
+        return any(
+            k in f for k in ("dvd", "vhs", "blu-ray", "bluray", "laserdisc", "video")
+        )
+
+    @staticmethod
+    def _type_by_count(track_count: int) -> str:
+        """Тип релиза по числу треков (надёжнее строки формата)."""
+        if track_count <= 3:
+            return "single"
+        if track_count <= 6:
+            return "ep"
+        return "album"
+
+    async def _get_release_card(self, release_id: str) -> dict | None:
+        """Карточка release-only айтема для экрана артиста: full-обложка
+        (images[0].uri, НЕ 150px thumb) + release_type по track_count. 1 GET
+        /releases/{id}, кэш TTL_MASTER_INFO. Переиспользует полный release-кэш,
+        если он уже прогрет."""
+        cached = await cache.get("release_card", release_id)
+        if cached is not None:
+            return cached
+
+        full = await cache.get("release", release_id)
+        if full is not None:
+            tl = full.get("tracklist") or []
+            tc = sum(1 for t in tl if t.get("type_", "track") == "track")
+            res = {
+                "cover": full.get("cover_image"),
+                "release_type": self._type_by_count(tc) if tc else None,
+            }
+            await cache.set("release_card", release_id, res, TTL_MASTER_INFO)
+            return res
+
+        data = await self._get(
+            f"{self.BASE_URL}/releases/{release_id}", priority=Priority.ENRICHMENT
+        )
+        images = data.get("images", [])
+        cover = images[0].get("uri") if images else None
+        tl = data.get("tracklist", [])
+        tc = sum(1 for t in tl if t.get("type_", "track") == "track")
+        res = {
+            "cover": cover,
+            "release_type": self._type_by_count(tc) if tc else None,
+        }
+        await cache.set("release_card", release_id, res, TTL_MASTER_INFO if cover else 3600)
+        return res
 
     async def get_artist_masters(
         self,
@@ -1405,7 +1459,7 @@ class DiscogsService:
         Кэшируется в Redis на TTL_ARTIST_MASTERS.
         """
         sort_order = "asc" if sort_order == "asc" else "desc"
-        ck = f"{artist_id}:v10:p{page}:pp{per_page}:{sort_order}"
+        ck = f"{artist_id}:v11:p{page}:pp{per_page}:{sort_order}"
         cached = await cache.get("artist_masters", ck)
         if cached is not None:
             return MasterSearchResponse(**cached)
@@ -1453,6 +1507,9 @@ class DiscogsService:
             if not item_id or item_id in seen_ids:
                 continue
             seen_ids.add(item_id)
+            # Видео (DVD/VHS/Blu-ray) — не коллекционный винил/CD, пропускаем.
+            if self._is_video(item.get("format")):
+                continue
             if item.get("type") == "master":
                 masters.append(item)
                 master_titles.add((item.get("title") or "").strip().lower())
@@ -1592,26 +1649,76 @@ class DiscogsService:
         # (роутит всё через /master/{master_id}) открывал такие айтемы — пустой
         # master_id давал путь /master/ → expo-router +not-found. Дедуп по title —
         # релиз, уже представленный мастером, не дублируем.
-        for item in release_items:
-            title = item.get("title", "")
-            if title.strip().lower() in master_titles:
-                continue
+        wanted_releases = [
+            it for it in release_items
+            if (it.get("title") or "").strip().lower() not in master_titles
+        ]
+
+        # Bounded per-release fetch: full-обложка (не 150px thumb) + точный
+        # release_type по track_count. Sem 5 + watchdog 6с — чтобы release-only
+        # не растянули ответ (как раньше блокировал master-фан-аут). Что не
+        # успело — fallback на Search-cover/thumb, добьётся при следующем заходе
+        # (каждый _get_release_card кэшируется индивидуально).
+        card_by_id: dict[str, dict] = {}
+        if wanted_releases:
+            sem = asyncio.Semaphore(5)
+
+            async def _card(rid: str):
+                async with sem:
+                    try:
+                        return rid, await self._get_release_card(rid)
+                    except Exception:
+                        return rid, None
+
+            tasks = [
+                asyncio.create_task(_card(str(it["id"]))) for it in wanted_releases
+            ]
+            done, pending = await asyncio.wait(tasks, timeout=6)
+            for t in pending:
+                t.cancel()
+            if pending:
+                covers_complete = False
+            for t in done:
+                try:
+                    rid, c = t.result()
+                    if c:
+                        card_by_id[rid] = c
+                except Exception:
+                    pass
+
+        for item in wanted_releases:
             item_id = str(item["id"])
+            title = item.get("title", "")
             try:
                 year = int(item["year"]) if item.get("year") else None
             except (ValueError, TypeError):
                 year = None
             thumb = item.get("thumb") or None
+            card = card_by_id.get(item_id) or {}
+            cover = card.get("cover") or release_cover_by_id.get(item_id) or thumb
+            release_type = card.get("release_type") or self._guess_release_type(
+                item.get("format")
+            )
             all_results.append(MasterSearchResult(
                 master_id=f"r{item_id}",
                 title=title,
                 artist=artist_name,
                 year=year,
                 main_release_id=item_id,
-                cover_image_url=release_cover_by_id.get(item_id) or thumb,
+                cover_image_url=cover,
                 thumb_image_url=thumb,
-                release_type=self._guess_release_type(item.get("format")),
+                release_type=release_type,
             ))
+
+        # Хронология: masters и release-only приходят из ОДНОГО year-окна страницы
+        # Discogs (sort=year), но собирались двумя блоками → release-only
+        # дописывались хвостом и порядок «сбрасывался» (старое после нового).
+        # Мёржим и сортируем по году в направлении сортировки; None-год — в конец.
+        def _ykey(r: MasterSearchResult) -> int:
+            if r.year is not None:
+                return r.year
+            return -1 if sort_order == "desc" else 10 ** 9
+        all_results.sort(key=_ykey, reverse=(sort_order == "desc"))
 
         pagination = data.get("pagination", {})
         total_items = pagination.get("items", len(all_results))
