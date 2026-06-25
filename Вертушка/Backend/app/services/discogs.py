@@ -1113,6 +1113,38 @@ class DiscogsService:
     # Артисты (кэшируются на 3 дня)
     # ------------------------------------------------------------------
 
+    async def _probe_artist_empty(self, artist_id: str) -> bool | None:
+        """Есть ли у артиста релизы. Кэшируется как флаг artist_empty (и True,
+        и False) на 7 дней — тот же ключ, что читает поиск.
+
+        Возвращает:
+          True  — релизов нет (артист-мусор), дропнуть из выдачи;
+          False — релизы есть, оставить;
+          None  — неизвестно (таймаут/ошибка), fail-open → оставить.
+
+        1 дешёвый вызов `/artists/{id}/releases?per_page=1` ради pagination.items.
+        Self-bounded таймаутом 5с: на холодном кэше страница поиска не виснет
+        дольше ~5с, а уже зарезолвленные probe попадают в кэш и ускоряют повтор.
+        """
+        flag = await cache.get("artist_empty", artist_id)
+        if flag is not None:
+            return bool(flag)
+        try:
+            data = await asyncio.wait_for(
+                self._get(
+                    f"{self.BASE_URL}/artists/{artist_id}/releases",
+                    params={"per_page": 1, "page": 1},
+                    priority=Priority.ENRICHMENT,
+                ),
+                timeout=5.0,
+            )
+        except Exception:
+            return None
+        items = data.get("pagination", {}).get("items", 0)
+        is_empty = items == 0
+        await cache.set("artist_empty", artist_id, is_empty, 7 * 86400)
+        return is_empty
+
     async def search_artists(
         self,
         query: str,
@@ -1152,10 +1184,13 @@ class DiscogsService:
                 thumb_image_url=thumb,
             ))
 
-        # Фильтруем артистов, у которых уже известно что релизов нет (псевдонимы)
+        # Фильтруем артистов, у которых нет релизов внутри (мусорные тёзки/фан-
+        # аккаунты Discogs). Флаг artist_empty активный: для незакэшированных id
+        # пробуем счётчик релизов прямо здесь. is_empty=True → дроп; None
+        # (таймаут/ошибка) → оставляем (fail-open, поиск не деградирует в пустоту).
         if results:
             empty_flags = await asyncio.gather(
-                *[cache.get("artist_empty", r.artist_id) for r in results]
+                *[self._probe_artist_empty(r.artist_id) for r in results]
             )
             results = [r for r, is_empty in zip(results, empty_flags) if not is_empty]
 
@@ -1465,7 +1500,7 @@ class DiscogsService:
         Кэшируется в Redis на TTL_ARTIST_MASTERS.
         """
         sort_order = "asc" if sort_order == "asc" else "desc"
-        ck = f"{artist_id}:v15:p{page}:pp{per_page}:{sort_order}"
+        ck = f"{artist_id}:v16:p{page}:pp{per_page}:{sort_order}"
         cached = await cache.get("artist_masters", ck)
         if cached is not None:
             return MasterSearchResponse(**cached)
@@ -1597,13 +1632,12 @@ class DiscogsService:
                 format_str = ", ".join(formats) if formats else None
                 release_type = self._guess_release_type(format_str)
 
-            # Видео-master (концертники, DVD) → "other": в «Все», но не в Альбомы.
-            # Детект ТОЛЬКО по item.format (первичный формат мастера). Search-
-            # format ненадёжен: у альбома с DVD-Audio изданием (напр. The Eminem
-            # Show) Search вернул бы DVD → флагман ушёл бы в "other". Цена —
-            # чистые видео-мастера без DVD в item.format не ловятся (edge).
-            if self._is_video(item.get("format")):
-                release_type = "other"
+            # NB: видео-детект для МАСТЕРОВ не делаем. format мастера в
+            # /artists/{id}/releases — произвольный representative среди всех
+            # версий: у альбома с DVD-Audio изданием (напр. The Eminem Show,
+            # 102 версии) прилетает "DVD-A" → флагман ложно уходил в "other".
+            # Видео бакетим только у release-only (там format = формат самого
+            # релиза, надёжно).
 
             if cover_image_url is None and info is not None:
                 cover_image_url = info.get("cover")
