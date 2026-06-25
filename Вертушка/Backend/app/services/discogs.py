@@ -1379,14 +1379,20 @@ class DiscogsService:
 
     @staticmethod
     def _is_video(format_str: str | None) -> bool:
-        """Видео-носители (DVD/VHS/Blu-ray/LaserDisc) — не винил/CD, на экране
-        артиста им не место. Исключаются из get_artist_masters."""
+        """Видео-носители (DVD-Video/VHS/Blu-ray/LaserDisc) → release_type "other".
+        ВАЖНО: "dvd" сам по себе НЕ видео — DVD-Audio/DVD-A это музыкальный формат
+        (напр. альбом The Eminem Show). Считаем видео только при явных видео-
+        маркерах, либо "dvd" без "audio" в строке."""
         if not format_str:
             return False
         f = format_str.lower()
-        return any(
-            k in f for k in ("dvd", "vhs", "blu-ray", "bluray", "laserdisc", "video")
-        )
+        if any(k in f for k in ("vhs", "blu-ray", "bluray", "laserdisc", "umd")):
+            return True
+        if "dvd-video" in f or "dvdvideo" in f:
+            return True
+        if ("dvd" in f or "video" in f) and "audio" not in f:
+            return True
+        return False
 
     @staticmethod
     def _type_by_count(track_count: int) -> str:
@@ -1459,7 +1465,7 @@ class DiscogsService:
         Кэшируется в Redis на TTL_ARTIST_MASTERS.
         """
         sort_order = "asc" if sort_order == "asc" else "desc"
-        ck = f"{artist_id}:v14:p{page}:pp{per_page}:{sort_order}"
+        ck = f"{artist_id}:v15:p{page}:pp{per_page}:{sort_order}"
         cached = await cache.get("artist_masters", ck)
         if cached is not None:
             return MasterSearchResponse(**cached)
