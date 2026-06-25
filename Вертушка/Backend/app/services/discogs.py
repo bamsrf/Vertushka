@@ -1459,7 +1459,7 @@ class DiscogsService:
         Кэшируется в Redis на TTL_ARTIST_MASTERS.
         """
         sort_order = "asc" if sort_order == "asc" else "desc"
-        ck = f"{artist_id}:v13:p{page}:pp{per_page}:{sort_order}"
+        ck = f"{artist_id}:v14:p{page}:pp{per_page}:{sort_order}"
         cached = await cache.get("artist_masters", ck)
         if cached is not None:
             return MasterSearchResponse(**cached)
@@ -1591,13 +1591,12 @@ class DiscogsService:
                 format_str = ", ".join(formats) if formats else None
                 release_type = self._guess_release_type(format_str)
 
-            # Видео-master (концертники, DVD): media-формат у master в
-            # /artists/{id}/releases часто пуст, но Search отдаёт реальный
-            # format-список с "DVD"/"Blu-ray". Помечаем "other" → попадает в «Все»,
-            # но не в фильтр Альбомы.
-            if self._is_video(item.get("format")) or (
-                s and self._is_video(", ".join(s.get("format", [])) or None)
-            ):
+            # Видео-master (концертники, DVD) → "other": в «Все», но не в Альбомы.
+            # Детект ТОЛЬКО по item.format (первичный формат мастера). Search-
+            # format ненадёжен: у альбома с DVD-Audio изданием (напр. The Eminem
+            # Show) Search вернул бы DVD → флагман ушёл бы в "other". Цена —
+            # чистые видео-мастера без DVD в item.format не ловятся (edge).
+            if self._is_video(item.get("format")):
                 release_type = "other"
 
             if cover_image_url is None and info is not None:
