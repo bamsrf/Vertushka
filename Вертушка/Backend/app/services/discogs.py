@@ -1459,7 +1459,7 @@ class DiscogsService:
         Кэшируется в Redis на TTL_ARTIST_MASTERS.
         """
         sort_order = "asc" if sort_order == "asc" else "desc"
-        ck = f"{artist_id}:v11:p{page}:pp{per_page}:{sort_order}"
+        ck = f"{artist_id}:v12:p{page}:pp{per_page}:{sort_order}"
         cached = await cache.get("artist_masters", ck)
         if cached is not None:
             return MasterSearchResponse(**cached)
@@ -1590,6 +1590,11 @@ class DiscogsService:
                 thumb_image_url = s.get("thumb")
                 formats = s.get("format", [])
                 format_str = ", ".join(formats) if formats else None
+                # Видео-master (концертники, DVD): media-формат у master в
+                # /artists/{id}/releases часто пуст, но Search отдаёт реальный
+                # format-список с "DVD"/"Blu-ray" → ловим и исключаем.
+                if self._is_video(format_str):
+                    continue
                 release_type = self._guess_release_type(format_str)
 
             if cover_image_url is None and info is not None:
