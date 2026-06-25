@@ -13,116 +13,13 @@ import {
   Pressable,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { Icon } from '@/components/ui';
+import { Icon, Toggle } from '@/components/ui';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useProfileStore, useCollectionStore } from '../../lib/store';
 import { toast } from '../../lib/toast';
 import { Colors, Typography, Spacing, BorderRadius } from '../../constants/theme';
 import { CollectionItem } from '../../lib/types';
 import { RecordCard } from '../../components/RecordCard';
-
-const TRACK_W = 52;
-const TRACK_H = 30;
-const VINYL_SIZE = 26;
-const TRACK_PAD = 2;
-const SLIDE_DISTANCE = TRACK_W - VINYL_SIZE - TRACK_PAD * 2;
-
-function VinylToggle({ value, onValueChange, disabled }: {
-  value: boolean;
-  onValueChange: (val: boolean) => void;
-  disabled?: boolean;
-}) {
-  const anim = useRef(new Animated.Value(value ? 1 : 0)).current;
-
-  useEffect(() => {
-    Animated.spring(anim, {
-      toValue: value ? 1 : 0,
-      useNativeDriver: true,
-      friction: 7,
-      tension: 40,
-    }).start();
-  }, [value]);
-
-  const translateX = anim.interpolate({
-    inputRange: [0, 1],
-    outputRange: [0, SLIDE_DISTANCE],
-  });
-
-  const spin = anim.interpolate({
-    inputRange: [0, 1],
-    outputRange: ['0deg', '360deg'],
-  });
-
-  const trackBg = anim.interpolate({
-    inputRange: [0, 1],
-    outputRange: [Colors.border, Colors.royalBlue],
-  });
-
-  return (
-    <Pressable
-      onPress={() => !disabled && onValueChange(!value)}
-      hitSlop={8}
-    >
-      <Animated.View style={[
-        vinylStyles.track,
-        { backgroundColor: trackBg },
-        disabled && { opacity: 0.5 },
-      ]}>
-        <Animated.View style={[
-          vinylStyles.vinyl,
-          { transform: [{ translateX }, { rotate: spin }] },
-        ]}>
-          {/* Внешняя бороздка */}
-          <View style={vinylStyles.groove1} />
-          {/* Внутренняя бороздка */}
-          <View style={vinylStyles.groove2} />
-          {/* Лейбл */}
-          <View style={vinylStyles.label} />
-        </Animated.View>
-      </Animated.View>
-    </Pressable>
-  );
-}
-
-const vinylStyles = StyleSheet.create({
-  track: {
-    width: TRACK_W,
-    height: TRACK_H,
-    borderRadius: TRACK_H / 2,
-    paddingHorizontal: TRACK_PAD,
-    justifyContent: 'center',
-  },
-  vinyl: {
-    width: VINYL_SIZE,
-    height: VINYL_SIZE,
-    borderRadius: VINYL_SIZE / 2,
-    backgroundColor: '#1A1A1A',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  groove1: {
-    position: 'absolute',
-    width: VINYL_SIZE - 4,
-    height: VINYL_SIZE - 4,
-    borderRadius: (VINYL_SIZE - 4) / 2,
-    borderWidth: 0.5,
-    borderColor: 'rgba(255,255,255,0.15)',
-  },
-  groove2: {
-    position: 'absolute',
-    width: VINYL_SIZE - 10,
-    height: VINYL_SIZE - 10,
-    borderRadius: (VINYL_SIZE - 10) / 2,
-    borderWidth: 0.5,
-    borderColor: 'rgba(255,255,255,0.12)',
-  },
-  label: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: Colors.royalBlue,
-  },
-});
 
 function SettingRow({ label, description, value, settingKey, onToggle, disabled }: {
   label: string;
@@ -138,7 +35,7 @@ function SettingRow({ label, description, value, settingKey, onToggle, disabled 
         <Text style={styles.settingLabel}>{label}</Text>
         {description && <Text style={styles.settingDescription}>{description}</Text>}
       </View>
-      <VinylToggle
+      <Toggle
         value={value}
         onValueChange={(val) => onToggle(settingKey, val)}
         disabled={disabled}
