@@ -1469,7 +1469,7 @@ class DiscogsService:
         Кэшируется в Redis на TTL_ARTIST_MASTERS.
         """
         sort_order = "asc" if sort_order == "asc" else "desc"
-        ck = f"{artist_id}:v16:p{page}:pp{per_page}:{sort_order}"
+        ck = f"{artist_id}:v17:p{page}:pp{per_page}:{sort_order}"
         cached = await cache.get("artist_masters", ck)
         if cached is not None:
             return MasterSearchResponse(**cached)
@@ -1742,7 +1742,14 @@ class DiscogsService:
         pagination = data.get("pagination", {})
         total_items = pagination.get("items", len(all_results))
         total_pages = pagination.get("pages", 1)
-        has_more = page < total_pages
+        # has_more: ещё есть страницы Discogs И текущая дала результаты. Discogs
+        # total_pages считает ВСЕ релизы артиста (включая тысячи appearances/
+        # фитов с role≠Main), но мы оставляем только role=Main. У больших артистов
+        # (Eminem) Main-дискография кончается за пару страниц, дальше идут пустые
+        # после фильтра страницы фитов → has_more=True навсегда → клиент крутил
+        # бесконечную load-more по пустым страницам (и ловил 503 на холодных).
+        # Пустая страница = конец Main-дискографии, останавливаемся.
+        has_more = page < total_pages and len(all_results) > 0
         next_cursor = page + 1 if has_more else None
 
         # «Пустой артист» — только когда у artist_id вообще нет релизов.
