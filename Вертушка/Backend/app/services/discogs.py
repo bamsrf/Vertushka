@@ -1113,38 +1113,6 @@ class DiscogsService:
     # Артисты (кэшируются на 3 дня)
     # ------------------------------------------------------------------
 
-    async def _probe_artist_empty(self, artist_id: str) -> bool | None:
-        """Есть ли у артиста релизы. Кэшируется как флаг artist_empty (и True,
-        и False) на 7 дней — тот же ключ, что читает поиск.
-
-        Возвращает:
-          True  — релизов нет (артист-мусор), дропнуть из выдачи;
-          False — релизы есть, оставить;
-          None  — неизвестно (таймаут/ошибка), fail-open → оставить.
-
-        1 дешёвый вызов `/artists/{id}/releases?per_page=1` ради pagination.items.
-        Self-bounded таймаутом 5с: на холодном кэше страница поиска не виснет
-        дольше ~5с, а уже зарезолвленные probe попадают в кэш и ускоряют повтор.
-        """
-        flag = await cache.get("artist_empty", artist_id)
-        if flag is not None:
-            return bool(flag)
-        try:
-            data = await asyncio.wait_for(
-                self._get(
-                    f"{self.BASE_URL}/artists/{artist_id}/releases",
-                    params={"per_page": 1, "page": 1},
-                    priority=Priority.ENRICHMENT,
-                ),
-                timeout=5.0,
-            )
-        except Exception:
-            return None
-        items = data.get("pagination", {}).get("items", 0)
-        is_empty = items == 0
-        await cache.set("artist_empty", artist_id, is_empty, 7 * 86400)
-        return is_empty
-
     async def search_artists(
         self,
         query: str,
@@ -1184,13 +1152,14 @@ class DiscogsService:
                 thumb_image_url=thumb,
             ))
 
-        # Фильтруем артистов, у которых нет релизов внутри (мусорные тёзки/фан-
-        # аккаунты Discogs). Флаг artist_empty активный: для незакэшированных id
-        # пробуем счётчик релизов прямо здесь. is_empty=True → дроп; None
-        # (таймаут/ошибка) → оставляем (fail-open, поиск не деградирует в пустоту).
+        # Фильтруем артистов, у которых уже известно что релизов нет (псевдонимы).
+        # ВНИМАНИЕ: только пассивное чтение кэша, без HTTP в горячем пути поиска.
+        # Активный probe (20 вызовов/поиск) сжигал app-level quota Discogs
+        # (~60/min) → 429 на самом database/search → 503. Прогрев artist_empty
+        # делается лениво при открытии артиста (get_artist_masters).
         if results:
             empty_flags = await asyncio.gather(
-                *[self._probe_artist_empty(r.artist_id) for r in results]
+                *[cache.get("artist_empty", r.artist_id) for r in results]
             )
             results = [r for r, is_empty in zip(results, empty_flags) if not is_empty]
 
