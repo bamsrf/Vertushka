@@ -1441,6 +1441,61 @@ class DiscogsService:
         await cache.set("release_card", release_id, res, TTL_MASTER_INFO if cover else 3600)
         return res
 
+    async def _artist_master_cover_map(
+        self,
+        artist_id: str,
+        artist_name: str,
+        creds: "tuple[str, str] | None" = None,
+        max_pages: int = 3,
+    ) -> dict[str, dict]:
+        """Карта master_id → {cover_image, thumb, format} по всему артисту,
+        собранная из Search (до max_pages × 100 мастеров). Кэш TTL_MASTER_INFO.
+
+        Зачем: раньше обложки тянулись per-page Search с page = страница
+        artist-releases, но порядок Search ≠ порядок artist-releases. На page 1
+        популярные мастера совпадали, на page 2+ — рассинхрон → мастера не
+        находились в Search → placeholder + дорогой master_info фан-аут. Карта на
+        весь артист закрывает обложки на ЛЮБОЙ странице за один прогрев."""
+        cached = await cache.get("artist_cover_map", artist_id)
+        if cached is not None:
+            return cached
+
+        clean_name = clean_artist_name(artist_name)
+        cover_map: dict[str, dict] = {}
+        for sp in range(1, max_pages + 1):
+            try:
+                sd = await self._get(
+                    f"{self.BASE_URL}/database/search",
+                    params={
+                        "type": "master",
+                        "artist": clean_name,
+                        "page": sp,
+                        "per_page": 100,
+                    },
+                    priority=Priority.SEARCH,
+                    creds=creds,
+                )
+            except Exception:
+                logger.exception(
+                    "artist cover map Search failed: %s p%s", artist_id, sp
+                )
+                break
+            for s in sd.get("results", []):
+                sid = str(s.get("id", ""))
+                if sid and sid not in cover_map:
+                    cover_map[sid] = {
+                        "cover_image": s.get("cover_image"),
+                        "thumb": s.get("thumb"),
+                        "format": s.get("format"),
+                    }
+            pagination = sd.get("pagination", {})
+            if sp >= pagination.get("pages", 1):
+                break
+
+        if cover_map:
+            await cache.set("artist_cover_map", artist_id, cover_map, TTL_MASTER_INFO)
+        return cover_map
+
     async def get_artist_masters(
         self,
         artist_id: str,
@@ -1469,7 +1524,7 @@ class DiscogsService:
         Кэшируется в Redis на TTL_ARTIST_MASTERS.
         """
         sort_order = "asc" if sort_order == "asc" else "desc"
-        ck = f"{artist_id}:v17:p{page}:pp{per_page}:{sort_order}"
+        ck = f"{artist_id}:v18:p{page}:pp{per_page}:{sort_order}"
         cached = await cache.get("artist_masters", ck)
         if cached is not None:
             return MasterSearchResponse(**cached)
@@ -1526,27 +1581,16 @@ class DiscogsService:
                 release_items.append(item)
 
         # 2) Обложки batch через Search API; exact match по master_id.
+        clean_name = clean_artist_name(artist_name)
+        # Обложки мастеров — из artist-wide карты (Search до 3 страниц, кэш 7д),
+        # НЕ из per-page Search. Раньше Search дёргался с page=page artist-
+        # releases, но порядок Search ≠ artist-releases → на страницах >1 мастера
+        # не находились → placeholder-обложки + лишний master_info фан-аут.
         search_by_id: dict[str, dict] = {}
         if masters:
-            clean_name = clean_artist_name(artist_name)
-            try:
-                search_data = await self._get(
-                    f"{self.BASE_URL}/database/search",
-                    params={
-                        "type": "master",
-                        "artist": clean_name,
-                        "page": page,
-                        "per_page": 100,
-                    },
-                    priority=Priority.SEARCH,
-                    creds=creds,
-                )
-                for s in search_data.get("results", []):
-                    sid = str(s.get("id", ""))
-                    if sid:
-                        search_by_id[sid] = s
-            except Exception:
-                logger.exception("Search API for artist masters covers failed: %s", artist_id)
+            search_by_id = await self._artist_master_cover_map(
+                artist_id, artist_name, creds=creds
+            )
 
         # 3) Параллельный fallback /masters/{id} для тех, кого Search не покрыл.
         # Раньше этот gather блокировал весь ответ на N×/masters/{id} (до ~100
