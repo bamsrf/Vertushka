@@ -531,6 +531,31 @@ async def apple_sign_in(
     )
     user = result.scalar_one_or_none()
 
+    # Линковка: аккаунт с этим email уже есть (пароль/Google/Discogs) — привязываем
+    # apple_id к нему, а не создаём дубль (иначе UniqueViolation по ix_users_email).
+    if not user:
+        link_email = (
+            (data.email or apple_payload.get("email") or "").lower().strip() or None
+        )
+        if link_email:
+            result = await db.execute(select(User).where(User.email == link_email))
+            existing = result.scalar_one_or_none()
+            if existing:
+                # Apple подтверждает владение email (свой Apple ID или relay).
+                # На всякий случай уважаем claim email_verified, как в Google-флоу.
+                email_verified = (
+                    str(apple_payload.get("email_verified", "true")).lower() == "true"
+                )
+                if not email_verified:
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail="Аккаунт с этим email уже существует. Войдите паролем.",
+                    )
+                existing.apple_id = data.user_identifier
+                if not existing.is_verified:
+                    existing.is_verified = True
+                user = existing
+
     if not user:
         # Создание нового пользователя
         email = data.email or apple_payload.get("email")

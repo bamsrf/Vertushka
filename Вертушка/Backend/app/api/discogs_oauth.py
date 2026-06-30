@@ -118,7 +118,9 @@ async def _find_or_create_discogs_user(
     user.discogs_oauth_token = access_token
     user.discogs_oauth_token_secret = encrypt_secret(access_secret)
     user.discogs_connected_at = datetime.now(timezone.utc)
-    user.last_login_at = datetime.now(timezone.utc)
+    # last_login_at — колонка TIMESTAMP WITHOUT TIME ZONE (naive). Aware-datetime
+    # сюда → asyncpg DataError "can't subtract offset-naive and offset-aware".
+    user.last_login_at = datetime.utcnow()
     await db.commit()
     await db.refresh(user)
     return user
