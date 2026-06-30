@@ -2538,6 +2538,7 @@ async def search_artists(
     page: int = Query(1, ge=1, description="Номер страницы"),
     per_page: int = Query(20, ge=1, le=100, description="Записей на страницу"),
     current_user: User | None = Depends(get_current_user_optional),
+    db: AsyncSession = Depends(get_db),
 ):
     """
     Поиск артистов в Discogs.
@@ -2553,6 +2554,22 @@ async def search_artists(
         )
         for artist in results.results:
             artist.name = clean_artist_name(artist.name) or artist.name
+
+        # Жёсткий фильтр: оставляем только артистов, чьё имя есть в локальном
+        # дамп-индексе (= у них есть релизы). Убирает мусорных тёзок/фан-аккаунты
+        # Discogs с 0 релизов. Один index-scan по discogs_artist_names, без
+        # вызовов Discogs API. Fail-open на ошибке БД (вернёт все имена → дропа
+        # нет). Применяется и на cache-hit, т.к. фильтр живёт в endpoint.
+        if results.results:
+            from app.services.discogs_index import filter_artist_names_with_releases
+            with_releases = await filter_artist_names_with_releases(
+                db, [a.name for a in results.results]
+            )
+            results.results = [
+                a for a in results.results
+                if a.name.strip().lower() in with_releases
+            ]
+
         # Кешируем на CDN только когда Discogs реально что-то вернул (total>0).
         # results может быть пуст после фильтра псевдонимов при total>0 — это
         # валидно кешировать; пустой total — деградация, не кешируем.

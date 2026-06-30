@@ -20,6 +20,34 @@ from app.services.scrapers.extractors import normalize_barcode, normalize_catalo
 logger = logging.getLogger(__name__)
 
 
+async def filter_artist_names_with_releases(
+    db: AsyncSession, names: list[str]
+) -> set[str]:
+    """Из списка имён артистов вернуть множество (lower-cased) тех, у кого в
+    локальном дамп-индексе есть хоть один релиз — по производной таблице
+    discogs_artist_names (btree PK, index-scan, без вызовов Discogs).
+
+    Жёсткий фильтр выдачи поиска: имя не вернулось → у артиста нет релизов в
+    дампе → дроп. Fail-open: при ошибке БД возвращаем все имена (поиск не
+    деградирует), вызывающий тогда никого не дропает.
+    """
+    norm = {n.strip().lower() for n in names if n and n.strip()}
+    if not norm:
+        return set()
+    try:
+        rows = await db.execute(
+            text(
+                "SELECT name_norm FROM discogs_artist_names "
+                "WHERE name_norm = ANY(:names)"
+            ),
+            {"names": list(norm)},
+        )
+        return {r[0] for r in rows}
+    except Exception as e:  # noqa: BLE001 — fail-open, не роняем поиск
+        logger.warning("filter_artist_names_with_releases failed: %s", e)
+        return norm  # все «прошли» → дропа не будет
+
+
 def _to_int(value) -> int | None:
     try:
         if value is None or value == "":
@@ -71,6 +99,15 @@ async def upsert_release_into_index(db: AsyncSession, record_data: dict) -> None
                 "ON CONFLICT (discogs_id) DO NOTHING"
             ),
             params,
+        )
+        # Держим производную таблицу имён в синхроне, чтобы свежий live-артист
+        # сразу проходил фильтр поиска (см. filter_artist_names_with_releases).
+        await db.execute(
+            text(
+                "INSERT INTO discogs_artist_names (name_norm) VALUES (:name) "
+                "ON CONFLICT (name_norm) DO NOTHING"
+            ),
+            {"name": artist.lower()},
         )
     except Exception as e:  # noqa: BLE001 — индекс-обогащение не критично
         logger.warning("upsert_release_into_index failed for %s: %s", discogs_id, e)
