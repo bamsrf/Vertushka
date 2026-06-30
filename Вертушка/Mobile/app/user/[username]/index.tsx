@@ -17,14 +17,12 @@ import {
   ActivityIndicator,
   Modal,
   TextInput,
-  RefreshControl,
   TouchableWithoutFeedback,
   KeyboardAvoidingView,
   Platform,
   Animated,
   Easing,
   Pressable,
-  Dimensions,
   Share,
   ActionSheetIOS,
   Alert,
@@ -56,9 +54,8 @@ import { toast } from '../../../lib/toast';
 import { cleanArtistName } from '../../../lib/format';
 import { AchievementsBlock } from '../../../components/AchievementsBlock';
 import { ArchetypeChip } from '../../../components/ArchetypeChip';
-import { RecordCard } from '../../../components/RecordCard';
 import { SegmentedControl } from '../../../components/ui';
-import { ZoomableRecordGrid } from '../../../components/ZoomableRecordGrid';
+import { RecordGrid } from '../../../components/RecordGrid';
 import { CollectionItem, WishlistItem, VinylRecord, Collection } from '../../../lib/types';
 
 type ProfileTab = 'collection' | 'wishlist';
@@ -98,11 +95,7 @@ const PP = {
   whiteSoft: 'rgba(255,255,255,0.6)',
 };
 
-const SCREEN_W = Dimensions.get('window').width;
-const GRID_GAP = 12;
 const GRID_PADDING = 20;
-const GRID_COLS = 3;
-const CARD_W = Math.floor((SCREEN_W - GRID_PADDING * 2 - GRID_GAP * (GRID_COLS - 1)) / GRID_COLS);
 
 function formatRub(value: number) {
   return Math.round(value).toLocaleString('ru-RU').replace(/,/g, ' ');
@@ -155,7 +148,7 @@ function useAnimatedCount(target: number): string {
 }
 
 /**
- * Адаптер: `PublicProfileRecord` → CollectionItem-shape для ZoomableRecordGrid.
+ * Адаптер: `PublicProfileRecord` → CollectionItem-shape для RecordGrid.
  * Карточка использует только поля из record (year/title/artist/cover/rarity flags) —
  * остальное (collection_id, condition и т.д.) для отображения не нужно.
  */
@@ -703,31 +696,6 @@ export default function UserProfileScreen() {
 
   const initials = pubProfile.username.slice(0, 2).toLowerCase();
 
-  const renderListOrEmpty = () => {
-    if (gridData.length === 0) {
-      return (
-        <Text style={styles.empty}>
-          {activeTab === 'collection' ? 'Коллекция пуста' : 'Вишлист пуст'}
-        </Text>
-      );
-    }
-    // List-режим — обычные карточки в одну колонку.
-    return (
-      <View style={styles.list}>
-        {gridData.map((r, idx) => (
-          <RecordCard
-            key={r.id + idx}
-            record={r}
-            variant="list"
-            isBooked={isWishlistTab && !!r.is_booked}
-            rarityContext={isWishlistTab ? 'wishlist' : 'collection'}
-            onPress={() => handleCardPress(r)}
-          />
-        ))}
-      </View>
-    );
-  };
-
   const showStickyCTA = !currentUser;
 
   return (
@@ -746,8 +714,8 @@ export default function UserProfileScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* В grid-режиме используем ZoomableRecordGrid (с pinch-зумом, как в коллекции),
-          ListHeaderComponent = headerContent. В list-режиме и при пустом гриде — обычный ScrollView. */}
+      {/* Единый RecordGrid для grid и list (headerContent = ListHeaderComponent) —
+          одинаковая раскладка в обоих режимах, без «прыжков» при переключении. */}
       {(() => {
         const headerContent = (
           <>
@@ -1028,37 +996,26 @@ export default function UserProfileScreen() {
           </>
         );
 
-        if (viewMode === 'grid' && gridData.length > 0) {
-          return (
-            <ZoomableRecordGrid
-              data={gridData.map(toZoomItem)}
-              ListHeaderComponent={headerContent}
-              onRecordPress={(it) =>
-                handleCardPress((it.record as unknown) as PublicProfileRecord)
-              }
-              isRefreshing={isRefreshing}
-              onRefresh={handleRefresh}
-              rarityContext={isWishlistTab ? 'wishlist' : 'collection'}
-              contentBottomPad={showStickyCTA ? 140 : 32}
-              pinchEnabled={false}
-            />
-          );
-        }
+        // Единый RecordGrid для grid и list — одинаковая раскладка хедера в обоих
+        // режимах, без «прыжков» при переключении. key={viewMode} форсит чистую
+        // перекладку (numColumns на лету RN не поддерживает), хедер кэширован →
+        // ремаунт мгновенный.
         return (
-          <ScrollView
-            showsVerticalScrollIndicator={false}
-            contentContainerStyle={{ paddingBottom: showStickyCTA ? 140 : 32 }}
-            refreshControl={
-              <RefreshControl
-                refreshing={isRefreshing}
-                onRefresh={handleRefresh}
-                tintColor={PP.cobalt}
-              />
+          <RecordGrid
+            key={viewMode}
+            data={gridData.map(toZoomItem)}
+            cardVariant={viewMode === 'list' ? 'list' : 'expanded'}
+            numColumns={viewMode === 'list' ? 1 : 2}
+            ListHeaderComponent={headerContent}
+            onRecordPress={(it) =>
+              handleCardPress((it.record as unknown) as PublicProfileRecord)
             }
-          >
-            {headerContent}
-            {renderListOrEmpty()}
-          </ScrollView>
+            isRefreshing={isRefreshing}
+            onRefresh={handleRefresh}
+            rarityContext={isWishlistTab ? 'wishlist' : 'collection'}
+            contentBottomPad={showStickyCTA ? 140 : 32}
+            emptyMessage={activeTab === 'collection' ? 'Коллекция пуста' : 'Вишлист пуст'}
+          />
         );
       })()}
 
@@ -1425,28 +1382,9 @@ const styles = StyleSheet.create({
   },
   viewToggleBtnActive: { backgroundColor: '#fff', borderWidth: 1, borderColor: 'rgba(58,75,224,0.20)' },
 
-  /* Grid — 2 колонки, выровнено с RecordCard (Spacing.md = 16) */
-  grid: {
-    flexDirection: 'row', flexWrap: 'wrap',
-    paddingHorizontal: 16,
-    paddingTop: 16, paddingBottom: 8,
-    gap: 16,
-    rowGap: 20,
-  },
   cardArtist: {
     fontFamily: Platform.select({ ios: 'Menlo', android: 'monospace' }),
     fontSize: 9, letterSpacing: 0.6, color: PP.cobalt, fontWeight: '600',
-  },
-
-  /* List */
-  list: {
-    paddingHorizontal: 16,
-    paddingTop: 16, paddingBottom: 8,
-    gap: 10,
-  },
-
-  empty: {
-    width: '100%', textAlign: 'center', color: PP.mute, fontSize: ms(14), paddingVertical: 60,
   },
 
   /* Sticky CTA — только для гостей */

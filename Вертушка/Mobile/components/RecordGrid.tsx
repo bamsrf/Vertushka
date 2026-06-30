@@ -54,6 +54,8 @@ interface RecordGridProps<T extends RecordItem = RecordItem> {
   onLongPressItem?: (itemId: string) => void;
   cardVariant?: 'compact' | 'expanded' | 'list';
   numColumns?: number;
+  /** Доп. нижний паддинг контента (напр. под sticky-CTA). */
+  contentBottomPad?: number;
   /** Drives rarity tier selection — `collection` hides "Популярно". */
   rarityContext?: RarityContext;
   /**
@@ -119,6 +121,7 @@ function RecordGridComponent<T extends RecordItem = RecordItem>({
   onLongPressItem,
   cardVariant = 'expanded',
   numColumns = 2,
+  contentBottomPad,
   rarityContext = 'search',
   onScroll,
   scrollEventThrottle = 16,
@@ -301,7 +304,10 @@ function RecordGridComponent<T extends RecordItem = RecordItem>({
       keyExtractor={keyExtractor as any}
       numColumns={numColumns}
       columnWrapperStyle={numColumns > 1 ? styles.row : undefined}
-      contentContainerStyle={styles.container}
+      contentContainerStyle={[
+        styles.container,
+        contentBottomPad != null && { paddingBottom: contentBottomPad },
+      ]}
       // Transparent — чтобы absolute MarketBackground в родителе search.tsx
       // был виден сквозь FlatList. Без этого FlatList перекрывает фон белым
       // и magic-transition не виден визуально.
