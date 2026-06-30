@@ -28,22 +28,33 @@ interface Props {
   compact?: boolean;
 }
 
+// Модульный кэш по ключу профиля — чтобы при ремаунте блока (например, тоггл
+// grid/list на профиле перемонтирует ListHeaderComponent) данные рисовались
+// мгновенно, без спиннера. Ревалидируем в фоне.
+const achCache = new Map<string, MyAchievementsResponse>();
+
 export function AchievementsBlock({ username, compact = false }: Props) {
   const router = useRouter();
-  const [data, setData] = useState<MyAchievementsResponse | null>(null);
-  const [loading, setLoading] = useState(true);
+  const cacheKey = username || '@me';
+  const [data, setData] = useState<MyAchievementsResponse | null>(
+    () => achCache.get(cacheKey) ?? null,
+  );
+  const [loading, setLoading] = useState(() => !achCache.has(cacheKey));
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        setLoading(true);
+        if (!achCache.has(cacheKey)) setLoading(true);
         const resp = username
           ? await api.getAchievementsByUsername(username)
           : await api.getMyAchievements();
-        if (!cancelled) setData(resp);
+        if (!cancelled) {
+          achCache.set(cacheKey, resp);
+          setData(resp);
+        }
       } catch {
-        if (!cancelled) setData(null);
+        if (!cancelled && !achCache.has(cacheKey)) setData(null);
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -51,7 +62,7 @@ export function AchievementsBlock({ username, compact = false }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [username]);
+  }, [username, cacheKey]);
 
   const handleOpen = () => {
     if (username) {

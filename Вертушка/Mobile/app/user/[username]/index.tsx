@@ -18,7 +18,6 @@ import {
   Modal,
   TextInput,
   RefreshControl,
-  Keyboard,
   TouchableWithoutFeedback,
   KeyboardAvoidingView,
   Platform,
@@ -123,11 +122,22 @@ function pluralRu(n: number, forms: [string, string, string]): string {
  * Хук плавного бегущего счётчика — порт логики из /collection/value.
  * Возвращает текущий display-string. Анимация на UI-thread через reanimated.
  */
+// Уже отыгранные таргеты — чтобы при ремаунте (тоггл grid/list перемонтирует
+// заголовок) счётчик не бежал заново с нуля, а сразу показывал финал.
+const animatedCountTargets = new Set<number>();
+
 function useAnimatedCount(target: number): string {
-  const progress = useSharedValue(0);
-  const [display, setDisplay] = useState('0');
+  const seen = animatedCountTargets.has(target);
+  const progress = useSharedValue(seen ? 1 : 0);
+  const fmt = (n: number) => n.toLocaleString('ru-RU').replace(/,/g, ' ');
+  const [display, setDisplay] = useState(() => (seen ? fmt(target) : '0'));
 
   useEffect(() => {
+    if (animatedCountTargets.has(target)) {
+      progress.value = 1;
+      return;
+    }
+    animatedCountTargets.add(target);
     progress.value = 0;
     progress.value = withDelay(
       120,
@@ -137,7 +147,7 @@ function useAnimatedCount(target: number): string {
 
   useDerivedValue(() => {
     const v = Math.round(progress.value * target);
-    runOnJS(setDisplay)(v.toLocaleString('ru-RU').replace(/,/g, ' '));
+    runOnJS(setDisplay)(fmt(v));
   });
 
   return display;
@@ -254,6 +264,13 @@ export default function UserProfileScreen() {
   const [bookingMessage, setBookingMessage] = useState('');
   const [isBooking, setIsBooking] = useState(false);
 
+  // Booking sheet анимация — фон фейдится на месте, лист выезжает снизу.
+  // Раньше animationType="slide" тянул вместе с листом и затемнение → коряво.
+  // (Тот же приём, что в components/FolderPickerModal.)
+  const [bookingMounted, setBookingMounted] = useState(false);
+  const bookingProgress = useRef(new Animated.Value(0)).current;
+  const bookingSheetH = useRef(0);
+
   // Папки чужого юзера — публичный список через api.getUserCollection
   const [folders, setFolders] = useState<Collection[]>([]);
 
@@ -357,6 +374,30 @@ export default function UserProfileScreen() {
   useEffect(() => {
     if (pubProfile && activeTab === 'wishlist' && !wishlist) loadWishlist();
   }, [pubProfile, activeTab, wishlist, loadWishlist]);
+
+  const bookingVisible = !!bookingItem;
+  useEffect(() => {
+    if (bookingVisible) {
+      setBookingMounted(true);
+      Animated.timing(bookingProgress, {
+        toValue: 1,
+        duration: 260,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }).start();
+    } else if (bookingMounted) {
+      Animated.timing(bookingProgress, {
+        toValue: 0,
+        duration: 200,
+        easing: Easing.in(Easing.cubic),
+        useNativeDriver: true,
+      }).start(({ finished }) => {
+        if (finished) setBookingMounted(false);
+      });
+    }
+    // bookingMounted нарочно вне deps — иначе закрытие триггерит повторный прогон.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bookingVisible]);
 
   const handleRefresh = useCallback(async () => {
     setIsRefreshing(true);
@@ -767,10 +808,10 @@ export default function UserProfileScreen() {
             ) : null}
           </View>
 
-          {/* Follow-блок: до подписки — одна кнопка; после — «Вы подписаны ⋯» + «Написать» */}
+          {/* Follow-блок: follow/request-кнопка + «Написать» всегда (личка не зависит от подписки) */}
           {!isOwn && profileUserId ? (
-            following ? (
-              <View style={styles.followRow}>
+            <View style={styles.followRow}>
+              {following ? (
                 <TouchableOpacity
                   style={[styles.followBtn, styles.followBtnActive, styles.followBtnFlex]}
                   onPress={handleFollowMenu}
@@ -787,42 +828,42 @@ export default function UserProfileScreen() {
                     </>
                   )}
                 </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.followBtn, styles.messageBtn]}
-                  onPress={handleMessage}
-                  activeOpacity={0.85}
-                >
-                  <Icon name="chatbubble-outline" size={16} color={PP.cobalt} />
-                  <Text style={[styles.followTxt, styles.followTxtActive]}>Написать</Text>
-                </TouchableOpacity>
-              </View>
-            ) : (() => {
-              const iconName = requestPending
-                ? 'time-outline'
-                : (isPrivateProfile ? 'lock-closed-outline' : 'person-add-outline');
-              const label = requestPending
-                ? 'Запрос отправлен'
-                : (isPrivateProfile ? 'Запросить подписку' : 'Подписаться');
-              const isAlt = requestPending;
-              return (
-                <TouchableOpacity
-                  style={[styles.followBtn, isAlt && styles.followBtnActive]}
-                  onPress={handleFollow}
-                  disabled={isFollowLoading}
-                >
-                  {isFollowLoading ? (
-                    <ActivityIndicator size="small" color={isAlt ? PP.cobalt : '#fff'} />
-                  ) : (
-                    <>
-                      <Icon name={iconName as any} size={16} color={isAlt ? PP.cobalt : '#fff'} />
-                      <Text style={[styles.followTxt, isAlt && styles.followTxtActive]}>
-                        {label}
-                      </Text>
-                    </>
-                  )}
-                </TouchableOpacity>
-              );
-            })()
+              ) : (() => {
+                const iconName = requestPending
+                  ? 'time-outline'
+                  : (isPrivateProfile ? 'lock-closed-outline' : 'person-add-outline');
+                const label = requestPending
+                  ? 'Запрос отправлен'
+                  : (isPrivateProfile ? 'Запросить подписку' : 'Подписаться');
+                const isAlt = requestPending;
+                return (
+                  <TouchableOpacity
+                    style={[styles.followBtn, styles.followBtnFlex, isAlt && styles.followBtnActive]}
+                    onPress={handleFollow}
+                    disabled={isFollowLoading}
+                  >
+                    {isFollowLoading ? (
+                      <ActivityIndicator size="small" color={isAlt ? PP.cobalt : '#fff'} />
+                    ) : (
+                      <>
+                        <Icon name={iconName as any} size={16} color={isAlt ? PP.cobalt : '#fff'} />
+                        <Text style={[styles.followTxt, isAlt && styles.followTxtActive]}>
+                          {label}
+                        </Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+                );
+              })()}
+              <TouchableOpacity
+                style={[styles.followBtn, styles.messageBtn]}
+                onPress={handleMessage}
+                activeOpacity={0.85}
+              >
+                <Icon name="chatbubble-outline" size={16} color={PP.cobalt} />
+                <Text style={[styles.followTxt, styles.followTxtActive]}>Написать</Text>
+              </TouchableOpacity>
+            </View>
           ) : null}
 
           {/* Карточка стоимости коллекции — плавный счётчик */}
@@ -945,15 +986,8 @@ export default function UserProfileScreen() {
           </View>
         </Animated.View>
 
-        {/* Booking hint — компактная одна строка вместо тяжёлой карточки.
-            Под toolbar'ом, не сдвигает sticky-зону при переключении таба. */}
-        {activeTab === 'wishlist' && !isOwn && !following ? (
-          <View style={styles.bookingHint}>
-            <Text style={styles.bookingHintRow}>
-              🎁  Подпишитесь, чтобы бронировать подарки
-            </Text>
-          </View>
-        ) : null}
+        {/* Условия брони показываем только в модалке при тапе на пластинку —
+            инлайн-плашку убрали (дублировала текст из шита). */}
 
         {/* Папки (только в режиме «В наличии»). Под toolbar'ом — не сдвигает
             sticky-зону при переключении таба. */}
@@ -1044,21 +1078,38 @@ export default function UserProfileScreen() {
         </View>
       ) : null}
 
-      {/* Booking modal — без полей имени/email (берём из учётки) */}
+      {/* Booking modal — фон фейдится на месте, лист выезжает снизу (без slide-затемнения) */}
       <Modal
-        visible={!!bookingItem}
+        visible={bookingMounted}
         transparent
-        animationType="slide"
+        animationType="none"
         onRequestClose={() => setBookingItem(null)}
       >
-        <KeyboardAvoidingView
-          style={styles.modalOverlay}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        >
-          <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-            <View style={{ flex: 1 }} />
+        <Animated.View style={[styles.modalOverlay, { opacity: bookingProgress }]}>
+          <TouchableWithoutFeedback onPress={() => setBookingItem(null)}>
+            <View style={StyleSheet.absoluteFill} />
           </TouchableWithoutFeedback>
-          <View style={[styles.modalContent, { paddingBottom: insets.bottom + 24 }]}>
+          <KeyboardAvoidingView
+            style={{ width: '100%' }}
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          >
+            <Animated.View
+              onLayout={(e) => { bookingSheetH.current = e.nativeEvent.layout.height; }}
+              style={[
+                styles.modalContent,
+                {
+                  paddingBottom: insets.bottom + 24,
+                  transform: [
+                    {
+                      translateY: bookingProgress.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [bookingSheetH.current || 480, 0],
+                      }),
+                    },
+                  ],
+                },
+              ]}
+            >
             <View style={styles.modalHandle} />
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Забронировать как подарок</Text>
@@ -1116,8 +1167,9 @@ export default function UserProfileScreen() {
                 <Text style={styles.confirmBtnTxt}>Подтвердить · бронь на 60 дней</Text>
               )}
             </TouchableOpacity>
-          </View>
-        </KeyboardAvoidingView>
+            </Animated.View>
+          </KeyboardAvoidingView>
+        </Animated.View>
       </Modal>
     </View>
   );
@@ -1244,25 +1296,6 @@ const styles = StyleSheet.create({
   achievementsWrap: {
     paddingHorizontal: GRID_PADDING,
     marginTop: 18,
-  },
-
-  /* Booking hint — компактная плашка одной строкой */
-  bookingHint: {
-    marginHorizontal: GRID_PADDING,
-    marginTop: 14,
-    marginBottom: 6,
-    paddingHorizontal: 14, paddingVertical: 12,
-    borderRadius: 12,
-    backgroundColor: 'rgba(255,255,255,0.55)',
-    borderWidth: 1, borderColor: PP.hairline,
-    gap: 10,
-  },
-  bookingHintRow: {
-    fontSize: ms(13),
-    lineHeight: ms(19),
-    color: PP.slate,
-    fontWeight: '500',
-    letterSpacing: 0.1,
   },
 
   /* Folders */
