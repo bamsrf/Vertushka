@@ -216,24 +216,34 @@ export const useMessagesStore = create<MessagesState>((set, get) => ({
         media?.url ?? null,
         media?.type ?? null,
       );
-      set((s) => ({
-        threads: {
-          ...s.threads,
-          [conversationId]: (s.threads[conversationId] ?? []).map((m) =>
-            m.id === localId ? { ...saved, _local_status: 'sent' } : m
-          ),
-        },
-        conversationsPrimary: s.conversationsPrimary.map((c) =>
-          c.id === conversationId
-            ? {
-                ...c,
-                last_message_preview: text.slice(0, 160),
-                last_message_at: saved.created_at,
-                last_message_sender_id: me.id,
-              }
-            : c
-        ),
-      }));
+      set((s) => {
+        const patch = (c: Conversation): Conversation => ({
+          ...c,
+          last_message_preview: text.slice(0, 160),
+          last_message_at: saved.created_at,
+          last_message_sender_id: me.id,
+        });
+        // Ответ в треде = неявное принятие: моя сторона переходит в primary.
+        // Сервер делает тот же флип (pending→accepted), здесь — чтобы UI не
+        // оставил тред висеть в «Запросах» (иначе он дублируется в обеих папках).
+        const reqHit = s.conversationsRequests.find((c) => c.id === conversationId);
+        const conversationsRequests = reqHit
+          ? s.conversationsRequests.filter((c) => c.id !== conversationId)
+          : s.conversationsRequests;
+        const conversationsPrimary = reqHit
+          ? upsertConversation(s.conversationsPrimary, patch({ ...reqHit, request_status: 'accepted' }))
+          : s.conversationsPrimary.map((c) => (c.id === conversationId ? patch(c) : c));
+        return {
+          threads: {
+            ...s.threads,
+            [conversationId]: (s.threads[conversationId] ?? []).map((m) =>
+              m.id === localId ? { ...saved, _local_status: 'sent' } : m
+            ),
+          },
+          conversationsPrimary,
+          conversationsRequests,
+        };
+      });
       return saved;
     } catch (e: any) {
       set((s) => ({
@@ -319,16 +329,19 @@ export const useMessagesStore = create<MessagesState>((set, get) => ({
 
   openOrCreate: async (recipientUserId) => {
     const conv = await messagesApi.createConversation(recipientUserId);
-    set((s) => ({
-      conversationsPrimary:
-        conv.request_status === 'accepted'
+    set((s) => {
+      const accepted = conv.request_status === 'accepted';
+      return {
+        conversationsPrimary: accepted
           ? upsertConversation(s.conversationsPrimary, conv)
           : s.conversationsPrimary,
-      conversationsRequests:
-        conv.request_status === 'pending'
-          ? upsertConversation(s.conversationsRequests, conv)
-          : s.conversationsRequests,
-    }));
+        // Когда я инициатор — бэкенд возвращает accepted. Чистим возможную
+        // устаревшую копию из «Запросов», чтобы тред не висел в двух папках.
+        conversationsRequests: accepted
+          ? s.conversationsRequests.filter((c) => c.id !== conv.id)
+          : upsertConversation(s.conversationsRequests, conv),
+      };
+    });
     return conv;
   },
 

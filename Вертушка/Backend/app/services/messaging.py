@@ -18,7 +18,6 @@ from app.models.conversation import (
 )
 from app.models.user_block import UserBlock
 from app.models.follow import Follow
-from app.models.profile_share import ProfileShare
 from app.models.user import User
 
 logger = logging.getLogger(__name__)
@@ -53,13 +52,6 @@ async def is_following(db: AsyncSession, follower_id: UUID, following_id: UUID) 
     return row.scalar_one_or_none() is not None
 
 
-async def is_private_profile(db: AsyncSession, user_id: UUID) -> bool:
-    flag = await db.scalar(
-        select(ProfileShare.is_private_profile).where(ProfileShare.user_id == user_id)
-    )
-    return bool(flag)
-
-
 async def check_can_send(
     db: AsyncSession,
     sender: User,
@@ -92,12 +84,10 @@ async def check_can_send(
 
     recipient_follows_sender = await is_following(db, recipient.id, sender.id)
 
-    if await is_private_profile(db, recipient.id) and not recipient_follows_sender:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Этот профиль приватный — сообщения принимаются только от взаимных подписчиков",
-        )
-
+    # Приватность профиля больше НЕ блокирует личку. Раньше входящие тонули:
+    # отправитель получал 403, а получатель не видел ни сообщения, ни запроса,
+    # пока сам не подпишется на отправителя. Теперь написать можно кому угодно;
+    # если получатель не подписан на отправителя — тред падает в «Запросы».
     goes_to_requests = not recipient_follows_sender
     return recipient, goes_to_requests
 

@@ -94,6 +94,8 @@ function buildPreviewLine(item: {
   switch (item.type) {
     case 'follow_request':
       return { actorPrefix: actor ?? 'Кто-то', body: 'хочет подписаться' };
+    case 'message_request':
+      return { actorPrefix: actor ?? 'Кто-то', body: 'хочет тебе написать' };
     case 'new_follower':
       return {
         actorPrefix: actor ?? 'Кто-то',

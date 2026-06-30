@@ -483,6 +483,11 @@ function routeForPersonal(item: NotificationItemType, router: ReturnType<typeof 
     case 'follow_request':
       router.push('/social/follow-requests');
       return;
+    case 'message_request': {
+      const convId = (data.conversation_id as string | undefined) || item.entity_id || undefined;
+      if (convId) router.push(`/messages/${convId}` as any);
+      return;
+    }
     case 'new_follower':
       if (item.actor?.username) router.push(`/user/${item.actor.username}`);
       return;

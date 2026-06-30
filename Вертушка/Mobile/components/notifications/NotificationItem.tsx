@@ -43,6 +43,8 @@ function iconForType(type: NotificationType): { name: string; tint: string } {
   switch (type) {
     case 'follow_request':
       return { name: 'person-add', tint: Colors.royalBlue };
+    case 'message_request':
+      return { name: 'chatbubble', tint: Colors.royalBlue };
     case 'new_follower':
       return { name: 'person-add', tint: Colors.success };
     case 'gift_booked':
@@ -107,6 +109,12 @@ function buildText(item: NotificationItemType): string {
   switch (item.type) {
     case 'follow_request':
       return `${actorName} хочет на тебя подписаться`;
+    case 'message_request': {
+      const preview = (data.preview as string | undefined)?.trim();
+      return preview
+        ? `${actorName} пишет тебе: ${preview}`
+        : `${actorName} хочет тебе написать`;
+    }
     case 'new_follower':
       return data.approved
         ? `${actorName} принял(а) твою подписку`

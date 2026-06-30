@@ -129,6 +129,12 @@ export const InAppNotificationToastHost: React.FC = () => {
       router.push('/social/follow-requests');
       return;
     }
+    if (type === 'message_request') {
+      const convId = (data.conversation_id as string | undefined) || entityId;
+      if (convId) router.push(`/messages/${convId}` as any);
+      else router.push('/messages');
+      return;
+    }
     if (type === 'achievement_unlocked' || type === 'milestone_unlocked') {
       router.push('/achievements');
       return;

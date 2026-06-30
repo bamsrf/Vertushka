@@ -166,7 +166,9 @@ function toZoomItem(r: PublicProfileRecord): CollectionItem {
     record_id: r.id,
     record: r as unknown as VinylRecord,
     added_at: r.added_at || new Date().toISOString(),
-  };
+    // RecordGrid читает booked-флаг с item-уровня (`'is_booked' in item`).
+    is_booked: !!r.is_booked,
+  } as unknown as CollectionItem;
 }
 
 /**

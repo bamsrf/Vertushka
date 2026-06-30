@@ -71,6 +71,9 @@ def _default_dedup_key(
         return f"milestone:{entity_id or d.get('milestone') or 'unknown'}"
     if type in ("gift_booked", "gift_confirmed", "follow_request"):
         return f"{type}:{entity_id or 'unknown'}"
+    if type == "message_request":
+        # одна нить на диалог — повторные сообщения-запросы бампают, а не спамят
+        return f"message_request:{entity_id or 'unknown'}"
     return f"{type}:{entity_id or 'na'}"
 
 

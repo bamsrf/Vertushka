@@ -276,6 +276,11 @@ async def create_or_get_conversation(
         db, current_user.id, recipient.id, goes_to_requests
     )
     me_part = await require_participant(db, conv.id, current_user.id)
+    # Я САМ открываю/инициирую диалог → моя сторона всегда primary, а не «Запрос».
+    # Иначе если собеседник написал мне первым (моя сторона pending), нажатие
+    # «Написать» показывало бы мой же тред в моих «Запросах» с кнопкой «Принять».
+    if me_part.request_status == "pending":
+        me_part.request_status = "accepted"
     await db.commit()
     await db.refresh(conv)
     await db.refresh(me_part)
@@ -483,7 +488,7 @@ async def send_message(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Диалог не найден")
 
     partner_id = partner_id_of(conv, current_user.id)
-    # Проверяем права (блок / приватный профиль) на каждом сообщении — состояние мог измениться
+    # Проверяем права (блокировка) на каждом сообщении — состояние мог измениться
     await check_can_send(db, current_user, partner_id)
 
     message = await post_message(
@@ -517,6 +522,37 @@ async def send_message(
     from app.services.achievements import emit_event
     from app.services.achievements.events import MESSAGE_SENT
     await emit_event(db, current_user.id, MESSAGE_SENT, {"message_id": message.id})
+
+    # Уведомление в ленту «Ты», когда тред у получателя в «Запросах» (pending):
+    # Instagram-логика — «тебе пытается написать @X». Дедуп по диалогу: повторные
+    # сообщения-запросы бампают одну нить, не спамят ленту.
+    partner_part_q = await db.execute(
+        select(ConversationParticipant).where(
+            ConversationParticipant.conversation_id == conv.id,
+            ConversationParticipant.user_id == partner_id,
+        )
+    )
+    partner_part = partner_part_q.scalar_one_or_none()
+    if partner_part and partner_part.request_status == "pending":
+        from app.services.notification_service import create_notification
+        sender_name = current_user.display_name or current_user.username
+        preview = (conv.last_message_preview or "")[:120]
+        await create_notification(
+            db,
+            user_id=partner_id,
+            type="message_request",
+            actor_id=current_user.id,
+            entity_type="conversation",
+            entity_id=str(conv.id),
+            data={
+                "conversation_id": str(conv.id),
+                "sender_username": current_user.username,
+                "preview": preview,
+            },
+            push_title=sender_name,
+            push_body=preview or "Новое сообщение",
+        )
+        await db.commit()
 
     return hydrated[0]
 

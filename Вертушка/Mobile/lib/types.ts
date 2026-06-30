@@ -758,6 +758,7 @@ export interface NotificationSettings {
 
 export type NotificationType =
   | 'follow_request'
+  | 'message_request'
   | 'new_follower'
   | 'gift_booked'
   | 'gift_confirmed'

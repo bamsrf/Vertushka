@@ -13,6 +13,7 @@ from app.database import Base
 # Типы уведомлений (синхронизированы с Mobile/lib/types.ts)
 NOTIFICATION_TYPES = {
     "follow_request",       # кто-то запросил подписку на приватный профиль
+    "message_request",      # кто-то написал тебе в личку (тред в «Запросах»)
     "new_follower",         # кто-то подписался (или approve запроса)
     "gift_booked",          # кто-то забронировал твой подарок
     "gift_confirmed",       # даритель подтвердил выдачу
