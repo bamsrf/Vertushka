@@ -146,8 +146,9 @@ function useAnimatedCount(target: number): string {
   }, [target, progress]);
 
   useDerivedValue(() => {
+    // worklet (UI-thread): нельзя звать обычные JS-функции (fmt) — форматируем инлайн.
     const v = Math.round(progress.value * target);
-    runOnJS(setDisplay)(fmt(v));
+    runOnJS(setDisplay)(v.toLocaleString('ru-RU').replace(/,/g, ' '));
   });
 
   return display;
