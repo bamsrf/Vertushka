@@ -505,6 +505,79 @@ export default function UserProfileScreen() {
     } catch {}
   }, [username]);
 
+  /**
+   * UGC (App Store 1.2): меню «Пожаловаться / Заблокировать» на чужом профиле.
+   */
+  const handleProfileMenu = useCallback(() => {
+    if (!profileUserId) return;
+
+    const doReport = () => {
+      Alert.alert(
+        'Пожаловаться на пользователя?',
+        'Профиль будет отправлен на проверку модератору. Мы реагируем на жалобы в течение 24 часов.',
+        [
+          { text: 'Отмена', style: 'cancel' },
+          {
+            text: 'Пожаловаться',
+            style: 'destructive',
+            onPress: async () => {
+              try {
+                await api.reportContent({ target_type: 'user', target_id: profileUserId });
+                toast.success('Спасибо, жалоба отправлена');
+              } catch {
+                toast.error('Не удалось отправить жалобу');
+              }
+            },
+          },
+        ],
+      );
+    };
+
+    const doBlock = () => {
+      Alert.alert(
+        `Заблокировать @${pubProfile?.username ?? ''}?`,
+        'Пользователь не сможет писать вам сообщения.',
+        [
+          { text: 'Отмена', style: 'cancel' },
+          {
+            text: 'Заблокировать',
+            style: 'destructive',
+            onPress: async () => {
+              try {
+                await useMessagesStore.getState().blockUser(profileUserId);
+                toast.success('Пользователь заблокирован');
+              } catch {
+                toast.error('Не удалось заблокировать');
+              }
+            },
+          },
+        ],
+      );
+    };
+
+    if (Platform.OS === 'ios') {
+      ActionSheetIOS.showActionSheetWithOptions(
+        {
+          title: `@${pubProfile?.username ?? ''}`,
+          options: ['Пожаловаться', 'Заблокировать', 'Отмена'],
+          cancelButtonIndex: 2,
+          destructiveButtonIndex: 1,
+          userInterfaceStyle: 'light',
+        },
+        (idx) => {
+          if (idx === 0) doReport();
+          if (idx === 1) doBlock();
+        },
+      );
+    } else {
+      Alert.alert(`@${pubProfile?.username ?? ''}`, undefined, [
+        { text: 'Пожаловаться', onPress: doReport },
+        { text: 'Заблокировать', style: 'destructive', onPress: doBlock },
+        { text: 'Отмена', style: 'cancel' },
+      ]);
+    }
+  }, [profileUserId, pubProfile?.username]);
+
   // Возвращает true, если действие выполнено (modal открыт / редирект на auth / показан toast).
   // false — caller должен сам выбрать fallback (например, открыть детальную карточки).
   const tryOpenBooking = useCallback(
@@ -833,6 +906,14 @@ export default function UserProfileScreen() {
               >
                 <Icon name="chatbubble-outline" size={16} color={PP.cobalt} />
                 <Text style={[styles.followTxt, styles.followTxtActive]}>Написать</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.followBtn, styles.messageBtn, styles.moreBtn]}
+                onPress={handleProfileMenu}
+                activeOpacity={0.85}
+                hitSlop={4}
+              >
+                <Icon name="ellipsis-horizontal" size={16} color={PP.cobalt} />
               </TouchableOpacity>
             </View>
           ) : null}
@@ -1219,6 +1300,10 @@ const styles = StyleSheet.create({
     backgroundColor: PP.whiteSoft,
     borderWidth: 1, borderColor: 'rgba(58,75,224,0.25)',
     marginTop: 0, marginBottom: 0,
+  },
+  moreBtn: {
+    flexGrow: 0,
+    paddingHorizontal: 12,
   },
   followTxt: { color: '#fff', fontWeight: '600', fontSize: ms(14) },
   followTxtActive: { color: PP.cobalt },

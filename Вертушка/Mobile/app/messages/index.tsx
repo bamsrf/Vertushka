@@ -29,6 +29,7 @@ import { ms } from '../../lib/responsive';
 import { useAuthStore } from '../../lib/store';
 import { useMessagesStore } from '../../lib/messagesStore';
 import { resolveMediaUrl } from '../../lib/api';
+import { registerPushToken } from '../../lib/push';
 import type { Conversation } from '../../lib/messagesTypes';
 import { Header } from '../../components/Header';
 
@@ -304,6 +305,12 @@ export default function MessagesInboxScreen() {
   useEffect(() => {
     reload();
   }, [reload]);
+
+  // Контекстная точка запроса push-разрешения: юзер открыл сообщения —
+  // уведомления о новых сообщениях ему релевантны (см. lib/push.ts).
+  useEffect(() => {
+    registerPushToken({ requestIfNeeded: true });
+  }, []);
 
   const segments = useMemo(() => {
     return SEGMENTS.map((s) =>

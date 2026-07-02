@@ -23,6 +23,7 @@ from app.models.message_reaction import MessageReaction
 from app.models.message_hidden import MessageHiddenFor
 from app.models.user_block import UserBlock
 from app.models.notification import Notification
+from app.models.report import Report
 
 __all__ = [
     "User",
@@ -56,5 +57,6 @@ __all__ = [
     "MessageHiddenFor",
     "UserBlock",
     "Notification",
+    "Report",
 ]
 

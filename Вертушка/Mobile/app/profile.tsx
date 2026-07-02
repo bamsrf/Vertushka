@@ -621,9 +621,28 @@ export default function ProfileScreen() {
             <Text style={styles.settingsItemText}>Планы Вертушки</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.settingsItem}>
+          <TouchableOpacity
+            style={styles.settingsItem}
+            onPress={() => Linking.openURL('mailto:support@vinyl-vertushka.ru')}
+          >
             <Icon name="help-circle-outline" size={24} color={Colors.royalBlue} />
             <Text style={styles.settingsItemText}>Помощь</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.settingsItem}
+            onPress={() => router.push('/legal/terms' as any)}
+          >
+            <Icon name="document-text-outline" size={24} color={Colors.royalBlue} />
+            <Text style={styles.settingsItemText}>Условия использования</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.settingsItem}
+            onPress={() => router.push('/legal/privacy' as any)}
+          >
+            <Icon name="shield-checkmark-outline" size={24} color={Colors.royalBlue} />
+            <Text style={styles.settingsItemText}>Конфиденциальность</Text>
           </TouchableOpacity>
 
           <TouchableOpacity

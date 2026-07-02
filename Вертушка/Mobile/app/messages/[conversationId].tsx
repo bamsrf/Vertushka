@@ -56,7 +56,7 @@ import { Colors, Spacing, BorderRadius } from '../../constants/theme';
 import { ms } from '../../lib/responsive';
 import { useAuthStore } from '../../lib/store';
 import { useMessagesStore } from '../../lib/messagesStore';
-import { resolveMediaUrl } from '../../lib/api';
+import { api, resolveMediaUrl } from '../../lib/api';
 import { messagesApi } from '../../lib/messagesApi';
 import { toast } from '../../lib/toast';
 import { cleanArtistName } from '../../lib/format';
@@ -1365,9 +1365,9 @@ export default function ConversationScreen() {
   const handleMenu = useCallback(() => {
     if (!conversationId || !partner) return;
     const muteLabel = isMuted ? 'Включить уведомления' : 'Отключить уведомления';
-    const options = [muteLabel, 'Очистить историю', `Заблокировать @${partner.username}`, 'Удалить диалог', 'Отмена'];
-    const cancel = 4;
-    const destructive = [2, 3];
+    const options = [muteLabel, 'Очистить историю', 'Пожаловаться', `Заблокировать @${partner.username}`, 'Удалить диалог', 'Отмена'];
+    const cancel = 5;
+    const destructive = [3, 4];
 
     const exec = (i: number) => {
       if (i === 0) {
@@ -1382,6 +1382,27 @@ export default function ConversationScreen() {
           { text: 'Очистить', style: 'destructive', onPress: () => clearHistory(conversationId) },
         ]);
       } else if (i === 2) {
+        // UGC (App Store 1.2): жалоба на собеседника.
+        Alert.alert(
+          `Пожаловаться на @${partner.username}?`,
+          'Жалоба уйдёт модератору. Мы реагируем в течение 24 часов.',
+          [
+            { text: 'Отмена', style: 'cancel' },
+            {
+              text: 'Пожаловаться',
+              style: 'destructive',
+              onPress: async () => {
+                try {
+                  await api.reportContent({ target_type: 'user', target_id: partner.id });
+                  toast.success('Спасибо, жалоба отправлена');
+                } catch {
+                  toast.error('Не удалось отправить жалобу');
+                }
+              },
+            },
+          ],
+        );
+      } else if (i === 3) {
         Alert.alert(
           `Заблокировать @${partner.username}?`,
           'Вы не сможете обмениваться сообщениями. Диалог исчезнет у вас.',
@@ -1397,7 +1418,7 @@ export default function ConversationScreen() {
             },
           ],
         );
-      } else if (i === 3) {
+      } else if (i === 4) {
         archive(conversationId).then(() => router.back());
       }
     };
@@ -1411,8 +1432,9 @@ export default function ConversationScreen() {
       Alert.alert(`@${partner.username}`, undefined, [
         { text: muteLabel, onPress: () => exec(0) },
         { text: 'Очистить историю', style: 'destructive', onPress: () => exec(1) },
-        { text: `Заблокировать @${partner.username}`, style: 'destructive', onPress: () => exec(2) },
-        { text: 'Удалить диалог', style: 'destructive', onPress: () => exec(3) },
+        { text: 'Пожаловаться', onPress: () => exec(2) },
+        { text: `Заблокировать @${partner.username}`, style: 'destructive', onPress: () => exec(3) },
+        { text: 'Удалить диалог', style: 'destructive', onPress: () => exec(4) },
         { text: 'Отмена', style: 'cancel' },
       ]);
     }
