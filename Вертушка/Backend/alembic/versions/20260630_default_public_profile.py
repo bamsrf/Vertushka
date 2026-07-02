@@ -25,8 +25,19 @@ def upgrade() -> None:
     op.execute("ALTER TABLE profile_shares ALTER COLUMN is_active SET DEFAULT true")
     op.execute(
         """
-        INSERT INTO profile_shares (id, user_id, is_active)
-        SELECT gen_random_uuid(), u.id, true
+        INSERT INTO profile_shares (
+            id, user_id, is_active,
+            is_private_profile, show_collection, show_wishlist,
+            show_record_year, show_record_label, show_record_format,
+            show_record_prices, show_collection_value,
+            view_count, created_at, updated_at
+        )
+        SELECT
+            gen_random_uuid(), u.id, true,
+            false, true, true,
+            true, true, true,
+            false, false,
+            0, now(), now()
         FROM users u
         LEFT JOIN profile_shares ps ON ps.user_id = u.id
         WHERE ps.id IS NULL
