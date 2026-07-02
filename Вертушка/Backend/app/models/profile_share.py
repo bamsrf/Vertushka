@@ -29,10 +29,12 @@ class ProfileShare(Base):
         index=True
     )
 
-    # Публичность
+    # Публичность. По умолчанию профиль публичный — деактивация только вручную
+    # в настройках. Иначе ссылка на свежий аккаунт отдаёт 404 (выглядит как баг).
     is_active: Mapped[bool] = mapped_column(
         Boolean,
-        default=False,
+        default=True,
+        server_default="true",
         nullable=False
     )
     is_private_profile: Mapped[bool] = mapped_column(

@@ -15,6 +15,7 @@ from app.config import get_settings
 from app.database import get_db
 from app.models.collection import Collection
 from app.models.user import User
+from app.models.profile_share import ProfileShare
 from app.models.wishlist import Wishlist
 from app.schemas.auth import Token
 from app.services import discogs_oauth
@@ -112,6 +113,8 @@ async def _find_or_create_discogs_user(
         await db.flush()
         db.add(Wishlist(user_id=user.id))
         db.add(Collection(user_id=user.id, name="Моя коллекция"))
+        # Публичный профиль активен по умолчанию
+        db.add(ProfileShare(user_id=user.id, is_active=True))
 
     # Сохраняем/обновляем OAuth-креды (секрет шифруем).
     user.discogs_username = username

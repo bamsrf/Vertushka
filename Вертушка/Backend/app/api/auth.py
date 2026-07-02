@@ -25,6 +25,7 @@ from app.database import get_db, async_session_maker
 from app.models.user import User
 from app.models.wishlist import Wishlist
 from app.models.collection import Collection
+from app.models.profile_share import ProfileShare
 from app.schemas.user import UserCreate, UserLogin, UserResponse
 from app.schemas.auth import (
     Token, RefreshToken, AppleSignIn, GoogleSignIn,
@@ -357,6 +358,9 @@ async def register(
     )
     db.add(collection)
 
+    # Публичный профиль активен по умолчанию (деактивация — только в настройках)
+    db.add(ProfileShare(user_id=user.id, is_active=True))
+
     try:
         await db.commit()
     except IntegrityError:
@@ -601,8 +605,11 @@ async def apple_sign_in(
         )
         db.add(collection)
 
+        # Публичный профиль активен по умолчанию
+        db.add(ProfileShare(user_id=user.id, is_active=True))
+
         await db.commit()
-    
+
     user.last_login_at = datetime.utcnow()
     await db.commit()
 
@@ -698,6 +705,9 @@ async def google_sign_in(
             name="Моя коллекция"
         )
         db.add(collection)
+
+        # Публичный профиль активен по умолчанию
+        db.add(ProfileShare(user_id=user.id, is_active=True))
 
         await db.commit()
 
