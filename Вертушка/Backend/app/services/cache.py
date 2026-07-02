@@ -181,6 +181,30 @@ class RedisCache:
             logger.warning("Redis take_token error: %s", bucket_key, exc_info=True)
             return None
 
+    async def peek_tokens(
+        self, bucket_key: str, capacity: float, refill_rate_per_sec: float,
+    ) -> float | None:
+        """Сколько токенов сейчас в распределённом bucket'е — БЕЗ изъятия.
+
+        Для drip-воркера обложек: расходовать app-bucket только когда он
+        полон (юзерский трафик не страдает). None = Redis недоступен —
+        caller должен считать, что свободных токенов нет.
+        """
+        if not self._available:
+            return None
+        try:
+            import time as _time
+            data = await self._pool.hmget(
+                self._key("ratelimit", bucket_key), "tokens", "ts_ms",
+            )
+            if data[0] is None or data[1] is None:
+                return capacity  # bucket ещё не создан = полон
+            elapsed_ms = _time.time() * 1000 - float(data[1])
+            return min(capacity, float(data[0]) + elapsed_ms * refill_rate_per_sec / 1000.0)
+        except Exception:
+            logger.warning("Redis peek_tokens error: %s", bucket_key, exc_info=True)
+            return None
+
     async def health(self) -> dict:
         """Статус Redis для /health endpoint."""
         if not self._available:

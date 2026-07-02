@@ -50,7 +50,11 @@ async def warm_dump_covers(discogs_ids: list[str]) -> None:
 
 
 async def _warm_batch(discogs_ids: list[str]) -> None:
-    from app.services.cover_fallback import cover_url_by_barcode
+    from app.services.cover_fallback import (
+        cover_url_by_artist_title,
+        cover_url_by_barcode,
+        cover_url_by_discogs_id,
+    )
     from app.services.discogs import DiscogsService
 
     # Дедуп через Redis: берём в работу только те id, что никто не греет
@@ -71,7 +75,7 @@ async def _warm_batch(discogs_ids: list[str]) -> None:
             return
         rows = (await session.execute(
             text(
-                "SELECT discogs_id::text AS discogs_id, barcode_norm "
+                "SELECT discogs_id::text AS discogs_id, barcode_norm, artist, title "
                 "FROM discogs_releases_index "
                 "WHERE discogs_id = ANY(:ids) "
                 "AND cover_image_url IS NULL"
@@ -84,14 +88,21 @@ async def _warm_batch(discogs_ids: list[str]) -> None:
             did = row["discogs_id"]
             cover: str | None = None
 
-            # 1) CAA по barcode — бесплатно
-            if row["barcode_norm"]:
+            # 1) CAA по офлайн mb_discogs_map — 1 HEAD, без MB-троттла
+            cover = await cover_url_by_discogs_id(session, did)
+
+            # 2) CAA по barcode — бесплатно, но с MB-троттлом 1 rps
+            if not cover and row["barcode_norm"]:
                 cover = await cover_url_by_barcode(row["barcode_norm"])
 
-            # 2) Discogs — низкий приоритет, в рамках бюджета батча
+            # 3) Discogs — низкий приоритет, в рамках бюджета батча
             if not cover and discogs_budget > 0:
                 discogs_budget -= 1
                 cover = await discogs.get_release_cover(did)
+
+            # 4) iTunes — album-level artwork, последний шанс
+            if not cover:
+                cover = await cover_url_by_artist_title(row["artist"], row["title"])
 
             if not cover:
                 continue
