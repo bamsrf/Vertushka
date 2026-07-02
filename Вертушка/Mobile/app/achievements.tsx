@@ -364,7 +364,7 @@ function howToUnlockText(item: AchievementItem): string | null {
   if (explicit) return explicit;
   // Прогресс-серии — динамическая подсказка
   if (item.code.startsWith('B') && item.progress_target > 0) {
-    return `Собери ${item.progress_target} уникальных пластинок (без удалений в течение 24 часов).`;
+    return `Собери ${item.progress_target} уникальных пластинок.`;
   }
   if (item.code.startsWith('META_')) {
     return 'Закрой все ачивки этой серии.';

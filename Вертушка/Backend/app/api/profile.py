@@ -36,6 +36,21 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+def _cover_url(record: Record) -> str | None:
+    """Обложка для публичного профиля.
+
+    Manual-релизы (local-first дамп без image URL) часто имеют обложку только
+    в `cover_local_path` — `cover_image_url` у них NULL, поэтому раньше карточка
+    выходила пустой. Фоллбэк на `/uploads/{cover_local_path}` (resolveMediaUrl
+    в мобилке и same-origin на вебе разворачивают относительный путь).
+    """
+    if record.cover_image_url:
+        return record.cover_image_url
+    if record.cover_local_path:
+        return f"/uploads/{record.cover_local_path}"
+    return None
+
+
 def _record_to_public(
     record: Record,
     is_booked: bool = False,
@@ -50,8 +65,8 @@ def _record_to_public(
         year=record.year,
         label=record.label,
         format_type=record.format_type,
-        cover_image_url=record.cover_image_url,
-        thumb_image_url=record.thumb_image_url,
+        cover_image_url=_cover_url(record),
+        thumb_image_url=record.thumb_image_url or _cover_url(record),
         estimated_price_median=float(record.estimated_price_median or record.estimated_price_min) if (record.estimated_price_median or record.estimated_price_min) else None,
         price_currency=record.price_currency,
         is_booked=is_booked,
