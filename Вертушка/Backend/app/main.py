@@ -61,7 +61,7 @@ if _settings_early.sentry_dsn:
     logger.info("Sentry initialised")
 
 # API роутеры
-from app.api import auth, records, collections, wishlists, users, gifts, profile, export, covers, user_photos, waitlist, achievements, offers, market, messages, notifications, discogs_oauth, admin
+from app.api import auth, records, collections, wishlists, users, gifts, profile, export, covers, user_photos, waitlist, achievements, offers, market, messages, notifications, discogs_oauth, admin, reports
 
 # Web роутеры (HTML страницы)
 from app.web import routes as web_routes
@@ -262,6 +262,7 @@ app.include_router(messages.router, prefix="/api/messages", tags=["Сообще�
 app.include_router(notifications.router, prefix="/api/notifications", tags=["Уведомления"])
 
 app.include_router(admin.router, prefix="/api/admin", tags=["Модерация"])
+app.include_router(reports.router, prefix="/api/reports", tags=["Жалобы"])
 
 # Web страницы (публичный профиль, OG-изображения)
 app.include_router(web_routes.router, tags=["Web"])

@@ -27,6 +27,7 @@ import {
 } from '../lib/messagesStore';
 import { useNotificationsStore } from '../lib/notificationsStore';
 import { api } from '../lib/api';
+import { registerPushToken } from '../lib/push';
 
 // Sentry загружается только если пакет установлен (не в Expo Go)
 type SentryStub = { init: (c: object) => void; wrap: <T>(c: T) => T };
@@ -175,34 +176,14 @@ function RootLayout() {
     };
   }, []);
 
-  // Регистрация Expo push-токена + рефреш unread на foreground
+  // Регистрация Expo push-токена + рефреш unread на foreground.
+  // Системный промпт здесь НЕ показываем (pre-permission UX): токен регистрируется
+  // только если разрешение уже выдано. Сам запрос — из контекстных точек
+  // (сообщения, настройки уведомлений), см. lib/push.ts.
   useEffect(() => {
     if (!isAuthenticated) return;
 
-    let cancelled = false;
-    (async () => {
-      try {
-        if (Platform.OS !== 'ios' && Platform.OS !== 'android') return;
-        const { status: existing } = await Notifications.getPermissionsAsync();
-        let granted = existing === 'granted';
-        if (!granted) {
-          const { status: req } = await Notifications.requestPermissionsAsync();
-          granted = req === 'granted';
-        }
-        if (!granted || cancelled) return;
-        const projectId =
-          (Constants.expoConfig?.extra?.eas as { projectId?: string } | undefined)?.projectId ||
-          (Constants as unknown as { easConfig?: { projectId?: string } }).easConfig?.projectId;
-        const tokenResp = await Notifications.getExpoPushTokenAsync(
-          projectId ? { projectId } : undefined,
-        );
-        if (tokenResp?.data && !cancelled) {
-          await api.savePushToken(tokenResp.data);
-        }
-      } catch {
-        // push не критичны
-      }
-    })();
+    registerPushToken({ requestIfNeeded: false });
 
     useNotificationsStore.getState().fetchUnreadCount();
 
@@ -234,7 +215,6 @@ function RootLayout() {
     });
 
     return () => {
-      cancelled = true;
       stopPolling();
       sub.remove();
     };
@@ -347,6 +327,14 @@ function RootLayout() {
           <Stack.Screen name="messages/new" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
           <Stack.Screen
             name="notifications"
+            options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
+          />
+          <Stack.Screen
+            name="legal/terms"
+            options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
+          />
+          <Stack.Screen
+            name="legal/privacy"
             options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
           />
         </Stack>

@@ -1542,6 +1542,24 @@ async def get_record(
     # и видны всем. Pending-гейт убран. Поле moderation_status оставлено для
     # 'merged' (rematch) и на будущее.
 
+    # UGC takedown (Guideline 1.2): скрытая по жалобе запись ('rejected')
+    # недоступна по прямой ссылке никому, кроме автора и staff.
+    if (
+        record.source == "user"
+        and record.moderation_status == "rejected"
+        and not (
+            current_user is not None
+            and (
+                current_user.is_staff
+                or record.created_by_user_id == current_user.id
+            )
+        )
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Пластинка не найдена"
+        )
+
     # Follow merged_into_id: если эту запись уже слили в Discogs-аналог,
     # отдаём данные целевой записи. Старые ссылки/push'и на исходный uuid
     # продолжают работать прозрачно для юзера.

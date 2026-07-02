@@ -381,6 +381,16 @@ class ApiClient {
     return response.data;
   }
 
+  // ==================== Reports (UGC, App Store 1.2) ====================
+
+  async reportContent(payload: {
+    target_type: 'record' | 'user' | 'message';
+    target_id: string;
+    reason?: string;
+  }): Promise<void> {
+    await this.client.post('/reports/', payload);
+  }
+
   // ==================== Notifications ====================
 
   async savePushToken(token: string): Promise<void> {

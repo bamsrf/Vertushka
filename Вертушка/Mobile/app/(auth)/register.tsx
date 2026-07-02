@@ -11,7 +11,8 @@ import {
   ScrollView,
 } from 'react-native';
 import { toast } from '../../lib/toast';
-import { Link } from 'expo-router';
+import { Link, useRouter } from 'expo-router';
+import { TouchableOpacity } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Icon } from '@/components/ui';
@@ -28,12 +29,15 @@ export default function RegisterScreen() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [termsAccepted, setTermsAccepted] = useState(false);
   const [errors, setErrors] = useState<{
     email?: string;
     username?: string;
     password?: string;
     confirmPassword?: string;
+    terms?: string;
   }>({});
+  const router = useRouter();
 
   const validate = () => {
     const newErrors: typeof errors = {};
@@ -62,6 +66,10 @@ export default function RegisterScreen() {
       newErrors.confirmPassword = 'Подтвердите пароль';
     } else if (password !== confirmPassword) {
       newErrors.confirmPassword = 'Пароли не совпадают';
+    }
+
+    if (!termsAccepted) {
+      newErrors.terms = 'Нужно принять условия использования';
     }
 
     setErrors(newErrors);
@@ -148,6 +156,30 @@ export default function RegisterScreen() {
             error={errors.confirmPassword}
           />
 
+          {/* Принятие условий — обязательное для регистрации (App Store 1.2) */}
+          <TouchableOpacity
+            style={styles.termsRow}
+            onPress={() => setTermsAccepted((v) => !v)}
+            activeOpacity={0.7}
+          >
+            <View style={[styles.checkbox, termsAccepted && styles.checkboxChecked]}>
+              {termsAccepted ? (
+                <Icon name="checkmark" size={14} color={Colors.background} />
+              ) : null}
+            </View>
+            <Text style={styles.termsText}>
+              Принимаю{' '}
+              <Text style={styles.termsLink} onPress={() => router.push('/legal/terms')}>
+                Условия использования
+              </Text>{' '}
+              и{' '}
+              <Text style={styles.termsLink} onPress={() => router.push('/legal/privacy')}>
+                Политику конфиденциальности
+              </Text>
+            </Text>
+          </TouchableOpacity>
+          {errors.terms ? <Text style={styles.termsError}>{errors.terms}</Text> : null}
+
           <Button
             title="Создать аккаунт"
             onPress={handleRegister}
@@ -157,6 +189,11 @@ export default function RegisterScreen() {
           />
 
           <SocialAuthButtons mode="register" />
+
+          <Text style={styles.socialTermsNote}>
+            Продолжая через Apple или Google, вы принимаете Условия использования и Политику
+            конфиденциальности
+          </Text>
         </View>
 
         {/* Ссылка на вход */}
@@ -206,6 +243,47 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.lg,
   },
   button: {
+    marginTop: Spacing.md,
+  },
+  termsRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: Spacing.sm,
+    marginTop: Spacing.sm,
+  },
+  checkbox: {
+    width: 22,
+    height: 22,
+    borderRadius: 6,
+    borderWidth: 2,
+    borderColor: Colors.textMuted,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 1,
+  },
+  checkboxChecked: {
+    backgroundColor: Colors.royalBlue,
+    borderColor: Colors.royalBlue,
+  },
+  termsText: {
+    ...Typography.caption,
+    color: Colors.textSecondary,
+    flex: 1,
+    lineHeight: 18,
+  },
+  termsLink: {
+    color: Colors.royalBlue,
+    fontWeight: '600',
+  },
+  termsError: {
+    ...Typography.caption,
+    color: Colors.error,
+    marginTop: Spacing.xs,
+  },
+  socialTermsNote: {
+    ...Typography.caption,
+    color: Colors.textMuted,
+    textAlign: 'center',
     marginTop: Spacing.md,
   },
   footer: {

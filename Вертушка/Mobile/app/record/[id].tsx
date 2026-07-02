@@ -411,12 +411,46 @@ export default function RecordDetailScreen() {
     }
   };
 
+  // UGC (App Store 1.2): жалоба на чужую user-запись.
+  const handleReportRecord = () => {
+    setShowActionSheet(false);
+    if (!record) return;
+    Alert.alert(
+      'Пожаловаться на запись?',
+      'Запись будет отправлена на проверку модератору. Мы реагируем на жалобы в течение 24 часов.',
+      [
+        { text: 'Отмена', style: 'cancel' },
+        {
+          text: 'Пожаловаться',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await api.reportContent({ target_type: 'record', target_id: record.id });
+              toast.success('Спасибо, жалоба отправлена');
+            } catch {
+              toast.error('Не удалось отправить жалобу');
+            }
+          },
+        },
+      ],
+    );
+  };
+
   const getActionSheetActions = (): ActionSheetAction[] => {
     const recordStatus = getRecordStatus();
     const actions: ActionSheetAction[] = [];
 
     // §11: править можно только свою user-record.
     const myId = useAuthStore.getState().user?.id;
+    // UGC: чужая user-запись — можно пожаловаться.
+    if (record?.source === 'user' && record.created_by_user_id && record.created_by_user_id !== myId) {
+      actions.push({
+        label: 'Пожаловаться',
+        icon: 'flag-outline',
+        onPress: handleReportRecord,
+        destructive: true,
+      });
+    }
     if (record?.source === 'user' && record.created_by_user_id && record.created_by_user_id === myId) {
       actions.push({
         label: 'Отредактировать',
@@ -541,9 +575,26 @@ export default function RecordDetailScreen() {
 
   const imageUrl = getCoverUrl(record);
 
+  // UGC: чужая user-запись — жалоба доступна из хедера даже вне коллекции.
+  const isForeignUserRecord =
+    record.source === 'user' &&
+    !!record.created_by_user_id &&
+    record.created_by_user_id !== useAuthStore.getState().user?.id;
+
   return (
     <View style={styles.container}>
-      <Header title="" showBack showProfile={false} />
+      <Header
+        title=""
+        showBack
+        showProfile={false}
+        rightAction={
+          isForeignUserRecord ? (
+            <TouchableOpacity onPress={handleReportRecord} hitSlop={8}>
+              <Icon name="flag-outline" size={22} color={Colors.textSecondary} />
+            </TouchableOpacity>
+          ) : undefined
+        }
+      />
 
       <ScrollView
         contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 100 }]}
@@ -786,6 +837,11 @@ export default function RecordDetailScreen() {
             ))}
           </Card>
         )}
+
+        {/* Атрибуция источника данных (условие Discogs при использовании их данных/API) */}
+        <Text style={styles.dataAttribution}>
+          Данные о релизах и обложки — Discogs / Cover Art Archive
+        </Text>
       </ScrollView>
 
       {/* Кнопки действий */}
@@ -1081,6 +1137,12 @@ const styles = StyleSheet.create({
     ...Typography.caption,
     color: Colors.textSecondary,
     marginLeft: Spacing.sm,
+  },
+  dataAttribution: {
+    ...Typography.caption,
+    color: Colors.textMuted,
+    textAlign: 'center',
+    marginTop: Spacing.md,
   },
   actionsContainer: {
     position: 'absolute',
