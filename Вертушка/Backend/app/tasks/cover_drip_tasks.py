@@ -21,6 +21,7 @@ cover_checked_at ставится после КАЖДОЙ попытки (вкл
 ошибок возможны, но редки (headroom-гейт исключает 429); при желании
 перепроверить: UPDATE ... SET cover_checked_at = NULL.
 """
+import asyncio
 import logging
 from datetime import datetime
 
@@ -37,14 +38,23 @@ _BUCKET_KEY = "app"
 _BUCKET_CAPACITY = 55
 _BUCKET_REFILL = 0.95
 # Ниже этого уровня токены не трогаем — резерв для живых юзеров.
-_HEADROOM = 25
-# Кап на один прогон (прогоны каждую минуту).
-_MAX_PER_RUN = 25
+_HEADROOM = 35
+# Кап на один прогон (прогоны каждую минуту). Вместе с паузой _PACE_SEC
+# даёт размазанные ~10 req/min вместо burst'а: Discogs считает скользящее
+# окно 60/min, а наш bucket в worst case пропускал burst 55 + рефилл —
+# drip-насыщение превращало это в постоянные 429 (2026-07-03).
+_MAX_PER_RUN = 10
+_PACE_SEC = 2.0
 
 
 async def drip_covers_batch() -> None:
     """Один прогон drip'а. Вызывается APScheduler'ом каждую минуту."""
     if not get_settings().cover_drip_enabled:
+        return
+
+    # Discogs недавно отвечал 429 app-токену (флаг ставит DiscogsService._get
+    # из любого контейнера) — уступаем окно юзерам, молчим до истечения TTL.
+    if await cache.get("discogs", "app_429"):
         return
 
     tokens = await cache.peek_tokens(_BUCKET_KEY, _BUCKET_CAPACITY, _BUCKET_REFILL)
@@ -80,10 +90,14 @@ async def drip_covers_batch() -> None:
 
         warmed = 0
         checked = 0
-        for did in rows:
-            # Re-peek перед каждым запросом: юзерский всплеск — выходим.
+        for i, did in enumerate(rows):
+            # Пауза между запросами — размазываем нагрузку вместо burst'а.
+            if i:
+                await asyncio.sleep(_PACE_SEC)
+            # Re-peek перед каждым запросом: юзерский всплеск или свежий 429 —
+            # выходим немедленно.
             tokens = await cache.peek_tokens(_BUCKET_KEY, _BUCKET_CAPACITY, _BUCKET_REFILL)
-            if tokens is None or tokens <= _HEADROOM:
+            if tokens is None or tokens <= _HEADROOM or await cache.get("discogs", "app_429"):
                 break
 
             cover = await discogs.get_release_cover(did)

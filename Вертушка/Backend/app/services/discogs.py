@@ -251,6 +251,11 @@ class DiscogsService:
                 continue
 
             status_code = last_response.status_code
+            if status_code == 429 and limiter_key == "app":
+                # Кросс-процессный сигнал «Discogs душит app-токен»: drip-воркер
+                # в scheduler-контейнере видит флаг и замолкает на 2 минуты,
+                # уступая окно живым юзерам.
+                await cache.set("discogs", "app_429", 1, ttl=120)
             if status_code in (429, 503) and attempt < 2:
                 retry_after = int(last_response.headers.get("Retry-After", "2"))
                 logger.warning("Discogs %d, retry after %ds", status_code, retry_after)
