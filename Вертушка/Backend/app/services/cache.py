@@ -128,53 +128,55 @@ class RedisCache:
             logger.warning("Redis SET NX error: %s:%s", namespace, key, exc_info=True)
             return True
 
-    # Атомарный token bucket: refill пропорционально времени + попытка взять
-    # токен одним вызовом. Возвращает 0 (токен взят) или wait_ms до следующего.
-    # Состояние в HASH {tokens, ts_ms} — шарится между всеми воркерами,
-    # поэтому суммарный rps по Discogs не зависит от числа процессов.
-    _TOKEN_BUCKET_LUA = """
+    # Атомарное СКОЛЬЗЯЩЕЕ ОКНО (замена token bucket 2026-07-03): Discogs
+    # считает лимит скользящим окном 60 req/min на токен, а token bucket в
+    # worst case пропускал burst capacity + рефилл = до ~112 запросов в
+    # 60с-окне → штормы 429 (и на app-, и на user-токенах при тяжёлых
+    # фан-аутах). ZSET timestamp'ов гарантирует ≤ limit запросов в любом
+    # 60с-окне. Burst до limit разом по-прежнему разрешён — это Discogs
+    # переживает, важно только окно.
+    # Возвращает 0 (запрос разрешён) или wait_ms до выхода старейшего
+    # запроса из окна. Состояние шарится между всеми воркерами.
+    _SLIDING_WINDOW_LUA = """
     local key = KEYS[1]
-    local capacity = tonumber(ARGV[1])
-    local refill_per_ms = tonumber(ARGV[2])
-    local now_ms = tonumber(ARGV[3])
-    local data = redis.call('HMGET', key, 'tokens', 'ts_ms')
-    local tokens = tonumber(data[1])
-    local ts_ms = tonumber(data[2])
-    if tokens == nil or ts_ms == nil then
-      tokens = capacity
-      ts_ms = now_ms
+    local limit = tonumber(ARGV[1])
+    local now_ms = tonumber(ARGV[2])
+    local member = ARGV[3]
+    local window_ms = 60000
+    redis.call('ZREMRANGEBYSCORE', key, 0, now_ms - window_ms)
+    local count = redis.call('ZCARD', key)
+    if count < limit then
+      redis.call('ZADD', key, now_ms, member)
+      redis.call('PEXPIRE', key, window_ms + 5000)
+      return 0
     end
-    tokens = math.min(capacity, tokens + (now_ms - ts_ms) * refill_per_ms)
-    local wait_ms = 0
-    if tokens >= 1 then
-      tokens = tokens - 1
-    else
-      wait_ms = math.ceil((1 - tokens) / refill_per_ms)
-    end
-    redis.call('HMSET', key, 'tokens', tokens, 'ts_ms', now_ms)
-    redis.call('EXPIRE', key, 300)
-    return wait_ms
+    local oldest = redis.call('ZRANGE', key, 0, 0, 'WITHSCORES')
+    return math.max(1, math.ceil(oldest[2] + window_ms - now_ms))
     """
 
     async def take_token(
         self, bucket_key: str, capacity: float, refill_rate_per_sec: float,
     ) -> int | None:
-        """Взять токен из распределённого bucket'а.
+        """Взять слот в скользящем окне (limit = capacity за 60с).
 
-        Возвращает 0 если токен получен, wait_ms если bucket пуст,
+        Возвращает 0 если запрос разрешён, wait_ms если окно заполнено,
         None если Redis недоступен (caller делает локальный fallback).
+        refill_rate_per_sec больше не участвует (семантика окна), параметр
+        сохранён для совместимости с локальным fallback в rate_limiter.
         """
         if not self._available:
             return None
         try:
             import time as _time
+            import uuid as _uuid
+            now_ms = int(_time.time() * 1000)
             wait_ms = await self._pool.eval(
-                self._TOKEN_BUCKET_LUA,
+                self._SLIDING_WINDOW_LUA,
                 1,
                 self._key("ratelimit", bucket_key),
-                capacity,
-                refill_rate_per_sec / 1000.0,
-                int(_time.time() * 1000),
+                int(capacity),
+                now_ms,
+                f"{now_ms}-{_uuid.uuid4().hex[:8]}",
             )
             return int(wait_ms)
         except Exception:
@@ -184,23 +186,21 @@ class RedisCache:
     async def peek_tokens(
         self, bucket_key: str, capacity: float, refill_rate_per_sec: float,
     ) -> float | None:
-        """Сколько токенов сейчас в распределённом bucket'е — БЕЗ изъятия.
+        """Сколько свободных слотов в скользящем окне — БЕЗ изъятия.
 
-        Для drip-воркера обложек: расходовать app-bucket только когда он
-        полон (юзерский трафик не страдает). None = Redis недоступен —
-        caller должен считать, что свободных токенов нет.
+        Для drip-воркера обложек: расходовать app-лимит только когда окно
+        почти пустое (юзерский трафик не страдает). None = Redis недоступен —
+        caller должен считать, что свободных слотов нет.
         """
         if not self._available:
             return None
         try:
             import time as _time
-            data = await self._pool.hmget(
-                self._key("ratelimit", bucket_key), "tokens", "ts_ms",
+            now_ms = _time.time() * 1000
+            used = await self._pool.zcount(
+                self._key("ratelimit", bucket_key), now_ms - 60_000, "+inf",
             )
-            if data[0] is None or data[1] is None:
-                return capacity  # bucket ещё не создан = полон
-            elapsed_ms = _time.time() * 1000 - float(data[1])
-            return min(capacity, float(data[0]) + elapsed_ms * refill_rate_per_sec / 1000.0)
+            return max(0.0, float(capacity) - float(used))
         except Exception:
             logger.warning("Redis peek_tokens error: %s", bucket_key, exc_info=True)
             return None
