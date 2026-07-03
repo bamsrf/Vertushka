@@ -93,6 +93,7 @@ async def get_artist_masters_local(
                     MIN(discogs_id) AS main_release_id
                 FROM discogs_releases_index
                 WHERE artist_ids @> ARRAY[CAST(:aid AS bigint)]
+                AND NOT is_unofficial
                 GROUP BY COALESCE(master_id, discogs_id), (master_id IS NULL)
             ),
             dedup AS (

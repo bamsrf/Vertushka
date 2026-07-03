@@ -71,28 +71,27 @@ async def load_release_map(pg, csv_path: Path) -> None:
     # Без PK: дубликаты release_id в дампе не встречаются, а set-дедуп на
     # 16M id съел бы ~1.5 GB RAM контейнера. UPDATE-join дубликаты переживёт.
     await pg.execute(
-        "CREATE TEMP TABLE _ra_stage (release_id BIGINT, ids TEXT)"
+        "CREATE TEMP TABLE _ra_stage (release_id BIGINT, ids TEXT, unofficial BOOLEAN)"
     )
     total = 0
-    batch: list[tuple[int, str]] = []
+    batch: list[tuple[int, str, bool]] = []
+    cols = ("release_id", "ids", "unofficial")
     with gzip.open(csv_path, "rt", newline="") as fh:
         for row in csv.reader(fh):
-            if len(row) != 2 or not row[0].isdigit():
+            # 3-колоночный CSV (с флагом unofficial); старый 2-колоночный
+            # тоже принимаем — unofficial=false.
+            if len(row) < 2 or not row[0].isdigit():
                 continue
-            batch.append((int(row[0]), row[1]))
+            batch.append((int(row[0]), row[1], len(row) > 2 and row[2] == "1"))
             if len(batch) >= _BATCH:
-                await pg.copy_records_to_table(
-                    "_ra_stage", records=batch, columns=("release_id", "ids"),
-                )
+                await pg.copy_records_to_table("_ra_stage", records=batch, columns=cols)
                 total += len(batch)
                 batch = []
                 if total % 2_000_000 == 0:
                     logger.info("map staging: %dM (%.0f мин)", total // 1_000_000,
                                 (time.monotonic() - started) / 60)
     if batch:
-        await pg.copy_records_to_table(
-            "_ra_stage", records=batch, columns=("release_id", "ids"),
-        )
+        await pg.copy_records_to_table("_ra_stage", records=batch, columns=cols)
         total += len(batch)
     logger.info("staging загружен: %d строк, начинаю батчевый UPDATE...", total)
 
@@ -116,11 +115,13 @@ async def load_release_map(pg, csv_path: Path) -> None:
                 n = await pg.fetchval(
                     "WITH upd AS ("
                     " UPDATE discogs_releases_index d "
-                    " SET artist_ids = string_to_array(s.ids, ';')::bigint[] "
+                    " SET artist_ids = string_to_array(s.ids, ';')::bigint[], "
+                    "     is_unofficial = s.unofficial "
                     " FROM _ra_stage s "
                     " WHERE d.discogs_id = s.release_id "
                     " AND s.release_id >= $1 AND s.release_id < $2 "
-                    " AND d.artist_ids IS DISTINCT FROM string_to_array(s.ids, ';')::bigint[] "
+                    " AND (d.artist_ids IS DISTINCT FROM string_to_array(s.ids, ';')::bigint[] "
+                    "      OR d.is_unofficial IS DISTINCT FROM s.unofficial) "
                     " RETURNING 1"
                     ") SELECT COUNT(*) FROM upd",
                     cur, cur + step,

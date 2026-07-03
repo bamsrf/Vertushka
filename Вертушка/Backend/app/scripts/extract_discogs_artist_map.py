@@ -80,11 +80,15 @@ def extract_artists(xml_path: Path, out_path: Path) -> None:
 
 
 def extract_release_artists(xml_path: Path, out_path: Path) -> None:
-    """releases-дамп → CSV (release_id, 'id1;id2;...').
+    """releases-дамп → CSV (release_id, 'id1;id2;...', unofficial 0/1).
 
     Структура: <releases><release id="N"><artists><artist><id>M</id>...
     <extraartists> игнорируется. Порядок артистов сохраняется (первый =
     основной для отображения).
+
+    unofficial=1 — бутлег: в format descriptions есть "Unofficial Release".
+    Live-путь дискографии исключал их через role=Main у Discogs; локальный
+    путь фильтрует по этому флагу, иначе топ артиста тонет в бутлегах.
     """
     started = time.monotonic()
     total = 0
@@ -94,6 +98,7 @@ def extract_release_artists(xml_path: Path, out_path: Path) -> None:
         root: ET.Element | None = None
         release_id: str | None = None
         artist_ids: list[str] = []
+        unofficial = False
         for event, elem in ET.iterparse(fh, events=("start", "end")):
             if event == "start":
                 path.append(elem.tag)
@@ -102,6 +107,7 @@ def extract_release_artists(xml_path: Path, out_path: Path) -> None:
                 elif len(path) == 2 and elem.tag == "release":
                     release_id = elem.get("id")
                     artist_ids = []
+                    unofficial = False
                 continue
             # end
             if (
@@ -113,9 +119,18 @@ def extract_release_artists(xml_path: Path, out_path: Path) -> None:
                 aid = (elem.text or "").strip()
                 if aid.isdigit():
                     artist_ids.append(aid)
+            elif (
+                not unofficial
+                and len(path) == 6
+                and elem.tag == "description"
+                and path[2] == "formats"
+                and path[4] == "descriptions"
+                and (elem.text or "").strip() == "Unofficial Release"
+            ):
+                unofficial = True
             elif len(path) == 2 and elem.tag == "release":
                 if release_id and release_id.isdigit() and artist_ids:
-                    writer.writerow((release_id, ";".join(artist_ids)))
+                    writer.writerow((release_id, ";".join(artist_ids), 1 if unofficial else 0))
                     total += 1
                     if total % 1_000_000 == 0:
                         logger.info(
