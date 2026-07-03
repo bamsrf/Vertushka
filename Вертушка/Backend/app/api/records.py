@@ -2368,19 +2368,51 @@ async def _enrich_covers_from_api(
             v for v in versions.results
             if not v.cover_image_url and not v.thumb_image_url
         ][:30]
+
+        # 1a-bis) Сначала CAA по офлайн-маппингу mb_discogs_map: has_front
+        # известен из дампа CAA-индекса → URL строится БЕЗ единого сетевого
+        # вызова. Схлопывает большинство страглеров до нуля Discogs-запросов.
+        if still:
+            from app.database import async_session_maker
+            ids = [int(v.release_id) for v in still if v.release_id and v.release_id.isdigit()]
+            if ids:
+                async with async_session_maker() as _s:
+                    caa_rows = (await _s.execute(
+                        text(
+                            "SELECT discogs_id::text AS did, mbid::text AS mbid "
+                            "FROM mb_discogs_map "
+                            "WHERE discogs_id = ANY(:ids) AND has_front"
+                        ),
+                        {"ids": ids},
+                    )).mappings().all()
+                caa_by_id = {
+                    r["did"]: f"https://coverartarchive.org/release/{r['mbid']}/front-1200"
+                    for r in caa_rows
+                }
+                if caa_by_id:
+                    for v in versions.results:
+                        if (
+                            not v.cover_image_url and not v.thumb_image_url
+                            and v.release_id in caa_by_id
+                        ):
+                            v.cover_image_url = caa_by_id[v.release_id]
+                            changed = True
+                    cover_by_id.update(caa_by_id)
+                    still = [
+                        v for v in still
+                        if not v.cover_image_url and not v.thumb_image_url
+                    ]
+
         if still:
             sem = asyncio.Semaphore(5)
 
             async def _one_cover(v):
                 async with sem:
                     try:
-                        data = await discogs.get_release(
-                            v.release_id, priority=Priority.ENRICHMENT
-                        )
-                        return v.release_id, (
-                            data.get("cover_image") or data.get("cover_image_url")
-                            or data.get("thumb_image") or data.get("thumb_image_url")
-                        )
+                        # get_release_cover, НЕ get_release: полный get_release
+                        # параллельно тянет marketplace/stats — для обложки это
+                        # 2× расход окна Discogs впустую (цены тут не нужны).
+                        return v.release_id, await discogs.get_release_cover(v.release_id)
                     except Exception:
                         return v.release_id, None
 

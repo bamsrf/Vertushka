@@ -134,11 +134,42 @@ class TokenBucketRateLimiter:
             self._tokens -= 1.0
             return
 
+    # Свободных слотов окна, зарезервированных под интерактивные приоритеты
+    # (SEARCH/DETAIL/SCAN). Фоновые (ENRICHMENT/BATCH) при меньшем запасе
+    # откладываются, не блокируя собой очередь (head-of-line): раньше
+    # ENRICHMENT-запрос в голове очереди ждал слот и держал за собой
+    # юзерский DETAIL — «Загружаем детали...» на 30с.
+    INTERACTIVE_RESERVE = 15
+
+    async def _requeue_later(
+        self, priority: int, enqueue_time: float, event: asyncio.Event,
+    ) -> None:
+        await asyncio.sleep(1.0)
+        await self._queue.put((priority, enqueue_time, event))
+
     async def _process_queue(self) -> None:
         """Фоновый цикл: выдаёт токены из bucket по приоритету."""
+        from app.services.cache import cache
+
         try:
             while True:
                 priority, enqueue_time, event = await self._queue.get()
+
+                if priority >= Priority.ENRICHMENT:
+                    free = await cache.peek_tokens(
+                        self._bucket_key, self._capacity, self._refill_rate,
+                    )
+                    if free is not None and free <= self.INTERACTIVE_RESERVE:
+                        # Окно почти занято — фоновый запрос в хвост, очередь
+                        # не блокируем. Таймаут в acquire() ограничит ожидание.
+                        self._queue.task_done()
+                        task = asyncio.create_task(
+                            self._requeue_later(priority, enqueue_time, event)
+                        )
+                        task.add_done_callback(
+                            lambda t: t.exception() if not t.cancelled() else None
+                        )
+                        continue
 
                 async with self._lock:
                     await self._take_token_global()
