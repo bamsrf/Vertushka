@@ -48,6 +48,99 @@ async def filter_artist_names_with_releases(
         return norm  # все «прошли» → дропа не будет
 
 
+async def get_artist_masters_local(
+    db: AsyncSession,
+    artist_id: str,
+    page: int = 1,
+    per_page: int = 100,
+    sort_order: str = "desc",
+):
+    """Дискография артиста из ЛОКАЛЬНОГО дамп-индекса — ноль вызовов Discogs.
+
+    Требует backfill artist_ids (scripts/load_artist_map.py). Группирует
+    релизы по master_id (release-only без мастера — отдельные карточки с
+    master_id="r{release_id}", как в live-пути). Возвращает None, когда у
+    артиста нет строк в индексе (новый/не залитый артист) — caller падает
+    обратно на live Discogs.
+
+    Обложки — cover_image_url индекса (CAA-маппинг + drip); отсутствующие
+    дойдут фоном, клиент терпит null.
+    """
+    from app.schemas.record import MasterSearchResponse, MasterSearchResult
+    from app.services.discogs import DiscogsService
+
+    if not str(artist_id).isdigit():
+        return None
+
+    name_row = (await db.execute(
+        text("SELECT name FROM discogs_artists WHERE artist_id = :aid"),
+        {"aid": int(artist_id)},
+    )).scalar()
+    if not name_row:
+        return None
+
+    order = "DESC" if sort_order != "asc" else "ASC"
+    rows = (await db.execute(
+        text(f"""
+            WITH grp AS (
+                SELECT
+                    COALESCE(master_id, discogs_id) AS gid,
+                    (master_id IS NULL) AS release_only,
+                    MIN(year) AS year,
+                    (array_agg(title ORDER BY year ASC NULLS LAST, discogs_id))[1] AS title,
+                    (array_agg(cover_image_url ORDER BY (cover_image_url IS NULL), year ASC NULLS LAST))[1] AS cover,
+                    (array_agg(format_type ORDER BY year ASC NULLS LAST, discogs_id))[1] AS format_type,
+                    MIN(discogs_id) AS main_release_id
+                FROM discogs_releases_index
+                WHERE artist_ids @> ARRAY[CAST(:aid AS bigint)]
+                GROUP BY COALESCE(master_id, discogs_id), (master_id IS NULL)
+            ),
+            dedup AS (
+                SELECT * FROM grp WHERE NOT release_only
+                UNION ALL
+                SELECT * FROM grp g
+                WHERE g.release_only AND NOT EXISTS (
+                    SELECT 1 FROM grp m
+                    WHERE NOT m.release_only AND lower(m.title) = lower(g.title)
+                )
+            )
+            SELECT *, COUNT(*) OVER () AS total
+            FROM dedup
+            ORDER BY year {order} NULLS LAST, gid
+            LIMIT :lim OFFSET :off
+        """),
+        {"aid": int(artist_id), "lim": per_page, "off": (page - 1) * per_page},
+    )).mappings().all()
+
+    if not rows and page == 1:
+        return None  # артиста нет в индексе → live fallback
+
+    total = rows[0]["total"] if rows else 0
+    results = []
+    for r in rows:
+        release_only = r["release_only"]
+        results.append(MasterSearchResult(
+            master_id=f"r{r['gid']}" if release_only else str(r["gid"]),
+            title=r["title"] or "",
+            artist=name_row,
+            year=r["year"],
+            main_release_id=str(r["main_release_id"]),
+            cover_image_url=r["cover"],
+            thumb_image_url=None,
+            release_type=DiscogsService._guess_release_type(r["format_type"]),
+        ))
+
+    has_more = page * per_page < total
+    return MasterSearchResponse(
+        results=results,
+        total=total,
+        page=page,
+        per_page=per_page,
+        has_more=has_more,
+        next_cursor=page + 1 if has_more else None,
+    )
+
+
 def _to_int(value) -> int | None:
     try:
         if value is None or value == "":

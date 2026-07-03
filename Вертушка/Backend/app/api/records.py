@@ -2666,6 +2666,7 @@ async def get_artist_masters(
     load_all: bool = Query(False, description="Загрузить все страницы сразу"),
     sort_order: str = Query("desc", regex="^(asc|desc)$", description="Порядок по году"),
     current_user: User | None = Depends(get_current_user_optional),
+    db: AsyncSession = Depends(get_db),
 ):
     """
     Получение только master releases артиста (альбомы, синглы, EP).
@@ -2677,6 +2678,20 @@ async def get_artist_masters(
     # (watchdog в get_artist_masters), max-age=300 даёт им зажить за пару заходов.
     response.headers["Cache-Control"] = "public, max-age=300"
     discogs = DiscogsService()
+
+    # Local-first: дискография из дамп-индекса (artist_ids GIN) — ноль вызовов
+    # Discogs, sub-100ms. None = артиста нет в индексе или backfill ещё не
+    # прогнан → live-путь ниже как раньше.
+    try:
+        from app.services.discogs_index import get_artist_masters_local
+
+        local = await get_artist_masters_local(
+            db, artist_id, page=page, per_page=per_page, sort_order=sort_order,
+        )
+        if local is not None:
+            return local
+    except Exception:
+        logger.exception("local artist masters failed, live fallback: %s", artist_id)
 
     try:
         # Watchdog 25с — backstop, чтобы клиент не висел в axios timeout 60с,
