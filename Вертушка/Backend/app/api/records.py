@@ -1944,12 +1944,40 @@ async def get_master(
 
     try:
         master = await discogs.get_master(master_id)
+        # Замыкаем петлю обложек: live-master несёт cover почти всегда, а
+        # сетка артиста (local-first) знает только cover_image_url индекса.
+        # Персистим в discogs_master_covers — сетка подхватит через COALESCE.
+        if master.cover_image_url and master_id.isdigit():
+            _schedule_master_cover_persist(int(master_id), master.cover_image_url)
         return master
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=f"Ошибка при получении мастер-релиза: {str(e)}"
         )
+
+
+def _schedule_master_cover_persist(master_id: int, cover_url: str) -> None:
+    """Fire-and-forget upsert обложки мастера. Ошибки глотаются."""
+    async def _persist() -> None:
+        try:
+            from app.database import async_session_maker
+            async with async_session_maker() as session:
+                await session.execute(
+                    text(
+                        "INSERT INTO discogs_master_covers (master_id, cover_image_url) "
+                        "VALUES (:mid, :url) "
+                        "ON CONFLICT (master_id) DO UPDATE "
+                        "SET cover_image_url = EXCLUDED.cover_image_url, updated_at = now()"
+                    ),
+                    {"mid": master_id, "url": cover_url},
+                )
+                await session.commit()
+        except Exception:
+            logger.debug("master cover persist failed: %s", master_id, exc_info=True)
+
+    task = asyncio.create_task(_persist())
+    task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
 
 
 @router.get("/masters/{master_id}/versions", response_model=MasterVersionsResponse)

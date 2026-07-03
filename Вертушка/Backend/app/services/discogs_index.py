@@ -105,9 +105,14 @@ async def get_artist_masters_local(
                     WHERE NOT m.release_only AND lower(m.title) = lower(g.title)
                 )
             )
-            SELECT *, COUNT(*) OVER () AS total
-            FROM dedup
-            ORDER BY year {order} NULLS LAST, gid
+            SELECT d.gid, d.release_only, d.year, d.title, d.format_type,
+                   d.main_release_id,
+                   COALESCE(d.cover, mc.cover_image_url) AS cover,
+                   COUNT(*) OVER () AS total
+            FROM dedup d
+            LEFT JOIN discogs_master_covers mc
+                ON NOT d.release_only AND mc.master_id = d.gid
+            ORDER BY d.year {order} NULLS LAST, d.gid
             LIMIT :lim OFFSET :off
         """),
         {"aid": int(artist_id), "lim": per_page, "off": (page - 1) * per_page},
