@@ -94,18 +94,50 @@ async def load_release_map(pg, csv_path: Path) -> None:
             "_ra_stage", records=batch, columns=("release_id", "ids"),
         )
         total += len(batch)
-    logger.info("staging загружен: %d строк, начинаю UPDATE (10-20 мин)...", total)
+    logger.info("staging загружен: %d строк, начинаю батчевый UPDATE...", total)
 
-    updated = await pg.fetchval(
-        "WITH upd AS ("
-        " UPDATE discogs_releases_index d "
-        " SET artist_ids = string_to_array(s.ids, ';')::bigint[] "
-        " FROM _ra_stage s "
-        " WHERE d.discogs_id = s.release_id "
-        " AND d.artist_ids IS DISTINCT FROM string_to_array(s.ids, ';')::bigint[] "
-        " RETURNING 1"
-        ") SELECT COUNT(*) FROM upd"
-    )
+    # UPDATE диапазонами по discogs_id, НЕ одной транзакцией: гигантский
+    # UPDATE держал row-локи часами в непредсказуемом порядке и дедлочился
+    # с параллельными писателями (drip/cover_warm обновляют cover_image_url
+    # тех же строк). Короткие транзакции + консистентный порядок + retry.
+    await pg.execute("CREATE INDEX ON _ra_stage (release_id)")
+    bounds = await pg.fetchrow("SELECT MIN(release_id) lo, MAX(release_id) hi FROM _ra_stage")
+    lo, hi = bounds["lo"], bounds["hi"]
+    if lo is None:
+        logger.info("staging пуст — нечего обновлять")
+        return
+
+    step = 200_000
+    updated = 0
+    cur = lo
+    while cur <= hi:
+        for attempt in range(5):
+            try:
+                n = await pg.fetchval(
+                    "WITH upd AS ("
+                    " UPDATE discogs_releases_index d "
+                    " SET artist_ids = string_to_array(s.ids, ';')::bigint[] "
+                    " FROM _ra_stage s "
+                    " WHERE d.discogs_id = s.release_id "
+                    " AND s.release_id >= $1 AND s.release_id < $2 "
+                    " AND d.artist_ids IS DISTINCT FROM string_to_array(s.ids, ';')::bigint[] "
+                    " RETURNING 1"
+                    ") SELECT COUNT(*) FROM upd",
+                    cur, cur + step,
+                )
+                updated += n
+                break
+            except Exception as e:
+                if "deadlock" in str(e).lower() and attempt < 4:
+                    logger.warning("deadlock на батче %d, retry %d", cur, attempt + 1)
+                    await asyncio.sleep(2 * (attempt + 1))
+                    continue
+                raise
+        cur += step
+        if (cur - lo) % 2_000_000 == 0:
+            logger.info("UPDATE прогресс: %d/%d id, %d обновлено (%.0f мин)",
+                        cur - lo, hi - lo, updated, (time.monotonic() - started) / 60)
+
     logger.info("artist_ids: %d строк обновлено за %.0f мин",
                 updated, (time.monotonic() - started) / 60)
 
