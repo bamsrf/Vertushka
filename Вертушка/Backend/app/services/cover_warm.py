@@ -129,3 +129,47 @@ def schedule_warm_dump_covers(discogs_ids: list[str]) -> None:
         return
     task = asyncio.create_task(warm_dump_covers(discogs_ids))
     task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
+
+
+async def warm_artist_master_covers(artist_id: str, artist_name: str) -> None:
+    """Batch-прогрев обложек ВСЕХ мастеров артиста: 1-3 вызова Search API
+    (до 300 мастеров) → discogs_master_covers. Убивает заглушки первого
+    просмотра: сетка артиста подхватит через COALESCE на клиентском retry
+    через секунды, и навсегда для всех последующих юзеров.
+
+    ON CONFLICT DO NOTHING — live get_master пишет более каноничную обложку,
+    её не перетираем. NX-лок 6ч — один прогрев на артиста, не на страницу.
+    """
+    if not await cache.set_nx("artist_cover_warm", artist_id, 1, ttl=6 * 3600):
+        return
+    try:
+        from app.services.discogs import DiscogsService
+
+        cover_map = await DiscogsService()._artist_master_cover_map(artist_id, artist_name)
+        rows = [
+            (int(mid), c["cover_image"])
+            for mid, c in cover_map.items()
+            if mid.isdigit() and c.get("cover_image")
+            and "api-img.discogs.com" not in c["cover_image"]
+        ]
+        if not rows:
+            return
+        async with async_session_maker() as session:
+            await session.execute(
+                text(
+                    "INSERT INTO discogs_master_covers (master_id, cover_image_url) "
+                    "SELECT unnest(CAST(:ids AS bigint[])), unnest(CAST(:urls AS text[])) "
+                    "ON CONFLICT (master_id) DO NOTHING"
+                ),
+                {"ids": [r[0] for r in rows], "urls": [r[1] for r in rows]},
+            )
+            await session.commit()
+        logger.info("artist cover warm: %s — %d master covers", artist_id, len(rows))
+    except Exception:
+        logger.exception("artist cover warm failed: %s", artist_id)
+
+
+def schedule_warm_artist_master_covers(artist_id: str, artist_name: str) -> None:
+    """fire-and-forget обёртка."""
+    task = asyncio.create_task(warm_artist_master_covers(artist_id, artist_name))
+    task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)

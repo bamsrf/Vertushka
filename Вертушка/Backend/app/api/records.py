@@ -2749,6 +2749,11 @@ async def get_artist_masters(
             db, artist_id, page=page, per_page=per_page, sort_order=sort_order,
         )
         if local is not None:
+            # Заглушки на странице → no-store: batch-прогрев уже запущен,
+            # клиентский cover-retry через секунды должен дойти до бэкенда,
+            # а nginx не должен запинить неполный ответ (урок versions-экрана).
+            if any(not r.cover_image_url for r in local.results):
+                response.headers["Cache-Control"] = "no-store"
             return local
     except Exception:
         logger.exception("local artist masters failed, live fallback: %s", artist_id)

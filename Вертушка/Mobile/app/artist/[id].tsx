@@ -144,12 +144,21 @@ export default function ArtistDetailScreen() {
   const [hasLoadError, setHasLoadError] = useState(false);
   const autoLoadAttemptsRef = useRef(0);
   const loadIdRef = useRef(0);
+  // Cover-retry: бэкенд при заглушках запускает batch-прогрев обложек
+  // (Search API → discogs_master_covers) — добираем их рефетчами страницы.
+  const coverRetryRef = useRef<{ attempts: number; timer: ReturnType<typeof setTimeout> | null }>({
+    attempts: 0,
+    timer: null,
+  });
 
   useEffect(() => {
     if (id) {
       loadArtist();
       loadMasters(true);
     }
+    return () => {
+      if (coverRetryRef.current.timer) clearTimeout(coverRetryRef.current.timer);
+    };
   }, [id]);
 
   const loadArtist = async () => {
@@ -210,6 +219,14 @@ export default function ArtistDetailScreen() {
       }
       setHasMore(data.has_more ?? false);
       setNextCursor(data.next_cursor ?? null);
+
+      if (reset) {
+        coverRetryRef.current.attempts = 0;
+        if (coverRetryRef.current.timer) clearTimeout(coverRetryRef.current.timer);
+      }
+      if (data.results.some((m) => !m.cover_image_url)) {
+        scheduleCoverRetry(cursor, order, currentLoadId);
+      }
     } catch (err) {
       if (loadIdRef.current !== currentLoadId) return;
       console.error('Ошибка загрузки релизов:', err);
@@ -220,6 +237,33 @@ export default function ArtistDetailScreen() {
         setIsLoadingMasters(false);
       }
     }
+  };
+
+  const scheduleCoverRetry = (page: number, order: 'asc' | 'desc', forLoadId: number) => {
+    if (coverRetryRef.current.attempts >= 3) return;
+    const delay = [4000, 7000, 12000][coverRetryRef.current.attempts];
+    coverRetryRef.current.attempts += 1;
+    if (coverRetryRef.current.timer) clearTimeout(coverRetryRef.current.timer);
+    coverRetryRef.current.timer = setTimeout(async () => {
+      if (!id || loadIdRef.current !== forLoadId) return;
+      try {
+        const fresh = await api.getArtistMasters(id, order, page, 100);
+        if (loadIdRef.current !== forLoadId) return;
+        const keyOf = (m: MasterSearchResult) => m.master_id || m.main_release_id;
+        const freshByKey = new Map(fresh.results.map((m) => [keyOf(m), m]));
+        let stillUncovered = false;
+        setMasters((prev) => prev.map((m) => {
+          if (m.cover_image_url) return m;
+          const f = freshByKey.get(keyOf(m));
+          if (f?.cover_image_url) return { ...m, cover_image_url: f.cover_image_url };
+          if (freshByKey.has(keyOf(m))) stillUncovered = true;
+          return m;
+        }));
+        if (stillUncovered) scheduleCoverRetry(page, order, forLoadId);
+      } catch {
+        // Тихо: ретрай обложек не должен показывать ошибки
+      }
+    }, delay);
   };
 
   const handleSortChange = (newMode: SortMode) => {

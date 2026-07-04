@@ -136,16 +136,27 @@ async def get_artist_masters_local(
             release_type=DiscogsService._guess_release_type(r["format_type"]),
         ))
 
-    # Самолечение обложек: непокрытые карточки страницы греем fire-and-forget
-    # (CAA по mb-map → barcode → Discogs budget → iTunes). Следующий заход на
-    # артиста получит больше обложек; drip тем временем метёт весь каталог.
-    uncovered = [
+    # Самолечение обложек, два уровня:
+    # 1) Batch-прогрев мастеров артиста: 1-3 Search-вызова закрывают до 300
+    #    обложек разом → discogs_master_covers (NX-лок 6ч на артиста).
+    # 2) Release-only карточки — через warm_dump_covers (CAA mb-map → barcode
+    #    → Discogs budget → iTunes).
+    # Клиент ретраит страницу через пару секунд и получает уже без заглушек.
+    uncovered_masters = any(
+        not r.cover_image_url and not r.master_id.startswith("r") for r in results
+    )
+    if uncovered_masters:
+        from app.services.cover_warm import schedule_warm_artist_master_covers
+        schedule_warm_artist_master_covers(str(artist_id), name_row)
+
+    uncovered_releases = [
         r.main_release_id for r in results
-        if not r.cover_image_url and r.main_release_id.isdigit()
+        if not r.cover_image_url and r.master_id.startswith("r")
+        and r.main_release_id.isdigit()
     ]
-    if uncovered:
+    if uncovered_releases:
         from app.services.cover_warm import schedule_warm_dump_covers
-        schedule_warm_dump_covers(uncovered)
+        schedule_warm_dump_covers(uncovered_releases)
 
     has_more = page * per_page < total
     return MasterSearchResponse(
