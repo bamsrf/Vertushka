@@ -220,10 +220,10 @@ export default function ArtistDetailScreen() {
       setHasMore(data.has_more ?? false);
       setNextCursor(data.next_cursor ?? null);
 
-      if (reset) {
-        coverRetryRef.current.attempts = 0;
-        if (coverRetryRef.current.timer) clearTimeout(coverRetryRef.current.timer);
-      }
+      // Счётчик ретраев — per page-load: раньше был глобальным на экран, и
+      // пролистав 5 страниц юзер оставлял страницы 2-5 без единого ретрая.
+      coverRetryRef.current.attempts = 0;
+      if (coverRetryRef.current.timer) clearTimeout(coverRetryRef.current.timer);
       if (data.results.some((m) => !m.cover_image_url)) {
         scheduleCoverRetry(cursor, order, currentLoadId);
       }
@@ -239,18 +239,25 @@ export default function ArtistDetailScreen() {
     }
   };
 
-  const scheduleCoverRetry = (page: number, order: 'asc' | 'desc', forLoadId: number) => {
-    if (coverRetryRef.current.attempts >= 3) return;
-    const delay = [4000, 7000, 12000][coverRetryRef.current.attempts];
+  const scheduleCoverRetry = (maxPage: number, order: 'asc' | 'desc', forLoadId: number) => {
+    // 4 попытки до ~50с: batch-прогрев больших артистов (5 Search-вызовов
+    // через общее окно лимита) может занять десятки секунд.
+    if (coverRetryRef.current.attempts >= 4) return;
+    const delay = [4000, 8000, 15000, 25000][coverRetryRef.current.attempts];
     coverRetryRef.current.attempts += 1;
     if (coverRetryRef.current.timer) clearTimeout(coverRetryRef.current.timer);
     coverRetryRef.current.timer = setTimeout(async () => {
       if (!id || loadIdRef.current !== forLoadId) return;
       try {
-        const fresh = await api.getArtistMasters(id, order, page, 100);
-        if (loadIdRef.current !== forLoadId) return;
+        // Рефетчим ВСЕ загруженные страницы (урок versions-экрана): юзер мог
+        // пролистать несколько, заглушки остаются на любой из них.
         const keyOf = (m: MasterSearchResult) => m.master_id || m.main_release_id;
-        const freshByKey = new Map(fresh.results.map((m) => [keyOf(m), m]));
+        const freshByKey = new Map<string, MasterSearchResult>();
+        for (let p = 1; p <= maxPage; p += 1) {
+          const fresh = await api.getArtistMasters(id, order, p, 100);
+          if (loadIdRef.current !== forLoadId) return;
+          fresh.results.forEach((m) => freshByKey.set(keyOf(m), m));
+        }
         let stillUncovered = false;
         setMasters((prev) => prev.map((m) => {
           if (m.cover_image_url) return m;
@@ -259,7 +266,7 @@ export default function ArtistDetailScreen() {
           if (freshByKey.has(keyOf(m))) stillUncovered = true;
           return m;
         }));
-        if (stillUncovered) scheduleCoverRetry(page, order, forLoadId);
+        if (stillUncovered) scheduleCoverRetry(maxPage, order, forLoadId);
       } catch {
         // Тихо: ретрай обложек не должен показывать ошибки
       }

@@ -145,7 +145,11 @@ async def warm_artist_master_covers(artist_id: str, artist_name: str) -> None:
     try:
         from app.services.discogs import DiscogsService
 
-        cover_map = await DiscogsService()._artist_master_cover_map(artist_id, artist_name)
+        # max_pages=5: у крупных артистов (Elton John — 448 мастеров) топ-300
+        # Search не покрывал хвост синглов, и их карточки оставались пустыми.
+        cover_map = await DiscogsService()._artist_master_cover_map(
+            artist_id, artist_name, max_pages=5,
+        )
         rows = [
             (int(mid), c["cover_image"])
             for mid, c in cover_map.items()

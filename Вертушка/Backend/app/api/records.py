@@ -784,6 +784,10 @@ async def search_records(
         schedule_warm_dump_covers(
             [r.discogs_id for r in local[:10] if not r.cover_image_url]
         )
+        # Неполные обложки → no-store: warm уже запущен, повторный запрос
+        # должен дойти до бэкенда, а не получить запиненную nginx копию.
+        if any(not r.cover_image_url for r in local):
+            response.headers["Cache-Control"] = "no-store"
         # total известен только приблизительно — отдаём len(local) + offset как
         # минимум. Mobile-pager работает с has_next по len(results)==per_page.
         return RecordSearchResponse(

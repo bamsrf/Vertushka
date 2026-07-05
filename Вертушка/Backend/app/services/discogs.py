@@ -1384,6 +1384,14 @@ class DiscogsService:
             return "ep"
         if "album" in fmt or "lp" in fmt or "compilation" in fmt:
             return "album"
+        # Дюймовые форматы без Album/LP-маркера: 7" — сингл всегда; 12"/10"
+        # без альбомного маркера — макси/ремикс-катки; шеллак 78 rpm — синглы
+        # эпохи. Раньше всё это падало в default "album" и забивало фильтр
+        # «Альбомы» на экране артиста (dump format_type = 'Vinyl, 7"' и т.п.).
+        if '7"' in fmt or "shellac" in fmt or "78 rpm" in fmt:
+            return "single"
+        if '12"' in fmt or '10"' in fmt:
+            return "single"
         return "album"
 
     @staticmethod

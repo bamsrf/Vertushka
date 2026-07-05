@@ -125,6 +125,13 @@ async def get_artist_masters_local(
     results = []
     for r in rows:
         release_only = r["release_only"]
+        # Видео-детект только для release-only (как в live-пути): format
+        # master-группы — случайный representative, DVD-A издание альбома
+        # ложно уводило бы флагман в "other".
+        if release_only and DiscogsService._is_video(r["format_type"]):
+            release_type = "other"
+        else:
+            release_type = DiscogsService._guess_release_type(r["format_type"])
         results.append(MasterSearchResult(
             master_id=f"r{r['gid']}" if release_only else str(r["gid"]),
             title=r["title"] or "",
@@ -133,7 +140,7 @@ async def get_artist_masters_local(
             main_release_id=str(r["main_release_id"]),
             cover_image_url=r["cover"],
             thumb_image_url=None,
-            release_type=DiscogsService._guess_release_type(r["format_type"]),
+            release_type=release_type,
         ))
 
     # Самолечение обложек, два уровня:
@@ -149,10 +156,14 @@ async def get_artist_masters_local(
         from app.services.cover_warm import schedule_warm_artist_master_covers
         schedule_warm_artist_master_covers(str(artist_id), name_row)
 
+    # Все непокрытые карточки (и мастера, и release-only) — через
+    # warm_dump_covers по main_release_id: Search-батч выше покрывает только
+    # топ-500 мастеров артиста, хвост синглов добирается поштучно
+    # (CAA mb-map → barcode → Discogs budget → iTunes), найденное пишется в
+    # строку индекса и сетка подхватит через array_agg.
     uncovered_releases = [
         r.main_release_id for r in results
-        if not r.cover_image_url and r.master_id.startswith("r")
-        and r.main_release_id.isdigit()
+        if not r.cover_image_url and r.main_release_id.isdigit()
     ]
     if uncovered_releases:
         from app.services.cover_warm import schedule_warm_dump_covers
