@@ -9,7 +9,7 @@ import { Icon } from '@/components/ui';
 import { Colors, Typography, Spacing } from '../constants/theme';
 import { ms } from '../lib/responsive';
 
-export const SUPPORT_EMAIL = 'support@vinyl-vertushka.ru';
+export const SUPPORT_EMAIL = 'support@vinyl-vertushka.store';
 
 export interface LegalSection {
   heading?: string;

@@ -330,6 +330,10 @@ function RootLayout() {
             options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
           />
           <Stack.Screen
+            name="legal/index"
+            options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
+          />
+          <Stack.Screen
             name="legal/terms"
             options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
           />
