@@ -90,6 +90,13 @@ async def get_artist_masters_local(
                     (array_agg(title ORDER BY year ASC NULLS LAST, discogs_id))[1] AS title,
                     (array_agg(cover_image_url ORDER BY (cover_image_url IS NULL), year ASC NULLS LAST))[1] AS cover,
                     (array_agg(format_type ORDER BY year ASC NULLS LAST, discogs_id))[1] AS format_type,
+                    -- Тип релиза голосованием по ВСЕМ версиям группы: у синглов
+                    -- с цифровым первым изданием ('File, MP3', без маркеров)
+                    -- одиночный representative давал ложный 'album'.
+                    bool_or(format_type ~* 'album|lp|compilation') AS has_album,
+                    bool_or(format_type ~* '\\mep\\M|mini') AS has_ep,
+                    bool_or(format_type ~* 'single|maxi|7"|10"|12"|shellac|78 rpm') AS has_single,
+                    bool_and(format_type ILIKE 'file%') AS all_file,
                     MIN(discogs_id) AS main_release_id
                 FROM discogs_releases_index
                 WHERE artist_ids @> ARRAY[CAST(:aid AS bigint)]
@@ -106,6 +113,7 @@ async def get_artist_masters_local(
                 )
             )
             SELECT d.gid, d.release_only, d.year, d.title, d.format_type,
+                   d.has_album, d.has_ep, d.has_single, d.all_file,
                    d.main_release_id,
                    COALESCE(d.cover, mc.cover_image_url) AS cover,
                    COUNT(*) OVER () AS total
@@ -130,6 +138,14 @@ async def get_artist_masters_local(
         # ложно уводило бы флагман в "other".
         if release_only and DiscogsService._is_video(r["format_type"]):
             release_type = "other"
+        elif r["has_album"]:
+            release_type = "album"
+        elif r["has_ep"]:
+            release_type = "ep"
+        elif r["has_single"] or r["all_file"]:
+            # all_file без маркеров = digital-only релиз без Album-пометки —
+            # у альбомов почти всегда есть Album хоть в одной версии.
+            release_type = "single"
         else:
             release_type = DiscogsService._guess_release_type(r["format_type"])
         results.append(MasterSearchResult(
