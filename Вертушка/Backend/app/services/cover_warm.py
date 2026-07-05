@@ -34,7 +34,7 @@ _DISCOGS_BUDGET_PER_BATCH = 3
 _warm_semaphore = asyncio.Semaphore(4)
 
 
-async def warm_dump_covers(discogs_ids: list[str]) -> None:
+async def warm_dump_covers(discogs_ids: list[str], discogs_budget: int | None = None) -> None:
     """Прогреть обложки для dump-строк без cover_image_url.
 
     Вызывается fire-and-forget из /records/search. Своя DB-сессия,
@@ -44,12 +44,12 @@ async def warm_dump_covers(discogs_ids: list[str]) -> None:
         return
     try:
         async with _warm_semaphore:
-            await _warm_batch(discogs_ids)
+            await _warm_batch(discogs_ids, discogs_budget)
     except Exception:
         logger.exception("cover warm batch failed")
 
 
-async def _warm_batch(discogs_ids: list[str]) -> None:
+async def _warm_batch(discogs_ids: list[str], budget_override: int | None = None) -> None:
     from app.services.cover_fallback import (
         cover_url_by_artist_title,
         cover_url_by_barcode,
@@ -67,7 +67,7 @@ async def _warm_batch(discogs_ids: list[str]) -> None:
         return
 
     discogs = DiscogsService()
-    discogs_budget = _DISCOGS_BUDGET_PER_BATCH
+    discogs_budget = budget_override if budget_override is not None else _DISCOGS_BUDGET_PER_BATCH
 
     async with async_session_maker() as session:
         ids = [int(d) for d in to_warm if d.isdigit()]
@@ -123,11 +123,11 @@ async def _warm_batch(discogs_ids: list[str]) -> None:
             logger.info("cover warm: %d/%d covers written", warmed, len(rows))
 
 
-def schedule_warm_dump_covers(discogs_ids: list[str]) -> None:
+def schedule_warm_dump_covers(discogs_ids: list[str], discogs_budget: int | None = None) -> None:
     """fire-and-forget обёртка для вызова из request handler'а."""
     if not discogs_ids:
         return
-    task = asyncio.create_task(warm_dump_covers(discogs_ids))
+    task = asyncio.create_task(warm_dump_covers(discogs_ids, discogs_budget))
     task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
 
 

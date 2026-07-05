@@ -167,7 +167,9 @@ async def get_artist_masters_local(
     ]
     if uncovered_releases:
         from app.services.cover_warm import schedule_warm_dump_covers
-        schedule_warm_dump_covers(uncovered_releases)
+        # Бюджет 12 (не дефолтные 3): прогрев с экрана артиста — точечный
+        # редкий хвост, sliding window + INTERACTIVE_RESERVE защищают юзеров.
+        schedule_warm_dump_covers(uncovered_releases, discogs_budget=12)
 
     has_more = page * per_page < total
     return MasterSearchResponse(
