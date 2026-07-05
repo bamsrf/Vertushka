@@ -11,12 +11,12 @@ import {
   ScrollView,
 } from 'react-native';
 import { toast } from '../../lib/toast';
-import { Link, useRouter } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { TouchableOpacity } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Icon } from '@/components/ui';
 import { Button, Input } from '../../components/ui';
+import { AuthHeader } from '../../components/AuthHeader';
 import { SocialAuthButtons } from '../../components/SocialAuthButtons';
 import { useAuthStore } from '../../lib/store';
 import { Colors, Typography, Spacing } from '../../constants/theme';
@@ -99,21 +99,10 @@ export default function RegisterScreen() {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        {/* Логотип */}
-        <View style={styles.logoContainer}>
-          <LinearGradient
-            colors={[Colors.royalBlue, Colors.periwinkle]}
-            style={styles.logo}
-          >
-            <Icon name="disc" size={48} color={Colors.background} />
-          </LinearGradient>
-          <Text style={styles.appName}>Вертушка</Text>
-        </View>
+        <AuthHeader mode="register" />
 
         {/* Форма */}
         <View style={styles.form}>
-          <Text style={styles.title}>Создать аккаунт</Text>
-
           <Input
             label="Email"
             value={email}
@@ -195,14 +184,6 @@ export default function RegisterScreen() {
             конфиденциальности
           </Text>
         </View>
-
-        {/* Ссылка на вход */}
-        <View style={styles.footer}>
-          <Text style={styles.footerText}>Уже есть аккаунт?</Text>
-          <Link href="/(auth)/login" style={styles.link}>
-            <Text style={styles.linkText}>Войти</Text>
-          </Link>
-        </View>
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -218,29 +199,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.lg,
     paddingBottom: Spacing.xl,
   },
-  logoContainer: {
-    alignItems: 'center',
-    marginBottom: Spacing.xl,
-  },
-  logo: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: Spacing.sm,
-  },
-  appName: {
-    ...Typography.h2,
-    color: Colors.deepNavy,
-  },
   form: {
     marginBottom: Spacing.xl,
-  },
-  title: {
-    ...Typography.h2,
-    color: Colors.deepNavy,
-    marginBottom: Spacing.lg,
   },
   button: {
     marginTop: Spacing.md,
@@ -285,23 +245,5 @@ const styles = StyleSheet.create({
     color: Colors.textMuted,
     textAlign: 'center',
     marginTop: Spacing.md,
-  },
-  footer: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: Spacing.xs,
-  },
-  footerText: {
-    ...Typography.body,
-    color: Colors.textSecondary,
-  },
-  link: {
-    padding: Spacing.xs,
-  },
-  linkText: {
-    ...Typography.body,
-    color: Colors.royalBlue,
-    fontWeight: '600',
   },
 });
