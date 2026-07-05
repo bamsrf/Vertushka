@@ -623,7 +623,7 @@ export default function ProfileScreen() {
 
           <TouchableOpacity
             style={styles.settingsItem}
-            onPress={() => Linking.openURL('mailto:support@vinyl-vertushka.ru')}
+            onPress={() => Linking.openURL('mailto:support@vinyl-vertushka.store')}
           >
             <Icon name="help-circle-outline" size={24} color={Colors.royalBlue} />
             <Text style={styles.settingsItemText}>Помощь</Text>
@@ -631,18 +631,10 @@ export default function ProfileScreen() {
 
           <TouchableOpacity
             style={styles.settingsItem}
-            onPress={() => router.push('/legal/terms' as any)}
-          >
-            <Icon name="document-text-outline" size={24} color={Colors.royalBlue} />
-            <Text style={styles.settingsItemText}>Условия использования</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.settingsItem}
-            onPress={() => router.push('/legal/privacy' as any)}
+            onPress={() => router.push('/legal' as any)}
           >
             <Icon name="shield-checkmark-outline" size={24} color={Colors.royalBlue} />
-            <Text style={styles.settingsItemText}>Конфиденциальность</Text>
+            <Text style={styles.settingsItemText}>Условия и конфиденциальность</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
