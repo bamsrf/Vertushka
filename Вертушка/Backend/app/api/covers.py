@@ -72,24 +72,69 @@ async def get_cover(
     """
     # nginx проксирует полный путь `/covers/{discogs_id}.jpg` — снимаем суффикс.
     discogs_id = discogs_id.removesuffix(".jpg")
+
+    def _safe(url: str | None) -> str | None:
+        """Guard от редирект-петли: если в БД каким-то путём оказался URL
+        нашего же зеркала — не редиректим сами на себя."""
+        if url and url.startswith(get_settings().public_covers_base):
+            return None
+        return url
+
+    # m{master_id} — обложка МАСТЕРА (сетка артиста): discogs_master_covers,
+    # иначе лучшая обложка любой версии группы из dump-индекса.
+    if discogs_id.startswith("m") and discogs_id[1:].isdigit():
+        from sqlalchemy import text as _text
+
+        mid = int(discogs_id[1:])
+        url = _safe((await db.execute(
+            _text("SELECT cover_image_url FROM discogs_master_covers WHERE master_id = :mid"),
+            {"mid": mid},
+        )).scalar())
+        if not url:
+            url = _safe((await db.execute(
+                _text(
+                    "SELECT cover_image_url FROM discogs_releases_index "
+                    "WHERE master_id = :mid AND cover_image_url IS NOT NULL "
+                    "ORDER BY year ASC NULLS LAST, discogs_id LIMIT 1"
+                ),
+                {"mid": mid},
+            )).scalar())
+        if not url:
+            raise HTTPException(status_code=404, detail="Cover image not available")
+        asyncio.create_task(_download_cover_background(discogs_id, url))
+        return RedirectResponse(url=url, status_code=302)
+
     result = await db.execute(
         select(Record.discogs_id, Record.cover_image_url, Record.cover_local_path)
         .where(Record.discogs_id == discogs_id)
     )
     record = result.first()
 
-    if record is None:
-        raise HTTPException(status_code=404, detail="Record not found")
+    record_url = _safe(record.cover_image_url) if record is not None else None
+    if record_url:
+        # Запускаем фоновое скачивание если обложки нет локально
+        if not record.cover_local_path:
+            asyncio.create_task(_download_cover_background(discogs_id, record_url))
+        # 302 redirect — клиент получит обложку немедленно через внешний URL
+        return RedirectResponse(url=record_url, status_code=302)
 
-    # Запускаем фоновое скачивание если обложки нет локально
-    if not record.cover_local_path and record.cover_image_url:
-        asyncio.create_task(_download_cover_background(discogs_id, record.cover_image_url))
+    # Записи нет (или без обложки) — dump-индекс: сетка артиста, поиск,
+    # версии отдают /covers/{discogs_id}.jpg для любых строк индекса.
+    if discogs_id.isdigit():
+        from sqlalchemy import text as _text
 
-    if not record.cover_image_url:
-        raise HTTPException(status_code=404, detail="Cover image not available")
+        url = _safe((await db.execute(
+            _text(
+                "SELECT cover_image_url FROM discogs_releases_index "
+                "WHERE discogs_id = :did"
+            ),
+            {"did": int(discogs_id)},
+        )).scalar())
+        if url:
+            asyncio.create_task(_download_cover_background(discogs_id, url))
+            return RedirectResponse(url=url, status_code=302)
 
-    # 302 redirect — клиент получит обложку немедленно через Discogs URL
-    return RedirectResponse(url=record.cover_image_url, status_code=302)
+    raise HTTPException(status_code=404, detail="Cover image not available")
 
 
 @router.post("/{discogs_id}/refresh", status_code=200)

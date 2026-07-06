@@ -404,13 +404,20 @@ async def ensure_cover_cached(discogs_id: str, image_url: str | None, db: AsyncS
     asyncio.create_task(_download_cover_background(discogs_id, image_url))
 
 
+# Холодная сетка артиста рождает до ~100 фоновых закачек разом (Redis-lock
+# дедупит только одинаковые id) — семафор держит параллельность к внешним
+# CDN и диску в рамках приличия.
+_download_semaphore = asyncio.Semaphore(8)
+
+
 async def _download_cover_background(discogs_id: str, image_url: str) -> None:
     """Фоновая задача — скачивает обложку с отдельной DB-сессией."""
     from app.database import async_session_maker
 
     try:
-        async with async_session_maker() as db:
-            service = CoverStorageService()
-            await service.download_and_store(discogs_id, image_url, db)
+        async with _download_semaphore:
+            async with async_session_maker() as db:
+                service = CoverStorageService()
+                await service.download_and_store(discogs_id, image_url, db)
     except Exception as exc:
         logger.warning("cover_storage: background download failed for %s: %s", discogs_id, exc)

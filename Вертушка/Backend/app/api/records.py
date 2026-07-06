@@ -784,6 +784,12 @@ async def search_records(
         schedule_warm_dump_covers(
             [r.discogs_id for r in local[:10] if not r.cover_image_url]
         )
+        # Обложки — через своё зеркало /covers/{discogs_id}.jpg: nginx-статика
+        # после первого обращения, вместо прямых ссылок на медленные из РФ CDN.
+        covers_base = get_settings().public_covers_base
+        for r in local:
+            if r.cover_image_url and not r.cover_image_url.startswith(covers_base):
+                r.cover_image_url = f"{covers_base}/{r.discogs_id}.jpg"
         # Неполные обложки → no-store: warm уже запущен, повторный запрос
         # должен дойти до бэкенда, а не получить запиненную nginx копию.
         if any(not r.cover_image_url for r in local):

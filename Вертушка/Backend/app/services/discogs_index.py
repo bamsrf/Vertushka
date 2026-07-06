@@ -134,6 +134,13 @@ async def get_artist_masters_local(
     if not rows and page == 1:
         return None  # артиста нет в индексе → live fallback
 
+    # Обложки — через собственное зеркало /covers/: nginx-статика после
+    # первого обращения (archive.org из РФ — секунды, наш сервер — мс).
+    # Стабильный имён-неймспейс: мастер → m{gid}.jpg, release-only → {id}.jpg;
+    # fallback в covers.py резолвит источник по этим же таблицам.
+    from app.config import get_settings
+    covers_base = get_settings().public_covers_base
+
     total = rows[0]["total"] if rows else 0
     results = []
     for r in rows:
@@ -158,13 +165,18 @@ async def get_artist_masters_local(
             release_type = "single"
         else:
             release_type = DiscogsService._guess_release_type(r["format_type"])
+        if r["cover"]:
+            mirror_name = f"{r['main_release_id']}" if release_only else f"m{r['gid']}"
+            cover_url = f"{covers_base}/{mirror_name}.jpg"
+        else:
+            cover_url = None
         results.append(MasterSearchResult(
             master_id=f"r{r['gid']}" if release_only else str(r["gid"]),
             title=r["title"] or "",
             artist=name_row,
             year=r["year"],
             main_release_id=str(r["main_release_id"]),
-            cover_image_url=r["cover"],
+            cover_image_url=cover_url,
             thumb_image_url=None,
             release_type=release_type,
         ))

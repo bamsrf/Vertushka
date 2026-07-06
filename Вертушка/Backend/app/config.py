@@ -85,6 +85,12 @@ class Settings(BaseSettings):
 
     # Хранение обложек
     covers_dir: str = Field(default="uploads/covers", alias="COVERS_DIR")
+    # Публичная база зеркала обложек: сетка артиста и поиск отдают
+    # {base}/{id}.jpg вместо прямых ссылок на внешние CDN (archive.org из РФ
+    # отвечает секундами). nginx: статика → @covers_fallback.
+    public_covers_base: str = Field(
+        default="https://api.vinyl-vertushka.ru/covers", alias="PUBLIC_COVERS_BASE",
+    )
     covers_max_cache_mb: int = Field(default=5000, alias="COVERS_MAX_CACHE_MB")
     internal_api_token: str = Field(default="", alias="INTERNAL_API_TOKEN")
 
