@@ -97,6 +97,10 @@ async def get_artist_masters_local(
                     bool_or(format_type ~* '\\mep\\M|mini') AS has_ep,
                     bool_or(format_type ~* 'single|maxi|7"|10"|12"|shellac|78 rpm') AS has_single,
                     bool_and(format_type ILIKE 'file%') AS all_file,
+                    -- ВСЕ официальные издания — видео (DVD-концерты, VHS) или
+                    -- промо (snippet tapes, live-промо) → "other", не альбомы.
+                    bool_and(format_type ~* 'dvd|vhs|blu-ray|laserdisc') AS all_video,
+                    bool_and(format_type ~* 'promo') AS all_promo,
                     MIN(discogs_id) AS main_release_id
                 FROM discogs_releases_index
                 WHERE artist_ids @> ARRAY[CAST(:aid AS bigint)]
@@ -114,6 +118,7 @@ async def get_artist_masters_local(
             )
             SELECT d.gid, d.release_only, d.year, d.title, d.format_type,
                    d.has_album, d.has_ep, d.has_single, d.all_file,
+                   d.all_video, d.all_promo,
                    d.main_release_id,
                    COALESCE(d.cover, mc.cover_image_url) AS cover,
                    COUNT(*) OVER () AS total
@@ -136,7 +141,12 @@ async def get_artist_masters_local(
         # Видео-детект только для release-only (как в live-пути): format
         # master-группы — случайный representative, DVD-A издание альбома
         # ложно уводило бы флагман в "other".
-        if release_only and DiscogsService._is_video(r["format_type"]):
+        if release_only and (
+            DiscogsService._is_video(r["format_type"])
+            or "promo" in (r["format_type"] or "").lower()
+        ):
+            release_type = "other"
+        elif not release_only and (r["all_video"] or r["all_promo"]):
             release_type = "other"
         elif r["has_album"]:
             release_type = "album"
