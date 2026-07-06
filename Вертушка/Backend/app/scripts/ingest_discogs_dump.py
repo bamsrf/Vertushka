@@ -208,7 +208,9 @@ def _parse_release(elem, dump_date: date) -> dict[str, Any] | None:
 
     return {
         "discogs_id": discogs_id,
-        "master_id": _xpath_int(elem, "master_id"),
+        # Discogs пишет <master_id>0</master_id> у релизов без мастера —
+        # 0 это НЕ id, храним NULL (release-only семантика в artist-grid и др.)
+        "master_id": _xpath_int(elem, "master_id") or None,
         "artist": artist,
         "title": title,
         "year": _parse_year(elem),

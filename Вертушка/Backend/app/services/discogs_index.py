@@ -246,7 +246,8 @@ async def upsert_release_into_index(db: AsyncSession, record_data: dict) -> None
 
     params = {
         "discogs_id": discogs_id,
-        "master_id": _to_int(record_data.get("master_id")),
+        # 0 = «нет мастера» у Discogs → NULL (release-only семантика).
+        "master_id": _to_int(record_data.get("master_id")) or None,
         "artist": artist,
         "title": title,
         "year": _to_int(record_data.get("year")),

@@ -1950,6 +1950,12 @@ async def get_master(
     if release_id is not None:
         return await _synth_master_from_release(release_id)
 
+    # Легаси-артефакт: у релизов без мастера Discogs отдаёт master_id=0,
+    # старые строки БД хранят '0'. Живой запрос /masters/0 в Discogs всегда
+    # падает → клиент видел 503 и «Повторить». Отвечаем 404 сразу.
+    if not master_id.isdigit() or master_id == "0":
+        raise HTTPException(status_code=404, detail="Master not found")
+
     discogs = DiscogsService()
 
     try:
@@ -2021,6 +2027,9 @@ async def get_master_versions(
     # (сам релиз). Отдаём её, чтобы master-экран показал «Все версии (1)» и
     # versions-экран не падал в 503.
     release_id = _release_only_id(master_id)
+    if release_id is None and (not master_id.isdigit() or master_id == "0"):
+        # Легаси master_id='0' (Discogs отдаёт 0 для релизов без мастера).
+        raise HTTPException(status_code=404, detail="Master not found")
     if release_id is not None:
         response.headers["Cache-Control"] = "public, max-age=3600"
         if page > 1:

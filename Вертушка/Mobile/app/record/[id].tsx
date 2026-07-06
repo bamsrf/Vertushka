@@ -813,8 +813,9 @@ export default function RecordDetailScreen() {
           <OffersBlock recordId={record.id} />
         ) : null}
 
-        {/* Другие версии релиза */}
-        {record.discogs_master_id ? (
+        {/* Другие версии релиза. '0' — легаси-артефакт Discogs (master_id=0
+            у релизов без мастера), по нему некуда переходить. */}
+        {record.discogs_master_id && record.discogs_master_id !== '0' ? (
           <OtherVersionsButton
             onPress={() => router.push(`/master/${record.discogs_master_id}/versions`)}
           />
