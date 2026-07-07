@@ -112,6 +112,17 @@ docker builder prune -f --filter "until=72h" --reserved-space 500MB
 
 echo -e "${GREEN}✅ Деплой завершён успешно!${NC}"
 
+# Авто-резюм bulk-backfill обложек (Deezer). Рестарт api при деплое убивает
+# фоновый процесс; backfill resumable (worklist done-флаги + checkpoint), поэтому
+# просто поднимаем заново, если он не запущен. Скрипт сам мгновенно выходит,
+# когда весь хвост пройден — повторный запуск безвреден.
+if docker compose -f docker-compose.prod.yml exec -T api sh -c 'grep -lq backfill_covers /proc/*/cmdline 2>/dev/null'; then
+    echo "🎨 backfill обложек уже крутится"
+else
+    echo "🎨 Поднимаю backfill обложек (Deezer, resumable)..."
+    docker compose -f docker-compose.prod.yml exec -T -d api sh -c 'python -m app.scripts.backfill_covers_deezer --kind both --batch 300 >> /app/uploads/backfill_covers.log 2>&1'
+fi
+
 # Показать статус
 echo ""
 echo "📊 Статус контейнеров:"
