@@ -1973,8 +1973,16 @@ async def get_master(
         )
 
 
+_master_cover_persist_tasks: set[asyncio.Task] = set()
+
+
 def _schedule_master_cover_persist(master_id: int, cover_url: str) -> None:
     """Fire-and-forget upsert обложки мастера. Ошибки глотаются."""
+    # Discogs отдаёт st.discogs.com/.../spacer.gif как no-image заглушку —
+    # не персистим её как настоящую обложку (иначе мастер навсегда с пустышкой).
+    if not cover_url or "spacer.gif" in cover_url or "st.discogs.com" in cover_url:
+        return
+
     async def _persist() -> None:
         try:
             from app.database import async_session_maker
@@ -1993,7 +2001,8 @@ def _schedule_master_cover_persist(master_id: int, cover_url: str) -> None:
             logger.debug("master cover persist failed: %s", master_id, exc_info=True)
 
     task = asyncio.create_task(_persist())
-    task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
+    _master_cover_persist_tasks.add(task)
+    task.add_done_callback(_master_cover_persist_tasks.discard)
 
 
 @router.get("/masters/{master_id}/versions", response_model=MasterVersionsResponse)

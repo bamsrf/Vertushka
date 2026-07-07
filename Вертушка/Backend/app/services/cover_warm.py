@@ -25,6 +25,17 @@ from app.services.cache import cache
 
 logger = logging.getLogger(__name__)
 
+# Сильные ссылки на fire-and-forget warm-задачи — asyncio держит только weak
+# reference, local task-var уходит из скоупа сразу и GC может собрать warm до
+# завершения. Модульный set удерживает до done-callback.
+_warm_tasks: set[asyncio.Task] = set()
+
+
+def _retain_warm(coro) -> None:
+    task = asyncio.create_task(coro)
+    _warm_tasks.add(task)
+    task.add_done_callback(_warm_tasks.discard)
+
 _WARM_LOCK_TTL = 6 * 3600
 # Сколько Discogs-вызовов позволяем одному warm-батчу (CAA не лимитируем —
 # он бесплатный и сам троттлится 1 rps в cover_fallback).
@@ -127,8 +138,7 @@ def schedule_warm_dump_covers(discogs_ids: list[str], discogs_budget: int | None
     """fire-and-forget обёртка для вызова из request handler'а."""
     if not discogs_ids:
         return
-    task = asyncio.create_task(warm_dump_covers(discogs_ids, discogs_budget))
-    task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
+    _retain_warm(warm_dump_covers(discogs_ids, discogs_budget))
 
 
 async def warm_artist_master_covers(artist_id: str, artist_name: str) -> None:
@@ -155,6 +165,9 @@ async def warm_artist_master_covers(artist_id: str, artist_name: str) -> None:
             for mid, c in cover_map.items()
             if mid.isdigit() and c.get("cover_image")
             and "api-img.discogs.com" not in c["cover_image"]
+            # st.discogs.com/.../spacer.gif — no-image заглушка Discogs, не обложка.
+            and "spacer.gif" not in c["cover_image"]
+            and "st.discogs.com" not in c["cover_image"]
         ]
         if not rows:
             return
@@ -175,5 +188,4 @@ async def warm_artist_master_covers(artist_id: str, artist_name: str) -> None:
 
 def schedule_warm_artist_master_covers(artist_id: str, artist_name: str) -> None:
     """fire-and-forget обёртка."""
-    task = asyncio.create_task(warm_artist_master_covers(artist_id, artist_name))
-    task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
+    _retain_warm(warm_artist_master_covers(artist_id, artist_name))

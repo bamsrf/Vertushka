@@ -25,6 +25,17 @@ logger = logging.getLogger(__name__)
 
 _LOCK_PREFIX = "vertushka:cover_dl:"
 _LOCK_TTL = 60  # секунд
+
+# Сильные ссылки на fire-and-forget задачи. asyncio держит на задачи только
+# weak reference — без удержания GC собирает корутину до завершения скачивания.
+_bg_tasks: set[asyncio.Task] = set()
+
+
+def _retain(coro) -> None:
+    """Запустить корутину фоном, удержав ссылку до завершения."""
+    task = asyncio.create_task(coro)
+    _bg_tasks.add(task)
+    task.add_done_callback(_bg_tasks.discard)
 # 1000px: detail-экран рендерит обложку почти во всю ширину (~390pt → 1170px
 # на 3x-ретине); 500px заметно пикселило. 1000px @ q85 ≈ 80-150KB на файл.
 _MAX_SIDE = 1000
@@ -307,7 +318,7 @@ def schedule_store_native_cover_cache(record_id: "uuid.UUID", image_url: str) ->
     """
     if not image_url:
         return
-    asyncio.create_task(_download_store_native_cover_background(record_id, image_url))
+    _retain(_download_store_native_cover_background(record_id, image_url))
 
 
 async def _download_store_native_cover_background(
@@ -401,7 +412,7 @@ async def ensure_cover_cached(discogs_id: str, image_url: str | None, db: AsyncS
     if service.get_cover_path(discogs_id):
         return  # уже есть
 
-    asyncio.create_task(_download_cover_background(discogs_id, image_url))
+    _retain(_download_cover_background(discogs_id, image_url))
 
 
 # Холодная сетка артиста рождает до ~100 фоновых закачек разом (Redis-lock

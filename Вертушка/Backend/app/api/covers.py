@@ -28,6 +28,19 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["Обложки"])
 
+# Сильные ссылки на фоновые задачи зеркалирования. asyncio держит на задачи
+# только weak reference — bare create_task в обработчике, который сразу
+# возвращает 302, GC-шится ДО запуска скачивания → файл m{gid}.jpg не пишется,
+# и каждый заход снова падает в 302 на Discogs (баг «обложки грузятся заново»).
+_mirror_tasks: set[asyncio.Task] = set()
+
+
+def _spawn_mirror(discogs_id: str, url: str) -> None:
+    """Fire-and-forget зеркалирование с удержанием ссылки до завершения."""
+    task = asyncio.create_task(_download_cover_background(discogs_id, url))
+    _mirror_tasks.add(task)
+    task.add_done_callback(_mirror_tasks.discard)
+
 
 @router.get("/store/{record_id}")
 async def get_store_cover(
@@ -74,9 +87,13 @@ async def get_cover(
     discogs_id = discogs_id.removesuffix(".jpg")
 
     def _safe(url: str | None) -> str | None:
-        """Guard от редирект-петли: если в БД каким-то путём оказался URL
-        нашего же зеркала — не редиректим сами на себя."""
-        if url and url.startswith(get_settings().public_covers_base):
+        """Guard: не редиректим на собственное зеркало (петля) и на no-image
+        заглушку Discogs (st.discogs.com/.../spacer.gif)."""
+        if not url:
+            return None
+        if url.startswith(get_settings().public_covers_base):
+            return None
+        if "spacer.gif" in url or "st.discogs.com" in url:
             return None
         return url
 
@@ -101,7 +118,7 @@ async def get_cover(
             )).scalar())
         if not url:
             raise HTTPException(status_code=404, detail="Cover image not available")
-        asyncio.create_task(_download_cover_background(discogs_id, url))
+        _spawn_mirror(discogs_id, url)
         return RedirectResponse(url=url, status_code=302)
 
     result = await db.execute(
@@ -114,7 +131,7 @@ async def get_cover(
     if record_url:
         # Запускаем фоновое скачивание если обложки нет локально
         if not record.cover_local_path:
-            asyncio.create_task(_download_cover_background(discogs_id, record_url))
+            _spawn_mirror(discogs_id, record_url)
         # 302 redirect — клиент получит обложку немедленно через внешний URL
         return RedirectResponse(url=record_url, status_code=302)
 
@@ -131,7 +148,7 @@ async def get_cover(
             {"did": int(discogs_id)},
         )).scalar())
         if url:
-            asyncio.create_task(_download_cover_background(discogs_id, url))
+            _spawn_mirror(discogs_id, url)
             return RedirectResponse(url=url, status_code=302)
 
     raise HTTPException(status_code=404, detail="Cover image not available")
