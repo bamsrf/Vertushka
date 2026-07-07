@@ -86,7 +86,8 @@ async def _warm_batch(discogs_ids: list[str], budget_override: int | None = None
             return
         rows = (await session.execute(
             text(
-                "SELECT discogs_id::text AS discogs_id, barcode_norm, artist, title "
+                "SELECT discogs_id::text AS discogs_id, barcode_norm, artist, title, "
+                "year, label "
                 "FROM discogs_releases_index "
                 "WHERE discogs_id = ANY(:ids) "
                 "AND cover_image_url IS NULL"
@@ -106,12 +107,23 @@ async def _warm_batch(discogs_ids: list[str], budget_override: int | None = None
             if not cover and row["barcode_norm"]:
                 cover = await cover_url_by_barcode(row["barcode_norm"])
 
-            # 3) Discogs — низкий приоритет, в рамках бюджета батча
+            # 3) Deezer — бесплатно, cover_xl 1000+, стабильный публичный URL.
+            #    До Discogs: экономит бюджет и не протухает (i.discogs.com — да).
+            if not cover:
+                from app.services.deezer import cover_by_meta
+                dz = await cover_by_meta(
+                    row["artist"], row["title"], year=row.get("year"),
+                    label=row.get("label"),
+                )
+                if dz:
+                    cover = dz.url
+
+            # 4) Discogs — низкий приоритет, в рамках бюджета батча
             if not cover and discogs_budget > 0:
                 discogs_budget -= 1
                 cover = await discogs.get_release_cover(did)
 
-            # 4) iTunes — album-level artwork, последний шанс
+            # 5) iTunes — album-level artwork, последний шанс
             if not cover:
                 cover = await cover_url_by_artist_title(row["artist"], row["title"])
 
