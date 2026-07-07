@@ -107,6 +107,43 @@ async def _throttle() -> None:
         _last = time.monotonic()
 
 
+def _fmt_dur_sec(sec: int | None) -> str | None:
+    """Секунды → 'M:SS' (формат треклиста Discogs)."""
+    if not sec or sec <= 0:
+        return None
+    return f"{sec // 60}:{sec % 60:02d}"
+
+
+async def tracklist_by_album_id(album_id: int | str) -> list[dict] | None:
+    """Треклист альбома из Deezer `/album/{id}` → [{position,title,duration}].
+
+    ВАЖНО: это стриминг-издание (album-level), НЕ конкретный винил-прессинг —
+    позиции числовые (1,2,3), не A1/B1; бонусы/порядок могут отличаться. Годится
+    как «достаточно хороший» fallback, точный прессинг — MB (per-release)/Discogs.
+    """
+    try:
+        await _throttle()
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            r = await client.get(_ALBUM_URL.format(album_id=album_id))
+            r.raise_for_status()
+            tracks = (r.json().get("tracks") or {}).get("data", [])
+    except (httpx.HTTPError, ValueError):
+        logger.debug("Deezer tracklist failed for album %s", album_id, exc_info=True)
+        return None
+
+    out: list[dict] = []
+    for i, t in enumerate(tracks, 1):
+        title = t.get("title")
+        if not title:
+            continue
+        out.append({
+            "position": str(t.get("track_position") or i),
+            "title": title,
+            "duration": _fmt_dur_sec(t.get("duration")),
+        })
+    return out or None
+
+
 async def cover_by_meta(
     artist: str,
     title: str,

@@ -40,6 +40,50 @@ async def _mb_throttle() -> None:
         _mb_last = time.monotonic()
 
 
+def _fmt_dur_ms(ms: int | None) -> str | None:
+    """Миллисекунды → 'M:SS' (формат треклиста Discogs)."""
+    if not ms or ms <= 0:
+        return None
+    sec = ms // 1000
+    return f"{sec // 60}:{sec % 60:02d}"
+
+
+async def tracklist_by_mbid(mbid: str) -> list[dict] | None:
+    """Треклист издания из MusicBrainz по MBID → [{position,title,duration}].
+
+    Per-release (конкретное издание) — точнее Deezer: несёт винил-позиции
+    (A1, B1), реальный порядок прессинга. Бесплатно, MB-троттл 1 req/s.
+    """
+    if not mbid:
+        return None
+    try:
+        await _mb_throttle()
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            r = await client.get(
+                f"{_MB_URL}/{mbid}",
+                params={"inc": "recordings", "fmt": "json"},
+                headers={"User-Agent": _user_agent()},
+            )
+            r.raise_for_status()
+            media = r.json().get("media", [])
+    except (httpx.HTTPError, ValueError):
+        logger.debug("MB tracklist failed for %s", mbid, exc_info=True)
+        return None
+
+    out: list[dict] = []
+    for medium in media:
+        for tr in medium.get("tracks", []):
+            title = tr.get("title") or (tr.get("recording") or {}).get("title")
+            if not title:
+                continue
+            out.append({
+                "position": tr.get("number") or str(tr.get("position") or ""),
+                "title": title,
+                "duration": _fmt_dur_ms(tr.get("length") or (tr.get("recording") or {}).get("length")),
+            })
+    return out or None
+
+
 async def cover_url_by_barcode(barcode: str) -> str | None:
     """Возвращает URL обложки Cover Art Archive по barcode, либо None.
 

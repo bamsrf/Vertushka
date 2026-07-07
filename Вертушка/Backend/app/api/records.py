@@ -363,6 +363,18 @@ async def _ensure_record_discogs_payload(record: Record, db: AsyncSession) -> No
     if record.tracklist:  # уже есть — пропускаем
         return
 
+    # Бесплатные источники треклиста ДО Discogs (rate-limited): MB per-release
+    # (точно, винил-позиции) → Deezer album-level (приблизительно). Мгновенный
+    # треклист без токена Discogs; остальной payload (кредиты/цены) добьёт
+    # Discogs фоном. Discogs остаётся точным источником прессинга.
+    free_tl = await _free_tracklist(record, db)
+    if free_tl:
+        record.tracklist = free_tl
+        await db.commit()
+        # Фоновый Discogs-энрич для кредитов/цен/точного прессинга — не блокирует.
+        _schedule_discogs_payload_enrich(record.discogs_id)
+        return
+
     try:
         discogs = DiscogsService()
         data = await discogs.get_release(record.discogs_id, priority=Priority.DETAIL)
@@ -373,6 +385,14 @@ async def _ensure_record_discogs_payload(record: Record, db: AsyncSession) -> No
     if not data:
         return
 
+    await _apply_discogs_release(record, data, db)
+
+
+async def _apply_discogs_release(record: Record, data: dict, db: AsyncSession) -> None:
+    """Заполняет пустые поля записи из Discogs release payload. Переиспользуется
+    inline-путём _ensure и фоновым _schedule_discogs_payload_enrich (после того
+    как треклист уже проставлен из бесплатного источника — здесь он не трогается,
+    т.к. guard `if not record.tracklist`)."""
     # Заполняем поля только если они пустые — не затираем уже существующие
     # (например, label из листинга магазина может быть точнее чем Discogs).
     changed = False
@@ -450,6 +470,72 @@ async def _ensure_record_discogs_payload(record: Record, db: AsyncSession) -> No
         except Exception:
             logger.exception("Failed to persist Discogs payload for record %s", record.discogs_id)
             await db.rollback()
+
+
+async def _free_tracklist(record: Record, db: AsyncSession) -> list[dict] | None:
+    """Треклист из бесплатных источников без токена Discogs.
+
+    MB (per-release, точный прессинг — по MBID из mb_discogs_map) → Deezer
+    (album-level, приблизительно — по deezer_album_id мастера из master_covers).
+    """
+    # 1) MusicBrainz per-release по MBID.
+    try:
+        mbid = (await db.execute(
+            text("SELECT mbid FROM mb_discogs_map WHERE discogs_id = :did"),
+            {"did": int(record.discogs_id)},
+        )).scalar()
+    except (ValueError, TypeError):
+        mbid = None
+    if mbid:
+        from app.services.cover_fallback import tracklist_by_mbid
+        tl = await tracklist_by_mbid(str(mbid))
+        if tl:
+            return tl
+
+    # 2) Deezer album-level по deezer_album_id мастера.
+    if record.discogs_master_id and str(record.discogs_master_id).isdigit():
+        dz_album = (await db.execute(
+            text(
+                "SELECT deezer_album_id FROM discogs_master_covers "
+                "WHERE master_id = :mid AND deezer_album_id IS NOT NULL"
+            ),
+            {"mid": int(record.discogs_master_id)},
+        )).scalar()
+        if dz_album:
+            from app.services.deezer import tracklist_by_album_id
+            tl = await tracklist_by_album_id(dz_album)
+            if tl:
+                return tl
+
+    return None
+
+
+_payload_enrich_tasks: set[asyncio.Task] = set()
+
+
+def _schedule_discogs_payload_enrich(discogs_id: str) -> None:
+    """Фоновый добор полного Discogs payload (кредиты/цены/точный прессинг) после
+    того как треклист уже отдан из бесплатного источника. Не блокирует ответ."""
+    async def _run() -> None:
+        try:
+            from app.database import async_session_maker
+            from sqlalchemy import select as _select
+            async with async_session_maker() as session:
+                rec = (await session.execute(
+                    _select(Record).where(Record.discogs_id == discogs_id)
+                )).scalar_one_or_none()
+                if rec is None:
+                    return
+                discogs = DiscogsService()
+                data = await discogs.get_release(discogs_id, priority=Priority.ENRICHMENT)
+                if data:
+                    await _apply_discogs_release(rec, data, session)
+        except Exception:
+            logger.debug("bg discogs payload enrich failed: %s", discogs_id, exc_info=True)
+
+    task = asyncio.create_task(_run())
+    _payload_enrich_tasks.add(task)
+    task.add_done_callback(_payload_enrich_tasks.discard)
 
 
 async def get_or_create_record_by_discogs_id(
