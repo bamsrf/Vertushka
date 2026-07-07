@@ -205,9 +205,11 @@ async def get_artist_masters_local(
     ]
     if uncovered_releases:
         from app.services.cover_warm import schedule_warm_dump_covers
-        # Бюджет 12 (не дефолтные 3): прогрев с экрана артиста — точечный
-        # редкий хвост, sliding window + INTERACTIVE_RESERVE защищают юзеров.
-        schedule_warm_dump_covers(uncovered_releases, discogs_budget=12)
+        # Бюджет 40 (как master-cap): release-only обскур (промо/сплиты) не на
+        # Deezer/CAA — только прямой get_release их несёт. 12 закрывал хвост
+        # артиста за ~20 просмотров; 40 — за пару. NX-лок 6ч + персист + sliding
+        # window + INTERACTIVE_RESERVE держат нагрузку.
+        schedule_warm_dump_covers(uncovered_releases, discogs_budget=40)
 
     # 3) Финальное звено — прямой get_master по непокрытым мастерам страницы.
     # Search (уровень 1) хоронит обскур (ремиксы/сплиты/компиляции), а прямой
