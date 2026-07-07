@@ -2,7 +2,7 @@
  * Карточка пластинки — Editorial Gradient Edition
  * Два варианта: compact (overlay) и expanded (card с инфо)
  */
-import React, { memo, useRef } from 'react';
+import React, { memo, useRef, useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -147,6 +147,12 @@ function RecordCardComponent({
         : null
     : null;
   const imageUrl = getCoverUrl(record);
+  // Битый URL (протухший Deezer/store-хотлинк, мёртвое зеркало) → откат на
+  // иконку пластинки вместо пустого квадрата. Сброс при смене обложки
+  // (FlatList переиспользует инстансы карточек).
+  const [imgFailed, setImgFailed] = useState(false);
+  useEffect(() => setImgFailed(false), [imageUrl]);
+  const showImage = !!imageUrl && !imgFailed;
   const artistDisplay = cleanArtistName(record.artist);
   const cardWidth = size === 'large' ? width - Spacing.md * 2 : CARD_WIDTH;
   const imageHeight = size === 'large' ? cardWidth * 0.8 : CARD_WIDTH;
@@ -214,8 +220,8 @@ function RecordCardComponent({
           </View>
         )}
 
-        {imageUrl ? (
-          <Image source={imageUrl} style={styles.compactImage} contentFit="cover" cachePolicy="disk" />
+        {showImage ? (
+          <Image source={imageUrl} style={styles.compactImage} contentFit="cover" cachePolicy="disk" onError={() => setImgFailed(true)} />
         ) : (
           <View style={styles.compactPlaceholder}>
             <Icon name="disc-outline" size={48} color={Colors.periwinkle} />
@@ -325,8 +331,8 @@ function RecordCardComponent({
         )}
 
         <View style={styles.listImageContainer}>
-          {imageUrl ? (
-            <Image source={imageUrl} style={styles.listImage} contentFit="cover" cachePolicy="disk" />
+          {showImage ? (
+            <Image source={imageUrl} style={styles.listImage} contentFit="cover" cachePolicy="disk" onError={() => setImgFailed(true)} />
           ) : (
             <View style={styles.listPlaceholder}>
               <Icon name="disc-outline" size={28} color={Colors.periwinkle} />
@@ -453,8 +459,8 @@ function RecordCardComponent({
               offerBadgeKind ? styles.expandedImageContainerFramed : null,
             ]}
           >
-            {imageUrl ? (
-              <Image source={imageUrl} style={styles.expandedImage} contentFit="cover" cachePolicy="disk" />
+            {showImage ? (
+              <Image source={imageUrl} style={styles.expandedImage} contentFit="cover" cachePolicy="disk" onError={() => setImgFailed(true)} />
             ) : (
               <View style={styles.expandedPlaceholder}>
                 <Icon name="disc-outline" size={48} color={Colors.periwinkle} />
