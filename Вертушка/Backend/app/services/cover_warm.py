@@ -25,6 +25,17 @@ from app.services.cache import cache
 
 logger = logging.getLogger(__name__)
 
+# Сильные ссылки на fire-and-forget warm-задачи — asyncio держит только weak
+# reference, local task-var уходит из скоупа сразу и GC может собрать warm до
+# завершения. Модульный set удерживает до done-callback.
+_warm_tasks: set[asyncio.Task] = set()
+
+
+def _retain_warm(coro) -> None:
+    task = asyncio.create_task(coro)
+    _warm_tasks.add(task)
+    task.add_done_callback(_warm_tasks.discard)
+
 _WARM_LOCK_TTL = 6 * 3600
 # Сколько Discogs-вызовов позволяем одному warm-батчу (CAA не лимитируем —
 # он бесплатный и сам троттлится 1 rps в cover_fallback).
@@ -75,7 +86,8 @@ async def _warm_batch(discogs_ids: list[str], budget_override: int | None = None
             return
         rows = (await session.execute(
             text(
-                "SELECT discogs_id::text AS discogs_id, barcode_norm, artist, title "
+                "SELECT discogs_id::text AS discogs_id, barcode_norm, artist, title, "
+                "year, label "
                 "FROM discogs_releases_index "
                 "WHERE discogs_id = ANY(:ids) "
                 "AND cover_image_url IS NULL"
@@ -95,12 +107,23 @@ async def _warm_batch(discogs_ids: list[str], budget_override: int | None = None
             if not cover and row["barcode_norm"]:
                 cover = await cover_url_by_barcode(row["barcode_norm"])
 
-            # 3) Discogs — низкий приоритет, в рамках бюджета батча
+            # 3) Deezer — бесплатно, cover_xl 1000+, стабильный публичный URL.
+            #    До Discogs: экономит бюджет и не протухает (i.discogs.com — да).
+            if not cover:
+                from app.services.deezer import cover_by_meta
+                dz = await cover_by_meta(
+                    row["artist"], row["title"], year=row.get("year"),
+                    label=row.get("label"),
+                )
+                if dz:
+                    cover = dz.url
+
+            # 4) Discogs — низкий приоритет, в рамках бюджета батча
             if not cover and discogs_budget > 0:
                 discogs_budget -= 1
                 cover = await discogs.get_release_cover(did)
 
-            # 4) iTunes — album-level artwork, последний шанс
+            # 5) iTunes — album-level artwork, последний шанс
             if not cover:
                 cover = await cover_url_by_artist_title(row["artist"], row["title"])
 
@@ -127,8 +150,7 @@ def schedule_warm_dump_covers(discogs_ids: list[str], discogs_budget: int | None
     """fire-and-forget обёртка для вызова из request handler'а."""
     if not discogs_ids:
         return
-    task = asyncio.create_task(warm_dump_covers(discogs_ids, discogs_budget))
-    task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
+    _retain_warm(warm_dump_covers(discogs_ids, discogs_budget))
 
 
 async def warm_artist_master_covers(artist_id: str, artist_name: str) -> None:
@@ -155,6 +177,9 @@ async def warm_artist_master_covers(artist_id: str, artist_name: str) -> None:
             for mid, c in cover_map.items()
             if mid.isdigit() and c.get("cover_image")
             and "api-img.discogs.com" not in c["cover_image"]
+            # st.discogs.com/.../spacer.gif — no-image заглушка Discogs, не обложка.
+            and "spacer.gif" not in c["cover_image"]
+            and "st.discogs.com" not in c["cover_image"]
         ]
         if not rows:
             return
@@ -175,5 +200,4 @@ async def warm_artist_master_covers(artist_id: str, artist_name: str) -> None:
 
 def schedule_warm_artist_master_covers(artist_id: str, artist_name: str) -> None:
     """fire-and-forget обёртка."""
-    task = asyncio.create_task(warm_artist_master_covers(artist_id, artist_name))
-    task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
+    _retain_warm(warm_artist_master_covers(artist_id, artist_name))
