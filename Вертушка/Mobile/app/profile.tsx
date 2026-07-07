@@ -631,14 +631,6 @@ export default function ProfileScreen() {
 
           <TouchableOpacity
             style={styles.settingsItem}
-            onPress={() => router.push('/legal' as any)}
-          >
-            <Icon name="shield-checkmark-outline" size={24} color={Colors.royalBlue} />
-            <Text style={styles.settingsItemText}>Условия и конфиденциальность</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.settingsItem}
             onPress={async () => {
               await AsyncStorage.removeItem('@vertushka:onboarding_complete');
               await onboarding.checkOnboarding();
@@ -699,8 +691,16 @@ export default function ProfileScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Версия */}
-        <Text style={styles.version}>Вертушка v1.0.0</Text>
+        {/* Футер: правовые ссылки + версия */}
+        <View style={styles.footer}>
+          <TouchableOpacity
+            onPress={() => router.push('/legal' as any)}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Text style={styles.footerLink}>Политика конфиденциальности и Условия</Text>
+          </TouchableOpacity>
+          <Text style={styles.version}>Вертушка v1.0.0</Text>
+        </View>
       </ScrollView>
 
       <OnboardingOverlay />
@@ -893,6 +893,17 @@ const styles = StyleSheet.create({
   },
   logoutSection: {
     marginBottom: Spacing.lg,
+  },
+  footer: {
+    alignItems: 'center',
+    gap: Spacing.xs,
+    marginTop: Spacing.sm,
+  },
+  footerLink: {
+    ...Typography.caption,
+    color: Colors.textSecondary,
+    textAlign: 'center',
+    textDecorationLine: 'underline',
   },
   version: {
     ...Typography.caption,
