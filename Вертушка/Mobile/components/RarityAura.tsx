@@ -390,6 +390,34 @@ export function TierCoverEffects({ tier, radius = 0 }: TierCoverEffectsProps) {
   return null;
 }
 
+interface TierEdgeStripProps {
+  tier: RarityTier | null;
+  radius?: number;
+}
+
+/**
+ * Vertical gradient strip on the card's left edge — the one signal shared by all
+ * three tiers, so signals never fight (no competing rings/borders per tier).
+ * Lives at x=0 over the cover's left edge, far from the text column, but still
+ * scannable in a long version list. Colors come from the tier's 3-stop palette.
+ *
+ * Parent must have overflow:'hidden' + matching radius so the strip clips to the
+ * rounded corners.
+ */
+export function TierEdgeStrip({ tier, radius = 0 }: TierEdgeStripProps) {
+  if (!tier) return null;
+  const tokens = RARITY_TIERS[tier];
+  return (
+    <LinearGradient
+      pointerEvents="none"
+      colors={tokens.edge}
+      start={{ x: 0.5, y: 0 }}
+      end={{ x: 0.5, y: 1 }}
+      style={[styles.leftEdge, { borderTopLeftRadius: radius, borderBottomLeftRadius: radius }]}
+    />
+  );
+}
+
 interface TierLabelProps {
   tier: RarityTier;
   size?: number;
@@ -498,14 +526,14 @@ const styles = StyleSheet.create({
     width: '40%',
   },
 
-  // Left edge accent (LIST)
+  // Left edge accent (LIST) — shared tier signal on the card's left rim
   leftEdge: {
     position: 'absolute',
     left: 0,
     top: 0,
     bottom: 0,
-    width: 5,
-    overflow: 'hidden',
+    width: 6,
+    zIndex: 2,
   },
 
   // Detail page feature block

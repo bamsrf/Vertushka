@@ -13,7 +13,7 @@ import { Icon } from '@/components/ui';
 import { Colors, Typography, BorderRadius, Shadows, Spacing } from '../constants/theme';
 import { MasterVersion } from '../lib/types';
 import { resolveMediaUrl } from '../lib/api';
-import { RarityAura, TierCoverEffects, TierLabel, pickRarityTier } from './RarityAura';
+import { RarityAura, TierCoverEffects, TierEdgeStrip, TierLabel, pickRarityTier } from './RarityAura';
 
 interface VersionCardProps {
   version: MasterVersion;
@@ -31,6 +31,9 @@ export function VersionCard({ version, onPress }: VersionCardProps) {
       activeOpacity={0.9}
       disabled={!onPress}
     >
+      {/* Градиент-полоса тира на левом крае карточки */}
+      <TierEdgeStrip tier={rarityTier} radius={BorderRadius.md} />
+
       {/* Обложка */}
       <View style={styles.imageContainer}>
         {imageUrl ? (
