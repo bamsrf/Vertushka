@@ -209,6 +209,18 @@ async def get_artist_masters_local(
         # редкий хвост, sliding window + INTERACTIVE_RESERVE защищают юзеров.
         schedule_warm_dump_covers(uncovered_releases, discogs_budget=12)
 
+    # 3) Финальное звено — прямой get_master по непокрытым мастерам страницы.
+    # Search (уровень 1) хоронит обскур (ремиксы/сплиты/компиляции), а прямой
+    # /masters/{id} несёт обложку всегда (это же грузит тап). Bounded капом +
+    # semaphore + NX-лок 6ч. Закрывает заглушки, что не нашёл никто.
+    uncovered_master_ids = [
+        r.master_id for r in results
+        if not r.cover_image_url and r.master_id.isdigit() and r.master_id != "0"
+    ]
+    if uncovered_master_ids:
+        from app.services.cover_warm import schedule_warm_masters_by_id
+        schedule_warm_masters_by_id(uncovered_master_ids)
+
     has_more = page * per_page < total
     return MasterSearchResponse(
         results=results,

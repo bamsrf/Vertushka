@@ -201,3 +201,68 @@ async def warm_artist_master_covers(artist_id: str, artist_name: str) -> None:
 def schedule_warm_artist_master_covers(artist_id: str, artist_name: str) -> None:
     """fire-and-forget обёртка."""
     _retain_warm(warm_artist_master_covers(artist_id, artist_name))
+
+
+# Per-ID get_master — надёжное финальное звено. Search хоронит обскур
+# (ремиксы/сплиты/компиляции), а прямой /masters/{id} несёт обложку ВСЕГДА
+# (это же делает тап по карточке). Возвращаем в local-first путь шаг, потерянный
+# при переходе с live-пути. Bounded: cap на страницу + semaphore + NX-лок 6ч.
+_MASTER_ID_WARM_TTL = 6 * 3600
+_MASTER_ID_PER_CALL_CAP = 40
+_master_id_semaphore = asyncio.Semaphore(6)
+
+
+async def warm_masters_by_id(master_ids: list[str]) -> None:
+    """Прямой get_master по непокрытым мастерам → discogs_master_covers.
+
+    Дороже Search (1 вызов = 1 мастер), поэтому только для тех, кого не закрыли
+    дешёвые источники, и с капом на вызов. NX-лок 6ч — один прогрев на мастера
+    глобально, дальше персист навсегда.
+    """
+    todo: list[str] = []
+    for mid in master_ids:
+        if len(todo) >= _MASTER_ID_PER_CALL_CAP:
+            break
+        if mid.isdigit() and mid != "0" and await cache.set_nx("master_id_warm", mid, 1, ttl=_MASTER_ID_WARM_TTL):
+            todo.append(mid)
+    if not todo:
+        return
+
+    from app.services.discogs import DiscogsService
+
+    disc = DiscogsService()
+
+    async def _one(mid: str) -> tuple[int, str] | None:
+        async with _master_id_semaphore:
+            try:
+                m = await disc.get_master(mid)
+                url = m.cover_image_url
+            except Exception:
+                return None
+        if not url or any(
+            b in url for b in ("spacer.gif", "st.discogs.com", "api-img.discogs.com")
+        ):
+            return None
+        return (int(mid), url)
+
+    rows = [r for r in await asyncio.gather(*(_one(m) for m in todo)) if r]
+    if not rows:
+        return
+    async with async_session_maker() as session:
+        await session.execute(
+            text(
+                "INSERT INTO discogs_master_covers (master_id, cover_image_url, source) "
+                "SELECT unnest(CAST(:ids AS bigint[])), unnest(CAST(:urls AS text[])), 'discogs' "
+                "ON CONFLICT (master_id) DO NOTHING"
+            ),
+            {"ids": [r[0] for r in rows], "urls": [r[1] for r in rows]},
+        )
+        await session.commit()
+    logger.info("master-id warm: %d/%d covers", len(rows), len(todo))
+
+
+def schedule_warm_masters_by_id(master_ids: list[str]) -> None:
+    """fire-and-forget обёртка."""
+    if not master_ids:
+        return
+    _retain_warm(warm_masters_by_id(master_ids))
