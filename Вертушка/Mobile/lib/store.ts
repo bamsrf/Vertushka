@@ -181,6 +181,7 @@ interface AuthState {
 
   // Actions
   login: (login: string, password: string) => Promise<void>;
+  restoreAccount: (restoreToken: string) => Promise<void>;
   register: (email: string, username: string, password: string) => Promise<void>;
   loginWithApple: (data: import('./types').AppleSignInRequest) => Promise<void>;
   loginWithGoogle: (idToken: string) => Promise<void>;
@@ -204,6 +205,21 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     set({ isLoading: true });
     try {
       await api.login({ login, password });
+      const user = await api.getMe();
+      set({ user, isAuthenticated: true, isLoading: false });
+      analytics.identify(user.id);
+      analytics.login('email');
+      initAchievementsCache().catch(() => {});
+    } catch (error) {
+      set({ isLoading: false });
+      throw error;
+    }
+  },
+
+  restoreAccount: async (restoreToken) => {
+    set({ isLoading: true });
+    try {
+      await api.restoreAccount(restoreToken);
       const user = await api.getMe();
       set({ user, isAuthenticated: true, isLoading: false });
       analytics.identify(user.id);
@@ -572,6 +588,8 @@ interface CollectionState {
   setSortBy: (sort: 'added_at' | 'price_desc' | 'price_asc') => void;
   addToCollection: (discogsId: string) => Promise<void>;
   addToCollectionByRecordId: (recordId: string) => Promise<void>;
+  // Добавить релиз + перекрыть обложку своим фото (UserRecordPhoto.is_primary).
+  addToCollectionWithPhoto: (opts: { discogsId?: string; recordId?: string; photoUri: string }) => Promise<void>;
   addToWishlist: (discogsId: string) => Promise<void>;
   addToWishlistByRecordId: (recordId: string) => Promise<void>;
   removeFromCollection: (itemId: string, skipRefetch?: boolean) => Promise<void>;
@@ -762,6 +780,39 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
         }
       }
       await api.addToCollectionByRecordId(defaultCollection.id, recordId);
+      useCacheStore.getState().invalidateAll();
+      await Promise.all([fetchCollectionItems(), fetchWishlistItems()]);
+      detectAchievementUnlocks();
+    });
+  },
+
+  addToCollectionWithPhoto: async ({ discogsId, recordId, photoUri }) => {
+    return dedupeAction(`addWithPhoto:${discogsId ?? recordId}`, async () => {
+      let { defaultCollection, collections, fetchCollectionItems, fetchWishlistItems } = get();
+      if (!defaultCollection) {
+        if (collections.length === 0) {
+          await api.createCollection({ name: 'Моя коллекция' });
+          await get().fetchCollections();
+          defaultCollection = get().defaultCollection;
+        }
+        if (!defaultCollection) {
+          throw new Error('Не удалось создать коллекцию');
+        }
+      }
+
+      const item = discogsId
+        ? await api.addToCollection(defaultCollection.id, discogsId)
+        : await api.addToCollectionByRecordId(defaultCollection.id, recordId!);
+
+      // Фото не критично: релиз уже в коллекции — при сбое аплоада просто
+      // останется обложка Discogs.
+      try {
+        const photo = await api.uploadUserPhoto(defaultCollection.id, item.id, photoUri);
+        await api.setPrimaryUserPhoto(defaultCollection.id, item.id, photo.id);
+      } catch (e) {
+        console.warn('addToCollectionWithPhoto: photo upload failed', e);
+      }
+
       useCacheStore.getState().invalidateAll();
       await Promise.all([fetchCollectionItems(), fetchWishlistItems()]);
       detectAchievementUnlocks();

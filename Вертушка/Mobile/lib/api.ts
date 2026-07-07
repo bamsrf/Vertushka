@@ -295,6 +295,19 @@ class ApiClient {
     return response.data;
   }
 
+  /**
+   * Восстановление soft-удалённого аккаунта в 30-дневном окне.
+   * restoreToken приходит в заголовке X-Restore-Token при попытке
+   * логина в удалённый аккаунт (403 account_deleted).
+   */
+  async restoreAccount(restoreToken: string): Promise<AuthTokens> {
+    const response = await this.client.post<AuthTokens>('/auth/restore', {
+      restore_token: restoreToken,
+    });
+    await this.setTokens(response.data.access_token, response.data.refresh_token || '');
+    return response.data;
+  }
+
   async register(data: RegisterRequest): Promise<AuthTokens> {
     const response = await this.client.post<AuthTokens>('/auth/register', data);
     
@@ -553,6 +566,34 @@ class ApiClient {
       payload
     );
     return response.data;
+  }
+
+  // ── Пользовательские фото элемента коллекции ────────────────────────────
+  // Своё фото пластинки поверх обложки Discogs (UserRecordPhoto.is_primary).
+  async uploadUserPhoto(
+    collectionId: string,
+    itemId: string,
+    uri: string
+  ): Promise<{ id: string; photo_url: string; is_primary: boolean }> {
+    const formData = new FormData();
+    formData.append('file', { uri, name: 'cover.jpg', type: 'image/jpeg' } as any);
+    const response = await this.client.post<{ id: string; photo_url: string; is_primary: boolean }>(
+      `/collections/${collectionId}/items/${itemId}/photos`,
+      formData,
+      { headers: { 'Content-Type': 'multipart/form-data' } }
+    );
+    return response.data;
+  }
+
+  async setPrimaryUserPhoto(
+    collectionId: string,
+    itemId: string,
+    photoId: string
+  ): Promise<void> {
+    await this.client.patch(
+      `/collections/${collectionId}/items/${itemId}/photos/${photoId}`,
+      { is_primary: true }
+    );
   }
 
   // Свои ручные релизы (для раздела «Мои релизы» в профиле). §11.

@@ -9,6 +9,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
+  Alert,
 } from 'react-native';
 import { toast } from '../../lib/toast';
 import { Link } from 'expo-router';
@@ -21,7 +22,7 @@ import { Colors, Typography, Spacing, BorderRadius } from '../../constants/theme
 
 export default function LoginScreen() {
   const insets = useSafeAreaInsets();
-  const { login, isLoading } = useAuthStore();
+  const { login, restoreAccount, isLoading } = useAuthStore();
 
   const [loginValue, setLoginValue] = useState('');
   const [password, setPassword] = useState('');
@@ -50,8 +51,48 @@ export default function LoginScreen() {
     try {
       await login(loginValue, password);
     } catch (error: any) {
+      // Аккаунт soft-удалён, но в 30-дневном окне восстановления:
+      // бэкенд отдаёт 403 account_deleted + X-Restore-Token в заголовке.
+      const isDeleted =
+        error.response?.status === 403 &&
+        error.response?.data?.detail === 'account_deleted';
+      const restoreToken = error.response?.headers?.['x-restore-token'];
+
+      if (isDeleted && restoreToken) {
+        promptRestore(restoreToken, error.response?.headers?.['x-purge-at']);
+        return;
+      }
+
       toast.error('Ошибка входа', error.response?.data?.detail || 'Неверный логин или пароль');
     }
+  };
+
+  const promptRestore = (restoreToken: string, purgeAt?: string) => {
+    let when = '';
+    if (purgeAt) {
+      const date = new Date(purgeAt);
+      if (!isNaN(date.getTime())) {
+        when = ` После этой даты (${date.toLocaleDateString('ru-RU')}) восстановление будет невозможно.`;
+      }
+    }
+
+    Alert.alert(
+      'Аккаунт удалён',
+      `Этот аккаунт помечен на удаление, но его ещё можно восстановить со всей коллекцией.${when}`,
+      [
+        { text: 'Отмена', style: 'cancel' },
+        {
+          text: 'Восстановить',
+          onPress: async () => {
+            try {
+              await restoreAccount(restoreToken);
+            } catch {
+              toast.error('Не удалось восстановить', 'Попробуйте войти ещё раз');
+            }
+          },
+        },
+      ],
+    );
   };
 
   return (
