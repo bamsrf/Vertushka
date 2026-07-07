@@ -432,3 +432,67 @@ async def _download_cover_background(discogs_id: str, image_url: str) -> None:
                 await service.download_and_store(discogs_id, image_url, db)
     except Exception as exc:
         logger.warning("cover_storage: background download failed for %s: %s", discogs_id, exc)
+
+
+def _looks_like_junk_cover(url: str | None) -> bool:
+    """Явные не-обложки: пусто, не http, магазинные плейсхолдеры."""
+    if not url or not url.startswith("http"):
+        return True
+    low = url.lower()
+    return any(m in low for m in ("spacer.gif", "no-image", "no_image", "noimage", "placeholder", "default.jp"))
+
+
+async def _harvest_store_cover(
+    discogs_id: str, master_id: str | None, image_url: str,
+) -> None:
+    """Осадить обложку из магазинного листинга в наш индекс/master_covers для
+    непокрытого discogs-релиза + сразу скачать файл на диск.
+
+    Магазин мы уже загрузили — обложка бесплатна (ноль внешних API). Хотлинк
+    магазина протухает, поэтому eager-скачиваем: пишем covers/{id}.jpg (и
+    covers/m{mid}.jpg для мастера), дальше nginx отдаёт статику навсегда.
+    Заполняем ТОЛЬКО пустые (IS NULL / ON CONFLICT DO NOTHING) — не перетираем
+    более каноничные источники.
+    """
+    if _looks_like_junk_cover(image_url):
+        return
+    from app.database import async_session_maker
+    from sqlalchemy import text as _text
+
+    try:
+        async with async_session_maker() as db:
+            if discogs_id.isdigit():
+                await db.execute(
+                    _text(
+                        "UPDATE discogs_releases_index SET cover_image_url = :url "
+                        "WHERE discogs_id = :did AND cover_image_url IS NULL"
+                    ),
+                    {"url": image_url, "did": int(discogs_id)},
+                )
+            if master_id and master_id.isdigit() and master_id != "0":
+                await db.execute(
+                    _text(
+                        "INSERT INTO discogs_master_covers (master_id, cover_image_url, source) "
+                        "VALUES (:mid, :url, 'store') ON CONFLICT (master_id) DO NOTHING"
+                    ),
+                    {"mid": int(master_id), "url": image_url},
+                )
+            await db.commit()
+    except Exception:
+        logger.debug("harvest store cover failed: %s", discogs_id, exc_info=True)
+
+    # Eager-зеркалирование: файл оседает сразу, до протухания хотлинка.
+    if discogs_id.isdigit():
+        _retain(_download_cover_background(discogs_id, image_url))
+    if master_id and master_id.isdigit() and master_id != "0":
+        _retain(_download_cover_background(f"m{master_id}", image_url))
+
+
+def schedule_harvest_store_cover(
+    discogs_id: str | None, master_id: str | None, image_url: str | None,
+) -> None:
+    """fire-and-forget харвест обложки магазина. Вызывается из _apply_match при
+    матче листинга на discogs-релиз."""
+    if not discogs_id or not image_url:
+        return
+    _retain(_harvest_store_cover(discogs_id, master_id, image_url))
