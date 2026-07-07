@@ -34,6 +34,11 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s %(message)s",
 )
+# httpx логирует КАЖДЫЙ запрос INFO-строкой — за многодневный прогон 7M
+# запросов = ~1.4GB лога, забьёт uploads-volume. Оставляем только наши
+# per-batch summary-строки.
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
 logger = logging.getLogger("backfill_covers")
 
 _WORKLIST_DDL = """
