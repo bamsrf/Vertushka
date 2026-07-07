@@ -99,7 +99,7 @@ async def get_artist_masters_local(
                     bool_and(format_type ILIKE 'file%') AS all_file,
                     -- ВСЕ официальные издания — видео (DVD-концерты, VHS) или
                     -- промо (snippet tapes, live-промо) → "other", не альбомы.
-                    bool_and(format_type ~* 'dvd|vhs|blu-ray|laserdisc') AS all_video,
+                    bool_and(format_type ~* 'dvd|vhs|blu-ray|laserdisc|u-?matic|betacam|betamax|video ?2000|video8|hi8|minidv|mini dv|vcd|svcd') AS all_video,
                     bool_and(format_type ~* 'promo') AS all_promo,
                     MIN(discogs_id) AS main_release_id
                 FROM discogs_releases_index

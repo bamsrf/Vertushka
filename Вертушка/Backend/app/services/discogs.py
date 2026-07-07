@@ -1403,7 +1403,14 @@ class DiscogsService:
         if not format_str:
             return False
         f = format_str.lower()
-        if any(k in f for k in ("vhs", "blu-ray", "bluray", "laserdisc", "umd")):
+        # Броадкаст/аналоговое видео: промо-видеокассеты Эминема (U-matic,
+        # Betacam SP) с маркером Compilation ложно попадали в «Альбомы».
+        if any(k in f for k in (
+            "vhs", "blu-ray", "bluray", "laserdisc", "umd",
+            "u-matic", "umatic", "betacam", "betamax",
+            "video 2000", "video2000", "video8", "hi8", "minidv", "mini dv",
+            "vcd", "svcd", "ced",
+        )):
             return True
         if "dvd-video" in f or "dvdvideo" in f:
             return True
