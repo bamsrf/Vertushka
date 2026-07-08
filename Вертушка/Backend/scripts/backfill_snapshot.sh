@@ -17,7 +17,11 @@ SELECT 'masters_covered='||
 SELECT 'index_rows_covered='||count(*) FILTER (WHERE cover_image_url IS NOT NULL)||'/'||count(*)
   FROM discogs_releases_index;
 SELECT 'backfill_masters_done='||count(*) FILTER (WHERE done)||'/'||count(*) FROM cover_backfill_masters;
+-- разбивка master_covers по каналам
 SELECT 'deezer_covers='||count(*) FROM discogs_master_covers WHERE source='deezer';
+SELECT 'store_covers='||count(*) FROM discogs_master_covers WHERE source='store';
+SELECT 'perid_covers='||count(*) FROM discogs_master_covers WHERE source='discogs';
+SELECT 'tracklists_local='||count(*) FROM discogs_release_tracklists;
 SQL
 )
 
