@@ -207,9 +207,14 @@ def schedule_warm_artist_master_covers(artist_id: str, artist_name: str) -> None
 # (ремиксы/сплиты/компиляции), а прямой /masters/{id} несёт обложку ВСЕГДА
 # (это же делает тап по карточке). Возвращаем в local-first путь шаг, потерянный
 # при переходе с live-пути. Bounded: cap на страницу + semaphore + NX-лок 6ч.
+# Cap НАМЕРЕННО низкий: per-ID get_master — дорогой last-resort (1 вызов =
+# 1 мастер) против Discogs 60/мин. Массовое наполнение делает bulk-backfill
+# (Deezer, бесплатно). При 1000 юзеров 40/заход насыщал лимитер (429 + 30с
+# таймауты version-detail). 8 трикл-обскур + NX-лок 6ч = катится по каталогу
+# без перегрева. Semaphore 3 — не хапать токены у DETAIL.
 _MASTER_ID_WARM_TTL = 6 * 3600
-_MASTER_ID_PER_CALL_CAP = 40
-_master_id_semaphore = asyncio.Semaphore(6)
+_MASTER_ID_PER_CALL_CAP = 8
+_master_id_semaphore = asyncio.Semaphore(3)
 
 
 async def warm_masters_by_id(master_ids: list[str]) -> None:
