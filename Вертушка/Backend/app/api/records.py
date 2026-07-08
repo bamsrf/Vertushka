@@ -475,9 +475,20 @@ async def _apply_discogs_release(record: Record, data: dict, db: AsyncSession) -
 async def _free_tracklist(record: Record, db: AsyncSession) -> list[dict] | None:
     """Треклист из бесплатных источников без токена Discogs.
 
-    MB (per-release, точный прессинг — по MBID из mb_discogs_map) → Deezer
-    (album-level, приблизительно — по deezer_album_id мастера из master_covers).
+    Локальная таблица треклистов (Tier 2, ноль внешних вызовов) → MB (per-release
+    по MBID из mb_discogs_map) → Deezer (album-level по deezer_album_id мастера).
     """
+    # 0) Локальная таблица (Tier 2) — спарсено из дампа, мгновенно, без сети.
+    try:
+        local_tl = (await db.execute(
+            text("SELECT tracklist FROM discogs_release_tracklists WHERE discogs_id = :did"),
+            {"did": int(record.discogs_id)},
+        )).scalar()
+        if local_tl:
+            return local_tl  # JSONB → уже list[dict]
+    except (ValueError, TypeError):
+        pass
+
     # 1) MusicBrainz per-release по MBID.
     try:
         mbid = (await db.execute(
