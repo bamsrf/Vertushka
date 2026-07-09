@@ -120,7 +120,8 @@ if docker compose -f docker-compose.prod.yml exec -T api sh -c 'grep -lq backfil
     echo "🎨 backfill обложек уже крутится"
 else
     echo "🎨 Поднимаю backfill обложек (Deezer, resumable)..."
-    docker compose -f docker-compose.prod.yml exec -T -d api sh -c 'python -m app.scripts.backfill_covers_deezer --kind both --batch 300 >> /app/uploads/backfill_covers.log 2>&1'
+    # python -u — иначе stdout буферизуется и лог «молчит» часами (httpx заглушён).
+    docker compose -f docker-compose.prod.yml exec -T -d api sh -c 'python -u -m app.scripts.backfill_covers_deezer --kind both --batch 300 >> /app/uploads/backfill_covers.log 2>&1'
 fi
 
 # Показать статус
