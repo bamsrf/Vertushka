@@ -94,6 +94,18 @@ class Settings(BaseSettings):
     covers_max_cache_mb: int = Field(default=5000, alias="COVERS_MAX_CACHE_MB")
     internal_api_token: str = Field(default="", alias="INTERNAL_API_TOKEN")
 
+    @property
+    def public_api_base(self) -> str:
+        """Публичный https-хост API (без хвоста пути).
+
+        Выводится из `public_covers_base` (…/covers) — единый источник правды
+        для абсолютных ссылок на статику (`/uploads/...`) в push-картинках.
+        """
+        base = self.public_covers_base.rstrip("/")
+        if base.endswith("/covers"):
+            base = base[: -len("/covers")]
+        return base
+
     # Анти-фрод для бронирования подарков
     gift_booking_per_ip_limit: int = Field(default=5, alias="GIFT_BOOKING_PER_IP_LIMIT")
     gift_booking_per_ip_window_minutes: int = Field(default=60, alias="GIFT_BOOKING_PER_IP_WINDOW_MINUTES")

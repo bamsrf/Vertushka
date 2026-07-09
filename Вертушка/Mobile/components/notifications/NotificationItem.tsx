@@ -186,6 +186,7 @@ export const NotificationItem: React.FC<Props> = ({
   const text = useMemo(() => buildText(item), [item]);
   const meta = useMemo(() => iconForType(item.type), [item.type]);
   const avatarUrl = item.actor?.avatar_url ? resolveMediaUrl(item.actor.avatar_url) : undefined;
+  const initials = useMemo(() => actorInitials(item), [item]);
   const coverUrl = useMemo(() => getCoverFromData(item.data || {}), [item.data]);
   const showInlineActions = item.type === 'follow_request' && onAcceptFollow && onRejectFollow;
   const isMilestone = item.type === 'milestone_unlocked';
@@ -209,6 +210,15 @@ export const NotificationItem: React.FC<Props> = ({
         ) : avatarUrl ? (
           <>
             <Image source={avatarUrl} style={styles.avatar} cachePolicy="disk" />
+            <View style={[styles.iconBadge, { backgroundColor: meta.tint }]}>
+              <Icon name={meta.name as any} size={10} color={Colors.background} />
+            </View>
+          </>
+        ) : initials ? (
+          <>
+            <View style={[styles.avatar, styles.initialsAvatar]}>
+              <Text style={styles.initialsText}>{initials}</Text>
+            </View>
             <View style={[styles.iconBadge, { backgroundColor: meta.tint }]}>
               <Icon name={meta.name as any} size={10} color={Colors.background} />
             </View>
@@ -246,6 +256,16 @@ export const NotificationItem: React.FC<Props> = ({
 
   return <NotificationSwipe onDelete={() => onDelete(item)}>{row}</NotificationSwipe>;
 };
+
+/** Инициалы актора для fallback-аватара (когда есть actor, но нет фото). */
+function actorInitials(item: NotificationItemType): string | undefined {
+  if (!item.actor) return undefined;
+  const src = (item.actor.display_name || item.actor.username || '').trim();
+  if (!src) return undefined;
+  const parts = src.split(/\s+/).filter(Boolean);
+  const chars = parts.length >= 2 ? parts[0][0] + parts[1][0] : src.slice(0, 2);
+  return chars.toUpperCase();
+}
 
 /** Мини-имидж пина для ачивок (по icon_slug из data). Иначе undefined → fallback на иконку. */
 function getAchievementPin(item: NotificationItemType): number | undefined {
@@ -288,6 +308,16 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 22,
+  },
+  initialsAvatar: {
+    backgroundColor: Colors.royalBlue,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  initialsText: {
+    ...Typography.bodySmall,
+    color: Colors.background,
+    fontWeight: '700',
   },
   pin: {
     width: 44,

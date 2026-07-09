@@ -60,6 +60,20 @@ def _is_quiet_hours_now(user) -> bool:
     return now >= start or now < end
 
 
+def absolute_media_url(path: str | None) -> str | None:
+    """Относительный `/uploads/...` → абсолютный https для push-картинок.
+
+    Expo/APNs требует полный https-URL. Уже-абсолютные (http) отдаём как есть.
+    """
+    if not path:
+        return None
+    if path.startswith("http"):
+        return path
+    from app.config import get_settings
+    base = get_settings().public_api_base
+    return f"{base}{path if path.startswith('/') else '/' + path}"
+
+
 def _looks_like_expo_token(token: str | None) -> bool:
     if not token:
         return False
@@ -74,8 +88,18 @@ async def send_push(
     title: str,
     body: str,
     data: dict[str, Any] | None = None,
+    image: str | None = None,
+    bypass_cap: bool = False,
+    cap_key: str | None = None,
 ) -> bool:
-    """Отправить push конкретному пользователю с учётом его настроек."""
+    """Отправить push конкретному пользователю с учётом его настроек.
+
+    `image` — абсолютный https-URL картинки (аватар отправителя): iOS показывает
+    её в раскрытом уведомлении через richContent + mutableContent.
+    `bypass_cap` — пропустить часовой freq-cap (для чатов, где 1/час недопустим).
+    `cap_key` — переопределить ключ cap-слота (по умолчанию = notification_type),
+    чтобы дедупить по диалогу, а не по типу.
+    """
     user = await db.scalar(select(User).where(User.id == user_id))
     if not user or not user.is_active or user.deleted_at is not None:
         return False
@@ -93,7 +117,8 @@ async def send_push(
         return False
 
     # Frequency cap: не больше одного push того же типа в час на юзера.
-    if not await _try_acquire_cap(user_id, notification_type):
+    # Чаты минуют часовой cap (bypass_cap) — иначе теряются сообщения.
+    if not bypass_cap and not await _try_acquire_cap(user_id, cap_key or notification_type):
         logger.debug("Skipping push for user %s — frequency cap (%s)", user_id, notification_type)
         return False
 
@@ -105,6 +130,11 @@ async def send_push(
         "priority": "high",
         "data": data or {},
     }
+    if image:
+        # Expo → iOS rich notification. mutableContent обязателен, чтобы
+        # notification service extension подтянул картинку.
+        message["richContent"] = {"image": image}
+        message["mutableContent"] = True
 
     results = await _post_with_retry([message])
     if not results:

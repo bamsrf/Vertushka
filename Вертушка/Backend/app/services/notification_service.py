@@ -89,6 +89,7 @@ async def upsert_notification(
     data: dict[str, Any] | None = None,
     push_title: str | None = None,
     push_body: str | None = None,
+    push_image: str | None = None,
     priority: int = PRIORITY_FEED,
     merge_data_fn: Callable[[dict, dict], dict] | None = None,
 ) -> tuple[Notification | None, bool]:
@@ -175,6 +176,7 @@ async def upsert_notification(
                 notification_type=type,
                 title=push_title,
                 body=push_body,
+                image=push_image,
                 data={
                     "notification_id": str(notif.id),
                     "type": type,
@@ -236,6 +238,7 @@ async def create_notification(
     data: dict[str, Any] | None = None,
     push_title: str | None = None,
     push_body: str | None = None,
+    push_image: str | None = None,
     flush: bool = True,  # сохраняем kwarg для совместимости
 ) -> Notification:
     """LEGACY-фасад. Сохраняет контракт старых call-site'ов в gifts/users/collections.
@@ -256,6 +259,7 @@ async def create_notification(
         data=data,
         push_title=push_title,
         push_body=push_body,
+        push_image=push_image,
         priority=PRIORITY_FEED,
     )
     if notif is None:

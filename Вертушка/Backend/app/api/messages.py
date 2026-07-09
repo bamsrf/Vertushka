@@ -67,6 +67,7 @@ from app.services.messaging import (
     require_participant,
 )
 from app.services import messages_ws_hub
+from app.services.push import absolute_media_url
 from app.config import get_settings
 from app.utils.security import verify_token_type
 
@@ -533,10 +534,15 @@ async def send_message(
         )
     )
     partner_part = partner_part_q.scalar_one_or_none()
+    sender_name = current_user.display_name or current_user.username
+    preview = (conv.last_message_preview or "")[:120]
+    avatar_abs = absolute_media_url(current_user.avatar_url)
+    partner_muted = _effective_muted(partner_part)[0] if partner_part else False
+
     if partner_part and partner_part.request_status == "pending":
+        # Чужой пишет впервые → запись в ленту «Ты» (Instagram-логика) + push.
+        # Дедуп по диалогу: повторные бампают одну нить, не спамят.
         from app.services.notification_service import create_notification
-        sender_name = current_user.display_name or current_user.username
-        preview = (conv.last_message_preview or "")[:120]
         await create_notification(
             db,
             user_id=partner_id,
@@ -551,8 +557,29 @@ async def send_message(
             },
             push_title=sender_name,
             push_body=preview or "Новое сообщение",
+            push_image=avatar_abs if not partner_muted else None,
         )
         await db.commit()
+    elif partner_part and not partner_muted:
+        # Принятый диалог: в ленту «Ты» не пишем (сообщения живут в чате),
+        # но шлём push на каждое входящее — с аватаром отправителя.
+        # bypass_cap: часовой freq-cap для чата недопустим; дедуп по диалогу.
+        from app.services.push import send_push
+        await send_push(
+            db,
+            partner_id,
+            notification_type="message",
+            title=sender_name,
+            body=preview or "Новое сообщение",
+            image=avatar_abs,
+            bypass_cap=True,
+            cap_key=f"msg:{conv.id}",
+            data={
+                "type": "message",
+                "conversation_id": str(conv.id),
+                "sender_username": current_user.username,
+            },
+        )
 
     return hydrated[0]
 

@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.database import get_db
+from app.services.push import absolute_media_url
 from app.models.user import User
 from app.models.follow import Follow
 from app.models.follow_request import FollowRequest, FollowRequestStatus
@@ -861,6 +862,7 @@ async def follow_user(
             },
             push_title="Новый запрос на подписку",
             push_body=f"{actor_name} хочет на тебя подписаться",
+            push_image=absolute_media_url(current_user.avatar_url),
         )
 
         await db.commit()
@@ -893,6 +895,7 @@ async def follow_user(
         },
         push_title="Новый подписчик",
         push_body=f"{actor_name} подписался(ась) на тебя",
+        push_image=absolute_media_url(current_user.avatar_url),
     )
 
     await db.commit()
@@ -1151,6 +1154,7 @@ async def approve_follow_request(
         },
         push_title="Запрос одобрен",
         push_body=f"{approver_name} принял(а) твою подписку",
+        push_image=absolute_media_url(current_user.avatar_url),
     )
 
     await db.commit()
