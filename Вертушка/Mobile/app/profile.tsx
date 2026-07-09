@@ -14,6 +14,7 @@ import {
   Platform,
   ActivityIndicator,
   Linking,
+  InteractionManager,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { File, Paths } from 'expo-file-system';
@@ -162,8 +163,13 @@ export default function ProfileScreen() {
     try {
       const { avatar_url } = await api.uploadAvatar(result.assets[0].uri);
       setUser({ ...user!, avatar_url: `${avatar_url}?t=${Date.now()}` });
-      // Возможный анлок A3 «Аватар»
-      detectAchievementUnlocks();
+      // Возможный анлок A3 «Аватар».
+      // Ждём, пока нативный ImagePicker полностью закроется, иначе overlay-Modal
+      // встаёт ПОЗАДИ пикера/профиля (iOS modal-on-modal) — экран залипает,
+      // а анимация ачивки прячется за контентом.
+      InteractionManager.runAfterInteractions(() => {
+        setTimeout(() => detectAchievementUnlocks(), 400);
+      });
     } catch {
       toast.error('Не удалось загрузить аватарку');
     } finally {
