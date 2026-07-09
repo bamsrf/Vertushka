@@ -294,6 +294,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   logout: async () => {
+    // Сбрасываем push-токен на сервере ПОКА auth ещё валиден — иначе после
+    // выхода на этот девайс продолжают лететь пуши старого аккаунта.
+    await api.clearPushToken().catch(() => {});
     await api.logout();
     set({ user: null, isAuthenticated: false });
     analytics.logout();

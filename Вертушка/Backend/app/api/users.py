@@ -8,7 +8,7 @@ from uuid import UUID
 logger = logging.getLogger(__name__)
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File
-from sqlalchemy import select, func, literal
+from sqlalchemy import select, func, literal, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -429,8 +429,33 @@ async def update_push_token(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """Сохранение Expo push token"""
+    """Сохранение Expo push token.
+
+    Токен уникален на девайс: снимаем его со всех ДРУГИХ юзеров, иначе после
+    смены аккаунта на этом устройстве старый юзер продолжает получать пуши
+    (push_token у него остаётся тем же). Девайс принадлежит последнему вошедшему.
+    """
+    if data.push_token:
+        await db.execute(
+            update(User)
+            .where(User.push_token == data.push_token, User.id != current_user.id)
+            .values(push_token=None)
+        )
     current_user.push_token = data.push_token
+    await db.commit()
+    return {"status": "ok"}
+
+
+@router.delete("/me/push-token")
+async def clear_push_token(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Сброс push-токена (вызывается при логауте до стирания auth-токена).
+
+    Без этого юзер продолжает получать пуши на устройство после выхода.
+    """
+    current_user.push_token = None
     await db.commit()
     return {"status": "ok"}
 

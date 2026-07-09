@@ -410,6 +410,11 @@ class ApiClient {
     await this.client.put('/users/me/push-token', { push_token: token });
   }
 
+  /** Сброс push-токена на сервере (при логауте, пока auth ещё валиден). */
+  async clearPushToken(): Promise<void> {
+    await this.client.delete('/users/me/push-token');
+  }
+
   async getNotificationSettings(): Promise<NotificationSettings> {
     const response = await this.client.get<NotificationSettings>('/users/me/notification-settings');
     return response.data;
