@@ -139,6 +139,11 @@ function RootLayout() {
         router.push('/social/follow-requests');
         return;
       }
+      if (type === 'message' || type === 'message_request') {
+        const convId = (data?.conversation_id as string | undefined) || entityId;
+        router.push((convId ? `/messages/${convId}` : '/messages') as any);
+        return;
+      }
       if (type === 'digest_wishlist_in_stock') {
         router.push('/notifications');
         return;

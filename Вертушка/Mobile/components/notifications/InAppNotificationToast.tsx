@@ -129,7 +129,7 @@ export const InAppNotificationToastHost: React.FC = () => {
       router.push('/social/follow-requests');
       return;
     }
-    if (type === 'message_request') {
+    if (type === 'message' || type === 'message_request') {
       const convId = (data.conversation_id as string | undefined) || entityId;
       if (convId) router.push(`/messages/${convId}` as any);
       else router.push('/messages');

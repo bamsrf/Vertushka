@@ -122,19 +122,22 @@ async def send_push(
         logger.debug("Skipping push for user %s — frequency cap (%s)", user_id, notification_type)
         return False
 
+    payload_data = dict(data or {})
+    if image and "avatar_url" not in payload_data:
+        # Кладём аватар в data → in-app toast/лента читают его из JS.
+        # Rich-картинка на локскрине (richContent+mutableContent) требует iOS
+        # Notification Service Extension в билде — пока не включаем (без NSE
+        # даёт пустой баннер). См. follow-up NSE task.
+        payload_data["avatar_url"] = image
+
     message = {
         "to": token,
         "title": title,
         "body": body,
         "sound": "default",
         "priority": "high",
-        "data": data or {},
+        "data": payload_data,
     }
-    if image:
-        # Expo → iOS rich notification. mutableContent обязателен, чтобы
-        # notification service extension подтянул картинку.
-        message["richContent"] = {"image": image}
-        message["mutableContent"] = True
 
     results = await _post_with_retry([message])
     if not results:
