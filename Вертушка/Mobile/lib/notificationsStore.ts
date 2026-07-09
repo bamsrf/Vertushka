@@ -40,6 +40,7 @@ interface NotificationsState {
   snoozePersonal: (id: string, days: number) => Promise<void>;
   bumpPending: () => void;
   clearPending: () => void;
+  bumpUnread: () => void;
   reset: () => void;
 }
 
@@ -257,6 +258,13 @@ export const useNotificationsStore = create<NotificationsState>((set, get) => ({
 
   clearPending() {
     set({ pendingNew: 0 });
+  },
+
+  bumpUnread() {
+    // Оптимистично зажигаем бейдж на аватарке сразу при получении push
+    // feed-типа — не ждём 30с-поллинга и не ловим гонку с коммитом на бэке.
+    // fetchUnreadCount позже сверит абсолютное значение.
+    set((s) => ({ unreadCount: s.unreadCount + 1 }));
   },
 
   reset() {

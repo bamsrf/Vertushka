@@ -113,15 +113,29 @@ function RootLayout() {
     // Foreground: уведомление пришло пока приложение открыто — рефрешим unread
     // и показываем in-app toast (OS-баннер подавлен через handleNotification).
     notificationListener.current = Notifications.addNotificationReceivedListener((event) => {
-      useNotificationsStore.getState().fetchUnreadCount();
-      useNotificationsStore.getState().bumpPending();
+      const content = event.request.content;
+      const data = (content.data || {}) as Record<string, unknown>;
+      const type = data.type as string | undefined;
+
+      // Личные сообщения (accepted) живут в чате, не в ленте «Ты» — они не
+      // должны зажигать бейдж/pill уведомлений, только счётчик сообщений.
+      if (type === 'message' || type === 'message_request') {
+        useMessagesStore.getState().refreshUnread();
+      }
+      if (type !== 'message') {
+        const store = useNotificationsStore.getState();
+        store.bumpUnread();   // мгновенно зажечь бейдж на аватарке
+        store.bumpPending();  // pill «Показать N новых», если экран открыт
+        // Реконсиляция абсолютного значения после коммита на бэке (гонка).
+        setTimeout(() => useNotificationsStore.getState().fetchUnreadCount(), 2000);
+      }
+
       if (AppState.currentState === 'active') {
-        const content = event.request.content;
         inAppToast.show({
           id: event.request.identifier,
           title: content.title || 'Уведомление',
           body: content.body || '',
-          data: (content.data || {}) as Record<string, unknown>,
+          data,
         });
       }
     });
