@@ -85,11 +85,19 @@ class RecordResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
 
+    cover_cached_at: datetime | None = Field(default=None, exclude=True)
+
     @model_validator(mode="after")
     def _populate_cover_url(self) -> "RecordResponse":
         if self.cover_local_path and not self.cover_url:
             lp = self.cover_local_path
-            self.cover_url = lp if lp.startswith("/") else f"/uploads/{lp}"
+            base = lp if lp.startswith("/") else f"/uploads/{lp}"
+            # cache-bust по cover_cached_at: перезалив обложки меняет метку →
+            # новый URL → клиент (expo-image disk / nginx expires 7d) грузит
+            # СВЕЖЕЕ фото, а не старое кэшированное по стабильному пути.
+            if self.cover_cached_at:
+                base = f"{base}?v={int(self.cover_cached_at.timestamp())}"
+            self.cover_url = base
         return self
 
 
@@ -118,11 +126,16 @@ class RecordBrief(BaseModel):
     is_limited: bool = False
     is_hot: bool = False
 
+    cover_cached_at: datetime | None = Field(default=None, exclude=True)
+
     @model_validator(mode="after")
     def _populate_cover_url(self) -> "RecordBrief":
         if self.cover_local_path and not self.cover_url:
             lp = self.cover_local_path
-            self.cover_url = lp if lp.startswith("/") else f"/uploads/{lp}"
+            base = lp if lp.startswith("/") else f"/uploads/{lp}"
+            if self.cover_cached_at:
+                base = f"{base}?v={int(self.cover_cached_at.timestamp())}"
+            self.cover_url = base
         return self
 
 
