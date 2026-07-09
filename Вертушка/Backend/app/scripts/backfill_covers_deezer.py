@@ -109,6 +109,25 @@ async def _build_masters_worklist(rebuild: bool = False) -> int:
         return int(total)
 
 
+# Watchdog батча: одиночный зависший Deezer-вызов (несмотря на httpx timeout)
+# морозил весь прогон на часы (инцидент 07-08: 34ч тишины). Батч дольше этого →
+# считаем непокрытым и идём дальше (self-heal, не хэнг и не бесконечный цикл).
+_BATCH_TIMEOUT = 240
+
+
+async def _gather_batch(items: list[dict], sem: asyncio.Semaphore) -> list[dict]:
+    try:
+        return await asyncio.wait_for(
+            asyncio.gather(*(_lookup(it, sem) for it in items)),
+            timeout=_BATCH_TIMEOUT,
+        )
+    except asyncio.TimeoutError:
+        logger.warning("batch timeout (%ds) — помечаем miss, продолжаем", _BATCH_TIMEOUT)
+        for it in items:
+            it.setdefault("cover", None)
+        return items
+
+
 async def _lookup(item: dict, sem: asyncio.Semaphore) -> dict:
     """Один Deezer-матч под семафором. Возвращает item + cover(dict|None)."""
     async with sem:
@@ -141,7 +160,7 @@ async def _run_masters(batch: int, max_requests: int | None) -> None:
             break
 
         items = [dict(r) for r in rows]
-        results = await asyncio.gather(*(_lookup(it, sem) for it in items))
+        results = await _gather_batch(items, sem)
 
         hits = [r for r in results if r["cover"]]
         done_ids = [r["master_id"] for r in results]
@@ -205,7 +224,7 @@ async def _run_releases(batch: int, max_requests: int | None) -> None:
             break
 
         items = [dict(r) for r in rows]
-        results = await asyncio.gather(*(_lookup(it, sem) for it in items))
+        results = await _gather_batch(items, sem)
         hits = [r for r in results if r["cover"]]
         seen += len(results)
         covered += len(hits)

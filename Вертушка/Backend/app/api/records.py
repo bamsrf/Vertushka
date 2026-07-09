@@ -991,17 +991,18 @@ async def scan_barcode(
                 for row in dump_rows
             ]
 
-    # Поиск в Discogs
+    # Поиск в Discogs — последний resort. Короткий watchdog 7с (не дефолтные
+    # 30с лимитера): юзер в магазине не должен ждать полминуты и ловить 503.
+    # При таймауте/ошибке/пусто → возвращаем [] («не найдено, добавьте вручную»),
+    # а НЕ 503: клиент показывает пустой результат, а не «ошибку». Graceful
+    # деградация — критично для скана в оффлайн-полях при перегрузе Discogs.
     discogs = DiscogsService()
-    
     try:
-        results = await discogs.search_by_barcode(barcode)
-        return results
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=f"Ошибка при поиске по штрихкоду: {str(e)}"
-        )
+        results = await asyncio.wait_for(discogs.search_by_barcode(barcode), timeout=7)
+        return results or []
+    except Exception:
+        logger.info("scan_barcode: Discogs fallback miss/slow for %s", barcode)
+        return []
 
 
 # Порог визуальной уверенности (косинус CLIP). Ниже — клиенту показать
