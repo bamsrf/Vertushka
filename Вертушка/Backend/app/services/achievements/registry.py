@@ -107,13 +107,14 @@ def reset_registry() -> None:
 # Загружаем определения. Порядок важен: серии раньше, рандом — после.
 # Внутри серии: обычные ачивки → мета-ачивка.
 #
-# Серии-каркасы (geography / eras / invitations / discography + J2–J6 в
-# gifts.py) — это SCAFFOLDING. Их evaluator-ы возвращают `unlocked=False`,
-# поэтому ничего не выдают пользователям. Каталог-эндпоинт отдаёт их как
-# «навсегда залоченные», чтобы Mobile-команда видела сетку серий в UI.
+# Серии-каркасы (eras / invitations / discography + J2–J6 в gifts.py) — это
+# SCAFFOLDING. Их evaluator-ы возвращают `unlocked=False`, поэтому ничего не
+# выдают пользователям. Каталог-эндпоинт отдаёт их как «навсегда залоченные»,
+# чтобы Mobile-команда видела сетку серий в UI.
 #
-# rarity (C*) и genres (F*) — РЕАЛИЗОВАНЫ (Phase 3): rarity считает по флагам
-# Record.is_limited/is_collectible/is_hot, genres — по Record.genre.
+# rarity (C*), genres (F*) и geography (D*) — РЕАЛИЗОВАНЫ (Phase 3): rarity
+# считает по флагам Record.is_limited/is_collectible/is_hot, genres — по
+# Record.genre, geography — по Record.country/Record.label.
 def _load_definitions() -> None:
     # Импорты внутри функции, чтобы избежать циклов и регистрировать в нужном порядке.
     from app.services.achievements.definitions.series import foundation as _foundation
