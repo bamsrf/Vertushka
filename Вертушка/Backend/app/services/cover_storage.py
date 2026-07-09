@@ -237,10 +237,17 @@ class CoverStorageService:
             .exists()
         )
 
-        # Выбираем старейшие записи с локальными обложками (кроме активных)
+        # Выбираем старейшие записи с локальными обложками (кроме активных).
+        # ⚠️ НИКОГДА не эвиктим source='user' — это загруженное юзером фото,
+        # НЕВОССТАНОВИМО (не тянется из Discogs/Deezer как зеркала). discogs/store
+        # обложки эвиктить можно — само-лечатся из cover_image_url при next view.
         result = await db.execute(
             select(Record.id, Record.discogs_id, Record.cover_local_path)
-            .where(Record.cover_local_path.isnot(None), ~active_in_stock)
+            .where(
+                Record.cover_local_path.isnot(None),
+                ~active_in_stock,
+                Record.source.is_distinct_from("user"),
+            )
             .order_by(Record.cover_cached_at.asc())
         )
         candidates = result.all()
