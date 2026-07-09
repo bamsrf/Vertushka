@@ -20,6 +20,7 @@ import { GradientText } from './GradientText';
 import { Colors, Typography, Spacing } from '../constants/theme';
 import { useAuthStore } from '../lib/store';
 import { useNotificationsStore } from '../lib/notificationsStore';
+import { useMessagesStore } from '../lib/messagesStore';
 import { resolveMediaUrl } from '../lib/api';
 
 interface HeaderProps {
@@ -38,7 +39,12 @@ export function Header({
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { user } = useAuthStore();
-  const unreadCount = useNotificationsStore((s) => s.unreadCount);
+  const notifUnread = useNotificationsStore((s) => s.unreadCount);
+  const msgUnread = useMessagesStore((s) => s.unread.primary + s.unread.requests);
+  // Агрегат на аватарке профиля: непрочитанные уведомления + неотвеченные
+  // личные сообщения. Юзер видит одну цифру → знает, что зайти в профиль.
+  // Сами сообщения в ленту «Ты» не прокидываются — только в этот счётчик.
+  const unreadCount = notifUnread + msgUnread;
   const badgeScale = useRef(new Animated.Value(1)).current;
   const prevUnreadRef = useRef(unreadCount);
 
