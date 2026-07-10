@@ -60,6 +60,12 @@ async def crawl_store(slug: str, *, mode: CrawlMode = "full", limit: int | None 
                 counters["discovered"] += 1
                 try:
                     upserted = await _upsert_listing(db, store.id, dto)
+                    # Коммит на КАЖДЫЙ листинг: транзакция живёт только на время
+                    # одного INSERT и не переживает следующий сетевой fetch в
+                    # `async for`. Раньше одна транзакция висела на весь краул
+                    # (часы) → idle-in-transaction держал локи store_listings →
+                    # api-upserts блокировались, воркер вставал (инцидент 07-10).
+                    await db.commit()
                     if upserted:
                         counters["upserted"] += 1
                     else:
@@ -131,6 +137,9 @@ async def refresh_store_listings(slug: str, items: list[tuple[object, str]]) -> 
                         counters["removed"] += 1
                     else:
                         await _upsert_listing(db, store.id, dto)
+                    # Коммит на каждый URL — транзакция не переживает следующий
+                    # `refresh_urls` fetch (см. crawl_store, инцидент 07-10).
+                    await db.commit()
                 except SQLAlchemyError:
                     counters["errors"] += 1
                     logger.exception("[%s] refresh upsert failed for %s", slug, url)

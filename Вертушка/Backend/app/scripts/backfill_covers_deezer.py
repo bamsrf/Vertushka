@@ -23,6 +23,7 @@ throttle Deezer (~7.7/s) × пул воркеров с перекрытием л
 import argparse
 import asyncio
 import logging
+import os
 import time
 
 from sqlalchemy import text
@@ -64,6 +65,26 @@ CREATE TABLE IF NOT EXISTS cover_backfill_progress (
 # app.services.deezer сериализует запросы (~7.7/s) — потолок держится им, пул
 # лишь не даёт латентности простаивать.
 _CONCURRENCY = 6
+
+# Self-watchdog: раньше зависший вне _gather_batch вызов (commit / следующий
+# SELECT) морозил прогон молча на 26ч (инцидент 07-10) — batch-watchdog покрывал
+# только gather. Теперь любой батч обновляет _last_progress; фоновый _watchdog
+# при застое > _STALL_LIMIT делает os._exit(1) → чистый рестарт (deploy/cron
+# подхватят resumable). Тихий зомби превращается в 10-мин самоубийство.
+_STALL_LIMIT = 600
+_last_progress = time.monotonic()
+
+
+async def _watchdog() -> None:
+    while True:
+        await asyncio.sleep(60)
+        stalled = time.monotonic() - _last_progress
+        if stalled > _STALL_LIMIT:
+            logger.error(
+                "backfill stalled %.0fs (>%ds) — self-exit for clean relaunch",
+                stalled, _STALL_LIMIT,
+            )
+            os._exit(1)
 
 
 async def _ensure_infra() -> None:
@@ -140,6 +161,7 @@ async def _lookup(item: dict, sem: asyncio.Semaphore) -> dict:
 
 
 async def _run_masters(batch: int, max_requests: int | None) -> None:
+    global _last_progress
     total = await _build_masters_worklist()
     if not total:
         logger.info("masters worklist empty — nothing to do")
@@ -193,6 +215,7 @@ async def _run_masters(batch: int, max_requests: int | None) -> None:
             ), {"seen": seen, "cov": covered})
             await s.commit()
 
+        _last_progress = time.monotonic()
         rate = seen / max(time.monotonic() - t0, 1e-9)
         logger.info(
             "masters: seen=%d covered=%d (%.0f%%) rate=%.1f/s",
@@ -201,6 +224,7 @@ async def _run_masters(batch: int, max_requests: int | None) -> None:
 
 
 async def _run_releases(batch: int, max_requests: int | None) -> None:
+    global _last_progress
     async with async_session_maker() as s:
         row = (await s.execute(text(
             "SELECT last_id, seen, covered FROM cover_backfill_progress WHERE kind='releases'"
@@ -248,6 +272,7 @@ async def _run_releases(batch: int, max_requests: int | None) -> None:
             ), {"last": last_id, "seen": seen, "cov": covered})
             await s.commit()
 
+        _last_progress = time.monotonic()
         rate = seen / max(time.monotonic() - t0, 1e-9)
         logger.info(
             "releases: last_id=%d seen=%d covered=%d (%.0f%%) rate=%.1f/s",
@@ -264,14 +289,20 @@ async def main() -> None:
     ap.add_argument("--rebuild-worklist", action="store_true")
     args = ap.parse_args()
 
-    await _ensure_infra()
-    if args.rebuild_worklist:
-        await _build_masters_worklist(rebuild=True)
+    global _last_progress
+    _last_progress = time.monotonic()
+    wd = asyncio.create_task(_watchdog())
+    try:
+        await _ensure_infra()
+        if args.rebuild_worklist:
+            await _build_masters_worklist(rebuild=True)
 
-    if args.kind in ("masters", "both"):
-        await _run_masters(args.batch, args.max_requests)
-    if args.kind in ("releases", "both"):
-        await _run_releases(args.batch, args.max_requests)
+        if args.kind in ("masters", "both"):
+            await _run_masters(args.batch, args.max_requests)
+        if args.kind in ("releases", "both"):
+            await _run_releases(args.batch, args.max_requests)
+    finally:
+        wd.cancel()
 
     logger.info("backfill done")
 
