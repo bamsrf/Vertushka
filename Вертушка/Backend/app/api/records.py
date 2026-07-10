@@ -935,11 +935,16 @@ async def scan_barcode(
     Поиск пластинки по штрихкоду.
     Требует авторизации.
     """
-    # Сначала проверяем локальную БД
+    # Сначала проверяем локальную БД. barcode НЕ уникален (store-native + user +
+    # пресс-дубли делят один код) → scalar_one_or_none() падал в
+    # MultipleResultsFound → 500 → клиент показывал «не найдено» (баг скана
+    # 602478091186). Берём один не-merged матч.
     result = await db.execute(
-        select(Record).where(Record.barcode == barcode)
+        select(Record)
+        .where(Record.barcode == barcode, Record.merged_into_id.is_(None))
+        .limit(1)
     )
-    local_record = result.scalar_one_or_none()
+    local_record = result.scalars().first()
     
     if local_record:
         return [RecordSearchResult(
