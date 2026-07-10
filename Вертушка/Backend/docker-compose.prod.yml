@@ -52,7 +52,12 @@ services:
       - DATABASE_URL=postgresql+asyncpg://${DB_USER}:${DB_PASSWORD}@db:5432/vertushka
       - REDIS_URL=redis://redis:6379/0
       - IS_SCHEDULER=false
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 2 --proxy-headers --forwarded-allow-ips '*'
+    # 1 воркер: cover-scan грузит резидентную CLIP ONNX-модель (~350MB + арены)
+    # в КАЖДЫЙ воркер → 2 × CLIP = OOM на 2GB (инцидент 07-10, 2-й воркер умирал).
+    # Один воркер + ONNX mem-флаги (cover_matcher.py) = ~500MB под капом 800.
+    # Изоляция воркеров не нужна: в аварию оба легли одинаково, защита =
+    # autoheal + statement_timeout + короткие транзакции + idle-txn backstop.
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1 --proxy-headers --forwarded-allow-ips '*'
     # healthcheck дёргает /health; при зависании воркеров (лок-шторм 07:55)
     # проверка падает → autoheal рестартит api за ~1 мин, без человека.
     healthcheck:

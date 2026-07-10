@@ -80,8 +80,17 @@ class CoverMatcher:
 
         self._ensure_model_file()
         opts = ort.SessionOptions()
-        opts.intra_op_num_threads = 2
-        opts.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+        # Память > скорость: скан обложки редкий, а модель резидентна навсегда
+        # в процессе (инцидент 07-10: CLIP держал ~350MB + арены ~200MB → 2 воркера
+        # × CLIP = OOM на 2GB). Флаги режут резидентный overhead ONNX:
+        # - enable_cpu_mem_arena=False: не предвыделять большую арену (2-3× модели);
+        # - enable_mem_pattern=False: не пре-планировать аллокации;
+        # - intra_op_num_threads=1: одна thread-local арена вместо N;
+        # - BASIC вместо ENABLE_ALL: без layout-оптимизаций, что держат лишние копии.
+        opts.intra_op_num_threads = 1
+        opts.enable_cpu_mem_arena = False
+        opts.enable_mem_pattern = False
+        opts.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_BASIC
         self._session = ort.InferenceSession(
             str(_MODEL_PATH), sess_options=opts, providers=["CPUExecutionProvider"]
         )
