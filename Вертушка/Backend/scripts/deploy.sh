@@ -122,8 +122,20 @@ echo -e "${GREEN}✅ Деплой завершён успешно!${NC}"
 # хост и sshd не задохнутся (инцидент 07-10, падение №2). Детект настоящего
 # процесса — по `python` в cmdline (grep-строка сама содержит имя модуля и
 # самоматчилась бы).
-if [ "${BACKFILL_ENABLED:-0}" != "1" ]; then
-    echo "🎨 backfill обложек ОТКЛЮЧЁН (BACKFILL_ENABLED!=1) — пропускаю"
+#
+# ГЕЙТ = persistent-маркер /app/uploads/.backfill_enabled (на volume uploads_data,
+# переживает force-recreate контейнера). Деплой каждой фичи пересоздаёт scheduler
+# → убивает exec-d backfill; этот блок поднимает его ЗАНОВО после recreate, если
+# маркер есть. backfill resumable (worklist done-флаги + checkpoint) → продолжает
+# с места, данные не теряются. Включить навсегда:
+#   docker compose -f docker-compose.prod.yml exec -T scheduler touch /app/uploads/.backfill_enabled
+# Выключить: тем же путём rm. (BACKFILL_ENABLED=1 — разовый форс без маркера.)
+BF_ON=0
+[ "${BACKFILL_ENABLED:-0}" = "1" ] && BF_ON=1
+docker compose -f docker-compose.prod.yml exec -T scheduler test -f /app/uploads/.backfill_enabled 2>/dev/null && BF_ON=1
+
+if [ "$BF_ON" != "1" ]; then
+    echo "🎨 backfill обложек ОТКЛЮЧЁН (нет маркера .backfill_enabled) — пропускаю"
 elif docker compose -f docker-compose.prod.yml exec -T scheduler sh -c 'for f in /proc/[0-9]*/cmdline; do c=$(tr "\0" " " <"$f" 2>/dev/null); echo "$c" | grep -q backfill_covers_deezer && echo "$c" | grep -q python && exit 0; done; exit 1'; then
     echo "🎨 backfill обложек уже крутится"
 else
