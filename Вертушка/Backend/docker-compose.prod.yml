@@ -41,9 +41,12 @@ services:
       dockerfile: Dockerfile
     container_name: vertushka_api
     restart: always
-    # Кап памяти: runaway (backfill/утечка) OOM-killer прибьёт ВНУТРИ контейнера,
-    # хост и sshd не задохнутся (инцидент 07-10, падение №2 = swap-thrash).
-    mem_limit: 800m
+    # Кап памяти: runaway OOM-killer прибьёт ВНУТРИ контейнера, хост и sshd не
+    # задохнутся (инцидент 07-10, падение №2 = swap-thrash). 1000m: после
+    # cover-scan резидентная CLIP-модель даёт ~715MB пика → 800 было впритык
+    # (89%), 1000 даёт headroom. Host worst-case ~1.6GB/1.96GB (api1000 + db +
+    # scheduler600 + glitchtip) — влезает.
+    mem_limit: 1000m
     labels:
       - autoheal=true   # autoheal-сайдкар рестартит при unhealthy
     env_file:

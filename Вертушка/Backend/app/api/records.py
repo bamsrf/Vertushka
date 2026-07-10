@@ -1069,7 +1069,19 @@ async def _visual_rerank(image_base64: str, candidates: list) -> list:
     scored.sort(key=lambda c: c.match_score, reverse=True)
     # хвост кандидатов за пределами top-N сохраняем как есть, после переранжированных
     tail = candidates[_COVER_RERANK_TOPN:]
-    return scored + unscored + tail
+    result = scored + unscored + tail
+
+    # Вернуть ОС арены от скачанных/декодированных обложек-кандидатов: glibc не
+    # отдаёт освобождённую память сама → RSS процесса пух после каждого скана
+    # (инцидент 07-10). malloc_trim схлопывает транзиенты; резидентная CLIP-модель
+    # остаётся (её держит singleton CoverMatcher).
+    del images, vecs, query_vec
+    try:
+        import ctypes
+        ctypes.CDLL("libc.so.6").malloc_trim(0)
+    except Exception:
+        pass
+    return result
 
 
 @router.post("/scan/cover/", response_model=CoverScanResponse)
