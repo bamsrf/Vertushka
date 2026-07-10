@@ -2823,8 +2823,28 @@ async def get_artist_releases(
     Получение релизов артиста.
     Не требует авторизации.
     """
-    response.headers["Cache-Control"] = "public, max-age=1800"
+    response.headers["Cache-Control"] = "public, max-age=300"
     discogs = DiscogsService()
+
+    # Local-first: все издания артиста из дамп-индекса (artist_ids GIN) — ноль
+    # вызовов Discogs, sub-100ms. None = артиста нет в индексе → live-путь ниже.
+    try:
+        from app.services.discogs_index import get_artist_releases_local
+
+        local = await get_artist_releases_local(
+            db, artist_id, page=page, per_page=per_page,
+        )
+        if local is not None:
+            await _enrich_search_results_with_rarity(
+                local.results, db, id_attr="release_id", format_attr="format"
+            )
+            # Заглушки на странице → no-store, чтобы cover-retry дошёл до бэка,
+            # а nginx не запинил неполный ответ (урок versions-экрана).
+            if any(not r.cover_image_url for r in local.results):
+                response.headers["Cache-Control"] = "no-store"
+            return local
+    except Exception:
+        logger.exception("local artist releases failed, live fallback: %s", artist_id)
 
     try:
         releases = await discogs.get_artist_releases(

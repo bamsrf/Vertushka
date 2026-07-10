@@ -234,6 +234,85 @@ async def get_artist_masters_local(
     )
 
 
+async def get_artist_releases_local(
+    db: AsyncSession,
+    artist_id: str,
+    page: int = 1,
+    per_page: int = 50,
+):
+    """ПЛОСКИЙ список всех изданий артиста из локального дамп-индекса — ноль
+    вызовов Discogs. В отличие от get_artist_masters_local (группирует по
+    мастеру), возвращает каждый релиз отдельно (все прессы), как live-путь
+    discogs.get_artist_releases. None → артиста нет в индексе → live fallback.
+    """
+    from app.schemas.record import ReleaseSearchResponse, ReleaseSearchResult
+    from app.config import get_settings
+
+    if not str(artist_id).isdigit():
+        return None
+
+    name_row = (await db.execute(
+        text("SELECT name FROM discogs_artists WHERE artist_id = :aid"),
+        {"aid": int(artist_id)},
+    )).scalar()
+    if not name_row:
+        return None
+
+    rows = (await db.execute(
+        text("""
+            SELECT discogs_id, title, label, catalog_norm, country, year,
+                   format_type, cover_image_url,
+                   COUNT(*) OVER () AS total
+            FROM discogs_releases_index
+            WHERE artist_ids @> ARRAY[CAST(:aid AS bigint)]
+              AND NOT is_unofficial
+            ORDER BY year DESC NULLS LAST, discogs_id
+            LIMIT :lim OFFSET :off
+        """),
+        {"aid": int(artist_id), "lim": per_page, "off": (page - 1) * per_page},
+    )).mappings().all()
+
+    if not rows and page == 1:
+        return None  # артиста нет в индексе → live fallback
+
+    covers_base = get_settings().public_covers_base
+    total = rows[0]["total"] if rows else 0
+    results = []
+    for r in rows:
+        # Обложка через собственное зеркало /covers/{id}.jpg (nginx-статика);
+        # covers.py резолвит источник по discogs_id. Null → дойдёт фоном.
+        cover_url = f"{covers_base}/{r['discogs_id']}.jpg" if r["cover_image_url"] else None
+        results.append(ReleaseSearchResult(
+            release_id=str(r["discogs_id"]),
+            title=r["title"] or "",
+            artist=name_row,
+            label=r["label"],
+            catalog_number=r["catalog_norm"],
+            country=r["country"],
+            year=r["year"],
+            format=r["format_type"],
+            cover_image_url=cover_url,
+            thumb_image_url=None,
+        ))
+
+    # Самолечение обложек непокрытых релизов (CAA → barcode → Discogs budget →
+    # iTunes), запись в индекс → следующий заход без заглушек.
+    uncovered = [
+        r.release_id for r in results
+        if not r.cover_image_url and r.release_id.isdigit()
+    ]
+    if uncovered:
+        from app.services.cover_warm import schedule_warm_dump_covers
+        schedule_warm_dump_covers(uncovered, discogs_budget=10)
+
+    return ReleaseSearchResponse(
+        results=results,
+        total=total,
+        page=page,
+        per_page=per_page,
+    )
+
+
 def _to_int(value) -> int | None:
     try:
         if value is None or value == "":
