@@ -64,7 +64,7 @@ CREATE TABLE IF NOT EXISTS cover_backfill_progress (
 # Пул воркеров: перекрывает сетевую латентность Deezer. Глобальный throttle в
 # app.services.deezer сериализует запросы (~7.7/s) — потолок держится им, пул
 # лишь не даёт латентности простаивать.
-_CONCURRENCY = 6
+_CONCURRENCY = 3
 
 # Self-watchdog: раньше зависший вне _gather_batch вызов (commit / следующий
 # SELECT) морозил прогон молча на 26ч (инцидент 07-10) — batch-watchdog покрывал
@@ -97,6 +97,9 @@ async def _ensure_infra() -> None:
 
 async def _build_masters_worklist(rebuild: bool = False) -> int:
     async with async_session_maker() as s:
+        # Тяжёлая агрегация (~30с) под глобальным statement_timeout=30с
+        # аборттилась бы. Локально поднимаем лимит только для этой сессии.
+        await s.execute(text("SET statement_timeout = 120000"))
         if rebuild:
             await s.execute(text("TRUNCATE cover_backfill_masters"))
             await s.commit()

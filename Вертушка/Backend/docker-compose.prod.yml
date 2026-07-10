@@ -41,6 +41,11 @@ services:
       dockerfile: Dockerfile
     container_name: vertushka_api
     restart: always
+    # Кап памяти: runaway (backfill/утечка) OOM-killer прибьёт ВНУТРИ контейнера,
+    # хост и sshd не задохнутся (инцидент 07-10, падение №2 = swap-thrash).
+    mem_limit: 800m
+    labels:
+      - autoheal=true   # autoheal-сайдкар рестартит при unhealthy
     env_file:
       - .env.prod
     environment:
@@ -48,6 +53,14 @@ services:
       - REDIS_URL=redis://redis:6379/0
       - IS_SCHEDULER=false
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 2 --proxy-headers --forwarded-allow-ips '*'
+    # healthcheck дёргает /health; при зависании воркеров (лок-шторм 07:55)
+    # проверка падает → autoheal рестартит api за ~1 мин, без человека.
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import httpx,sys; sys.exit(0 if httpx.get('http://localhost:8000/health',timeout=3).status_code==200 else 1)\""]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
     volumes:
       - uploads_data:/app/uploads
     depends_on:
@@ -63,6 +76,11 @@ services:
       dockerfile: Dockerfile
     container_name: vertushka_scheduler
     restart: always
+    # Кап памяти: здесь крутятся краул-крон + (опц.) backfill@3. Runaway
+    # прибьётся внутри контейнера, api и хост не затронуты.
+    mem_limit: 600m
+    labels:
+      - autoheal=true
     env_file:
       - .env.prod
     environment:
@@ -70,6 +88,12 @@ services:
       - REDIS_URL=redis://redis:6379/0
       - IS_SCHEDULER=true
     command: uvicorn app.main:app --host 0.0.0.0 --port 8001 --workers 1 --proxy-headers --forwarded-allow-ips '*'
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import httpx,sys; sys.exit(0 if httpx.get('http://localhost:8001/health',timeout=3).status_code==200 else 1)\""]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
     volumes:
       - uploads_data:/app/uploads
     depends_on:
@@ -102,6 +126,20 @@ services:
     volumes:
       - ./certbot/conf:/etc/letsencrypt
       - ./certbot/www:/var/www/certbot
+
+  # Autoheal — рестартит контейнеры с label autoheal=true при статусе unhealthy.
+  # Runtime-страховка: зависший воркер (лок-шторм 07:55) сам восстанавливается
+  # за ~1 мин, без ручного рестарта. Крошечный образ (~10MB), только docker.sock.
+  autoheal:
+    image: willfarrell/autoheal:latest
+    container_name: vertushka_autoheal
+    restart: always
+    environment:
+      - AUTOHEAL_CONTAINER_LABEL=autoheal
+      - AUTOHEAL_INTERVAL=10
+      - AUTOHEAL_START_PERIOD=60
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
 
   # Metabase убран с прода 2026-05-09 ради экономии ~1.8 ГБ диска.
   # Локальный запуск для аналитики: cd Backend && docker compose up metabase

@@ -17,6 +17,13 @@ engine = create_async_engine(
     pool_pre_ping=True,
     pool_size=5,   # × 4 воркера = 20 базовых соединений
     max_overflow=10,  # × 4 воркера = 60 макс (в рамках max_connections=100)
+    # statement_timeout: ни один запрос не висит вечно, воркер не залипает
+    # (инцидент 07-10: лок-вейт морозил корутины на часы → тотальный аут).
+    # 30с с запасом покрывает любой user-запрос (замеры <1с). Только для
+    # app-коннектов — alembic поднимает свой engine (alembic/env.py:81), так
+    # что миграции НЕ задеты. Тяжёлые фоновые агрегации (backfill worklist)
+    # локально поднимают лимит через `SET statement_timeout` в своей сессии.
+    connect_args={"server_settings": {"statement_timeout": "30000"}},
 )
 
 # Фабрика сессий
