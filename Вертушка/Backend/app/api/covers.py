@@ -42,6 +42,52 @@ def _spawn_mirror(discogs_id: str, url: str) -> None:
     task.add_done_callback(_mirror_tasks.discard)
 
 
+async def _resolve_cover_live(
+    db, discogs_id: str, artist: str | None, title: str | None,
+    year: int | None, barcode: str | None,
+) -> str | None:
+    """Синхронный резолв обложки для release без URL в индексе — показать
+    реальную обложку вместо заглушки (первый заход). Порядок по цене:
+    CAA-оффлайн (бесплатно, mb_discogs_map) → Deezer (бесплатно) → Discogs
+    (последним, под лимитером 60/мин + interactive-reserve). Найденное пишем в
+    индекс → следующий заход отдаёт 302 из БД без повторного резолва.
+    """
+    url = None
+    try:
+        from app.services.cover_fallback import cover_url_by_discogs_id
+        url = await cover_url_by_discogs_id(db, discogs_id)
+    except Exception:
+        pass
+    if not url and artist and title:
+        try:
+            from app.services.deezer import cover_by_meta
+            dz = await cover_by_meta(artist, title, year=year)
+            if dz:
+                url = dz.url
+        except Exception:
+            pass
+    if not url:
+        try:
+            from app.services.discogs import DiscogsService
+            url = await DiscogsService().get_release_cover(discogs_id)
+        except Exception:
+            pass
+
+    if url and str(discogs_id).isdigit():
+        from sqlalchemy import text as _t
+        try:
+            await db.execute(
+                _t("UPDATE discogs_releases_index SET cover_image_url = :u, "
+                   "cover_checked_at = now() WHERE discogs_id = :d "
+                   "AND cover_image_url IS NULL"),
+                {"u": url, "d": int(discogs_id)},
+            )
+            await db.commit()
+        except Exception:
+            await db.rollback()
+    return url
+
+
 @router.get("/store/{record_id}")
 async def get_store_cover(
     record_id: str,
@@ -140,16 +186,35 @@ async def get_cover(
     if discogs_id.isdigit():
         from sqlalchemy import text as _text
 
-        url = _safe((await db.execute(
+        row = (await db.execute(
             _text(
-                "SELECT cover_image_url FROM discogs_releases_index "
-                "WHERE discogs_id = :did"
+                "SELECT cover_image_url, artist, title, year, barcode_norm "
+                "FROM discogs_releases_index WHERE discogs_id = :did"
             ),
             {"did": int(discogs_id)},
-        )).scalar())
-        if url:
-            _spawn_mirror(discogs_id, url)
-            return RedirectResponse(url=url, status_code=302)
+        )).mappings().first()
+        if row:
+            url = _safe(row["cover_image_url"])
+            if url:
+                _spawn_mirror(discogs_id, url)
+                return RedirectResponse(url=url, status_code=302)
+
+            # Нет URL в индексе → живой резолв (мин заглушек). Bounded таймаутом,
+            # чтобы /covers не висел; на промах/таймаут — 404 (клиент заглушку).
+            resolved = None
+            try:
+                resolved = _safe(await asyncio.wait_for(
+                    _resolve_cover_live(
+                        db, discogs_id, row["artist"], row["title"],
+                        row["year"], row["barcode_norm"],
+                    ),
+                    timeout=6,
+                ))
+            except Exception:
+                resolved = None
+            if resolved:
+                _spawn_mirror(discogs_id, resolved)
+                return RedirectResponse(url=resolved, status_code=302)
 
     raise HTTPException(status_code=404, detail="Cover image not available")
 
