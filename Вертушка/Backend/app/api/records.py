@@ -1174,6 +1174,16 @@ async def scan_cover(
     except Exception:
         logger.exception("Visual re-rank failed, fallback to text order")
 
+    # Обложки → наше зеркало /covers/{id}.jpg: RU-надёжно (не i.discogs.com
+    # напрямую) + живой резолв (Deezer/CAA/Discogs) на промах вместо заглушки.
+    # Rewrite ПОСЛЕ visual_rerank — ему нужны прямые image-URL для CLIP.
+    from app.config import get_settings as _gs
+    _cov_base = _gs().public_covers_base
+    for _r in results:
+        if _r.discogs_id and str(_r.discogs_id).isdigit():
+            _r.cover_image_url = f"{_cov_base}/{_r.discogs_id}.jpg"
+            _r.thumb_image_url = _r.cover_image_url
+
     return CoverScanResponse(
         recognized_artist=artist,
         recognized_album=album,
