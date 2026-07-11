@@ -132,6 +132,15 @@ async def lifespan(app: FastAPI):
             # Drip-прогрев обложек: каждую минуту, тратит только простой app-bucket'а
             scheduler.add_job(drip_covers_batch, 'interval', minutes=1, id='cover_drip', max_instances=1, coalesce=True)
 
+            # Bulk-backfill обложек (Deezer) — in-process интервальная джоба вместо
+            # хрупкого detached `docker exec -d` (не переживал деплой, детект
+            # самоматчился → «RUNNING» врал, реально не крутилось сутки). Гейт
+            # внутри = маркер /app/uploads/.backfill_enabled. Resumable, ест только
+            # свободный Deezer-throttle. max_instances=1 → без перекрытий.
+            from app.scripts.backfill_covers_deezer import run_scheduled_batch
+            scheduler.add_job(run_scheduled_batch, 'interval', minutes=2,
+                              id='cover_backfill_deezer', max_instances=1, coalesce=True)
+
             # ---- Парсеры магазинов винила (под env SCRAPERS_ENABLED) ----
             if os.environ.get("SCRAPERS_ENABLED", "false").lower() == "true":
                 from app.tasks.scraper_tasks import (

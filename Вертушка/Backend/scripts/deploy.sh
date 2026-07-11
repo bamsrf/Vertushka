@@ -117,31 +117,17 @@ echo -e "${GREEN}✅ Деплой завершён успешно!${NC}"
 # добивал её в swap-thrash (инцидент 07-10). Включать осознанно после
 # стабилизации: BACKFILL_ENABLED=1 bash scripts/deploy.sh.
 # backfill resumable (worklist done-флаги + checkpoint) — старт заново безопасен.
-# Запуск в scheduler (не api): backfill изолирован от user-facing воркеров,
-# scheduler под mem_limit → runaway-джоба OOM-killer прибьёт внутри контейнера,
-# хост и sshd не задохнутся (инцидент 07-10, падение №2). Детект настоящего
-# процесса — по `python` в cmdline (grep-строка сама содержит имя модуля и
-# самоматчилась бы).
-#
-# ГЕЙТ = persistent-маркер /app/uploads/.backfill_enabled (на volume uploads_data,
-# переживает force-recreate контейнера). Деплой каждой фичи пересоздаёт scheduler
-# → убивает exec-d backfill; этот блок поднимает его ЗАНОВО после recreate, если
-# маркер есть. backfill resumable (worklist done-флаги + checkpoint) → продолжает
-# с места, данные не теряются. Включить навсегда:
+# Bulk-backfill обложек (Deezer) теперь ведёт APScheduler-джоба в scheduler
+# (main.py, id=cover_backfill_deezer, каждые 2 мин) — надёжнее detached
+# `docker exec -d`, который не переживал деплой и путал детект самоматчем.
+# Деплой ничего не запускает: джоба поднимается со scheduler-контейнером сама.
+# ГЕЙТ = маркер /app/uploads/.backfill_enabled (volume uploads_data). Включить:
 #   docker compose -f docker-compose.prod.yml exec -T scheduler touch /app/uploads/.backfill_enabled
-# Выключить: тем же путём rm. (BACKFILL_ENABLED=1 — разовый форс без маркера.)
-BF_ON=0
-[ "${BACKFILL_ENABLED:-0}" = "1" ] && BF_ON=1
-docker compose -f docker-compose.prod.yml exec -T scheduler test -f /app/uploads/.backfill_enabled 2>/dev/null && BF_ON=1
-
-if [ "$BF_ON" != "1" ]; then
-    echo "🎨 backfill обложек ОТКЛЮЧЁН (нет маркера .backfill_enabled) — пропускаю"
-elif docker compose -f docker-compose.prod.yml exec -T scheduler sh -c 'for f in /proc/[0-9]*/cmdline; do c=$(tr "\0" " " <"$f" 2>/dev/null); echo "$c" | grep -q backfill_covers_deezer && echo "$c" | grep -q python && exit 0; done; exit 1'; then
-    echo "🎨 backfill обложек уже крутится"
+# Выключить: тем же путём rm.
+if docker compose -f docker-compose.prod.yml exec -T scheduler test -f /app/uploads/.backfill_enabled 2>/dev/null; then
+    echo "🎨 backfill обложек ВКЛ (маркер есть) — ведёт APScheduler-джоба"
 else
-    echo "🎨 Поднимаю backfill обложек (Deezer, resumable, scheduler)..."
-    # python -u — иначе stdout буферизуется и лог «молчит» часами (httpx заглушён).
-    docker compose -f docker-compose.prod.yml exec -T -d scheduler sh -c 'python -u -m app.scripts.backfill_covers_deezer --kind both --batch 300 >> /app/uploads/backfill_covers.log 2>&1'
+    echo "🎨 backfill обложек ОТКЛ (нет маркера .backfill_enabled)"
 fi
 
 # Показать статус

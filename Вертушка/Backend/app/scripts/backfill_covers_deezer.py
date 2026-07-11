@@ -283,6 +283,24 @@ async def _run_releases(batch: int, max_requests: int | None) -> None:
         )
 
 
+async def run_scheduled_batch(batch: int = 300, max_requests: int = 400) -> None:
+    """Ограниченный проход worklist для APScheduler-джобы (in-process).
+
+    Надёжная замена detached `docker exec -d python -m ...`, который не
+    переживал деплой / не стартовал / путал детект самоматчем. Гейт — маркер
+    /app/uploads/.backfill_enabled. Resumable (done-флаги + checkpoint) →
+    каждый вызов догрызает следующий кусок. БЕЗ _watchdog (его os._exit(1)
+    убил бы весь scheduler-процесс); батч ограничен max_requests + внутренними
+    _BATCH_TIMEOUT/statement_timeout, зависнуть не даст.
+    """
+    if not os.path.exists("/app/uploads/.backfill_enabled"):
+        return
+    await _ensure_infra()
+    # Сначала мастера (пока worklist не пуст), затем release-only хвост.
+    await _run_masters(batch, max_requests)
+    await _run_releases(batch, max_requests)
+
+
 async def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--kind", choices=["masters", "releases", "both"], default="both")
