@@ -184,9 +184,10 @@ export function OffersBlock({ discogsId, recordId }: OffersBlockProps) {
       {/* Generic CTA → ведём в Маркет в целом (не в конкретный магазин).
           Юзер увидел текущего продавца в OfferRow выше — дубль лого внизу
           лишний. Плашка единая: disc-иконка + копи + arrow.
-          Routes to /(tabs)/search где живёт раздел Маркет. */}
+          navigate (не push): если /market уже в стеке (юзер пришёл оттуда) —
+          возвращаемся к живому инстансу вместо монтирования нового. */}
       <Pressable
-        onPress={() => router.push('/market' as any)}
+        onPress={() => router.navigate('/market' as any)}
         accessibilityRole="button"
         accessibilityLabel="Открыть Маркет"
         style={({ pressed }) => [styles.marketEntryWrap, pressed && { opacity: 0.85 }]}

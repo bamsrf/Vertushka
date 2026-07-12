@@ -23,7 +23,21 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+import type { MarketStoreData } from '../components/market/MarketSection';
+
+/** Кэш каруселей живёт STORES_TTL_MS, потом mount делает тихий re-fetch. */
+export const STORES_TTL_MS = 10 * 60 * 1000;
+
 interface MarketState {
+  /**
+   * In-memory кэш каруселей магазинов (не persisted): MarketMain монтируется
+   * заново при каждом router.push('/market'), кэш даёт мгновенный рендер
+   * вместо полного re-fetch'а. Свежесть — по storesFetchedAt + STORES_TTL_MS.
+   */
+  stores: MarketStoreData[];
+  storesFetchedAt: number | null;
+  setStores: (stores: MarketStoreData[]) => void;
+
   /** Юзер сейчас «в Маркете» (после успешного curtain-commit'а). */
   committed: boolean;
   setCommitted: (v: boolean) => void;
@@ -43,6 +57,11 @@ interface MarketState {
 export const useMarketStore = create<MarketState>()(
   persist(
     (set, get) => ({
+      stores: [],
+      storesFetchedAt: null,
+      setStores: (stores: MarketStoreData[]) =>
+        set({ stores, storesFetchedAt: Date.now() }),
+
       committed: false,
       hasSeenSwipeHint: false,
       hasSeenCurtainHint: false,

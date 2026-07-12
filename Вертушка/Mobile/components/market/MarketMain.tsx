@@ -25,6 +25,7 @@ import Animated, {
 
 import { Icon } from '../ui/Icon';
 import { api, resolveMediaUrl } from '../../lib/api';
+import { STORES_TTL_MS, useMarketStore } from '../../lib/marketStore';
 import type { MarketFormatFilter, MarketSearchItem } from '../../lib/types';
 
 import MarketSection, { type MarketStoreData } from './MarketSection';
@@ -151,7 +152,10 @@ const hintStyles = StyleSheet.create({
 export function MarketMain({ onScroll, scrollEnabled = true, paddingTop, pullFraction }: MarketMainProps) {
   const router = useRouter();
 
-  const [marketStores, setMarketStores] = useState<MarketStoreData[]>([]);
+  // Карусели магазинов — в marketStore (in-memory кэш переживает remount
+  // экрана /market, рендер мгновенный; re-fetch тихо в фоне по TTL).
+  const marketStores = useMarketStore((s) => s.stores);
+  const setMarketStores = useMarketStore((s) => s.setStores);
   const [marketSearch, setMarketSearch] = useState('');
   const [debouncedQuery, setDebouncedQuery] = useState('');
   const [marketFormatFilter, setMarketFormatFilter] = useState<MarketFormatFilter | 'all'>('all');
@@ -168,6 +172,14 @@ export function MarketMain({ onScroll, scrollEnabled = true, paddingTop, pullFra
   }, [marketSearch]);
 
   useEffect(() => {
+    // Кэш свежий — пропускаем fetch, рендерим то что есть. Читаем через
+    // getState(): эффект mount-only, подписка на эти поля тут не нужна.
+    const cached = useMarketStore.getState();
+    const fresh =
+      cached.storesFetchedAt !== null &&
+      Date.now() - cached.storesFetchedAt < STORES_TTL_MS;
+    if (fresh && cached.stores.length > 0) return;
+
     let cancelled = false;
     (async () => {
       try {
