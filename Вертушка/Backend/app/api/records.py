@@ -2243,6 +2243,13 @@ async def get_master_versions(
                     versions_dump=cached_enriched,
                     enriched_ck=enriched_ck,
                 )
+            # Response-time master-fallback для дыр: мутируем только resp_obj
+            # (Redis-кэш нетронут → straggler-лечение точных обложек живо).
+            mc_url = await _master_cover_url(db, master_id)
+            if mc_url:
+                for v in resp_obj.results:
+                    if not (v.cover_image_url or v.thumb_image_url):
+                        v.cover_image_url = mc_url
         else:
             response.headers["Cache-Control"] = "public, max-age=3600"
         return resp_obj
@@ -2257,6 +2264,10 @@ async def get_master_versions(
         versions = local_versions
         main_release_id = None
 
+        # Master-обложка (Deezer-backfill 110k+, store, discogs) — закрывает
+        # дыры на response-time и позволяет пропустить inline-watchdog Discogs.
+        master_cover_url = await _master_cover_url(db, master_id)
+
         # P3: inline short-watchdog. Если у большинства версий нет обложки —
         # пробуем 1 вызов Discogs прямо сейчас (≤4с) и мёржим thumbs в ответ.
         # get_master_versions Redis-кэшируется → фоновый таск ниже добьёт остаток
@@ -2264,7 +2275,12 @@ async def get_master_versions(
         covered = sum(
             1 for v in versions.results if v.cover_image_url or v.thumb_image_url
         )
-        if covered < len(versions.results) / 2:
+        # covered считается ТОЛЬКО по per-release источникам (records/index) —
+        # master-fallback не учитываем, иначе фоновый enrich точных обложек
+        # перестанет триггериться. Но при наличии master-обложки inline-вызов
+        # Discogs (до 4с ожидания юзером) пропускаем: дыры закроет fallback
+        # ниже, а точные обложки дольёт background _enrich_covers_from_api.
+        if covered < len(versions.results) / 2 and not master_cover_url:
             try:
                 api_resp = await asyncio.wait_for(
                     DiscogsService().get_master_versions(
@@ -2310,6 +2326,7 @@ async def get_master_versions(
             ]
         )
     else:
+        master_cover_url = None  # API-ветка несёт обложки сама
         discogs = DiscogsService()
         try:
             versions, main_release_id = await asyncio.wait_for(
@@ -2389,7 +2406,33 @@ async def get_master_versions(
     # no-store → retry проходит до бэка и получает обогащённый ответ.
     response.headers["Cache-Control"] = "no-store"
 
+    # Response-time fallback: оставшиеся дыры закрываем master-обложкой.
+    # ВАЖНО: строго после всех model_dump() выше — bg-таски и enriched-кэш
+    # снимаются БЕЗ fallback'а, per-release лечение не подавляется.
+    if master_cover_url:
+        for v in versions.results:
+            if not v.cover_image_url and not v.thumb_image_url:
+                v.cover_image_url = master_cover_url
+
     return versions
+
+
+async def _master_cover_url(db: AsyncSession, master_id: str) -> str | None:
+    """Обложка мастера из discogs_master_covers (Deezer-backfill, store, discogs).
+
+    Дешёвый PK-lookup. Используется как response-time fallback для версий без
+    per-release обложки: НЕ персистится в кэши/дампы, чтобы фоновый enrich
+    продолжал лечить точные per-release обложки.
+    """
+    try:
+        mid = int(master_id)
+    except (TypeError, ValueError):
+        return None
+    row = await db.execute(
+        text("SELECT cover_image_url FROM discogs_master_covers WHERE master_id = :m"),
+        {"m": mid},
+    )
+    return row.scalar()
 
 
 async def _fetch_versions_from_local_index(
