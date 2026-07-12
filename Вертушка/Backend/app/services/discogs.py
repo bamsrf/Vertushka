@@ -725,9 +725,11 @@ class DiscogsService:
         try:
             stats_response = await stats_task
             if stats_response:
-                price_min = stats_response.get("lowest_price", {}).get("value")
-                price_max = stats_response.get("highest_price", {}).get("value")
-                price_median = stats_response.get("median_price", {}).get("value")
+                # Ключи могут присутствовать со значением null → .get(k, {})
+                # вернёт None и упадёт AttributeError. `or {}` покрывает оба.
+                price_min = (stats_response.get("lowest_price") or {}).get("value")
+                price_max = (stats_response.get("highest_price") or {}).get("value")
+                price_median = (stats_response.get("median_price") or {}).get("value")
         except Exception:
             logger.exception("Failed to get price stats for release %s", release_id)
 
