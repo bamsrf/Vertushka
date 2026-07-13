@@ -900,20 +900,22 @@ export default function UserProfileScreen() {
                 );
               })()}
               <TouchableOpacity
-                style={[styles.followBtn, styles.messageBtn]}
+                style={[styles.followBtn, styles.messageBtn, styles.followIconBtn]}
                 onPress={handleMessage}
                 activeOpacity={0.85}
+                hitSlop={4}
+                accessibilityLabel="Написать"
               >
-                <Icon name="chatbubble-outline" size={16} color={PP.cobalt} />
-                <Text style={[styles.followTxt, styles.followTxtActive]}>Написать</Text>
+                <Icon name="chatbubble-outline" size={18} color={PP.cobalt} />
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.followBtn, styles.messageBtn, styles.moreBtn]}
+                style={[styles.followBtn, styles.messageBtn, styles.followIconBtn]}
                 onPress={handleProfileMenu}
                 activeOpacity={0.85}
                 hitSlop={4}
+                accessibilityLabel="Ещё"
               >
-                <Icon name="ellipsis-horizontal" size={16} color={PP.cobalt} />
+                <Icon name="ellipsis-horizontal" size={18} color={PP.cobalt} />
               </TouchableOpacity>
             </View>
           ) : null}
@@ -1301,9 +1303,10 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: 'rgba(58,75,224,0.25)',
     marginTop: 0, marginBottom: 0,
   },
-  moreBtn: {
+  followIconBtn: {
     flexGrow: 0,
-    paddingHorizontal: 12,
+    flexShrink: 0,
+    paddingHorizontal: 14,
   },
   followTxt: { color: '#fff', fontWeight: '600', fontSize: ms(14) },
   followTxtActive: { color: PP.cobalt },
