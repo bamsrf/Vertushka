@@ -57,7 +57,7 @@ export default function ScannerScreen() {
     searchByCover,
     clearScan,
   } = useScannerStore();
-  const { addToCollection, addToWishlist, collectionItems, wishlistItems, isOwned } = useCollectionStore();
+  const { addToCollection, addToWishlist, collectionItems, wishlistItems, isOwned, fetchOwnedIds } = useCollectionStore();
 
   const handleBarCodeScanned = async ({ data }: { data: string }) => {
     if (!isScanning || isLoading) return;
@@ -115,6 +115,15 @@ export default function ScannerScreen() {
 
   // ID пластинки, на детали которой ушли (null = не уходили)
   const viewedDetailId = useRef<string | null>(null);
+
+  // Owned-ids подгружаются лениво (fetchCollectionItems). Scanner может открыться
+  // первым на холодном старте — тянем сет владения при фокусе, иначе дабл-чек
+  // дубля не срабатывает на первом скане.
+  useFocusEffect(
+    useCallback(() => {
+      fetchOwnedIds();
+    }, [fetchOwnedIds])
+  );
 
   useFocusEffect(
     useCallback(() => {
