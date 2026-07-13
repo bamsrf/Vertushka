@@ -119,6 +119,10 @@ const YEAR_OPTIONS = [
   { value: '1950s', label: '1950-е и ранее', min: 0, max: 1959 },
 ];
 
+// Футпринт плавающей GlassTabBar: bottom(28) + height(60) = 88px + воздух(24).
+// Нижний клиренс списка home-view, чтобы плашка не перекрывала контент.
+const TAB_BAR_CLEARANCE = 112;
+
 export default function SearchScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -1381,6 +1385,10 @@ export default function SearchScreen() {
             } : undefined}
             emptyMessage=""
             ListHeaderComponent={HeaderContent}
+            // Плавающая GlassTabBar (bottom:28 + height:60 = ~88px) перекрывала
+            // низ home-view (market-рейл + curtain-CTA) при раскрытой истории.
+            // Даём контенту клиренс под плашку + воздух, чтобы ничего не заезжало.
+            contentBottomPad={TAB_BAR_CLEARANCE}
             cardVariant="compact"
             onScroll={onScrollSearch}
             scrollToTopRef={scrollToTopRef}
@@ -1389,6 +1397,18 @@ export default function SearchScreen() {
 
           {FilterModal}
         </KeyboardAvoidingView>
+
+        {/* Fade-маска: контент мягко растворяется в фоне у нижней кромки,
+            вместо жёсткого края под плавающей плашкой. Только в home-view —
+            там живут market-рейл + curtain-CTA. pointerEvents=none, чтобы не
+            перехватывать скролл/тапы. */}
+        {isHomeView && (
+          <LinearGradient
+            pointerEvents="none"
+            colors={['rgba(250,251,255,0)', 'rgba(250,251,255,0.95)']}
+            style={styles.bottomFade}
+          />
+        )}
       </View>
 
       {/* Слой Маркета (верхний). При committedAnim=0 целиком под экраном
@@ -1420,6 +1440,15 @@ const styles = StyleSheet.create({
   },
   flex: {
     flex: 1,
+  },
+  // Fade-маска у нижней кромки home-view (см. рендер). Высота 140 перекрывает
+  // футпринт плашки (88) + участок дисольва над ней.
+  bottomFade: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    height: 140,
   },
   // Curtain CTA — юзер скроллит сюда, продолжает тянуть → progress внизу
   // блока наполняется до 100% → commit запускает in-place slide-up Маркет-
