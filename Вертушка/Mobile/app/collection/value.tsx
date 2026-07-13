@@ -81,9 +81,11 @@ export default function CollectionValueScreen() {
   const router = useRouter();
   const { stats, isLoadingStats, fetchStats, defaultCollection } = useCollectionStore();
 
-  // Локальный список items только для оценки. Грузим напрямую через api с
-  // exclude_foldered=true (пластинки в папках не считаются), не трогая общий
-  // store коллекции — вкладка «Коллекция» должна показывать всё как раньше.
+  // Локальный список items только для оценки. Грузим напрямую через api БЕЗ
+  // exclude_foldered — папка это группировка, а не вынос с полки: релиз в
+  // жанровой папке всё ещё в коллекции и должен быть в списке «По стоимости».
+  // Раньше список исключал папочные (32 из 60), а пилл «оценено» считал все
+  // (53) → рассинхрон. Теперь оба по всем владениям.
   const [valuedItems, setValuedItems] = React.useState<CollectionItem[]>([]);
 
   const [helpOpen, setHelpOpen] = React.useState(false);
@@ -93,7 +95,7 @@ export default function CollectionValueScreen() {
 
   useEffect(() => {
     fetchStats();
-    // Грузим ВСЕ страницы коллекции с exclude_foldered=true, иначе список
+    // Грузим ВСЕ страницы коллекции (exclude_foldered=false), иначе список
     // обрезается до первой пачки и не совпадает со статистикой «оценено N из M».
     (async () => {
       let collectionId = useCollectionStore.getState().defaultCollection?.id;
@@ -108,7 +110,7 @@ export default function CollectionValueScreen() {
       for (let page = 1; ; page += 1) {
         try {
           const { items, hasMore } = await api.getCollectionItems(
-            collectionId, 'price_desc', page, perPage, true,
+            collectionId, 'price_desc', page, perPage, false,
           );
           all.push(...items);
           if (!hasMore || items.length === 0) break;
