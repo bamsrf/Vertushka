@@ -1,7 +1,7 @@
 /**
  * Root Layout - проверка авторизации и роутинг
  */
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Stack, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -41,6 +41,7 @@ import { Colors } from '../constants/theme';
 import { OfflineBanner } from '../components/OfflineBanner';
 import { OnboardingOverlay } from '../components/OnboardingOverlay';
 import { AchievementUnlockHost } from '../components/AchievementUnlockOverlay';
+import { MascotIntro } from '../components/MascotIntro';
 import { InAppNotificationToastHost, inAppToast } from '../components/notifications/InAppNotificationToast';
 import Toast from 'react-native-toast-message';
 import { toastConfig } from '../components/CustomToast';
@@ -94,6 +95,9 @@ function RootLayout() {
   // чтобы редирект на /(auth)/login срабатывал только при потере авторизации,
   // а не на холодном старте (когда isAuthenticated изначально false).
   const wasAuthenticatedRef = useRef(false);
+  // Интро-заставка маскота — играет один раз за холодный старт, поверх UI,
+  // сразу после того как скрылся native splash. См. MascotIntro / ТЗ §6.
+  const [introDone, setIntroDone] = useState(false);
 
   const [fontsLoaded] = useFonts({
     Inter_400Regular,
@@ -363,6 +367,7 @@ function RootLayout() {
         </Stack>
         <OnboardingOverlay />
         <AchievementUnlockHost />
+        {!introDone && <MascotIntro onFinish={() => setIntroDone(true)} />}
         <InAppNotificationToastHost />
         <Toast config={toastConfig} topOffset={56} bottomOffset={100} />
         </SafeAreaProvider>
