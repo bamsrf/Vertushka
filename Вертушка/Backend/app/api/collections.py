@@ -48,6 +48,28 @@ from app.schemas.collection import (
     CollectionWithItems,
     CollectionStats,
 )
+from app.schemas.record import RecordBrief
+
+
+def _item_record_brief(item: CollectionItem) -> "Record | RecordBrief":
+    """
+    Обложка элемента коллекции с учётом своего фото юзера.
+
+    Если у item есть UserRecordPhoto с is_primary=True — отдаём RecordBrief с
+    cover_url, перекрытым этим фото (юзер сфоткал свою пластинку и хочет видеть
+    её, а не обложку Discogs). Иначе возвращаем ORM-запись как есть (Pydantic
+    сериализует через from_attributes).
+
+    Требует, чтобы item.user_photos был загружен (selectinload).
+    """
+    photos = getattr(item, "user_photos", None) or []
+    primary = next((p for p in photos if p.is_primary), None)
+    if not primary:
+        return item.record
+    rb = RecordBrief.model_validate(item.record)
+    rb.cover_url = f"/uploads/{primary.photo_path}"
+    return rb
+
 
 router = APIRouter()
 
@@ -280,7 +302,10 @@ async def get_collection(
     items_result = await db.execute(
         select(CollectionItem)
         .where(*base_filter)
-        .options(selectinload(CollectionItem.record))
+        .options(
+            selectinload(CollectionItem.record),
+            selectinload(CollectionItem.user_photos),
+        )
         .order_by(order_clause, CollectionItem.id)
         .offset(offset)
         .limit(per_page)
@@ -313,7 +338,7 @@ async def get_collection(
             shelf_position=item.shelf_position,
             estimated_price_rub=float(item.estimated_price_rub) if item.estimated_price_rub else None,
             added_at=item.added_at,
-            record=item.record
+            record=_item_record_brief(item)
         ) for item in items]
     )
 
@@ -673,37 +698,32 @@ async def get_collection_stats(
             detail="Коллекция не найдена"
         )
 
-    # record_id, которые пользователь разложил по папкам (= коллекции с большим
-    # sort_order, чем текущая). Для статистики общей коллекции такие пластинки
-    # считаются «вынесенными в папку» и в общий счёт не попадают.
-    foldered_result = await db.execute(
-        select(CollectionItem.record_id)
-        .join(Collection, CollectionItem.collection_id == Collection.id)
-        .where(
-            Collection.user_id == current_user.id,
-            Collection.sort_order > collection.sort_order,
-        )
-    )
-    foldered_record_ids = set(foldered_result.scalars().all())
-
-    # Получаем все пластинки коллекции
+    # Все владения пользователя по ВСЕМ коллекциям (вариант A, как total_records
+    # ниже). Папка — это группировка, а не вынос с полки: релиз, разложенный по
+    # жанровой папке, всё ещё в коллекции и обязан считаться в стоимости и в
+    # «оценено». Раньше breakdown бежал по текущей коллекции с вычетом foldered —
+    # числитель («оценено X») и знаменатель («из Y») мерились по разным
+    # множествам, из-за чего раскладывание релизов по папкам занижало и счётчик,
+    # и сумму. Теперь оба по одному множеству — все уникальные владения.
     result = await db.execute(
         select(CollectionItem)
-        .where(CollectionItem.collection_id == collection_id)
+        .join(Collection, CollectionItem.collection_id == Collection.id)
+        .where(Collection.user_id == current_user.id)
         .options(selectinload(CollectionItem.record))
     )
     items = result.scalars().all()
 
-    # Дедуп по record_id + исключаем разложенные по папкам пластинки.
-    seen_records: set = set()
-    unique_items = []
+    # Дедуп по record_id: одна пластинка может лежать в главной коллекции и в
+    # папке одновременно — считаем её один раз. При коллизии предпочитаем копию
+    # с посчитанным estimated_price_rub, чтобы не потерять стоимость на дубле.
+    by_record: dict = {}
     for item in items:
-        if item.record_id in seen_records:
-            continue
-        if item.record_id in foldered_record_ids:
-            continue
-        seen_records.add(item.record_id)
-        unique_items.append(item)
+        existing = by_record.get(item.record_id)
+        if existing is None:
+            by_record[item.record_id] = item
+        elif existing.estimated_price_rub is None and item.estimated_price_rub is not None:
+            by_record[item.record_id] = item
+    unique_items = list(by_record.values())
 
     # «В коллекции» (вариант A): все уникальные владения пользователя по ВСЕМ
     # коллекциям — папки это группировка, а не вынос с полки, поэтому из счёта
@@ -731,11 +751,16 @@ async def get_collection_stats(
 
         if record.estimated_price_min:
             total_min += float(record.estimated_price_min)
-            records_with_price += 1
         if record.estimated_price_max:
             total_max += float(record.estimated_price_max)
         if record.estimated_price_median:
             total_median += float(record.estimated_price_median)
+
+        # «Оценено» = есть хоть какая-то цена. Discogs у редких релизов отдаёт
+        # median=NULL → цена живёт только в min; считать priced строго по min
+        # рассинхронило бы счётчик со стоимостью (та берёт median or min).
+        if record.estimated_price_median or record.estimated_price_min:
+            records_with_price += 1
 
         if item.estimated_price_rub:
             rub = float(item.estimated_price_rub)
