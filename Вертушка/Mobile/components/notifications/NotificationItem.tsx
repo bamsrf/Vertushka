@@ -200,11 +200,8 @@ export const NotificationItem: React.FC<Props> = ({
       onLongPress={onLongPress ? () => onLongPress(item) : undefined}
       delayLongPress={350}
     >
-      <View style={styles.unreadCol}>
-        {unread ? <View style={styles.unreadDot} /> : null}
-      </View>
-
       <View style={styles.avatarWrap}>
+        {unread ? <View style={styles.unreadDot} /> : null}
         {pinSource ? (
           <Image source={pinSource} style={styles.pin} contentFit="contain" cachePolicy="memory-disk" />
         ) : avatarUrl ? (
@@ -289,15 +286,15 @@ const styles = StyleSheet.create({
   rowMilestone: {
     backgroundColor: 'rgba(248, 228, 238, 0.5)',
   },
-  unreadCol: {
-    width: 10,
-    alignItems: 'center',
-  },
   unreadDot: {
+    position: 'absolute',
+    left: -14,
+    top: 18,
     width: 8,
     height: 8,
     borderRadius: 4,
     backgroundColor: Colors.royalBlue,
+    zIndex: 1,
   },
   avatarWrap: {
     width: 44,
