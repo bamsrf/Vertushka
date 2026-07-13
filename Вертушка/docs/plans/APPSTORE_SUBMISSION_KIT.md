@@ -11,7 +11,7 @@
 
 Создать руками в проде перед сабмитом (5–10 минут в приложении):
 
-- [ ] Email: `review@vinyl-vertushka.ru` (завести ящик/алиас), пароль — сгенерировать, записать в ASC
+- [ ] Email: `review@vinyl-vertushka.store` (завести ящик/алиас), пароль — сгенерировать, записать в ASC
 - [ ] Регистрация через email+пароль (НЕ Apple/Google — у ревьюера не будет доступа)
 - [ ] Наполнить: 15–20 записей в коллекции (через поиск + пара через скан штрихкода), 5+ в вишлисте, 1–2 папки
 - [ ] Публичный профиль активен (дефолт), заполнить bio
@@ -26,7 +26,7 @@
 
 ```
 DEMO ACCOUNT
-Email: review@vinyl-vertushka.ru
+Email: review@vinyl-vertushka.store
 Password: <заполнить>
 
 WHAT THE APP IS
@@ -59,7 +59,7 @@ Safeguards in place:
 - Zero-tolerance policy in the Terms of Use (in-app: Profile → Terms).
 - Reported content is reviewed within 24 hours; content can be hidden and
   users banned via our moderation endpoints.
-- Contact for complaints: support@vinyl-vertushka.ru
+- Contact for complaints: support@vinyl-vertushka.store
 - Report submissions are rate-limited server-side.
 
 ACCOUNT DELETION (5.1.1(v))
@@ -111,7 +111,10 @@ Vertushka is an app for vinyl record collectors.
 Release data by Discogs. The app is free.
 ```
 
-**Support URL:** `https://vinyl-vertushka.ru` (добавить на страницу mailto:support@vinyl-vertushka.ru)
+> **Домен-конвенция:** сайт/страницы/API — на `.ru`; почтовый ящик — на `.store`.
+> Support/complaint email = `support@vinyl-vertushka.store`, все URL = `vinyl-vertushka.ru`.
+
+**Support URL:** `https://vinyl-vertushka.ru` (добавить на страницу mailto:support@vinyl-vertushka.store)
 **Marketing URL (опц.):** `https://vinyl-vertushka.ru`
 **Privacy Policy URL:** `https://vinyl-vertushka.ru/privacy`
 **Copyright:** `© 2026 Вертушка`
@@ -145,6 +148,6 @@ health, browsing history, advertising data.
 - [ ] Категория: **Music** (secondary: Lifestyle)
 - [ ] Price: Free, все регионы (или RU/CIS + выборочно)
 - [ ] App Review contact: имя, телефон, email
-- [ ] Contact for UGC complaints в metadata: support@vinyl-vertushka.ru
+- [ ] Contact for UGC complaints в metadata: support@vinyl-vertushka.store
 - [ ] Скриншоты 6.9" (1320×2868) — 5–8 шт (см. аудит A6)
 - [ ] `Mobile/app.json` → решить `supportsTablet` (аудит A3 — отложено по решению 2026-07-02)
