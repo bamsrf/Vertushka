@@ -305,9 +305,13 @@ function UnlockModal({
             <View style={[styles.tierChip, { borderColor: aura.aura }]}>
               <Text style={styles.tierChipText}>{main.tier.label_ru}</Text>
             </View>
-            {main.flavor_ru && (
+            {main.flavor_ru ? (
               <Text style={styles.flavor}>«{main.flavor_ru}»</Text>
-            )}
+            ) : main.description_done_ru || main.description_ru ? (
+              <Text style={styles.flavor}>
+                {main.description_done_ru || main.description_ru}
+              </Text>
+            ) : null}
 
             {/* Batch — подписные пины */}
             {others.length > 0 && (

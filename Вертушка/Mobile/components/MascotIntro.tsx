@@ -10,6 +10,11 @@
  * нет (Expo Go) — интро тихо пропускается (onFinish вызывается сразу), пользователь
  * просто попадает в приложение без заставки. Никаких заглушек на весь экран.
  *
+ * Placeholder-guard: пока в intro-mascot.json лежит заглушка (поле "nm" содержит
+ * "-PLACEHOLDER"), интро НЕ показывается — синий кружок не должен утечь в релиз.
+ * Как только дизайнер подложит финальный .json (без маркера), интро включится
+ * само, править код не нужно. См. docs/plans/MASCOT_ANIMATION_SPEC.md §7.5.
+ *
  * Фон интро = Colors.background (#FAFBFF) — совпадает с фоном splash-стыка (§8 ТЗ).
  */
 import { useEffect, useRef } from 'react';
@@ -22,6 +27,11 @@ try {
 } catch {
   LottieView = null;
 }
+
+const INTRO_SOURCE = require('../assets/animations/intro-mascot.json');
+// Заглушка? Не показываем интро вообще, пока не придёт финальная анимация.
+const IS_PLACEHOLDER =
+  typeof INTRO_SOURCE?.nm === 'string' && INTRO_SOURCE.nm.includes('PLACEHOLDER');
 
 interface MascotIntroProps {
   /** Вызывается когда интро отыграло (или сразу, если lottie недоступен). */
@@ -39,8 +49,8 @@ export function MascotIntro({ onFinish }: MascotIntroProps) {
   };
 
   useEffect(() => {
-    if (!LottieView) {
-      // Модуля нет — интро пропускаем сразу.
+    if (!LottieView || IS_PLACEHOLDER) {
+      // Модуля нет ИЛИ в файле заглушка — интро пропускаем сразу.
       finish();
       return;
     }
@@ -51,12 +61,12 @@ export function MascotIntro({ onFinish }: MascotIntroProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  if (!LottieView) return null;
+  if (!LottieView || IS_PLACEHOLDER) return null;
 
   return (
     <View style={styles.fill} pointerEvents="auto">
       <LottieView
-        source={require('../assets/animations/intro-mascot.json')}
+        source={INTRO_SOURCE}
         autoPlay
         loop={false}
         onAnimationFinish={finish}
