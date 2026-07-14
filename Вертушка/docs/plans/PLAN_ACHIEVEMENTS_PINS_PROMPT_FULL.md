@@ -426,7 +426,7 @@ Same enamel pin style as the previous Vertushka pins (gold contour, navy outline
 Output: 1024×1024 PNG, transparent background.
 ```
 
-#### `F3_jazz_x25` — Селектор 🌸
+#### `F3_jazz_x25` — Эй, Арнольд 🌸
 > Метафора: 25 jazz — саксофон за пластинкой.
 
 ```text
