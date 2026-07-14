@@ -505,6 +505,7 @@ function routeForPersonal(item: NotificationItemType, router: ReturnType<typeof 
       }
       return;
     case 'wishlist_in_stock':
+    case 'wishlist_in_stock_alt':
     case 'wishlist_price_drop':
       if (recordId) router.push(`/record/${recordId}` as any);
       return;

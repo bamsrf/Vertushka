@@ -56,7 +56,7 @@ def _default_dedup_key(
     Каноны должны совпадать с явными ключами в notification_tasks/digest и тестах.
     """
     d = data or {}
-    if type in ("wishlist_in_stock", "wishlist_price_drop"):
+    if type in ("wishlist_in_stock", "wishlist_in_stock_alt", "wishlist_price_drop"):
         rid = d.get("record_id") or entity_id
         return f"{type}:{rid or 'unknown'}"
     if type == "wishlist_in_stock_alt":
@@ -90,6 +90,7 @@ async def upsert_notification(
     push_title: str | None = None,
     push_body: str | None = None,
     push_image: str | None = None,
+    push_cap_key: str | None = None,
     priority: int = PRIORITY_FEED,
     merge_data_fn: Callable[[dict, dict], dict] | None = None,
 ) -> tuple[Notification | None, bool]:
@@ -177,6 +178,7 @@ async def upsert_notification(
                 title=push_title,
                 body=push_body,
                 image=push_image,
+                cap_key=push_cap_key,
                 data={
                     "notification_id": str(notif.id),
                     "type": type,

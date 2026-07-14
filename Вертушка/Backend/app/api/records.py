@@ -12,7 +12,7 @@ import httpx
 logger = logging.getLogger(__name__)
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status, Query, Response
-from sqlalchemy import select, text
+from sqlalchemy import select, text, func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -1655,6 +1655,59 @@ async def update_user_submitted_record(
     await db.commit()
     await db.refresh(record)
     return RecordResponse.model_validate(record)
+
+
+@router.get("/{record_id}/price-history")
+async def get_record_price_history(
+    record_id: UUID,
+    days: int = Query(90, ge=7, le=365),
+    db: AsyncSession = Depends(get_db),
+):
+    """Динамика цены пластинки: дневной минимум in_stock + историческая нижняя.
+
+    Источник — listing_price_history (снапшоты при смене цены). Точки дают
+    только дни, где были изменения; клиент интерполирует между ними.
+    """
+    from datetime import timedelta
+    from app.models.listing_price_history import ListingPriceHistory
+    from app.models.store_listing import ListingStatus
+
+    since = datetime.utcnow() - timedelta(days=days)
+    day = func.date_trunc("day", ListingPriceHistory.captured_at)
+
+    rows = (
+        await db.execute(
+            select(
+                day.label("day"),
+                func.min(ListingPriceHistory.price_rub).label("min_price"),
+                func.count(func.distinct(ListingPriceHistory.listing_id)).label("listings"),
+            )
+            .where(
+                ListingPriceHistory.record_id == record_id,
+                ListingPriceHistory.status == ListingStatus.IN_STOCK,
+                ListingPriceHistory.price_rub.is_not(None),
+                ListingPriceHistory.captured_at >= since,
+            )
+            .group_by(day)
+            .order_by(day)
+        )
+    ).all()
+
+    points = [
+        {
+            "date": d.date().isoformat(),
+            "min_price_rub": float(mp) if mp is not None else None,
+            "listings_count": int(cnt),
+        }
+        for d, mp, cnt in rows
+    ]
+    prices = [p["min_price_rub"] for p in points if p["min_price_rub"] is not None]
+    return {
+        "record_id": str(record_id),
+        "days": days,
+        "points": points,
+        "historical_low_rub": min(prices) if prices else None,
+    }
 
 
 @router.get("/{record_id}", response_model=RecordResponse)

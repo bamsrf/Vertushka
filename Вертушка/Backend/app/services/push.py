@@ -37,6 +37,7 @@ PUSH_PREFERENCE_FIELD = {
     "gift_booked": "notify_gift_booked",
     "gift_confirmed": "notify_gift_confirmed",
     "wishlist_in_stock": "notify_wishlist_in_stock",
+    "wishlist_in_stock_alt": "notify_wishlist_in_stock",
     "wishlist_price_drop": "notify_wishlist_in_stock",
     "digest_wishlist_in_stock": "notify_wishlist_in_stock",
     "achievement_unlocked": "notify_achievement",

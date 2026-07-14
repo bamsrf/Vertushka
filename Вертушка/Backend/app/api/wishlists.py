@@ -82,6 +82,8 @@ async def get_my_wishlist(
             added_at=item.added_at,
             purchased_at=item.purchased_at,
             record=item.record,
+            notify_mode=item.notify_mode,
+            price_threshold_rub=item.price_threshold_rub,
             is_booked=item.gift_booking is not None,
             gift_booking=GiftBookingInfo(
                 id=item.gift_booking.id,
@@ -218,6 +220,8 @@ async def add_to_wishlist(
         added_at=item.added_at,
         purchased_at=item.purchased_at,
         record=record,
+        notify_mode=item.notify_mode,
+        price_threshold_rub=item.price_threshold_rub,
         is_booked=False,
         gift_booking=None
     )
@@ -258,10 +262,16 @@ async def update_wishlist_item(
         item.priority = data.priority
     if data.notes is not None:
         item.notes = data.notes
-    
+    if data.notify_mode is not None:
+        item.notify_mode = data.notify_mode
+    # threshold: только при subscribed имеет смысл, но храним как задано —
+    # producer сам применяет порог лишь для subscribed-item'ов.
+    if "price_threshold_rub" in data.model_fields_set:
+        item.price_threshold_rub = data.price_threshold_rub
+
     await db.commit()
     await db.refresh(item)
-    
+
     return WishlistItemResponse(
         id=item.id,
         wishlist_id=item.wishlist_id,
@@ -272,6 +282,8 @@ async def update_wishlist_item(
         added_at=item.added_at,
         purchased_at=item.purchased_at,
         record=item.record,
+        notify_mode=item.notify_mode,
+        price_threshold_rub=item.price_threshold_rub,
         is_booked=item.gift_booking is not None,
         gift_booking=GiftBookingInfo(
             id=item.gift_booking.id,
@@ -589,6 +601,8 @@ async def search_wishlist(
         added_at=item.added_at,
         purchased_at=item.purchased_at,
         record=item.record,
+        notify_mode=item.notify_mode,
+        price_threshold_rub=item.price_threshold_rub,
         is_booked=item.gift_booking is not None,
         gift_booking=GiftBookingInfo(
             id=item.gift_booking.id,
@@ -770,6 +784,8 @@ def _wishlist_item_to_response(item: WishlistItem) -> WishlistItemResponse:
         added_at=item.added_at,
         purchased_at=item.purchased_at,
         record=item.record,
+        notify_mode=item.notify_mode,
+        price_threshold_rub=item.price_threshold_rub,
         is_booked=item.gift_booking is not None,
         gift_booking=GiftBookingInfo(
             id=item.gift_booking.id,

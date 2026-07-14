@@ -18,6 +18,7 @@ import {
   Wishlist,
   WishlistItem,
   WishlistFolder,
+  PriceHistoryResponse,
   SearchFilters,
   MasterSearchResponse,
   MasterRelease,
@@ -984,6 +985,25 @@ class ApiClient {
   async removeFromWishlist(itemId: string): Promise<void> {
     // Бэкенд использует /wishlists/records/{item_id}
     await this.client.delete(`/wishlists/records/${itemId}`);
+  }
+
+  async updateWishlistItem(
+    itemId: string,
+    patch: Partial<Pick<WishlistItem, 'notify_mode' | 'price_threshold_rub' | 'priority' | 'notes'>>,
+  ): Promise<WishlistItem> {
+    const response = await this.client.put<WishlistItem>(
+      `/wishlists/records/${itemId}`,
+      patch,
+    );
+    return response.data;
+  }
+
+  async getPriceHistory(recordId: string, days = 90): Promise<PriceHistoryResponse> {
+    const response = await this.client.get<PriceHistoryResponse>(
+      `/records/${recordId}/price-history`,
+      { params: { days } },
+    );
+    return response.data;
   }
 
   async moveToCollection(wishlistItemId: string, collectionId: string): Promise<CollectionItem> {

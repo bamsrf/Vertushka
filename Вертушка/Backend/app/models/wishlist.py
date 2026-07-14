@@ -4,7 +4,8 @@
 import uuid
 import secrets
 from datetime import datetime
-from sqlalchemy import String, DateTime, ForeignKey, Text, Integer, Boolean, Table, Column
+from decimal import Decimal
+from sqlalchemy import String, DateTime, ForeignKey, Text, Integer, Boolean, Table, Column, Numeric
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import UUID
 
@@ -170,6 +171,21 @@ class WishlistItem(Base):
         Boolean,
         default=False,
         nullable=False
+    )
+
+    # Колокольчик: 'watched' (дефолт, тихо + недельный digest) |
+    # 'subscribed' (мгновенный push при in_stock / price_drop / аналоге).
+    notify_mode: Mapped[str] = mapped_column(
+        String(16),
+        default="watched",
+        server_default="watched",
+        nullable=False,
+    )
+
+    # Порог цены для push. None = уведомлять при любом появлении/падении.
+    price_threshold_rub: Mapped[Decimal | None] = mapped_column(
+        Numeric(12, 2),
+        nullable=True,
     )
     
     # Временные метки

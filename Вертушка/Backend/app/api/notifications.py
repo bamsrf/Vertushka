@@ -36,7 +36,7 @@ router = APIRouter()
 # Типы, у которых протухший unread болтается в ленте без смысла (магазинные алерты —
 # через месяц уже неактуальны). Волна A: скрываем их из выдачи и unread-счётчика.
 # Волна B заменит это полноценным snooze ladder через `snoozed_until`.
-_STALE_TYPES = ("wishlist_in_stock", "wishlist_price_drop")
+_STALE_TYPES = ("wishlist_in_stock", "wishlist_in_stock_alt", "wishlist_price_drop")
 _STALE_AFTER = timedelta(days=30)
 
 

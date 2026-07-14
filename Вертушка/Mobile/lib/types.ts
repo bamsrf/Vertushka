@@ -458,6 +458,21 @@ export interface GiftBookingInfo {
   booked_at: string;
 }
 
+export type WishlistNotifyMode = 'watched' | 'subscribed';
+
+export interface PriceHistoryPoint {
+  date: string; // YYYY-MM-DD
+  min_price_rub: number | null;
+  listings_count: number;
+}
+
+export interface PriceHistoryResponse {
+  record_id: string;
+  days: number;
+  points: PriceHistoryPoint[];
+  historical_low_rub: number | null;
+}
+
 export interface WishlistItem {
   id: string;
   wishlist_id: string;
@@ -468,6 +483,10 @@ export interface WishlistItem {
   is_booked?: boolean;
   gift_booking?: GiftBookingInfo | null;
   added_at: string;
+  // Колокольчик: 'subscribed' → мгновенный push при появлении/падении цены.
+  notify_mode?: WishlistNotifyMode;
+  // Порог «уведомить, когда дешевле X ₽». null/undefined = любое появление.
+  price_threshold_rub?: number | null;
 }
 
 export interface WishlistFolder {

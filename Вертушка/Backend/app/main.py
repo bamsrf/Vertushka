@@ -103,7 +103,12 @@ async def lifespan(app: FastAPI):
             from app.tasks.discogs_tasks import cleanup_search_cache, enrich_records_artist_data, update_prices_batch, enrich_market_covers, refresh_market_store_stats, refresh_new_releases
             from app.tasks.valuation_tasks import record_daily_snapshots
             from app.tasks.achievements_tasks import daily_tick_achievements
-            from app.tasks.notification_tasks import emit_wishlist_in_stock_notifications, emit_weekly_wishlist_digest
+            from app.tasks.notification_tasks import (
+                emit_wishlist_in_stock_notifications,
+                emit_weekly_wishlist_digest,
+                emit_wishlist_price_drop_notifications,
+                cleanup_price_history,
+            )
             from app.tasks.cover_drip_tasks import drip_covers_batch
             from app.services.cover_storage import CoverStorageService
 
@@ -128,7 +133,9 @@ async def lifespan(app: FastAPI):
             scheduler.add_job(refresh_new_releases, 'cron', day=1, hour=4, minute=45, id='refresh_new_releases')
             scheduler.add_job(daily_tick_achievements, 'cron', hour=6, minute=0, id='achievements_daily_tick')
             scheduler.add_job(emit_wishlist_in_stock_notifications, 'interval', minutes=15, id='wishlist_in_stock_notifications')
+            scheduler.add_job(emit_wishlist_price_drop_notifications, 'interval', minutes=15, id='wishlist_price_drop_notifications')
             scheduler.add_job(emit_weekly_wishlist_digest, 'cron', day_of_week='mon', hour=10, minute=0, id='weekly_wishlist_digest')
+            scheduler.add_job(cleanup_price_history, 'cron', hour=3, minute=30, id='price_history_cleanup')
             # Drip-прогрев обложек: каждую минуту, тратит только простой app-bucket'а
             scheduler.add_job(drip_covers_batch, 'interval', minutes=1, id='cover_drip', max_instances=1, coalesce=True)
 

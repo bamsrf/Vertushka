@@ -9,9 +9,12 @@ import {
   ScrollView,
   ActivityIndicator,
   Alert,
+  Platform,
   TouchableOpacity,
 } from 'react-native';
 import { toast } from '../../lib/toast';
+import * as Haptics from 'expo-haptics';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import { Icon } from '@/components/ui';
@@ -34,12 +37,13 @@ import { Button, Card, ActionSheet, ActionSheetAction } from '../../components/u
 import { api, getCoverUrl } from '../../lib/api';
 import { cleanArtistName } from '../../lib/format';
 import { useCollectionStore, useAuthStore } from '../../lib/store';
-import { VinylRecord, CollectionItem } from '../../lib/types';
+import { VinylRecord, CollectionItem, PriceHistoryResponse } from '../../lib/types';
 import { Colors, Typography, Spacing, BorderRadius, Gradients } from '../../constants/theme';
 import { ms } from '../../lib/responsive';
 import { VinylColorTag } from '../../components/VinylColorTag';
 import { VinylSpinner } from '../../components/VinylSpinner';
 import { OffersBlock } from '../../components/OffersBlock';
+import { PriceSparkline } from '../../components/PriceSparkline';
 import { parseVinylColor } from '../../lib/vinylColor';
 import { TierFeatureBlock, allRarityTiers } from '../../components/RarityAura';
 
@@ -126,7 +130,25 @@ export default function RecordDetailScreen() {
   const [record, setRecord] = useState<VinylRecord | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [priceHistory, setPriceHistory] = useState<PriceHistoryResponse | null>(null);
   const hasPreview = Boolean(previewTitle || previewCover || previewArtist);
+
+  // Динамика цены — грузим лениво после появления записи. Тихо игнорим ошибку:
+  // блок графика просто не отрисуется, если истории нет.
+  useEffect(() => {
+    const rid = record?.id;
+    if (!rid) return;
+    let alive = true;
+    api
+      .getPriceHistory(rid, 90)
+      .then((res) => {
+        if (alive) setPriceHistory(res);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [record?.id]);
   const [showActionSheet, setShowActionSheet] = useState(false);
   const [showFolderPicker, setShowFolderPicker] = useState(false);
 
@@ -137,6 +159,8 @@ export default function RecordDetailScreen() {
     addToWishlistByRecordId,
     removeFromCollection,
     removeFromWishlist,
+    setWishlistNotifyMode,
+    setWishlistPriceThreshold,
     moveToCollection,
     collectionItems,
     wishlistItems,
@@ -166,6 +190,8 @@ export default function RecordDetailScreen() {
     copiesCount: number;
     collectionItemId: string | null;
     wishlistItemId: string | null;
+    wishlistNotifyMode?: import('@/lib/types').WishlistNotifyMode;
+    wishlistPriceThreshold?: number | null;
   } => {
     if (!record) {
       return { status: 'not_added', copiesCount: 0, collectionItemId: null, wishlistItemId: null };
@@ -217,6 +243,8 @@ export default function RecordDetailScreen() {
         copiesCount: 0,
         collectionItemId: null,
         wishlistItemId: wishlistItem.id,
+        wishlistNotifyMode: wishlistItem.notify_mode ?? 'watched',
+        wishlistPriceThreshold: wishlistItem.price_threshold_rub ?? null,
       };
     }
 
@@ -361,6 +389,82 @@ export default function RecordDetailScreen() {
         },
       ]
     );
+  };
+
+  const handleToggleWishlistBell = async () => {
+    const status = getRecordStatus();
+    if (status.status !== 'in_wishlist' || !status.wishlistItemId) return;
+
+    const next = status.wishlistNotifyMode === 'subscribed' ? 'watched' : 'subscribed';
+    Haptics.impactAsync(
+      next === 'subscribed'
+        ? Haptics.ImpactFeedbackStyle.Medium
+        : Haptics.ImpactFeedbackStyle.Light,
+    ).catch(() => {});
+
+    try {
+      await setWishlistNotifyMode(status.wishlistItemId, next);
+      if (next === 'subscribed') {
+        // Разово объясняем, что даёт колокольчик — потом молчим.
+        const seen = await AsyncStorage.getItem('wishlist_bell_hint_seen');
+        if (!seen) {
+          await AsyncStorage.setItem('wishlist_bell_hint_seen', '1');
+          Alert.alert(
+            'Следим за пластинкой',
+            'Пришлём пуш, когда появится в продаже или подешевеет.',
+          );
+        } else {
+          toast.success('Следим за пластинкой');
+        }
+      } else {
+        toast.success('Уведомления выключены');
+      }
+    } catch (error: any) {
+      toast.error('Не удалось изменить уведомления');
+    }
+  };
+
+  const handleBellLongPress = async () => {
+    const status = getRecordStatus();
+    if (status.status !== 'in_wishlist' || !status.wishlistItemId) return;
+    const itemId = status.wishlistItemId;
+    const current = status.wishlistPriceThreshold;
+
+    const apply = async (raw: string | undefined) => {
+      const trimmed = (raw ?? '').replace(/[^\d]/g, '');
+      const value = trimmed ? Number(trimmed) : null;
+      try {
+        await setWishlistPriceThreshold(itemId, value);
+        toast.success(value ? `Порог: дешевле ${value} ₽` : 'Порог снят');
+      } catch {
+        toast.error('Не удалось сохранить порог');
+      }
+    };
+
+    if (Platform.OS === 'ios') {
+      Alert.prompt(
+        'Порог цены',
+        'Пуш только когда дешевле, ₽. Пусто — при любой цене.',
+        [
+          { text: 'Отмена', style: 'cancel' },
+          ...(current ? [{ text: 'Убрать порог', style: 'destructive' as const, onPress: () => apply('') }] : []),
+          { text: 'Сохранить', onPress: (v?: string) => apply(v) },
+        ],
+        'plain-text',
+        current ? String(current) : '',
+        'number-pad',
+      );
+    } else {
+      // Android: Alert.prompt недоступен — быстрый тумблер «снять/оставить».
+      if (current) {
+        Alert.alert('Порог цены', `Сейчас: дешевле ${current} ₽`, [
+          { text: 'Отмена', style: 'cancel' },
+          { text: 'Убрать порог', style: 'destructive', onPress: () => apply('') },
+        ]);
+      } else {
+        toast.info('Порог цены задаётся на iOS');
+      }
+    }
   };
 
   const handleRemoveFromFolder = async () => {
@@ -813,6 +917,14 @@ export default function RecordDetailScreen() {
           <OffersBlock recordId={record.id} />
         ) : null}
 
+        {/* Динамика цены (Волна C) — рисуем только когда есть точки истории */}
+        {priceHistory && priceHistory.points.length > 0 ? (
+          <PriceSparkline
+            points={priceHistory.points}
+            historicalLow={priceHistory.historical_low_rub}
+          />
+        ) : null}
+
         {/* Другие версии релиза. '0' — легаси-артефакт Discogs (master_id=0
             у релизов без мастера), по нему некуда переходить. */}
         {record.discogs_master_id && record.discogs_master_id !== '0' ? (
@@ -882,6 +994,7 @@ export default function RecordDetailScreen() {
 
         // ========== СТАТУС: В ВИШЛИСТЕ ==========
         if (recordStatus.status === 'in_wishlist') {
+          const subscribed = recordStatus.wishlistNotifyMode === 'subscribed';
           return (
             <BlurView intensity={60} tint="light" style={[styles.actionsContainer, { paddingBottom: insets.bottom + Spacing.md }]}>
               <Button
@@ -889,6 +1002,26 @@ export default function RecordDetailScreen() {
                 onPress={handleAddToCollection}
                 style={styles.actionButton}
               />
+              <TouchableOpacity
+                style={[styles.bellButton, subscribed && styles.bellButtonActive]}
+                onPress={handleToggleWishlistBell}
+                onLongPress={subscribed ? handleBellLongPress : undefined}
+                delayLongPress={300}
+                accessibilityRole="switch"
+                accessibilityState={{ checked: subscribed }}
+                accessibilityLabel={subscribed ? 'Отключить уведомления о цене' : 'Уведомить о появлении и цене'}
+                accessibilityHint={subscribed ? 'Удержание — задать порог цены' : undefined}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Icon
+                  name={subscribed ? 'bell' : 'bell-slash'}
+                  size={20}
+                  color={subscribed ? '#FFFFFF' : Colors.textSecondary}
+                />
+                {subscribed && recordStatus.wishlistPriceThreshold ? (
+                  <View style={styles.bellThresholdDot} />
+                ) : null}
+              </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.actionButton, styles.removeButton]}
                 onPress={handleRemoveFromWishlist}
@@ -1194,6 +1327,26 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: Colors.surface,
     borderRadius: BorderRadius.md,
+  },
+  bellButton: {
+    width: 56,
+    height: 56,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.surface,
+    borderRadius: BorderRadius.md,
+  },
+  bellButtonActive: {
+    backgroundColor: Colors.royalBlue,
+  },
+  bellThresholdDot: {
+    position: 'absolute',
+    top: 10,
+    right: 10,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#FFFFFF',
   },
   removeButtonText: {
     ...Typography.button,

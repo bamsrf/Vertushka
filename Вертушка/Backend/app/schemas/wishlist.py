@@ -2,8 +2,12 @@
 Схемы для вишлистов и подарков
 """
 from datetime import datetime
+from decimal import Decimal
+from typing import Literal
 from uuid import UUID
 from pydantic import BaseModel, EmailStr, Field, ConfigDict
+
+NotifyMode = Literal["watched", "subscribed"]
 
 from app.schemas.record import RecordBrief
 from app.models.gift_booking import GiftStatus
@@ -21,6 +25,10 @@ class WishlistItemUpdate(BaseModel):
     """Схема для обновления элемента вишлиста"""
     priority: int | None = Field(None, ge=0, le=10)
     notes: str | None = Field(None, max_length=1000)
+    # Колокольчик: 'subscribed' → мгновенный push при in_stock/price_drop/аналоге.
+    notify_mode: NotifyMode | None = None
+    # Порог «уведомить, когда дешевле X ₽». None = любое появление/падение.
+    price_threshold_rub: Decimal | None = Field(None, ge=0)
 
 
 class GiftBookingInfo(BaseModel):
@@ -48,6 +56,8 @@ class WishlistItemResponse(BaseModel):
     record: RecordBrief
     is_booked: bool = False
     gift_booking: GiftBookingInfo | None = None
+    notify_mode: NotifyMode = "watched"
+    price_threshold_rub: Decimal | None = None
 
 
 class WishlistResponse(BaseModel):

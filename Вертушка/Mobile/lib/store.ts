@@ -39,6 +39,7 @@ import {
   CollectionItem,
   CollectionStats,
   WishlistItem,
+  WishlistNotifyMode,
   WishlistFolder,
   CollectionTab,
   SearchFilters,
@@ -597,6 +598,8 @@ interface CollectionState {
   addToWishlistByRecordId: (recordId: string) => Promise<void>;
   removeFromCollection: (itemId: string, skipRefetch?: boolean) => Promise<void>;
   removeFromWishlist: (itemId: string, skipRefetch?: boolean) => Promise<void>;
+  setWishlistNotifyMode: (itemId: string, mode: WishlistNotifyMode) => Promise<void>;
+  setWishlistPriceThreshold: (itemId: string, value: number | null) => Promise<void>;
   moveToCollection: (wishlistItemId: string) => Promise<void>;
 
   // Folder actions
@@ -736,6 +739,37 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
       set({ wishlistItems: items, isLoading: false });
     } catch (error) {
       set({ isLoading: false });
+      throw error;
+    }
+  },
+
+  setWishlistNotifyMode: async (itemId, mode) => {
+    // Оптимистично: флипаем локально, откатываем при ошибке сети.
+    const prev = get().wishlistItems;
+    set({
+      wishlistItems: prev.map((wi) =>
+        wi.id === itemId ? { ...wi, notify_mode: mode } : wi,
+      ),
+    });
+    try {
+      await api.updateWishlistItem(itemId, { notify_mode: mode });
+    } catch (error) {
+      set({ wishlistItems: prev });
+      throw error;
+    }
+  },
+
+  setWishlistPriceThreshold: async (itemId, value) => {
+    const prev = get().wishlistItems;
+    set({
+      wishlistItems: prev.map((wi) =>
+        wi.id === itemId ? { ...wi, price_threshold_rub: value } : wi,
+      ),
+    });
+    try {
+      await api.updateWishlistItem(itemId, { price_threshold_rub: value });
+    } catch (error) {
+      set({ wishlistItems: prev });
       throw error;
     }
   },

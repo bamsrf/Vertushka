@@ -18,6 +18,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from app.database import async_session_maker
 from app.models.store import Store
 from app.models.store_listing import StoreListing, ListingStatus
+from app.models.listing_price_history import ListingPriceHistory
 from app.services.scrapers.base import (
     BaseStoreParser,
     ListingDTO,
@@ -185,6 +186,12 @@ async def _upsert_listing(db, store_id, dto: ListingDTO) -> bool:
     """INSERT ... ON CONFLICT(store_id, external_id) DO UPDATE SET ...
 
     Возвращает True если запись была вставлена/обновлена.
+
+    Волна B: одним roundtrip через prev-CTE забираем СТАРЫЕ price/status
+    (снапшот до апдейта — data-modifying CTE видит строку до INSERT) плюс
+    id/matched_record_id новой строки. Если price или status изменились —
+    пишем снапшот в listing_price_history (источник для price_drop-producer
+    и графика динамики).
     """
     now = datetime.utcnow()
     payload = {
@@ -205,6 +212,20 @@ async def _upsert_listing(db, store_id, dto: ListingDTO) -> bool:
         "raw_payload": _serialize_raw(dto),
     }
 
+    prev = (
+        select(
+            StoreListing.price_rub.label("price_rub"),
+            StoreListing.status.label("status"),
+        )
+        .where(
+            StoreListing.store_id == store_id,
+            StoreListing.external_id == dto.external_id,
+        )
+        .cte("prev")
+    )
+    old_price = select(prev.c.price_rub).scalar_subquery()
+    old_status = select(prev.c.status).scalar_subquery()
+
     stmt = pg_insert(StoreListing).values(**payload)
     stmt = stmt.on_conflict_do_update(
         index_elements=["store_id", "external_id"],
@@ -224,7 +245,29 @@ async def _upsert_listing(db, store_id, dto: ListingDTO) -> bool:
             "updated_at": now,
         },
     )
-    await db.execute(stmt)
+    stmt = stmt.add_cte(prev).returning(
+        StoreListing.id,
+        StoreListing.matched_record_id,
+        StoreListing.price_rub,
+        StoreListing.status,
+        old_price.label("old_price"),
+        old_status.label("old_status"),
+    )
+    row = (await db.execute(stmt)).one()
+
+    # old_* = None → строки раньше не было (первый показ листинга).
+    price_changed = row.old_price != row.price_rub
+    status_changed = row.old_status != row.status
+    if row.old_status is None or price_changed or status_changed:
+        db.add(
+            ListingPriceHistory(
+                listing_id=row.id,
+                record_id=row.matched_record_id,
+                price_rub=row.price_rub,
+                status=row.status,
+                captured_at=now,
+            )
+        )
     return True
 
 
