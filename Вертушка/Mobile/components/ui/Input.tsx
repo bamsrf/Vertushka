@@ -29,6 +29,8 @@ interface InputProps {
   leftIcon?: string;
   rightIcon?: string;
   onRightIconPress?: () => void;
+  onFocus?: () => void;
+  onBlur?: () => void;
   style?: ViewStyle;
 }
 
@@ -48,6 +50,8 @@ export function Input({
   leftIcon,
   rightIcon,
   onRightIconPress,
+  onFocus,
+  onBlur,
   style,
 }: InputProps) {
   const [isFocused, setIsFocused] = useState(false);
@@ -95,8 +99,8 @@ export function Input({
           editable={editable}
           multiline={multiline}
           numberOfLines={numberOfLines}
-          onFocus={() => setIsFocused(true)}
-          onBlur={() => setIsFocused(false)}
+          onFocus={() => { setIsFocused(true); onFocus?.(); }}
+          onBlur={() => { setIsFocused(false); onBlur?.(); }}
         />
 
         {showPasswordToggle && (

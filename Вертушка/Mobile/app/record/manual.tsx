@@ -14,7 +14,7 @@
  *   - POST  /records/user/           (создание)
  *   - PATCH /records/user/{id}       (правка автором)
  */
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import {
   View,
   Text,
@@ -25,19 +25,25 @@ import {
   Image,
   KeyboardAvoidingView,
   Platform,
+  Modal,
+  FlatList,
+  TextInput,
+  Keyboard,
 } from 'react-native';
 import { useRouter, Stack, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import * as ImagePicker from 'expo-image-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
+import { LinearGradient } from 'expo-linear-gradient';
 import { Icon } from '@/components/ui';
 import { Button, Input, Card } from '../../components/ui';
 import { toast } from '../../lib/toast';
 import { api, getCoverUrl } from '../../lib/api';
 import { useCollectionStore } from '../../lib/store';
 import type { SpotifyAlbumCandidate, VinylRecord, PreflightResponse, RecordSearchResult } from '../../lib/types';
-import { Colors, Typography, Spacing, BorderRadius } from '../../constants/theme';
+import { Colors, Typography, Spacing, BorderRadius, ComponentSizes, Gradients, Shadows } from '../../constants/theme';
+import { COUNTRIES } from '../../constants/countries';
 
 // Форматы носителя (§9). value → format_type на бэке.
 const FORMAT_OPTIONS = [
@@ -126,6 +132,7 @@ export default function ManualRecordScreen() {
   const isEdit = !!editId;
   const addToCollection = useCollectionStore((s) => s.addToCollection);
   const addToCollectionByRecordId = useCollectionStore((s) => s.addToCollectionByRecordId);
+  const addToCollectionWithPhoto = useCollectionStore((s) => s.addToCollectionWithPhoto);
 
   const [step, setStep] = useState<Step>(0);
   const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT);
@@ -136,6 +143,20 @@ export default function ManualRecordScreen() {
   const [adding, setAdding] = useState(false);
   // Discogs-поиск в шаге 2: id записи, которую сейчас добавляем.
   const [addingDiscogsId, setAddingDiscogsId] = useState<string | null>(null);
+  // Текст поиска Discogs живёт на уровне экрана — не теряется между шагами и
+  // префиллит детали при переходе «Далее».
+  const [searchQuery, setSearchQuery] = useState('');
+  // Пока открыта клавиатура — прячем нижнюю кнопку на всех шагах: жать «Далее»/
+  // «Добавить» посреди ввода нелогично, а без футера контент занимает всё место
+  // над клавиатурой. Слушаем keyboardWillShow/Hide (fires до анимации → без прыжка).
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
+  useEffect(() => {
+    const showEvt = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvt = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const show = Keyboard.addListener(showEvt, () => setKeyboardVisible(true));
+    const hide = Keyboard.addListener(hideEvt, () => setKeyboardVisible(false));
+    return () => { show.remove(); hide.remove(); };
+  }, []);
 
   const patch = useCallback(
     (p: Partial<Draft>) => setDraft((d) => ({ ...d, ...p })),
@@ -186,6 +207,19 @@ export default function ManualRecordScreen() {
 
   const goNext = () => {
     Haptics.selectionAsync();
+    // Переход с шага Discogs → префиллим детали текстом поиска, чтобы не терять
+    // набранное. «Артист — Название» разбиваем по тире; иначе всё в название.
+    if (step === 1) {
+      const q = searchQuery.trim();
+      if (q && !draft.artist.trim() && !draft.title.trim()) {
+        const parts = q.split(/\s+[—–-]\s+/);
+        if (parts.length >= 2) {
+          patch({ artist: parts[0].trim(), title: parts.slice(1).join(' — ').trim() });
+        } else {
+          patch({ title: q });
+        }
+      }
+    }
     setStep((s) => Math.min(2, s + 1) as Step);
   };
   const goBack = () => {
@@ -233,7 +267,13 @@ export default function ManualRecordScreen() {
   const addDiscogsRecord = async (discogsId: string) => {
     setAddingDiscogsId(discogsId);
     try {
-      await addToCollection(discogsId);
+      // Юзер сфоткал свою пластинку → показываем его обложку даже на готовом
+      // Discogs-релизе (§: своё фото поверх Discogs).
+      if (draft.coverPhoto) {
+        await addToCollectionWithPhoto({ discogsId, photoUri: draft.coverPhoto });
+      } else {
+        await addToCollection(discogsId);
+      }
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       toast.success('Добавлено', 'Релиз в вашей коллекции', { position: 'bottom' });
       router.back();
@@ -307,10 +347,15 @@ export default function ManualRecordScreen() {
     if (!intercept) return;
     setAdding(true);
     try {
+      const photoUri = draft.coverPhoto;
       if (intercept.match?.id) {
-        await addToCollectionByRecordId(intercept.match.id);
+        photoUri
+          ? await addToCollectionWithPhoto({ recordId: intercept.match.id, photoUri })
+          : await addToCollectionByRecordId(intercept.match.id);
       } else if (intercept.discogs_id) {
-        await addToCollection(intercept.discogs_id);
+        photoUri
+          ? await addToCollectionWithPhoto({ discogsId: intercept.discogs_id, photoUri })
+          : await addToCollection(intercept.discogs_id);
       }
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       toast.success('Добавлено', 'Релиз в вашей коллекции', { position: 'bottom' });
@@ -373,31 +418,41 @@ export default function ManualRecordScreen() {
           style={styles.flex}
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         >
-          <ScrollView
-            contentContainerStyle={styles.scroll}
-            keyboardShouldPersistTaps="handled"
-          >
-            {isEdit ? (
-              <View style={styles.stepGap}>
-                <Text style={styles.stepTitle}>Обложка</Text>
-                <View style={styles.editCoverRow}>
-                  <PhotoSlot label="Обложка" uri={draft.coverPhoto} onPress={pickCover} />
-                  <View style={styles.flex} />
+          {/* Шаг Discogs: поиск закреплён сверху, результаты — в своём скролле,
+              чтобы футер и клавиатура не налипали на строку поиска. */}
+          {!isEdit && step === 1 ? (
+            <DiscogsStep
+              query={searchQuery}
+              onQueryChange={setSearchQuery}
+              onAdd={addDiscogsRecord}
+              addingId={addingDiscogsId}
+            />
+          ) : (
+            <ScrollView
+              style={styles.flex}
+              contentContainerStyle={styles.scroll}
+              keyboardShouldPersistTaps="handled"
+            >
+              {isEdit ? (
+                <View style={styles.stepGap}>
+                  <Text style={styles.stepTitle}>Обложка</Text>
+                  <View style={styles.editCoverRow}>
+                    <PhotoSlot label="Обложка" uri={draft.coverPhoto} onPress={pickCover} />
+                    <View style={styles.flex} />
+                  </View>
+                  <DetailsStep draft={draft} patch={patch} />
                 </View>
-                <DetailsStep draft={draft} patch={patch} />
-              </View>
-            ) : (
-              <>
-                {step === 0 && <PhotoStep draft={draft} patch={patch} />}
-                {step === 1 && (
-                  <DiscogsStep onAdd={addDiscogsRecord} addingId={addingDiscogsId} />
-                )}
-                {step === 2 && <DetailsStep draft={draft} patch={patch} />}
-              </>
-            )}
-          </ScrollView>
+              ) : (
+                <>
+                  {step === 0 && <PhotoStep draft={draft} patch={patch} />}
+                  {step === 2 && <DetailsStep draft={draft} patch={patch} />}
+                </>
+              )}
+            </ScrollView>
+          )}
 
-          {/* Нижняя кнопка */}
+          {/* Нижняя кнопка. Прячем пока открыта клавиатура — на любом шаге. */}
+          {!keyboardVisible && (
           <View style={[styles.footer, { paddingBottom: insets.bottom + Spacing.md }]}>
             {!isEdit && step < 2 ? (
               <Button
@@ -419,6 +474,7 @@ export default function ManualRecordScreen() {
               </Pressable>
             )}
           </View>
+          )}
         </KeyboardAvoidingView>
       )}
     </View>
@@ -573,96 +629,147 @@ function PhotoSlot({
 // ─── Шаг 1: поиск в Discogs ────────────────────────────────────────────────────
 
 function DiscogsStep({
+  query,
+  onQueryChange,
   onAdd,
   addingId,
 }: {
+  query: string;
+  onQueryChange: (text: string) => void;
   onAdd: (discogsId: string) => void;
   addingId: string | null;
 }) {
-  const [q, setQ] = useState('');
   const [loading, setLoading] = useState(false);
   const [results, setResults] = useState<RecordSearchResult[]>([]);
   const [searched, setSearched] = useState(false);
+  // Debounce-таймер + счётчик запросов (отбрасываем устаревшие ответы при
+  // быстром наборе, чтобы не было гонки порядка результатов).
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const reqId = useRef(0);
 
-  const search = async () => {
-    if (!q.trim()) return;
+  const runSearch = useCallback(async (raw: string) => {
+    const q = raw.trim();
+    if (!q) return;
+    const id = ++reqId.current;
     setLoading(true);
     setSearched(true);
     try {
-      const r = await api.searchRecords(q.trim());
+      const r = await api.searchRecords(q);
+      if (id !== reqId.current) return;
       setResults(r.results);
-      if (r.results.length === 0) {
-        toast.info('Ничего не нашлось', 'Заполните данные вручную на следующем шаге', {
-          position: 'bottom',
-        });
-      }
     } catch {
-      toast.error('Discogs недоступен', 'Заполните данные вручную', { position: 'bottom' });
+      if (id !== reqId.current) return;
+      setResults([]);
     } finally {
+      if (id === reqId.current) setLoading(false);
+    }
+  }, []);
+
+  // Живой поиск по образцу основного экрана: debounce 400мс при наборе ≥2
+  // символов, без нажатия на лупу. Лупа = немедленный триггер.
+  const onChange = useCallback((text: string) => {
+    onQueryChange(text);
+    if (timer.current) clearTimeout(timer.current);
+    if (text.trim().length >= 2) {
+      timer.current = setTimeout(() => runSearch(text), 400);
+    } else {
+      reqId.current++; // гасим возможный висящий ответ
+      setResults([]);
+      setSearched(false);
       setLoading(false);
     }
-  };
+  }, [runSearch, onQueryChange]);
+
+  const onSubmit = useCallback(() => {
+    if (timer.current) clearTimeout(timer.current);
+    runSearch(query);
+  }, [query, runSearch]);
+
+  // Возврат на шаг с уже набранным запросом — восстанавливаем выдачу.
+  useEffect(() => {
+    if (query.trim().length >= 2 && results.length === 0 && !searched) {
+      runSearch(query);
+    }
+    return () => { if (timer.current) clearTimeout(timer.current); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
-    <View style={styles.stepGap}>
-      <Text style={styles.stepTitle}>Найти в Discogs</Text>
-      <Text style={styles.stepHint}>
-        Если релиз уже есть в Discogs — выбери его, добавим со всеми данными.
-        Нет в списке — пропусти и заполни вручную.
-      </Text>
-
-      <View style={styles.searchRow}>
-        <View style={styles.flex}>
-          <Input value={q} onChangeText={setQ} placeholder="Kendrick Lamar — DAMN" />
+    <View style={styles.flex}>
+      {/* Закреплённая шапка: заголовок + строка поиска. */}
+      <View style={styles.discogsHead}>
+        <Text style={styles.stepTitle}>Найти в Discogs</Text>
+        <Text style={styles.stepHint}>
+          Если релиз уже есть в Discogs — выбери его, добавим со всеми данными.
+          Нет в списке — пропусти и заполни вручную.
+        </Text>
+        <View style={styles.searchRow}>
+          <View style={styles.flex}>
+            <Input
+              value={query}
+              onChangeText={onChange}
+              placeholder="Kendrick Lamar — DAMN"
+            />
+          </View>
+          <Pressable onPress={onSubmit} style={styles.searchBtn}>
+            <Icon name="magnifying-glass" size={20} color="onBrand" />
+          </Pressable>
         </View>
-        <Pressable onPress={search} style={styles.searchBtn}>
-          <Icon name="magnifying-glass" size={20} color="onBrand" />
-        </Pressable>
       </View>
 
-      {loading && <ActivityIndicator color={Colors.royalBlue} style={styles.mt16} />}
-
-      {results.map((r) => {
-        const cover = getCoverUrl(r);
-        const busy = addingId === r.discogs_id;
-        return (
-          <Pressable key={r.discogs_id} onPress={() => !addingId && onAdd(r.discogs_id)}>
-            <Card style={styles.albumCard}>
-              <View style={styles.albumThumb}>
-                {cover ? (
-                  <Image source={{ uri: cover }} style={styles.albumThumbImg} resizeMode="cover" />
+      <FlatList
+        data={results}
+        keyExtractor={(r) => r.discogs_id}
+        style={styles.flex}
+        contentContainerStyle={styles.discogsList}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
+        ListHeaderComponent={
+          loading ? <ActivityIndicator color={Colors.royalBlue} style={styles.mt16} /> : null
+        }
+        ListEmptyComponent={
+          searched && !loading ? (
+            <View style={styles.sparkleNote}>
+              <Icon name="sparkles" size={16} color="accent" />
+              <Text style={styles.sparkleText}>
+                Не нашлось — нажми «Пропустить» и заполни вручную.
+              </Text>
+            </View>
+          ) : null
+        }
+        renderItem={({ item: r }) => {
+          const cover = getCoverUrl(r);
+          const busy = addingId === r.discogs_id;
+          return (
+            <Pressable onPress={() => !addingId && onAdd(r.discogs_id)}>
+              <Card style={styles.albumCard}>
+                <View style={styles.albumThumb}>
+                  {cover ? (
+                    <Image source={{ uri: cover }} style={styles.albumThumbImg} resizeMode="cover" />
+                  ) : (
+                    <Icon name="disc-outline" size={22} color="secondary" />
+                  )}
+                </View>
+                <View style={styles.flex}>
+                  <Text style={styles.albumTitle} numberOfLines={1}>
+                    {r.title}
+                  </Text>
+                  <Text style={styles.albumMeta} numberOfLines={1}>
+                    {r.artist}
+                    {r.year ? ` · ${r.year}` : ''}
+                    {r.format_type ? ` · ${r.format_type}` : ''}
+                  </Text>
+                </View>
+                {busy ? (
+                  <ActivityIndicator color={Colors.royalBlue} />
                 ) : (
-                  <Icon name="disc-outline" size={22} color="secondary" />
+                  <Icon name="plus" size={22} color="brand" />
                 )}
-              </View>
-              <View style={styles.flex}>
-                <Text style={styles.albumTitle} numberOfLines={1}>
-                  {r.title}
-                </Text>
-                <Text style={styles.albumMeta} numberOfLines={1}>
-                  {r.artist}
-                  {r.year ? ` · ${r.year}` : ''}
-                  {r.format_type ? ` · ${r.format_type}` : ''}
-                </Text>
-              </View>
-              {busy ? (
-                <ActivityIndicator color={Colors.royalBlue} />
-              ) : (
-                <Icon name="plus" size={22} color="accent" />
-              )}
-            </Card>
-          </Pressable>
-        );
-      })}
-
-      {searched && !loading && results.length === 0 && (
-        <View style={styles.sparkleNote}>
-          <Icon name="sparkles" size={16} color="accent" />
-          <Text style={styles.sparkleText}>
-            Не нашлось — нажми «Пропустить» и заполни вручную.
-          </Text>
-        </View>
-      )}
+              </Card>
+            </Pressable>
+          );
+        }}
+      />
     </View>
   );
 }
@@ -670,20 +777,42 @@ function DiscogsStep({
 // ─── Шаг 2: детали ───────────────────────────────────────────────────────────
 
 function DetailsStep({ draft, patch }: StepProps) {
+  const [picker, setPicker] = useState<null | 'year' | 'country'>(null);
+  // draft.country хранит value (англ. имя как в Discogs) → показываем рус. label.
+  const countryLabel = draft.country
+    ? (COUNTRIES.find((c) => c.value === draft.country)?.label ?? draft.country)
+    : '';
+
   return (
     <View style={styles.stepGap}>
       <Text style={styles.stepTitle}>Детали издания</Text>
       <Text style={styles.stepHint}>
-        Поля со звёздочкой обязательны. Каталог DGS-* в прототипе вернёт
-        «нашлось в Discogs».
+        Поля со звёздочкой обязательны. Год и страну выбери из списка — так не
+        будет ошибок при добавлении.
       </Text>
 
       <Input label="Артист *" value={draft.artist} onChangeText={(v) => patch({ artist: v })} placeholder="Антоха МС" />
       <Input label="Название *" value={draft.title} onChangeText={(v) => patch({ title: v })} placeholder="Родня" />
-      <Input label="Год" value={draft.year} onChangeText={(v) => patch({ year: v })} placeholder="2022" keyboardType="numeric" />
+      <PickerField
+        label="Год"
+        value={draft.year}
+        placeholder="Выбрать год"
+        onPress={() => {
+          Haptics.selectionAsync();
+          setPicker('year');
+        }}
+      />
       <Input label="Лейбл" value={draft.label} onChangeText={(v) => patch({ label: v })} placeholder="Самиздат" />
       <Input label="Каталожный №" value={draft.catalog} onChangeText={(v) => patch({ catalog: v })} placeholder="—" />
-      <Input label="Страна" value={draft.country} onChangeText={(v) => patch({ country: v })} placeholder="Россия" />
+      <PickerField
+        label="Страна"
+        value={countryLabel}
+        placeholder="Выбрать страну"
+        onPress={() => {
+          Haptics.selectionAsync();
+          setPicker('country');
+        }}
+      />
 
       <View>
         <Text style={styles.fieldLabel}>Формат</Text>
@@ -707,7 +836,299 @@ function DetailsStep({ draft, patch }: StepProps) {
           })}
         </View>
       </View>
+
+      <YearWheelSheet
+        visible={picker === 'year'}
+        selected={draft.year}
+        onSelect={(v) => patch({ year: v })}
+        onClose={() => setPicker(null)}
+      />
+      <CountryPickerModal
+        visible={picker === 'country'}
+        selected={draft.country}
+        onSelect={(v) => patch({ country: v })}
+        onClose={() => setPicker(null)}
+      />
     </View>
+  );
+}
+
+// ─── Пикер-филд + bottom-sheet пикер (год / страна) ───────────────────────────
+
+interface PickerOption {
+  value: string;
+  label: string;
+}
+
+// Год: текущий … 1900 (в пределах бэкенд-границы ge=1900, le=2100). Топ —
+// текущий год, обновляется автоматически (new Date). Первый пункт — сброс.
+const CURRENT_YEAR = new Date().getFullYear();
+const YEAR_PICKER_OPTIONS: PickerOption[] = [
+  { value: '', label: '—' },
+  ...Array.from({ length: CURRENT_YEAR - 1900 + 1 }, (_, i) => {
+    const y = CURRENT_YEAR - i;
+    return { value: String(y), label: String(y) };
+  }),
+];
+
+const COUNTRY_PICKER_OPTIONS: PickerOption[] = [
+  { value: '', label: '— Не указана' },
+  ...COUNTRIES,
+];
+
+function PickerField({
+  label,
+  value,
+  placeholder,
+  onPress,
+}: {
+  label: string;
+  value: string;
+  placeholder: string;
+  onPress: () => void;
+}) {
+  const filled = !!value;
+  return (
+    <View style={styles.pickerFieldWrap}>
+      <Text style={styles.fieldLabel}>{label}</Text>
+      <Pressable
+        onPress={onPress}
+        style={({ pressed }) => [styles.pickerField, pressed && styles.pressedField]}
+      >
+        <Text style={[styles.pickerValue, !filled && styles.pickerPlaceholder]} numberOfLines={1}>
+          {filled ? value : placeholder}
+        </Text>
+        <Icon name="chevron-down" size={18} color="secondary" />
+      </Pressable>
+    </View>
+  );
+}
+
+// ── Крутилка (iOS-style wheel) — компактный вертикальный пикер ────────────────
+
+const WHEEL_ITEM_H = 40;
+const WHEEL_VISIBLE = 5; // нечётное — центральный слот подсвечен
+
+function WheelPicker({
+  data,
+  selectedValue,
+  onChange,
+}: {
+  data: PickerOption[];
+  selectedValue: string;
+  onChange: (value: string) => void;
+}) {
+  const scrollRef = useRef<ScrollView>(null);
+  const didInit = useRef(false);
+
+  const indexOf = (v: string) => {
+    const i = data.findIndex((d) => d.value === v);
+    return i < 0 ? 0 : i;
+  };
+
+  // Первичная установка на выбранное значение (без анимации).
+  const onLayout = () => {
+    if (didInit.current) return;
+    didInit.current = true;
+    scrollRef.current?.scrollTo({ y: indexOf(selectedValue) * WHEEL_ITEM_H, animated: false });
+  };
+
+  const commit = (y: number) => {
+    const i = Math.min(data.length - 1, Math.max(0, Math.round(y / WHEEL_ITEM_H)));
+    if (data[i].value !== selectedValue) {
+      Haptics.selectionAsync();
+      onChange(data[i].value);
+    }
+  };
+
+  const fadeH = WHEEL_ITEM_H * ((WHEEL_VISIBLE - 1) / 2);
+
+  return (
+    <View style={styles.wheelWrap} onLayout={onLayout}>
+      {/* Подсветка центрального слота */}
+      <View pointerEvents="none" style={styles.wheelBand} />
+      <ScrollView
+        ref={scrollRef}
+        showsVerticalScrollIndicator={false}
+        snapToInterval={WHEEL_ITEM_H}
+        decelerationRate="fast"
+        onMomentumScrollEnd={(e) => commit(e.nativeEvent.contentOffset.y)}
+        contentContainerStyle={{ paddingVertical: fadeH }}
+      >
+        {data.map((d, i) => {
+          const active = d.value === selectedValue;
+          return (
+            <View key={d.value || `_${i}`} style={styles.wheelItem}>
+              <Text style={[styles.wheelText, active && styles.wheelTextActive]} numberOfLines={1}>
+                {d.label}
+              </Text>
+            </View>
+          );
+        })}
+      </ScrollView>
+      {/* Fade к фону сверху и снизу — как в iOS-пикере */}
+      <LinearGradient
+        pointerEvents="none"
+        colors={[Colors.background, `${Colors.background}00`]}
+        style={[styles.wheelFade, { top: 0, height: fadeH }]}
+      />
+      <LinearGradient
+        pointerEvents="none"
+        colors={[`${Colors.background}00`, Colors.background]}
+        style={[styles.wheelFade, { bottom: 0, height: fadeH }]}
+      />
+    </View>
+  );
+}
+
+// Год: bottom-sheet с крутилкой. Значение применяется на «Готово».
+function YearWheelSheet({
+  visible,
+  selected,
+  onSelect,
+  onClose,
+}: {
+  visible: boolean;
+  selected: string;
+  onSelect: (value: string) => void;
+  onClose: () => void;
+}) {
+  const insets = useSafeAreaInsets();
+  const [temp, setTemp] = useState(selected);
+
+  useEffect(() => {
+    if (visible) setTemp(selected);
+  }, [visible, selected]);
+
+  if (!visible) return null;
+
+  return (
+    <Modal visible transparent animationType="slide" onRequestClose={onClose}>
+      <View style={styles.sheetOverlay}>
+        {/* Мягкий fade к затемнению (плотнее у листа), а не плоская плашка */}
+        <LinearGradient pointerEvents="none" colors={Gradients.overlay} style={StyleSheet.absoluteFill} />
+        {/* Тап по затемнению закрывает; сам лист — сосед, чтобы скролл крутилки не перехватывался */}
+        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
+        <View style={[styles.sheet, { paddingBottom: insets.bottom + Spacing.md }]}>
+          <View style={styles.sheetHandle} />
+          <Text style={styles.sheetTitle}>Год издания</Text>
+          <WheelPicker data={YEAR_PICKER_OPTIONS} selectedValue={temp} onChange={setTemp} />
+          <View style={styles.wheelActions}>
+            <Button
+              title="Готово"
+              onPress={() => {
+                onSelect(temp);
+                onClose();
+              }}
+            />
+            <Pressable
+              onPress={() => {
+                onSelect('');
+                onClose();
+              }}
+              style={styles.skip}
+            >
+              <Text style={styles.skipText}>Сбросить год</Text>
+            </Pressable>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+// Страна: полноэкранный модал. Поле поиска закреплено сверху — клавиатура не
+// перекрывает ввод (баг: не было видно, что печатаешь).
+function CountryPickerModal({
+  visible,
+  selected,
+  onSelect,
+  onClose,
+}: {
+  visible: boolean;
+  selected: string;
+  onSelect: (value: string) => void;
+  onClose: () => void;
+}) {
+  const insets = useSafeAreaInsets();
+  const [query, setQuery] = useState('');
+
+  useEffect(() => {
+    if (!visible) setQuery('');
+  }, [visible]);
+
+  const data = useMemo(() => {
+    if (!query.trim()) return COUNTRY_PICKER_OPTIONS;
+    const ql = query.trim().toLowerCase();
+    return COUNTRY_PICKER_OPTIONS.filter(
+      (o) => o.label.toLowerCase().includes(ql) || o.value.toLowerCase().includes(ql)
+    );
+  }, [query]);
+
+  if (!visible) return null;
+
+  return (
+    <Modal visible animationType="slide" onRequestClose={onClose}>
+      <View style={styles.countryRoot}>
+        <View style={[styles.header, { paddingTop: insets.top + Spacing.sm }]}>
+          <Pressable onPress={onClose} hitSlop={12} style={styles.headerBtn}>
+            <Icon name="arrow-left" size={24} color="default" />
+          </Pressable>
+          <Text style={styles.headerTitle}>Страна</Text>
+          <View style={styles.headerBtn} />
+        </View>
+
+        <View style={styles.countrySearchWrap}>
+          <View style={styles.sheetSearch}>
+            <Icon name="magnifying-glass" size={18} color="secondary" />
+            <TextInput
+              value={query}
+              onChangeText={setQuery}
+              placeholder="Поиск страны"
+              placeholderTextColor={Colors.textMuted}
+              style={styles.sheetSearchInput}
+              autoCorrect={false}
+              autoCapitalize="none"
+              autoFocus
+            />
+          </View>
+        </View>
+
+        <FlatList
+          data={data}
+          keyExtractor={(o) => o.value || '__empty'}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+          contentContainerStyle={{
+            paddingHorizontal: Spacing.md,
+            paddingBottom: insets.bottom + Spacing.xl,
+          }}
+          ListEmptyComponent={
+            <View style={styles.sparkleNote}>
+              <Text style={styles.sparkleText}>Ничего не нашлось</Text>
+            </View>
+          }
+          renderItem={({ item }) => {
+            const active = item.value === selected;
+            return (
+              <Pressable
+                onPress={() => {
+                  Haptics.selectionAsync();
+                  onSelect(item.value);
+                  onClose();
+                }}
+                style={({ pressed }) => [styles.sheetRow, pressed && styles.pressedRow]}
+              >
+                <Text style={[styles.sheetRowText, active && styles.sheetRowTextActive]}>
+                  {item.label}
+                </Text>
+                {active && <Icon name="check" size={18} color="brand" />}
+              </Pressable>
+            );
+          }}
+        />
+      </View>
+    </Modal>
   );
 }
 
@@ -837,6 +1258,7 @@ const styles = StyleSheet.create({
   footer: {
     paddingHorizontal: Spacing.md,
     paddingTop: Spacing.sm,
+    backgroundColor: Colors.background,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: Colors.divider,
     gap: Spacing.sm,
@@ -845,6 +1267,93 @@ const styles = StyleSheet.create({
   skipText: { ...Typography.bodySmall, color: Colors.textMuted },
   loadingWrap: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   editCoverRow: { flexDirection: 'row', gap: Spacing.md },
+  // пикер-филд (год / страна) — визуально как Input
+  pickerFieldWrap: { marginBottom: Spacing.md },
+  pickerField: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    height: ComponentSizes.inputHeight,
+    paddingHorizontal: Spacing.md,
+    backgroundColor: Colors.surface,
+    borderRadius: BorderRadius.xl,
+    borderWidth: 1.5,
+    borderColor: Colors.border,
+  },
+  pickerValue: { ...Typography.body, color: Colors.text, flex: 1 },
+  pickerPlaceholder: { color: Colors.textMuted },
+  pressedField: { opacity: 0.7, borderColor: Colors.royalBlue },
+  pressedRow: { opacity: 0.6 },
+  // шаг Discogs: закреплённая шапка + скролл результатов
+  discogsHead: { paddingHorizontal: Spacing.md, paddingTop: Spacing.md, gap: Spacing.md },
+  discogsList: { paddingHorizontal: Spacing.md, paddingTop: Spacing.md, paddingBottom: Spacing.xxl, gap: Spacing.sm },
+  // крутилка года
+  wheelWrap: { height: WHEEL_ITEM_H * WHEEL_VISIBLE, justifyContent: 'center' },
+  wheelBand: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: WHEEL_ITEM_H * ((WHEEL_VISIBLE - 1) / 2),
+    height: WHEEL_ITEM_H,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderColor: Colors.border,
+    backgroundColor: Colors.surface,
+    borderRadius: BorderRadius.sm,
+  },
+  wheelItem: { height: WHEEL_ITEM_H, alignItems: 'center', justifyContent: 'center' },
+  wheelFade: { position: 'absolute', left: 0, right: 0 },
+  wheelText: { ...Typography.body, color: Colors.textMuted, fontVariant: ['tabular-nums'] },
+  wheelTextActive: { color: Colors.text, fontWeight: '700', fontSize: 20 },
+  wheelActions: { marginTop: Spacing.md, gap: Spacing.xs },
+  // модал страны
+  countryRoot: { flex: 1, backgroundColor: Colors.background },
+  countrySearchWrap: { paddingHorizontal: Spacing.md, paddingBottom: Spacing.sm },
+  // bottom-sheet пикер
+  sheetOverlay: { flex: 1, justifyContent: 'flex-end' },
+  sheet: {
+    backgroundColor: Colors.background,
+    borderTopLeftRadius: BorderRadius.lg,
+    borderTopRightRadius: BorderRadius.lg,
+    paddingTop: Spacing.sm,
+    paddingHorizontal: Spacing.md,
+    maxHeight: '70%',
+    ...Shadows.lg,
+    shadowOffset: { width: 0, height: -8 },
+  },
+  sheetHandle: {
+    alignSelf: 'center',
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: Colors.border,
+    marginBottom: Spacing.sm,
+  },
+  sheetTitle: { ...Typography.h3, color: Colors.text, marginBottom: Spacing.sm },
+  sheetSearch: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    height: ComponentSizes.inputHeight,
+    paddingHorizontal: Spacing.md,
+    backgroundColor: Colors.surface,
+    borderRadius: BorderRadius.xl,
+    borderWidth: 1.5,
+    borderColor: Colors.border,
+    marginBottom: Spacing.sm,
+  },
+  sheetSearchInput: { flex: 1, ...Typography.body, color: Colors.text, padding: 0 },
+  sheetList: { flexGrow: 0 },
+  sheetRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: Spacing.md,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: Colors.divider,
+  },
+  sheetRowText: { ...Typography.body, color: Colors.text, fontVariant: ['tabular-nums'] },
+  sheetRowTextActive: { color: Colors.royalBlue, fontWeight: '600' },
   // format-сегмент (§9)
   fieldLabel: { ...Typography.bodySmall, color: Colors.textSecondary, marginBottom: Spacing.xs },
   segment: {
