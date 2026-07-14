@@ -13,3 +13,8 @@
 
 # Design pack zip — slim by reference, generated from Design/style-pack-achievements/
 Design/style-pack-achievements.zip
+
+# Tier 2 tracklist ingest (large, local-only)
+tier2_target_ids.txt
+tracklists.csv
+*_releases.xml.gz
