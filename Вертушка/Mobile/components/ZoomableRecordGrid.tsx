@@ -128,6 +128,8 @@ interface Props {
   hotStockMap?: Map<string, { variant: any; price: number } | null>;
   /** Wishlist tile/list badge-режим — см. RecordCard.useOfferBadge. */
   useOfferBadge?: boolean;
+  /** record.id пластинок на радаре — бейдж на карточке. */
+  radarRecordIds?: Set<string>;
   /** Pinch-зум сетки. false → жёстко отключить (напр. чужой профиль, пока не починим). */
   pinchEnabled?: boolean;
 }
@@ -248,6 +250,7 @@ export function ZoomableRecordGrid({
   rarityContext = 'collection',
   hotStockMap,
   useOfferBadge = false,
+  radarRecordIds,
   pinchEnabled = true,
 }: Props) {
   const [level, setLevel] = useState<ZoomLevel>(0);
@@ -497,6 +500,7 @@ export function ZoomableRecordGrid({
                         : undefined
                     }
                     useOfferBadge={useOfferBadge}
+                    onRadar={radarRecordIds ? radarRecordIds.has(item.record.id) : false}
                     isSelected={isSelected}
                     rarityContext={rarityContext}
                     noRarityAura={false}

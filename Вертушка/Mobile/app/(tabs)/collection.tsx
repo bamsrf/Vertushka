@@ -2,7 +2,7 @@
  * Экран коллекции — Editorial Gradient Edition
  * Переключатель Моё / Хочу, editorial заголовок, expanded cards
  */
-import { useEffect, useCallback, useState, useRef } from 'react';
+import { useEffect, useCallback, useState, useRef, useMemo } from 'react';
 import { View, StyleSheet, Alert, TouchableOpacity, Text, Animated, ScrollView, LayoutAnimation, UIManager, Platform, Easing } from 'react-native';
 import { toast } from '../../lib/toast';
 import { Image } from 'expo-image';
@@ -126,6 +126,12 @@ export default function CollectionScreen() {
     createWishlistFolder,
     addItemsToWishlistFolder,
   } = useCollectionStore();
+
+  // record.id пластинок на радаре (subscribed) — для бейджа на карточках.
+  const radarRecordIds = useMemo(
+    () => new Set(wishlistItems.filter((w) => w.notify_mode === 'subscribed').map((w) => w.record.id)),
+    [wishlistItems],
+  );
 
   // Загрузка данных при монтировании
   useEffect(() => {
@@ -1053,6 +1059,7 @@ export default function CollectionScreen() {
           rarityContext={activeTab === 'wishlist' ? 'wishlist' : 'collection'}
           hotStockMap={activeTab === 'wishlist' ? hotStockMap : undefined}
           useOfferBadge={activeTab === 'wishlist'}
+          radarRecordIds={activeTab === 'wishlist' ? radarRecordIds : undefined}
         />
       ) : (
         <RecordGrid
@@ -1063,6 +1070,7 @@ export default function CollectionScreen() {
           rarityContext={activeTab === 'wishlist' ? 'wishlist' : 'collection'}
           hotStockMap={activeTab === 'wishlist' ? hotStockMap : undefined}
           useOfferBadge={activeTab === 'wishlist'}
+          radarRecordIds={activeTab === 'wishlist' ? radarRecordIds : undefined}
           // Swipe-to-offers только в list-mode вишлиста: в grid-mode карточки
           // компактные и swipe конфликтовал бы с горизонтальным скроллом
           // ZoomableRecordGrid'а.

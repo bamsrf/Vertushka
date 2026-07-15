@@ -1,15 +1,17 @@
 /**
  * ThresholdSheet — меню порога цены (макет 1f). Заменяет серый Alert.prompt.
  *
- * Сумма — дисплей, БЕЗ системной клавиатуры. Управление: слайдер (мин.90д → текущая)
- * с боковыми кнопками [−][+] (±100) + пресет-чипы. Плюс фильтр «Состояние релиза».
- * Слайдер на PanResponder (RN core) — надёжно внутри gorhom-портала, без gesture-handler.
+ * Сумма — дисплей, БЕЗ системной клавиатуры. Управление: слайдер (мин.90д → выше
+ * текущей) с боковыми кнопками [−][+] (±100). Плюс фильтр «Состояние релиза».
+ * Слайдер гладкий: тянем на UI-потоке через reanimated sharedValue (без re-render),
+ * сумма-дисплей — animated TextInput. Значение фиксируется в state только на отпускании.
  */
-import React, { forwardRef, useImperativeHandle, useMemo, useRef, useState, useCallback } from 'react';
+import React, { forwardRef, useImperativeHandle, useMemo, useRef, useState, useCallback, useEffect } from 'react';
 import {
   StyleSheet,
   Text,
   View,
+  TextInput,
   TouchableOpacity,
   PanResponder,
   Alert,
@@ -22,12 +24,19 @@ import {
   type BottomSheetBackdropProps,
 } from '@gorhom/bottom-sheet';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  useAnimatedProps,
+} from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
 import { Colors, Typography } from '../../constants/theme';
 import { api } from '../../lib/api';
 import { toast } from '../../lib/toast';
 import { useCollectionStore } from '../../lib/store';
 import { WishlistCondition } from '../../lib/types';
+
+const AnimatedTextInput = Animated.createAnimatedComponent(TextInput);
 
 export interface ThresholdSheetData {
   itemId: string;
@@ -43,7 +52,7 @@ export interface ThresholdSheetRef {
 }
 
 interface Props {
-  onSaved?: () => void;   // после успешного сохранения/удаления
+  onSaved?: () => void;
 }
 
 const CONDITION_OPTIONS: { key: WishlistCondition; label: string }[] = [
@@ -60,6 +69,19 @@ const fmt = (n: number) => Math.round(n).toLocaleString('ru-RU');
 const roundTo = (n: number, step: number) => Math.max(0, Math.round(n / step) * step);
 const clamp = (n: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, n));
 
+// Группировка разрядов пробелом — worklet-safe (без toLocaleString в UI-потоке).
+function groupWorklet(n: number): string {
+  'worklet';
+  const r = Math.max(0, Math.round(n));
+  const s = String(r);
+  let out = '';
+  for (let i = 0; i < s.length; i++) {
+    if (i > 0 && (s.length - i) % 3 === 0) out += ' ';
+    out += s[i];
+  }
+  return out;
+}
+
 export const ThresholdSheet = forwardRef<ThresholdSheetRef, Props>(({ onSaved }, ref) => {
   const sheetRef = useRef<BottomSheetModal>(null);
   const insets = useSafeAreaInsets();
@@ -73,48 +95,63 @@ export const ThresholdSheet = forwardRef<ThresholdSheetRef, Props>(({ onSaved },
   const [conds, setConds] = useState<WishlistCondition[]>(DEFAULT_CONDITIONS);
   const [trackW, setTrackW] = useState(260);
 
-  // Границы слайдера: мин.90д … выше текущей (можно задать порог и выше цены).
+  // Границы: мин.90д … выше текущей (порог можно и выше цены).
   const bounds = useMemo(() => {
     const base = current ?? (amount > 0 ? amount : 5000);
-    const hi = Math.max(base * 1.6, base + 3000, amount + 100); // потолок выше цены
+    const hi = Math.max(base * 1.6, base + 3000, amount + 100);
     const lo = low ?? Math.min(base * 0.4, base - 500);
     return { lo: Math.max(0, Math.floor(lo)), hi: Math.max(Math.ceil(hi), lo + 500) };
   }, [current, low, amount]);
 
-  const amountRef = useRef(amount);
-  amountRef.current = amount;
-  const boundsRef = useRef(bounds);
-  boundsRef.current = bounds;
-  const trackWRef = useRef(trackW);
-  trackWRef.current = trackW;
+  // UI-поток: позиция thumb (px) + зеркала границ/ширины для worklet'ов.
+  const thumbX = useSharedValue(0);
+  const sLo = useSharedValue(0);
+  const sHi = useSharedValue(1);
+  const sW = useSharedValue(260);
+  const dragging = useRef(false);
+  const dragBase = useRef(0);
 
-  // px позиции thumb из текущего amount.
-  const thumbPx = useMemo(() => {
-    const { lo, hi } = bounds;
-    const t = hi > lo ? (amount - lo) / (hi - lo) : 0.5;
-    return clamp(t * trackW, 0, trackW);
+  // Синхра thumb из state (кроме момента перетаскивания).
+  useEffect(() => {
+    sLo.value = bounds.lo;
+    sHi.value = bounds.hi;
+    sW.value = trackW;
+    if (!dragging.current) {
+      const t = bounds.hi > bounds.lo ? (amount - bounds.lo) / (bounds.hi - bounds.lo) : 0.5;
+      thumbX.value = clamp(t * trackW, 0, trackW);
+    }
   }, [amount, bounds, trackW]);
 
-  const dragBase = useRef(0);
   const pan = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
       onMoveShouldSetPanResponder: () => true,
       onPanResponderGrant: () => {
-        const { lo, hi } = boundsRef.current;
-        const w = trackWRef.current;
-        const t = hi > lo ? (amountRef.current - lo) / (hi - lo) : 0.5;
-        dragBase.current = clamp(t * w, 0, w);
+        dragging.current = true;
+        dragBase.current = thumbX.value;
       },
       onPanResponderMove: (_e, g) => {
-        const w = trackWRef.current;
-        const { lo, hi } = boundsRef.current;
-        const px = clamp(dragBase.current + g.dx, 0, w);
-        const v = lo + (px / w) * (hi - lo);
+        thumbX.value = clamp(dragBase.current + g.dx, 0, sW.value);
+      },
+      onPanResponderRelease: () => {
+        dragging.current = false;
+        const w = sW.value || 1;
+        const v = sLo.value + (thumbX.value / w) * (sHi.value - sLo.value);
         setAmount(roundTo(v, 50));
+      },
+      onPanResponderTerminate: () => {
+        dragging.current = false;
       },
     }),
   ).current;
+
+  const thumbStyle = useAnimatedStyle(() => ({ transform: [{ translateX: thumbX.value - 13 }] }));
+  const fillStyle = useAnimatedStyle(() => ({ width: thumbX.value }));
+  const amountProps = useAnimatedProps(() => {
+    const w = sW.value || 1;
+    const v = sLo.value + (thumbX.value / w) * (sHi.value - sLo.value);
+    return { text: groupWorklet(Math.round(v / 50) * 50) } as any;
+  });
 
   const present = useCallback((d: ThresholdSheetData) => {
     setData(d);
@@ -140,7 +177,7 @@ export const ThresholdSheet = forwardRef<ThresholdSheetRef, Props>(({ onSaved },
 
   const nudge = (delta: number) => {
     Haptics.selectionAsync().catch(() => {});
-    setAmount((a) => clamp(roundTo(a + delta, STEP), 0, boundsRef.current.hi));
+    setAmount((a) => clamp(roundTo(a + delta, STEP), 0, bounds.hi));
   };
 
   const toggleCond = (key: WishlistCondition) => {
@@ -152,7 +189,6 @@ export const ThresholdSheet = forwardRef<ThresholdSheetRef, Props>(({ onSaved },
     if (!data) return;
     sheetRef.current?.dismiss();
     try {
-      // Один PUT: подписка + порог + состояние (бэк проверит лимит радара).
       await saveRadar(data.itemId, {
         threshold: amount > 0 ? amount : null,
         conditions: conds.length ? conds : null,
@@ -164,7 +200,7 @@ export const ThresholdSheet = forwardRef<ThresholdSheetRef, Props>(({ onSaved },
       if (e?.response?.status === 409 && detail?.code === 'radar_limit') {
         Alert.alert(
           'Радар заполнен',
-          `На радаре можно держать до ${detail.limit ?? 5} пластинок. Убери одну, чтобы добавить новую.`,
+          `Можно добавить максимум ${detail.limit ?? 5} релизов. Убери один, чтобы добавить новый.`,
         );
       } else {
         toast.error('Не удалось сохранить');
@@ -210,7 +246,13 @@ export const ThresholdSheet = forwardRef<ThresholdSheetRef, Props>(({ onSaved },
         <Text style={styles.subtitle}>Пуш, когда цена опустится ниже</Text>
 
         <View style={styles.amountRow}>
-          <Text style={styles.amount}>{fmt(amount)}</Text>
+          <AnimatedTextInput
+            style={styles.amount}
+            editable={false}
+            animatedProps={amountProps}
+            defaultValue={fmt(amount)}
+            underlineColorAndroid="transparent"
+          />
           <Text style={styles.rub}> ₽</Text>
         </View>
         <Text style={styles.context}>
@@ -219,17 +261,18 @@ export const ThresholdSheet = forwardRef<ThresholdSheetRef, Props>(({ onSaved },
         </Text>
 
         <View style={styles.sliderRow}>
-          <TouchableOpacity style={styles.sideBtn} onPress={() => nudge(-STEP)} hitSlop={8}>
+          <TouchableOpacity style={styles.sideBtn} onPress={() => nudge(-STEP)} hitSlop={8} activeOpacity={0.7}>
             <Text style={styles.sideTxt}>−</Text>
           </TouchableOpacity>
 
           <View style={styles.trackWrap}>
             <View style={styles.track} onLayout={onTrackLayout}>
-              <View style={[styles.fill, { width: thumbPx }]} />
-              <View
-                style={[styles.thumb, { left: thumbPx - 13 }]}
+              <View style={styles.trackBg} />
+              <Animated.View style={[styles.fill, fillStyle]} />
+              <Animated.View
+                style={[styles.thumb, thumbStyle]}
                 {...pan.panHandlers}
-                hitSlop={{ top: 14, bottom: 14, left: 14, right: 14 }}
+                hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
               />
             </View>
             <View style={styles.sliderLabels}>
@@ -238,7 +281,7 @@ export const ThresholdSheet = forwardRef<ThresholdSheetRef, Props>(({ onSaved },
             </View>
           </View>
 
-          <TouchableOpacity style={styles.sideBtn} onPress={() => nudge(STEP)} hitSlop={8}>
+          <TouchableOpacity style={styles.sideBtn} onPress={() => nudge(STEP)} hitSlop={8} activeOpacity={0.7}>
             <Text style={styles.sideTxt}>+</Text>
           </TouchableOpacity>
         </View>
@@ -249,7 +292,7 @@ export const ThresholdSheet = forwardRef<ThresholdSheetRef, Props>(({ onSaved },
           {CONDITION_OPTIONS.map((opt) => {
             const checked = conds.includes(opt.key);
             return (
-              <TouchableOpacity key={opt.key} style={styles.condRow} onPress={() => toggleCond(opt.key)}>
+              <TouchableOpacity key={opt.key} style={styles.condRow} onPress={() => toggleCond(opt.key)} activeOpacity={0.7}>
                 <View style={[styles.checkbox, checked && styles.checkboxOn]}>
                   {checked ? <Text style={styles.checkMark}>✓</Text> : null}
                 </View>
@@ -282,8 +325,8 @@ const styles = StyleSheet.create({
   container: { paddingHorizontal: 24, paddingBottom: 34, paddingTop: 6 },
   title: { ...Typography.h2, color: Colors.text, textAlign: 'center' },
   subtitle: { ...Typography.bodySmall, color: Colors.textSecondary, textAlign: 'center', marginTop: 5 },
-  amountRow: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'center', marginTop: 24 },
-  amount: { fontFamily: 'Inter_800ExtraBold', fontSize: 52, color: Colors.royalBlue, fontVariant: ['tabular-nums'], letterSpacing: -1 },
+  amountRow: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'center', marginTop: 20 },
+  amount: { fontFamily: 'Inter_800ExtraBold', fontSize: 52, color: Colors.royalBlue, fontVariant: ['tabular-nums'], letterSpacing: -1, padding: 0, textAlign: 'center', minWidth: 120 },
   rub: { fontFamily: 'Inter_800ExtraBold', fontSize: 40, color: Colors.periwinkle },
   context: { ...Typography.caption, color: Colors.textSecondary, textAlign: 'center', marginTop: 4, fontVariant: ['tabular-nums'] },
   sliderRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 14, marginTop: 24 },
@@ -291,15 +334,11 @@ const styles = StyleSheet.create({
   sideTxt: { fontFamily: 'Inter_700Bold', fontSize: 24, color: Colors.royalBlue, marginTop: -2 },
   trackWrap: { flex: 1 },
   track: { height: 44, justifyContent: 'center' },
+  trackBg: { position: 'absolute', left: 0, right: 0, height: 6, borderRadius: 9999, backgroundColor: '#E3E6F3' },
   fill: { position: 'absolute', left: 0, height: 6, borderRadius: 9999, backgroundColor: Colors.royalBlue },
-  thumb: { position: 'absolute', width: 26, height: 26, borderRadius: 13, backgroundColor: '#fff', borderWidth: 3, borderColor: Colors.royalBlue, shadowColor: Colors.royalBlue, shadowOpacity: 0.35, shadowRadius: 6, shadowOffset: { width: 0, height: 2 }, elevation: 3 },
+  thumb: { position: 'absolute', left: 0, width: 26, height: 26, borderRadius: 13, backgroundColor: '#fff', borderWidth: 3, borderColor: Colors.royalBlue, shadowColor: Colors.royalBlue, shadowOpacity: 0.35, shadowRadius: 6, shadowOffset: { width: 0, height: 2 }, elevation: 3 },
   sliderLabels: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 6 },
   sliderLabel: { ...Typography.caption, color: Colors.textMuted, fontVariant: ['tabular-nums'] },
-  chipsRow: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 10, marginTop: 22 },
-  chip: { paddingVertical: 11, paddingHorizontal: 18, borderRadius: 9999, backgroundColor: '#fff', borderWidth: 1, borderColor: Colors.border },
-  chipActive: { backgroundColor: Colors.royalBlue, borderColor: Colors.royalBlue },
-  chipTxt: { fontFamily: 'Inter_600SemiBold', fontSize: 15, color: Colors.textSecondary, fontVariant: ['tabular-nums'] },
-  chipTxtActive: { color: '#fff', fontFamily: 'Inter_700Bold' },
   condCard: { backgroundColor: '#fff', borderRadius: 16, padding: 18, marginTop: 22 },
   condTitle: { ...Typography.bodyBold, color: Colors.text },
   condSub: { ...Typography.caption, color: Colors.textSecondary, marginTop: 2, marginBottom: 12 },
@@ -311,6 +350,6 @@ const styles = StyleSheet.create({
   condLabelOff: { color: Colors.textSecondary },
   saveBtn: { marginTop: 22, paddingVertical: 18, borderRadius: 16, backgroundColor: Colors.royalBlue, alignItems: 'center' },
   saveTxt: { ...Typography.button, color: '#fff' },
-  removeBtn: { paddingVertical: 14, alignItems: 'center', marginTop: 4 },
+  removeBtn: { paddingVertical: 16, alignItems: 'center', marginTop: 6 },
   removeTxt: { ...Typography.buttonSmall, color: Colors.error, fontFamily: 'Inter_600SemiBold' },
 });

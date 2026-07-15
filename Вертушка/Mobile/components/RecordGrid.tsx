@@ -96,6 +96,8 @@ interface RecordGridProps<T extends RecordItem = RecordItem> {
    * и AltBadge для altVersion в list.
    */
   useOfferBadge?: boolean;
+  /** record.id-множество пластинок на радаре — рисуем бейдж на карточке. */
+  radarRecordIds?: Set<string>;
 }
 
 function RecordGridComponent<T extends RecordItem = RecordItem>({
@@ -130,6 +132,7 @@ function RecordGridComponent<T extends RecordItem = RecordItem>({
   hotStockMap,
   rowWrapper,
   useOfferBadge = false,
+  radarRecordIds,
 }: RecordGridProps<T>) {
   // Internal ref для scrollToOffset вызова (search.tsx, market navigation).
   // Populate переданного scrollToTopRef один раз на mount.
@@ -202,6 +205,7 @@ function RecordGridComponent<T extends RecordItem = RecordItem>({
             : undefined
         }
         useOfferBadge={useOfferBadge}
+        onRadar={radarRecordIds && 'id' in record && record.id ? radarRecordIds.has(record.id) : false}
       />
     );
 

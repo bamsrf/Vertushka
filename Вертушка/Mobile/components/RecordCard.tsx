@@ -25,6 +25,7 @@ import { ms } from '../lib/responsive';
 import { cleanArtistName } from '../lib/format';
 import { RarityAura, TierCoverEffects, TierLabel, pickRarityTier, RarityContext, RarityFlags, RARITY_TIERS } from './RarityAura';
 import HotStockTag, { type ResolvedHotStock } from './HotStockTag';
+import { RadarIcon } from './RadarIcon';
 import { OfferBadge, TileFrameGradient } from './OfferBadge';
 
 const { width } = Dimensions.get('window');
@@ -66,6 +67,8 @@ interface RecordCardProps {
    *    OfferBadge «ЕСТЬ АНАЛОГ». Для in-stock case оставляет HotStockTag.
    */
   useOfferBadge?: boolean;
+  /** Пластинка на радаре (notify_mode='subscribed') — маленький бейдж-иконка. */
+  onRadar?: boolean;
 }
 
 const FORMAT_TRANSLATIONS: Record<string, string> = {
@@ -135,6 +138,7 @@ function RecordCardComponent({
   noRarityAura = false,
   hotStock,
   useOfferBadge = false,
+  onRadar = false,
 }: RecordCardProps) {
   // ── Wishlist offer-badge режим (handoff/screens-wishlist-grid-v3.jsx) ──
   // Для tile (expanded) и list — corner/inline-плашка вместо HotStockTag.
@@ -242,6 +246,13 @@ function RecordCardComponent({
           </View>
         )}
 
+        {/* Радар-бейдж — левый нижний угол обложки */}
+        {onRadar && (
+          <View style={styles.radarBadge} pointerEvents="none">
+            <RadarIcon size={13} color="#fff" variant="on" />
+          </View>
+        )}
+
         {isBooked && !isSelectionMode && (
           <LinearGradient
             colors={[Colors.royalBlue, Colors.periwinkle]}
@@ -339,6 +350,11 @@ function RecordCardComponent({
             </View>
           )}
           <TierCoverEffects tier={auraTier} radius={10} />
+          {onRadar && (
+            <View style={styles.radarBadgeList} pointerEvents="none">
+              <RadarIcon size={11} color="#fff" variant="on" />
+            </View>
+          )}
           {isBooked && !isSelectionMode && (
             <View style={styles.listBookedBadge}>
               <Icon name="gift-outline" size={10} color={Colors.background} />
@@ -660,6 +676,35 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontFamily: 'Inter_600SemiBold',
     color: '#FFFFFF',
+  },
+  radarBadge: {
+    position: 'absolute',
+    bottom: 8,
+    left: 8,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: Colors.royalBlue,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 3,
+    shadowColor: '#3B4BF5',
+    shadowOpacity: 0.4,
+    shadowRadius: 5,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 3,
+  },
+  radarBadgeList: {
+    position: 'absolute',
+    bottom: 4,
+    left: 4,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: Colors.royalBlue,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 3,
   },
 
   // ===== EXPANDED (card) =====

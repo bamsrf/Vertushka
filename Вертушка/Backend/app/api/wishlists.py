@@ -206,6 +206,19 @@ async def get_radar(
         if mid:
             by_master.setdefault(str(mid), []).append((listing, str(rec_id)))
 
+    # Догружаем Record'ы альтернативных прессингов (их нет в вишлисте, но нужны
+    # обложка/год/страна/формат для экрана подтверждения).
+    alt_ids = {
+        listing.matched_record_id
+        for listing, rec_id, _mid in listing_rows
+        if rec_id not in record_ids and listing.matched_record_id is not None
+    }
+    alt_records: dict = dict(records)
+    if alt_ids:
+        rows = (await db.execute(select(Record).where(Record.id.in_(list(alt_ids))))).scalars().all()
+        for r in rows:
+            alt_records[r.id] = r
+
     out: list[RadarItem] = []
     match_count = 0
     for wi in items:
@@ -233,7 +246,7 @@ async def get_radar(
         ]
         if alt_candidates:
             cheapest_alt, alt_rid = min(alt_candidates, key=lambda x: float(x[0].price_rub))
-            alt_rec = records.get(cheapest_alt.matched_record_id)
+            alt_rec = alt_records.get(cheapest_alt.matched_record_id)
             alt_payload = RadarAlt(
                 record_id=cheapest_alt.matched_record_id,
                 title=getattr(alt_rec, "title", None),
