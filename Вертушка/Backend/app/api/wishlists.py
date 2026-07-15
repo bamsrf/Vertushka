@@ -89,6 +89,7 @@ async def get_my_wishlist(
             notify_mode=item.notify_mode,
             price_threshold_rub=item.price_threshold_rub,
             conditions=item.conditions,
+            accept_alt=item.accept_alt,
             is_booked=item.gift_booking is not None,
             gift_booking=GiftBookingInfo(
                 id=item.gift_booking.id,
@@ -135,20 +136,25 @@ def _condition_ok(condition_raw: str | None, accepted: list | None) -> bool:
     return grade in accepted
 
 
+RADAR_MAX = 5  # максимум подписанных пластинок на радаре
+
+
 def _radar_radius(status: str, price: float | None, threshold: float | None) -> float:
-    """0..1: 0 — у центра (зона покупки), 1 — внешний край."""
+    """Доля 0..1 ВНУТРИ полосы статуса (клиент раскладывает по зонам).
+
+    0 — у ближнего края полосы, 1 — у дальнего. Для match/available зависит от
+    близости цены к порогу: чем дешевле относительно порога, тем ближе к центру.
+    """
     if status == "match":
         if threshold and price is not None and threshold > 0:
-            return round(0.15 + 0.15 * min(1.0, price / threshold), 3)
-        return 0.2
+            return round(min(1.0, price / threshold), 3)  # цена→порог = дальше в зоне
+        return 0.4
     if status == "available":
         if threshold and price is not None and threshold > 0:
             over = (price - threshold) / threshold
-            return round(0.4 + min(0.4, over), 3)
-        return 0.6  # порог не задан — середина
-    if status == "alt":
-        return 0.85
-    return 0.92  # absent
+            return round(min(1.0, max(0.0, over)), 3)  # сильно дороже порога = дальше
+        return 0.5  # порог не задан — середина
+    return 0.5  # alt / absent — середина своей полосы
 
 
 @router.get("/radar", response_model=RadarResponse)
@@ -191,7 +197,7 @@ async def get_radar(
     from sqlalchemy import or_ as _or
     listing_rows = (await db.execute(listing_q.where(_or(*conds)))).all()
 
-    # Бакеты: по exact record и по master.
+    # Бакеты: по exact record и по master. Храним листинг целиком (нужен url).
     exact_by_record: dict[str, list[StoreListing]] = {}
     by_master: dict[str, list[tuple[StoreListing, str]]] = {}
     for listing, rec_id, mid in listing_rows:
@@ -213,34 +219,50 @@ async def get_radar(
             l for l in exact_by_record.get(str(rec.id), [])
             if l.price_rub is not None and _condition_ok(l.condition, accepted)
         ]
-        lowest = min((float(l.price_rub) for l in exact), default=None)
+        exact.sort(key=lambda l: float(l.price_rub))
+        lowest = float(exact[0].price_rub) if exact else None
+        buy_url = exact[0].url if exact else None
 
         alt_payload = None
+        # Кандидаты-аналоги (другой прессинг того же мастера) — считаем всегда,
+        # чтобы отдать их для экрана подтверждения и для accept_alt.
+        mid = str(getattr(rec, "discogs_master_id", "") or "")
+        alt_candidates = [
+            (l, rid) for (l, rid) in by_master.get(mid, [])
+            if rid != str(rec.id) and l.price_rub is not None and _condition_ok(l.condition, accepted)
+        ]
+        if alt_candidates:
+            cheapest_alt, alt_rid = min(alt_candidates, key=lambda x: float(x[0].price_rub))
+            alt_rec = records.get(cheapest_alt.matched_record_id)
+            alt_payload = RadarAlt(
+                record_id=cheapest_alt.matched_record_id,
+                title=getattr(alt_rec, "title", None),
+                cover_url=getattr(alt_rec, "cover_image_url", None),
+                price_rub=cheapest_alt.price_rub,
+                year=getattr(alt_rec, "year", None),
+                country=getattr(alt_rec, "country", None),
+                format=getattr(alt_rec, "format_description", None) or getattr(alt_rec, "format_type", None),
+                buy_url=cheapest_alt.url,
+            )
+
         if exact:
             if threshold is not None and lowest is not None and lowest <= threshold:
                 status_v = "match"
                 match_count += 1
             else:
                 status_v = "available"
+        elif wi.accept_alt and alt_payload is not None:
+            # Юзер принял аналог как подходящий → считаем его «в продаже».
+            status_v = "available"
+            lowest = float(alt_payload.price_rub) if alt_payload.price_rub is not None else None
+            buy_url = alt_payload.buy_url
+            if threshold is not None and lowest is not None and lowest <= threshold:
+                status_v = "match"
+                match_count += 1
+        elif alt_payload is not None:
+            status_v = "alt"
         else:
-            # аналог: in_stock листинг другой записи того же мастера
-            mid = str(getattr(rec, "discogs_master_id", "") or "")
-            alt_candidates = [
-                (l, rid) for (l, rid) in by_master.get(mid, [])
-                if rid != str(rec.id) and l.price_rub is not None and _condition_ok(l.condition, accepted)
-            ]
-            if alt_candidates:
-                status_v = "alt"
-                cheapest_alt, alt_rid = min(alt_candidates, key=lambda x: x[0].price_rub)
-                alt_rec = records.get(cheapest_alt.matched_record_id)
-                alt_payload = RadarAlt(
-                    record_id=cheapest_alt.matched_record_id,
-                    title=getattr(alt_rec, "title", None),
-                    cover_url=getattr(alt_rec, "cover_image_url", None),
-                    price_rub=cheapest_alt.price_rub,
-                )
-            else:
-                status_v = "absent"
+            status_v = "absent"
 
         out.append(
             RadarItem(
@@ -250,12 +272,15 @@ async def get_radar(
                 lowest_price_rub=(lowest if status_v in ("match", "available") else None),
                 threshold_rub=wi.price_threshold_rub,
                 conditions=accepted,
+                accept_alt=wi.accept_alt,
                 radius=_radar_radius(status_v, lowest, threshold),
-                alt=alt_payload,
+                offers_count=(len(exact) if exact else (1 if status_v == "available" else 0)),
+                buy_url=buy_url,
+                alt=(alt_payload if status_v == "alt" else None),
             )
         )
 
-    return RadarResponse(items=out, count=len(out), match_count=match_count)
+    return RadarResponse(items=out, count=len(out), match_count=match_count, limit=RADAR_MAX)
 
 
 @router.post("/items", response_model=WishlistItemResponse, status_code=status.HTTP_201_CREATED)
@@ -386,6 +411,7 @@ async def add_to_wishlist(
         notify_mode=item.notify_mode,
         price_threshold_rub=item.price_threshold_rub,
         conditions=item.conditions,
+        accept_alt=item.accept_alt,
         is_booked=False,
         gift_booking=None
     )
@@ -427,6 +453,25 @@ async def update_wishlist_item(
     if data.notes is not None:
         item.notes = data.notes
     if data.notify_mode is not None:
+        # Лимит радара: не больше RADAR_MAX подписанных пластинок.
+        if data.notify_mode == "subscribed" and item.notify_mode != "subscribed":
+            active = (
+                await db.execute(
+                    select(func.count())
+                    .select_from(WishlistItem)
+                    .join(Wishlist)
+                    .where(
+                        Wishlist.user_id == current_user.id,
+                        WishlistItem.notify_mode == "subscribed",
+                        WishlistItem.id != item.id,
+                    )
+                )
+            ).scalar_one()
+            if active >= RADAR_MAX:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail={"code": "radar_limit", "limit": RADAR_MAX},
+                )
         item.notify_mode = data.notify_mode
     # threshold: только при subscribed имеет смысл, но храним как задано —
     # producer сам применяет порог лишь для subscribed-item'ов.
@@ -434,6 +479,8 @@ async def update_wishlist_item(
         item.price_threshold_rub = data.price_threshold_rub
     if "conditions" in data.model_fields_set:
         item.conditions = data.conditions
+    if "accept_alt" in data.model_fields_set and data.accept_alt is not None:
+        item.accept_alt = data.accept_alt
 
     await db.commit()
     await db.refresh(item)
@@ -451,6 +498,7 @@ async def update_wishlist_item(
         notify_mode=item.notify_mode,
         price_threshold_rub=item.price_threshold_rub,
         conditions=item.conditions,
+        accept_alt=item.accept_alt,
         is_booked=item.gift_booking is not None,
         gift_booking=GiftBookingInfo(
             id=item.gift_booking.id,
@@ -771,6 +819,7 @@ async def search_wishlist(
         notify_mode=item.notify_mode,
         price_threshold_rub=item.price_threshold_rub,
         conditions=item.conditions,
+        accept_alt=item.accept_alt,
         is_booked=item.gift_booking is not None,
         gift_booking=GiftBookingInfo(
             id=item.gift_booking.id,
@@ -955,6 +1004,7 @@ def _wishlist_item_to_response(item: WishlistItem) -> WishlistItemResponse:
         notify_mode=item.notify_mode,
         price_threshold_rub=item.price_threshold_rub,
         conditions=item.conditions,
+        accept_alt=item.accept_alt,
         is_booked=item.gift_booking is not None,
         gift_booking=GiftBookingInfo(
             id=item.gift_booking.id,

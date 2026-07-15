@@ -194,6 +194,15 @@ class WishlistItem(Base):
         JSONB,
         nullable=True,
     )
+
+    # Юзер принял альтернативный прессинг (тот же мастер) как подходящий —
+    # тогда его наличие считается как «в продаже», а не «альтернатива».
+    accept_alt: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        server_default="false",
+        nullable=False,
+    )
     
     # Временные метки
     added_at: Mapped[datetime] = mapped_column(

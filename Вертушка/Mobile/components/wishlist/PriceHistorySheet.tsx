@@ -25,6 +25,8 @@ export interface PriceHistorySheetData {
   currentPrice?: number | null;
   threshold?: number | null;
   status: RadarStatus;
+  buyUrl?: string | null;
+  offersCount?: number;
 }
 
 export interface PriceHistorySheetRef {
@@ -124,6 +126,14 @@ export const PriceHistorySheet = forwardRef<PriceHistorySheetRef, Props>(
             </View>
           </View>
 
+          {data?.currentPrice != null ? (
+            <Text style={styles.priceHint}>
+              {data.offersCount && data.offersCount > 1
+                ? `Самое дешёвое из ${data.offersCount} подходящих предложений`
+                : 'Самое дешёвое подходящее предложение'}
+            </Text>
+          ) : null}
+
           {history && history.points.length > 0 ? (
             <View style={styles.chartCard}>
               <PriceSparkline points={history.points} historicalLow={history.historical_low_rub} width={300} />
@@ -145,8 +155,12 @@ export const PriceHistorySheet = forwardRef<PriceHistorySheetRef, Props>(
           ) : null}
 
           <View style={styles.btnRow}>
-            <TouchableOpacity style={styles.primaryBtn} onPress={() => data && onOpenStore?.(data)}>
-              <Text style={styles.primaryTxt}>В магазин</Text>
+            <TouchableOpacity
+              style={styles.primaryBtn}
+              activeOpacity={0.9}
+              onPress={() => { sheetRef.current?.dismiss(); data && onOpenStore?.(data); }}
+            >
+              <Text style={styles.primaryTxt}>{data?.buyUrl ? 'Заказать в магазине' : 'В магазин'}</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.secondaryBtn} onPress={() => { sheetRef.current?.dismiss(); data && onEditThreshold?.(data); }}>
               <RadarIcon size={16} color={Colors.royalBlue} />
@@ -174,6 +188,7 @@ const styles = StyleSheet.create({
   title: { ...Typography.h3, color: Colors.text, marginTop: 2 },
   priceRow: { flexDirection: 'row', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginTop: 18 },
   price: { fontFamily: 'Inter_800ExtraBold', fontSize: 28, color: Colors.text, fontVariant: ['tabular-nums'] },
+  priceHint: { fontSize: 12, color: Colors.textSecondary, marginTop: 6 },
   thChip: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingVertical: 7, paddingHorizontal: 12, backgroundColor: '#E8EBFA', borderRadius: 9999 },
   thChipTxt: { fontSize: 13, fontFamily: 'Inter_600SemiBold', color: Colors.royalBlue },
   pill: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 7, paddingHorizontal: 12, borderRadius: 9999 },

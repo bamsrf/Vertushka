@@ -602,6 +602,14 @@ interface CollectionState {
   setWishlistNotifyMode: (itemId: string, mode: WishlistNotifyMode) => Promise<void>;
   setWishlistPriceThreshold: (itemId: string, value: number | null) => Promise<void>;
   setWishlistConditions: (itemId: string, conditions: WishlistCondition[] | null) => Promise<void>;
+  setWishlistAcceptAlt: (itemId: string, value: boolean) => Promise<void>;
+  // Единый PUT: подписать на радар + порог + состояние (для лимит-проверки бэка).
+  saveWishlistRadar: (
+    itemId: string,
+    opts: { threshold: number | null; conditions: WishlistCondition[] | null },
+  ) => Promise<void>;
+  // Убрать с радара: notify_mode='watched' + сброс порога одним PUT.
+  removeWishlistRadar: (itemId: string) => Promise<void>;
   moveToCollection: (wishlistItemId: string) => Promise<void>;
 
   // Folder actions
@@ -785,6 +793,57 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
     });
     try {
       await api.updateWishlistItem(itemId, { conditions });
+    } catch (error) {
+      set({ wishlistItems: prev });
+      throw error;
+    }
+  },
+
+  setWishlistAcceptAlt: async (itemId, value) => {
+    const prev = get().wishlistItems;
+    set({
+      wishlistItems: prev.map((wi) =>
+        wi.id === itemId ? { ...wi, accept_alt: value } : wi,
+      ),
+    });
+    try {
+      await api.updateWishlistItem(itemId, { accept_alt: value });
+    } catch (error) {
+      set({ wishlistItems: prev });
+      throw error;
+    }
+  },
+
+  saveWishlistRadar: async (itemId, { threshold, conditions }) => {
+    const prev = get().wishlistItems;
+    set({
+      wishlistItems: prev.map((wi) =>
+        wi.id === itemId
+          ? { ...wi, notify_mode: 'subscribed', price_threshold_rub: threshold, conditions }
+          : wi,
+      ),
+    });
+    try {
+      await api.updateWishlistItem(itemId, {
+        notify_mode: 'subscribed',
+        price_threshold_rub: threshold,
+        conditions,
+      });
+    } catch (error) {
+      set({ wishlistItems: prev });
+      throw error;
+    }
+  },
+
+  removeWishlistRadar: async (itemId) => {
+    const prev = get().wishlistItems;
+    set({
+      wishlistItems: prev.map((wi) =>
+        wi.id === itemId ? { ...wi, notify_mode: 'watched', price_threshold_rub: null } : wi,
+      ),
+    });
+    try {
+      await api.updateWishlistItem(itemId, { notify_mode: 'watched', price_threshold_rub: null });
     } catch (error) {
       set({ wishlistItems: prev });
       throw error;

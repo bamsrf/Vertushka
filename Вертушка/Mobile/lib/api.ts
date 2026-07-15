@@ -990,7 +990,7 @@ class ApiClient {
 
   async updateWishlistItem(
     itemId: string,
-    patch: Partial<Pick<WishlistItem, 'notify_mode' | 'price_threshold_rub' | 'conditions' | 'priority' | 'notes'>>,
+    patch: Partial<Pick<WishlistItem, 'notify_mode' | 'price_threshold_rub' | 'conditions' | 'accept_alt' | 'priority' | 'notes'>>,
   ): Promise<WishlistItem> {
     const response = await this.client.put<WishlistItem>(
       `/wishlists/records/${itemId}`,

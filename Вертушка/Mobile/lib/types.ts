@@ -467,6 +467,10 @@ export interface RadarAlt {
   title: string | null;
   cover_url: string | null;
   price_rub: number | null;
+  year?: number | null;
+  country?: string | null;
+  format?: string | null;
+  buy_url?: string | null;
 }
 
 export interface RadarItem {
@@ -476,7 +480,10 @@ export interface RadarItem {
   lowest_price_rub: number | null;
   threshold_rub: number | null;
   conditions: WishlistCondition[] | null;
-  radius: number; // 0..1
+  accept_alt?: boolean;
+  radius: number; // 0..1 доля внутри полосы статуса
+  offers_count?: number;
+  buy_url?: string | null;
   alt: RadarAlt | null;
 }
 
@@ -484,6 +491,7 @@ export interface RadarResponse {
   items: RadarItem[];
   count: number;
   match_count: number;
+  limit?: number;
 }
 
 export interface PriceHistoryPoint {
@@ -515,6 +523,8 @@ export interface WishlistItem {
   price_threshold_rub?: number | null;
   // Принятые грейды состояния для радара. null/undefined = любое.
   conditions?: WishlistCondition[] | null;
+  // Юзер принял альт-прессинг как подходящий.
+  accept_alt?: boolean;
 }
 
 export interface WishlistFolder {

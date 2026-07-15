@@ -12,6 +12,7 @@ import {
   View,
   TouchableOpacity,
   PanResponder,
+  Alert,
   type LayoutChangeEvent,
 } from 'react-native';
 import {
@@ -34,10 +35,15 @@ export interface ThresholdSheetData {
   currentPrice?: number | null;
   threshold?: number | null;
   conditions?: WishlistCondition[] | null;
+  subscribed?: boolean; // уже на радаре → показываем «Убрать радар»
 }
 
 export interface ThresholdSheetRef {
   present: (data: ThresholdSheetData) => void;
+}
+
+interface Props {
+  onSaved?: () => void;   // после успешного сохранения/удаления
 }
 
 const CONDITION_OPTIONS: { key: WishlistCondition; label: string }[] = [
@@ -54,11 +60,11 @@ const fmt = (n: number) => Math.round(n).toLocaleString('ru-RU');
 const roundTo = (n: number, step: number) => Math.max(0, Math.round(n / step) * step);
 const clamp = (n: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, n));
 
-export const ThresholdSheet = forwardRef<ThresholdSheetRef, {}>((_props, ref) => {
+export const ThresholdSheet = forwardRef<ThresholdSheetRef, Props>(({ onSaved }, ref) => {
   const sheetRef = useRef<BottomSheetModal>(null);
   const insets = useSafeAreaInsets();
-  const setThreshold = useCollectionStore((s) => s.setWishlistPriceThreshold);
-  const setConditions = useCollectionStore((s) => s.setWishlistConditions);
+  const saveRadar = useCollectionStore((s) => s.saveWishlistRadar);
+  const removeRadar = useCollectionStore((s) => s.removeWishlistRadar);
 
   const [data, setData] = useState<ThresholdSheetData | null>(null);
   const [amount, setAmount] = useState(0);
@@ -67,11 +73,12 @@ export const ThresholdSheet = forwardRef<ThresholdSheetRef, {}>((_props, ref) =>
   const [conds, setConds] = useState<WishlistCondition[]>(DEFAULT_CONDITIONS);
   const [trackW, setTrackW] = useState(260);
 
-  // Границы слайдера: мин.90д … текущая (с запасом).
+  // Границы слайдера: мин.90д … выше текущей (можно задать порог и выше цены).
   const bounds = useMemo(() => {
-    const hi = current ?? (amount > 0 ? amount * 1.5 : 5000);
-    const lo = low ?? Math.min(hi * 0.4, hi - 500);
-    return { lo: Math.max(0, Math.floor(lo)), hi: Math.max(hi, lo + 500) };
+    const base = current ?? (amount > 0 ? amount : 5000);
+    const hi = Math.max(base * 1.6, base + 3000, amount + 100); // потолок выше цены
+    const lo = low ?? Math.min(base * 0.4, base - 500);
+    return { lo: Math.max(0, Math.floor(lo)), hi: Math.max(Math.ceil(hi), lo + 500) };
   }, [current, low, amount]);
 
   const amountRef = useRef(amount);
@@ -136,16 +143,6 @@ export const ThresholdSheet = forwardRef<ThresholdSheetRef, {}>((_props, ref) =>
     setAmount((a) => clamp(roundTo(a + delta, STEP), 0, boundsRef.current.hi));
   };
 
-  const presets = useMemo(() => {
-    const base = current ?? amount ?? 0;
-    return [
-      { label: '−10%', value: roundTo(base * 0.9, 50) },
-      { label: '−20%', value: roundTo(base * 0.8, 50) },
-      { label: fmt(roundTo(base * 0.85, 500)), value: roundTo(base * 0.85, 500) },
-      { label: fmt(roundTo(base * 0.7, 500)), value: roundTo(base * 0.7, 500) },
-    ];
-  }, [current, amount]);
-
   const toggleCond = (key: WishlistCondition) => {
     Haptics.selectionAsync().catch(() => {});
     setConds((prev) => (prev.includes(key) ? prev.filter((c) => c !== key) : [...prev, key]));
@@ -155,11 +152,23 @@ export const ThresholdSheet = forwardRef<ThresholdSheetRef, {}>((_props, ref) =>
     if (!data) return;
     sheetRef.current?.dismiss();
     try {
-      await setThreshold(data.itemId, amount > 0 ? amount : null);
-      await setConditions(data.itemId, conds.length ? conds : null);
-      toast.success(amount > 0 ? `Порог: дешевле ${fmt(amount)} ₽` : 'Порог снят');
-    } catch {
-      toast.error('Не удалось сохранить');
+      // Один PUT: подписка + порог + состояние (бэк проверит лимит радара).
+      await saveRadar(data.itemId, {
+        threshold: amount > 0 ? amount : null,
+        conditions: conds.length ? conds : null,
+      });
+      toast.success(amount > 0 ? `Радар: дешевле ${fmt(amount)} ₽` : 'На радаре');
+      onSaved?.();
+    } catch (e: any) {
+      const detail = e?.response?.data?.detail;
+      if (e?.response?.status === 409 && detail?.code === 'radar_limit') {
+        Alert.alert(
+          'Радар заполнен',
+          `На радаре можно держать до ${detail.limit ?? 5} пластинок. Убери одну, чтобы добавить новую.`,
+        );
+      } else {
+        toast.error('Не удалось сохранить');
+      }
     }
   };
 
@@ -167,9 +176,9 @@ export const ThresholdSheet = forwardRef<ThresholdSheetRef, {}>((_props, ref) =>
     if (!data) return;
     sheetRef.current?.dismiss();
     try {
-      await setThreshold(data.itemId, null);
-      await setConditions(data.itemId, null);
-      toast.success('Радар снят');
+      await removeRadar(data.itemId);
+      toast.success('Убрали с радара');
+      onSaved?.();
     } catch {
       toast.error('Не удалось убрать радар');
     }
@@ -234,21 +243,6 @@ export const ThresholdSheet = forwardRef<ThresholdSheetRef, {}>((_props, ref) =>
           </TouchableOpacity>
         </View>
 
-        <View style={styles.chipsRow}>
-          {presets.map((p, i) => {
-            const active = p.value === amount;
-            return (
-              <TouchableOpacity
-                key={i}
-                style={[styles.chip, active && styles.chipActive]}
-                onPress={() => setAmount(p.value)}
-              >
-                <Text style={[styles.chipTxt, active && styles.chipTxtActive]}>{p.label}</Text>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-
         <View style={styles.condCard}>
           <Text style={styles.condTitle}>Состояние релиза</Text>
           <Text style={styles.condSub}>Какие копии считать</Text>
@@ -265,14 +259,15 @@ export const ThresholdSheet = forwardRef<ThresholdSheetRef, {}>((_props, ref) =>
           })}
         </View>
 
-        <TouchableOpacity style={styles.saveBtn} onPress={onSave}>
+        <TouchableOpacity style={styles.saveBtn} onPress={onSave} activeOpacity={0.9}>
           <Text style={styles.saveTxt}>Сохранить</Text>
         </TouchableOpacity>
-        {(data?.threshold ?? amount) ? (
-          <TouchableOpacity style={styles.removeBtn} onPress={onRemove}>
+        {data?.subscribed ? (
+          <TouchableOpacity style={styles.removeBtn} onPress={onRemove} activeOpacity={0.7}>
             <Text style={styles.removeTxt}>Убрать радар</Text>
           </TouchableOpacity>
         ) : null}
+        <View style={{ height: Math.max(insets.bottom, 12) }} />
       </BottomSheetView>
     </BottomSheetModal>
   );

@@ -165,8 +165,7 @@ export default function RecordDetailScreen() {
     addToWishlistByRecordId,
     removeFromCollection,
     removeFromWishlist,
-    setWishlistNotifyMode,
-    setWishlistPriceThreshold,
+    removeWishlistRadar,
     moveToCollection,
     collectionItems,
     wishlistItems,
@@ -408,17 +407,41 @@ export default function RecordDetailScreen() {
     // единичный пульс
     radarPulse.value = 0;
     radarPulse.value = withTiming(1, { duration: 520, easing: Easing.out(Easing.quad) });
-    if (status.wishlistNotifyMode !== 'subscribed') {
-      setWishlistNotifyMode(status.wishlistItemId, 'subscribed').catch(() => {});
+
+    const itemId = status.wishlistItemId;
+    const subscribed = status.wishlistNotifyMode === 'subscribed';
+
+    // Уже на радаре → подтверждение отключения (без открытия меню).
+    if (subscribed) {
+      Alert.alert(
+        'Убрать радар с этого релиза?',
+        'Перестанем следить за ценой и уберём пластинку с радара.',
+        [
+          { text: 'Оставить', style: 'cancel' },
+          {
+            text: 'Убрать',
+            style: 'destructive',
+            onPress: () => {
+              removeWishlistRadar(itemId)
+                .then(() => toast.success('Убрали с радара'))
+                .catch(() => toast.error('Не удалось убрать'));
+            },
+          },
+        ],
+      );
+      return;
     }
+
+    // Ещё не на радаре → открываем меню. Подписка произойдёт ТОЛЬКО при «Сохранить».
     const priceHint =
       record.estimated_price_median_rub ?? record.estimated_price_min_rub ?? null;
     thresholdSheetRef.current?.present({
-      itemId: status.wishlistItemId,
+      itemId,
       recordId: record.id,
       currentPrice: priceHint,
       threshold: status.wishlistPriceThreshold ?? null,
       conditions: status.wishlistConditions ?? null,
+      subscribed: false,
     });
   };
 

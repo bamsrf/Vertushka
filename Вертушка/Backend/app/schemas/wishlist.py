@@ -33,6 +33,8 @@ class WishlistItemUpdate(BaseModel):
     price_threshold_rub: Decimal | None = Field(None, ge=0)
     # Принятые грейды состояния (['sealed','mint','vg_plus','vg']). None = любое.
     conditions: list[WishlistCondition] | None = None
+    # Принять альт-прессинг как подходящий (радар: статус «в продаже», не «альтернатива»).
+    accept_alt: bool | None = None
 
 
 class GiftBookingInfo(BaseModel):
@@ -63,6 +65,7 @@ class WishlistItemResponse(BaseModel):
     notify_mode: NotifyMode = "watched"
     price_threshold_rub: Decimal | None = None
     conditions: list[WishlistCondition] | None = None
+    accept_alt: bool = False
 
 
 class WishlistResponse(BaseModel):
@@ -213,6 +216,11 @@ class RadarAlt(BaseModel):
     title: str | None = None
     cover_url: str | None = None
     price_rub: Decimal | None = None
+    # Отличия от версии в вишлисте — для экрана подтверждения.
+    year: int | None = None
+    country: str | None = None
+    format: str | None = None
+    buy_url: str | None = None
 
 
 class RadarItem(BaseModel):
@@ -225,7 +233,10 @@ class RadarItem(BaseModel):
     lowest_price_rub: Decimal | None = None
     threshold_rub: Decimal | None = None
     conditions: list[WishlistCondition] | None = None
+    accept_alt: bool = False
     radius: float  # 0..1: 0 = у центра (зона покупки), 1 = внешний край
+    offers_count: int = 0       # сколько подходящих in_stock листингов
+    buy_url: str | None = None  # ссылка на самый дешёвый листинг (прямой заказ)
     alt: RadarAlt | None = None
 
 
@@ -234,4 +245,5 @@ class RadarResponse(BaseModel):
     items: list[RadarItem] = []
     count: int = 0
     match_count: int = 0  # сколько в зоне покупки (для бейджа кнопки)
+    limit: int = 5        # максимум пластинок на радаре
 

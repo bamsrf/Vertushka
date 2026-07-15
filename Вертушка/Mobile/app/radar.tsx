@@ -1,25 +1,18 @@
 /**
  * Радар — экран отслеживания цены (макет 1b/1c).
  *
- * Тёмный MarketPalette-мир. Subscribed-пластинки как кружки-обложки. Слои по статусу:
- * подходит — ближе к центру (зона покупки), в продаже — следующее кольцо, альтернатива
- * дальше, отсутствует — на внешнем кольце (не мешает). Вращающийся sweep, аватар юзера
- * в центре с softPulse. Тап по кружку → шторка истории; peach → alt-подтверждение.
+ * Тёмный MarketPalette-мир. Пластинки-кружки раскладываются по зонам статуса без
+ * наложений (равномерные углы + радиус по полосе). Луч вращается; когда проходит
+ * сквозь обложку — она подсвечивается и «дышит». Аватар юзера в центре. Тап по
+ * кружку → шторка истории; peach → alt-подтверждение.
  */
-import { useCallback, useRef, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
+import { useCallback, useMemo, useRef, useState } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, useWindowDimensions, Linking } from 'react-native';
 import { Image } from 'expo-image';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Svg, {
-  Path,
-  Defs,
-  LinearGradient as SvgGradient,
-  RadialGradient,
-  Stop,
-  Circle,
-} from 'react-native-svg';
+import Svg, { Path, Defs, LinearGradient as SvgGradient, RadialGradient, Stop, Circle } from 'react-native-svg';
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -27,6 +20,8 @@ import Animated, {
   withTiming,
   withSequence,
   Easing,
+  interpolate,
+  type SharedValue,
 } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
 import { Colors, Typography } from '../constants/theme';
@@ -39,9 +34,6 @@ import { api, getCoverUrl, resolveMediaUrl } from '../lib/api';
 import { useAuthStore } from '../lib/store';
 import { RadarItem, RadarResponse, RadarStatus } from '../lib/types';
 
-const STAGE = 320;
-const MAX_R = 150;
-
 const STATUS_COLOR: Record<RadarStatus, string> = {
   match: '#30A46C',
   available: '#5B6AF5',
@@ -49,35 +41,110 @@ const STATUS_COLOR: Record<RadarStatus, string> = {
   absent: '#9A9EBF',
 };
 
-// Радиус-полоса на статус (доля 0..1 от MAX_R) — гарантирует слои.
-const STATUS_BAND: Record<RadarStatus, [number, number]> = {
-  match: [0.14, 0.32],
-  available: [0.4, 0.58],
-  alt: [0.64, 0.8],
-  absent: [0.86, 0.96],
+const STATUS_LABEL: Record<RadarStatus, string> = {
+  match: 'подходит',
+  available: 'в продаже',
+  alt: 'альтернатива',
+  absent: 'отсутствует',
 };
+
+// Порядок раскладки: подходит ближе к центру → отсутствует у края.
+const BAND_ORDER: RadarStatus[] = ['match', 'available', 'alt', 'absent'];
+const COVER = 50;
 
 const fmt = (n: number) => Math.round(n).toLocaleString('ru-RU');
 
-// Стабильный угол из record.id — чтобы позиция не прыгала между рефрешами.
-function angleOf(id: string): number {
-  let h = 0;
-  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) % 360;
-  return h;
+interface Placed {
+  item: RadarItem;
+  x: number;
+  y: number;
+  angleDeg: number; // экранные градусы (0 = вправо, по часовой)
 }
 
-function coverPos(item: RadarItem) {
-  const [lo, hi] = STATUS_BAND[item.status];
-  const t = Math.min(1, Math.max(0, item.radius));
-  const frac = lo + t * (hi - lo);
-  const r = frac * MAX_R;
-  const a = (angleOf(item.record.id) * Math.PI) / 180;
-  return { x: Math.cos(a) * r, y: Math.sin(a) * r };
+/** Раскладка без наложений: полоса радиуса по статусу + равномерные углы. */
+function layout(items: RadarItem[], C: number): Placed[] {
+  // Полосы радиуса (px от центра). Match начинается за пределами аватара.
+  const BAND: Record<RadarStatus, [number, number]> = {
+    match: [C * 0.34, C * 0.5],
+    available: [C * 0.56, C * 0.74],
+    alt: [C * 0.78, C * 0.9],
+    absent: [C * 0.9, C * 0.99],
+  };
+  const ordered = [...items].sort((a, b) => {
+    const d = BAND_ORDER.indexOf(a.status) - BAND_ORDER.indexOf(b.status);
+    return d !== 0 ? d : a.record.id.localeCompare(b.record.id);
+  });
+  const n = ordered.length || 1;
+  return ordered.map((item, i) => {
+    const [lo, hi] = BAND[item.status];
+    const frac = Math.min(1, Math.max(0, item.radius));
+    const r = lo + frac * (hi - lo);
+    // Равномерный угол по глобальному индексу → кружки не пересекаются.
+    const deg = -90 + (360 / n) * i + 26;
+    const rad = (deg * Math.PI) / 180;
+    return { item, x: Math.cos(rad) * r, y: Math.sin(rad) * r, angleDeg: (deg + 360) % 360 };
+  });
+}
+
+/** Одна обложка + «дыхание» при проходе луча. */
+function RadarCover({
+  placed,
+  C,
+  sweep,
+  onPress,
+}: {
+  placed: Placed;
+  C: number;
+  sweep: SharedValue<number>;
+  onPress: () => void;
+}) {
+  const { item, x, y, angleDeg } = placed;
+  const color = STATUS_COLOR[item.status];
+  const absent = item.status === 'absent';
+  const price = item.status === 'alt' ? item.alt?.price_rub : item.lowest_price_rub;
+  const cover = getCoverUrl(item.record);
+
+  // Луч (передняя кромка + центр клина ~+27°) в экранных градусах.
+  const beam = useAnimatedStyle(() => {
+    const lead = (270 + sweep.value + 27) % 360;
+    let diff = Math.abs(lead - angleDeg);
+    if (diff > 180) diff = 360 - diff;
+    const near = diff < 34 ? 1 - diff / 34 : 0;
+    return {
+      transform: [{ scale: 1 + near * 0.14 }],
+      shadowOpacity: (absent ? 0.35 : 0.55) + near * 0.4,
+      shadowRadius: 8 + near * 8,
+    };
+  });
+
+  return (
+    <TouchableOpacity
+      activeOpacity={0.85}
+      onPress={onPress}
+      hitSlop={8}
+      style={[styles.coverWrap, { left: C + x - COVER / 2, top: C + y - COVER / 2 }]}
+    >
+      {item.status === 'match' ? <View style={[styles.buyGlow, { shadowColor: color }]} /> : null}
+      <Animated.View style={[styles.coverRing, { borderColor: color, shadowColor: color, opacity: absent ? 0.5 : 1 }, beam]}>
+        {cover ? (
+          <Image source={cover} style={styles.cover} contentFit="cover" cachePolicy="disk" transition={150} />
+        ) : (
+          <View style={[styles.cover, styles.coverPh]} />
+        )}
+      </Animated.View>
+      {price != null ? (
+        <View style={[styles.priceChip, { borderColor: color }]} pointerEvents="none">
+          <Text style={[styles.priceTxt, { color }]} numberOfLines={1}>{fmt(price)} ₽</Text>
+        </View>
+      ) : null}
+    </TouchableOpacity>
+  );
 }
 
 export default function RadarScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { width } = useWindowDimensions();
   const user = useAuthStore((s) => s.user);
   const [data, setData] = useState<RadarResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -89,38 +156,50 @@ export default function RadarScreen() {
   const sweep = useSharedValue(0);
   const pulse = useSharedValue(0);
 
+  const STAGE = Math.min(width - 24, 400);
+  const C = STAGE / 2;
+
   const load = useCallback(() => {
-    api
-      .getRadar()
-      .then((res) => setData(res))
-      .catch(() => {})
-      .finally(() => setLoading(false));
+    api.getRadar().then(setData).catch(() => {}).finally(() => setLoading(false));
   }, []);
 
   useFocusEffect(
     useCallback(() => {
       load();
       sweep.value = 0;
-      sweep.value = withRepeat(withTiming(360, { duration: 4000, easing: Easing.linear }), -1, false);
-      pulse.value = withRepeat(withSequence(withTiming(1, { duration: 1400 }), withTiming(0, { duration: 1400 })), -1, false);
+      sweep.value = withRepeat(withTiming(360, { duration: 4200, easing: Easing.linear }), -1, false);
+      pulse.value = withRepeat(withSequence(withTiming(1, { duration: 1500 }), withTiming(0, { duration: 1500 })), -1, false);
     }, [load]),
   );
 
   const sweepStyle = useAnimatedStyle(() => ({ transform: [{ rotate: `${sweep.value}deg` }] }));
-  const pulseStyle = useAnimatedStyle(() => ({ transform: [{ scale: 1 + pulse.value * 0.16 }], opacity: 0.7 - pulse.value * 0.5 }));
+  const haloStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: 1 + pulse.value * 0.35 }],
+    opacity: interpolate(pulse.value, [0, 1], [0.5, 0]),
+  }));
   const avatarStyle = useAnimatedStyle(() => ({ transform: [{ scale: 1 + pulse.value * 0.04 }] }));
 
   const items = data?.items ?? [];
+  const limit = data?.limit ?? 5;
   const isEmpty = !loading && items.length === 0;
   const avatarSrc = user?.avatar_url ? resolveMediaUrl(user.avatar_url) : undefined;
+  const placed = useMemo(() => layout(items, C), [items, C]);
 
   const onCoverPress = (item: RadarItem) => {
     Haptics.selectionAsync().catch(() => {});
     if (item.status === 'alt' && item.alt) {
       altRef.current?.present({
         itemId: item.wishlist_item_id,
+        recordTitle: item.record.title,
+        recordArtist: item.record.artist,
+        recordYear: (item.record as any).year ?? null,
+        recordCountry: (item.record as any).country ?? null,
         altTitle: item.alt.title,
         altCoverUrl: item.alt.cover_url ? getCoverUrl({ cover_image_url: item.alt.cover_url }) : null,
+        altYear: item.alt.year ?? null,
+        altCountry: item.alt.country ?? null,
+        altFormat: item.alt.format ?? null,
+        altPrice: item.alt.price_rub ?? null,
       });
       return;
     }
@@ -133,6 +212,8 @@ export default function RadarScreen() {
       currentPrice: item.lowest_price_rub,
       threshold: item.threshold_rub,
       status: item.status,
+      buyUrl: item.buy_url ?? null,
+      offersCount: item.offers_count ?? 0,
     });
   };
 
@@ -142,55 +223,57 @@ export default function RadarScreen() {
       recordId: d.recordId,
       currentPrice: d.currentPrice,
       threshold: d.threshold,
+      subscribed: true,
     });
   };
 
-  const onAltConfirm = () => {
-    load();
+  const onOpenStore = (d: PriceHistorySheetData) => {
+    if (d.buyUrl) {
+      Linking.openURL(d.buyUrl).catch(() => router.push(`/record/${d.recordId}` as any));
+    } else {
+      router.push(`/record/${d.recordId}` as any);
+    }
   };
 
   return (
     <View style={styles.root}>
       <StatusBar style="light" />
-      {/* радиальный фон */}
       <Svg style={StyleSheet.absoluteFill} width="100%" height="100%">
         <Defs>
-          <RadialGradient id="bg" cx="50%" cy="34%" r="75%">
+          <RadialGradient id="bg" cx="50%" cy="32%" r="80%">
             <Stop offset="0" stopColor="#2A1466" />
             <Stop offset="0.5" stopColor="#170A3A" />
             <Stop offset="1" stopColor="#0A0218" />
           </RadialGradient>
         </Defs>
-        <Path d={`M0 0 H2000 V2000 H0 Z`} fill="url(#bg)" />
+        <Path d="M0 0 H2000 V2000 H0 Z" fill="url(#bg)" />
       </Svg>
 
-      {/* header */}
       <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
         <TouchableOpacity style={styles.backBtn} onPress={() => router.back()} hitSlop={8}>
           <Icon name="chevron-back" size={22} color="#fff" />
         </TouchableOpacity>
-        <View>
+        <View style={{ flex: 1 }}>
           <Text style={styles.hTitle}>Радар</Text>
           <Text style={styles.hSub}>
             {isEmpty ? 'Пока пусто' : `Следим за ${items.length} ${plural(items.length)}`}
           </Text>
         </View>
+        {!isEmpty ? (
+          <View style={styles.slots}>
+            <Text style={styles.slotsTxt}>{items.length}/{limit}</Text>
+          </View>
+        ) : null}
       </View>
 
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
-        <View style={styles.stage}>
-          {/* rings */}
-          {[STAGE, STAGE * 0.77, STAGE * 0.53, STAGE * 0.3].map((d, i) => (
-            <View
-              key={i}
-              style={[styles.ring, { width: d, height: d, borderRadius: d / 2, opacity: 0.1 + i * 0.05 }]}
-            />
+        <View style={[styles.stage, { width: STAGE, height: STAGE }]}>
+          {[STAGE, STAGE * 0.78, STAGE * 0.56, STAGE * 0.34].map((d, i) => (
+            <View key={i} style={[styles.ring, { width: d, height: d, borderRadius: d / 2, opacity: 0.1 + i * 0.045 }]} />
           ))}
-          {/* buy zone */}
-          <View style={styles.buyZone} />
+          <View style={[styles.buyZone, { width: C * 1.0, height: C * 1.0, borderRadius: C * 0.5 }]} />
 
-          {/* sweep */}
-          <Animated.View style={[styles.sweep, sweepStyle]} pointerEvents="none">
+          <Animated.View style={[styles.sweep, { width: STAGE, height: STAGE }, sweepStyle]} pointerEvents="none">
             <Svg width={STAGE} height={STAGE}>
               <Defs>
                 <SvgGradient id="sw" x1="0.5" y1="0.5" x2="0.92" y2="0.08">
@@ -199,101 +282,66 @@ export default function RadarScreen() {
                 </SvgGradient>
               </Defs>
               <Path
-                d={`M${STAGE / 2} ${STAGE / 2} L${STAGE / 2} 0 A${STAGE / 2} ${STAGE / 2} 0 0 1 ${STAGE / 2 + Math.sin((55 * Math.PI) / 180) * (STAGE / 2)} ${STAGE / 2 - Math.cos((55 * Math.PI) / 180) * (STAGE / 2)} Z`}
+                d={`M${C} ${C} L${C} 0 A${C} ${C} 0 0 1 ${C + Math.sin((52 * Math.PI) / 180) * C} ${C - Math.cos((52 * Math.PI) / 180) * C} Z`}
                 fill="url(#sw)"
               />
             </Svg>
           </Animated.View>
 
-          {/* covers */}
-          {items.map((item) => {
-            const { x, y } = coverPos(item);
-            const color = STATUS_COLOR[item.status];
-            const price = item.status === 'alt' ? item.alt?.price_rub : item.lowest_price_rub;
-            const cover = getCoverUrl(item.record);
-            const absent = item.status === 'absent';
-            return (
-              <TouchableOpacity
-                key={item.wishlist_item_id}
-                activeOpacity={0.85}
-                onPress={() => onCoverPress(item)}
-                style={[styles.coverWrap, { left: STAGE / 2 + x - 27, top: STAGE / 2 + y - 27 }]}
-              >
-                {item.status === 'match' ? <View style={[styles.buyGlow, { shadowColor: color }]} /> : null}
-                <View style={[styles.coverRing, { borderColor: color, shadowColor: color, opacity: absent ? 0.55 : 1 }]}>
-                  {cover ? (
-                    <Image source={cover} style={styles.cover} contentFit="cover" cachePolicy="disk" transition={150} />
-                  ) : (
-                    <View style={[styles.cover, styles.coverPh]} />
-                  )}
-                </View>
-                {price != null ? (
-                  <View style={[styles.priceChip, { borderColor: color }]}>
-                    <Text style={[styles.priceTxt, { color }]}>{fmt(price)} ₽</Text>
-                  </View>
-                ) : null}
-              </TouchableOpacity>
-            );
-          })}
+          {placed.map((p) => (
+            <RadarCover key={p.item.wishlist_item_id} placed={p} C={C} sweep={sweep} onPress={() => onCoverPress(p.item)} />
+          ))}
 
-          {/* center avatar + soft pulse */}
-          <Animated.View style={[styles.avatarPulse, pulseStyle]} pointerEvents="none" />
+          {/* halo + аватар (SVG-контур для чёткости) */}
+          <Animated.View style={[styles.halo, haloStyle]} pointerEvents="none" />
           <Animated.View style={[styles.avatarWrap, avatarStyle]}>
+            <Svg width={62} height={62} style={StyleSheet.absoluteFill}>
+              <Circle cx={31} cy={31} r={29} fill="none" stroke="#5568F0" strokeWidth={3} />
+            </Svg>
             {avatarSrc ? (
               <Image source={avatarSrc} style={styles.avatarImg} contentFit="cover" cachePolicy="disk" />
             ) : (
               <View style={[styles.avatarImg, styles.avatarFallback]}>
-                <RadarIcon size={26} color="#fff" />
+                <RadarIcon size={24} color="#fff" />
               </View>
             )}
           </Animated.View>
-          {!isEmpty ? <Text style={styles.scanTxt}>сканирую цены…</Text> : null}
         </View>
 
         {isEmpty ? (
           <View style={styles.empty}>
             <Text style={styles.emptyTitle}>Поставь пластинку на радар</Text>
-            <Text style={styles.emptyBody}>
-              Задай желаемую цену — сообщим, когда пластинка появится в продаже.
-            </Text>
-            <TouchableOpacity style={styles.cta} onPress={() => router.replace('/(tabs)/collection')}>
+            <Text style={styles.emptyBody}>Задай желаемую цену — сообщим, когда пластинка появится в продаже.</Text>
+            <TouchableOpacity style={styles.cta} onPress={() => router.replace('/(tabs)/collection')} activeOpacity={0.9}>
               <RadarIcon size={20} color="#fff" />
               <Text style={styles.ctaTxt}>Открыть вишлист</Text>
             </TouchableOpacity>
           </View>
-        ) : (
-          <View style={styles.legend}>
-            {(['match', 'available', 'alt', 'absent'] as RadarStatus[]).map((s) => (
-              <View key={s} style={[styles.legendChip, { borderColor: hexA(STATUS_COLOR[s], 0.55) }]}>
-                <View style={[styles.legendDot, { backgroundColor: STATUS_COLOR[s] }]} />
-                <Text style={[styles.legendTxt, { color: STATUS_COLOR[s] }]}>{STATUS_LABEL[s]}</Text>
-              </View>
-            ))}
-          </View>
-        )}
+        ) : null}
       </ScrollView>
 
-      <PriceHistorySheet
-        ref={historyRef}
-        onEditThreshold={onEditThreshold}
-        onOpenStore={(d) => router.push(`/record/${d.recordId}` as any)}
-      />
-      <AltVersionSheet ref={altRef} onConfirm={onAltConfirm} />
-      <ThresholdSheet ref={thresholdRef} />
+      {/* Легенда — фиксированный подвал */}
+      {!isEmpty ? (
+        <View style={[styles.legend, { paddingBottom: insets.bottom + 14 }]}>
+          {BAND_ORDER.map((s) => (
+            <View key={s} style={[styles.legendChip, { borderColor: hexA(STATUS_COLOR[s], 0.5) }]}>
+              <View style={[styles.legendDot, { backgroundColor: STATUS_COLOR[s] }]} />
+              <Text style={[styles.legendTxt, { color: STATUS_COLOR[s] }]}>{STATUS_LABEL[s]}</Text>
+            </View>
+          ))}
+        </View>
+      ) : null}
+
+      <PriceHistorySheet ref={historyRef} onEditThreshold={onEditThreshold} onOpenStore={onOpenStore} />
+      <AltVersionSheet ref={altRef} onConfirm={() => load()} />
+      <ThresholdSheet ref={thresholdRef} onSaved={() => load()} />
     </View>
   );
 }
 
-const STATUS_LABEL: Record<RadarStatus, string> = {
-  match: 'подходит',
-  available: 'в продаже',
-  alt: 'альтернатива',
-  absent: 'отсутствует',
-};
-
 function plural(n: number): string {
   const m10 = n % 10, m100 = n % 100;
-  if (m100 >= 11 && m100 <= 14) return 'пластинок';
+  if (m100 >= 11 && m100 <= 14) return 'пластинками';
   if (m10 === 1) return 'пластинкой';
   if (m10 >= 2 && m10 <= 4) return 'пластинками';
   return 'пластинками';
@@ -311,30 +359,31 @@ const styles = StyleSheet.create({
   backBtn: { width: 40, height: 40, borderRadius: 9999, backgroundColor: 'rgba(255,255,255,0.06)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.18)', alignItems: 'center', justifyContent: 'center' },
   hTitle: { fontFamily: 'RubikMonoOne-Regular', fontSize: 26, color: '#fff', letterSpacing: -0.5 },
   hSub: { fontSize: 13, color: 'rgba(255,255,255,0.6)', marginTop: 3 },
-  scroll: { alignItems: 'center', paddingBottom: 40 },
-  stage: { width: STAGE, height: STAGE, marginTop: 44, alignItems: 'center', justifyContent: 'center' },
+  slots: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 9999, backgroundColor: 'rgba(91,106,245,0.18)', borderWidth: 1, borderColor: 'rgba(91,106,245,0.4)' },
+  slotsTxt: { fontSize: 14, fontFamily: 'Inter_700Bold', color: '#B7C0FF', fontVariant: ['tabular-nums'] },
+  scroll: { alignItems: 'center', paddingBottom: 20, flexGrow: 1, justifyContent: 'center' },
+  stage: { marginTop: 20, alignItems: 'center', justifyContent: 'center' },
   ring: { position: 'absolute', borderWidth: 1, borderColor: '#4A5FD8' },
-  buyZone: { position: 'absolute', width: 108, height: 108, borderRadius: 54, borderWidth: 1.5, borderColor: 'rgba(48,164,108,0.5)', borderStyle: 'dashed', backgroundColor: 'rgba(48,164,108,0.09)' },
-  sweep: { position: 'absolute', width: STAGE, height: STAGE },
-  avatarPulse: { position: 'absolute', width: 96, height: 96, borderRadius: 48, backgroundColor: '#6B7BE8' },
-  avatarWrap: { position: 'absolute', width: 58, height: 58, borderRadius: 29, borderWidth: 3, borderColor: '#5568F0', shadowColor: '#3B4BF5', shadowOpacity: 0.9, shadowRadius: 14, shadowOffset: { width: 0, height: 0 }, elevation: 10, backgroundColor: '#241057' },
-  avatarImg: { width: '100%', height: '100%', borderRadius: 29 },
+  buyZone: { position: 'absolute', borderWidth: 1.5, borderColor: 'rgba(48,164,108,0.5)', borderStyle: 'dashed', backgroundColor: 'rgba(48,164,108,0.08)' },
+  sweep: { position: 'absolute' },
+  halo: { position: 'absolute', width: 86, height: 86, borderRadius: 43, backgroundColor: '#6B7BE8' },
+  avatarWrap: { position: 'absolute', width: 62, height: 62, borderRadius: 31, shadowColor: '#3B4BF5', shadowOpacity: 0.9, shadowRadius: 16, shadowOffset: { width: 0, height: 0 }, elevation: 12, backgroundColor: '#241057', alignItems: 'center', justifyContent: 'center' },
+  avatarImg: { width: 54, height: 54, borderRadius: 27 },
   avatarFallback: { backgroundColor: '#3B4BF5', alignItems: 'center', justifyContent: 'center' },
-  scanTxt: { position: 'absolute', top: STAGE / 2 + 44, fontSize: 11, color: 'rgba(255,255,255,0.42)' },
-  coverWrap: { position: 'absolute', alignItems: 'center', justifyContent: 'center' },
-  buyGlow: { position: 'absolute', width: 62, height: 62, borderRadius: 31, top: -4, left: -4, shadowOpacity: 0.9, shadowRadius: 12, shadowOffset: { width: 0, height: 0 }, elevation: 8, backgroundColor: 'rgba(48,164,108,0.25)' },
-  coverRing: { width: 54, height: 54, borderRadius: 27, borderWidth: 2.5, overflow: 'hidden', shadowOpacity: 0.55, shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: 5 },
+  coverWrap: { position: 'absolute', alignItems: 'center', justifyContent: 'center', width: COVER, height: COVER },
+  buyGlow: { position: 'absolute', width: COVER + 8, height: COVER + 8, borderRadius: (COVER + 8) / 2, top: -4, left: -4, shadowOpacity: 0.9, shadowRadius: 12, shadowOffset: { width: 0, height: 0 }, elevation: 8, backgroundColor: 'rgba(48,164,108,0.22)' },
+  coverRing: { width: COVER, height: COVER, borderRadius: COVER / 2, borderWidth: 2.5, overflow: 'hidden', shadowOffset: { width: 0, height: 2 }, elevation: 5 },
   cover: { width: '100%', height: '100%' },
   coverPh: { backgroundColor: '#33333f' },
-  priceChip: { position: 'absolute', top: 58, paddingVertical: 2.5, paddingHorizontal: 8, borderRadius: 9999, borderWidth: 1, backgroundColor: 'rgba(6,2,18,0.85)' },
-  priceTxt: { fontSize: 10, fontFamily: 'Inter_700Bold', fontVariant: ['tabular-nums'] },
+  priceChip: { position: 'absolute', top: COVER + 5, minWidth: 62, paddingVertical: 3, paddingHorizontal: 9, borderRadius: 9999, borderWidth: 1, backgroundColor: 'rgba(6,2,18,0.9)', alignItems: 'center' },
+  priceTxt: { fontSize: 11, fontFamily: 'Inter_700Bold', fontVariant: ['tabular-nums'] },
   empty: { alignItems: 'center', paddingHorizontal: 40, marginTop: 30 },
   emptyTitle: { ...Typography.h2, color: '#fff', textAlign: 'center' },
   emptyBody: { fontSize: 14, color: 'rgba(255,255,255,0.6)', textAlign: 'center', lineHeight: 20, marginTop: 8 },
   cta: { flexDirection: 'row', alignItems: 'center', gap: 9, paddingVertical: 15, paddingHorizontal: 26, backgroundColor: Colors.royalBlue, borderRadius: 9999, marginTop: 24, shadowColor: '#3B4BF5', shadowOpacity: 0.6, shadowRadius: 16, shadowOffset: { width: 0, height: 4 }, elevation: 8 },
   ctaTxt: { color: '#fff', fontFamily: 'Inter_600SemiBold', fontSize: 16 },
-  legend: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 8, marginTop: 34, paddingHorizontal: 24 },
-  legendChip: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 6, paddingHorizontal: 12, borderRadius: 9999, borderWidth: 1 },
+  legend: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 8, paddingTop: 14, paddingHorizontal: 20, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.06)' },
+  legendChip: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 7, paddingHorizontal: 13, borderRadius: 9999, borderWidth: 1 },
   legendDot: { width: 8, height: 8, borderRadius: 4 },
-  legendTxt: { fontSize: 11 },
+  legendTxt: { fontSize: 12 },
 });
