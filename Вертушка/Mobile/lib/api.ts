@@ -20,6 +20,7 @@ import {
   WishlistFolder,
   PriceHistoryResponse,
   RadarResponse,
+  RadarEventsResponse,
   SearchFilters,
   MasterSearchResponse,
   MasterRelease,
@@ -1001,6 +1002,14 @@ class ApiClient {
 
   async getRadar(): Promise<RadarResponse> {
     const response = await this.client.get<RadarResponse>('/wishlists/radar');
+    return response.data;
+  }
+
+  async getRadarEvents(itemId: string, limit = 20): Promise<RadarEventsResponse> {
+    const response = await this.client.get<RadarEventsResponse>(
+      `/wishlists/radar/events/${itemId}`,
+      { params: { limit } },
+    );
     return response.data;
   }
 

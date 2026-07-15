@@ -11,6 +11,15 @@ import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { Image } from 'expo-image';
 import { Colors, Spacing, BorderRadius, Typography } from '@/constants/theme';
 import { Icon } from '@/components/ui';
+import { RadarIcon } from '@/components/RadarIcon';
+
+const RADAR_TINT: Record<string, string> = {
+  match: Colors.success,
+  available: Colors.royalBlue,
+  alt: '#F4A06A',
+  price_drop: Colors.success,
+  absent: Colors.textMuted,
+};
 import { resolveMediaUrl, getCoverUrl } from '@/lib/api';
 import { DESIGN_PNGS } from '@/assets/achievements/designs';
 import type { NotificationItem as NotificationItemType, NotificationType } from '@/lib/types';
@@ -184,7 +193,12 @@ export const NotificationItem: React.FC<Props> = ({
 }) => {
   const unread = !item.read_at;
   const text = useMemo(() => buildText(item), [item]);
-  const meta = useMemo(() => iconForType(item.type), [item.type]);
+  const onRadar = !!(item.data as any)?.on_radar;
+  const radarStatus = (item.data as any)?.radar_status as string | undefined;
+  const baseMeta = useMemo(() => iconForType(item.type), [item.type]);
+  const meta = onRadar
+    ? { name: baseMeta.name, tint: RADAR_TINT[radarStatus ?? 'available'] ?? Colors.royalBlue }
+    : baseMeta;
   const avatarUrl = item.actor?.avatar_url ? resolveMediaUrl(item.actor.avatar_url) : undefined;
   const initials = useMemo(() => actorInitials(item), [item]);
   const coverUrl = useMemo(() => getCoverFromData(item.data || {}), [item.data]);
@@ -208,7 +222,11 @@ export const NotificationItem: React.FC<Props> = ({
           <>
             <Image source={avatarUrl} style={styles.avatar} cachePolicy="disk" />
             <View style={[styles.iconBadge, { backgroundColor: meta.tint }]}>
-              <Icon name={meta.name as any} size={10} color={Colors.background} />
+              {onRadar ? (
+                <RadarIcon size={11} color={Colors.background} variant="on" />
+              ) : (
+                <Icon name={meta.name as any} size={10} color={Colors.background} />
+              )}
             </View>
           </>
         ) : initials ? (
@@ -217,12 +235,20 @@ export const NotificationItem: React.FC<Props> = ({
               <Text style={styles.initialsText}>{initials}</Text>
             </View>
             <View style={[styles.iconBadge, { backgroundColor: meta.tint }]}>
-              <Icon name={meta.name as any} size={10} color={Colors.background} />
+              {onRadar ? (
+                <RadarIcon size={11} color={Colors.background} variant="on" />
+              ) : (
+                <Icon name={meta.name as any} size={10} color={Colors.background} />
+              )}
             </View>
           </>
         ) : (
           <View style={[styles.systemIcon, { backgroundColor: meta.tint }]}>
-            <Icon name={meta.name as any} size={22} color={Colors.background} />
+            {onRadar ? (
+              <RadarIcon size={24} color={Colors.background} variant="on" />
+            ) : (
+              <Icon name={meta.name as any} size={22} color={Colors.background} />
+            )}
           </View>
         )}
       </View>

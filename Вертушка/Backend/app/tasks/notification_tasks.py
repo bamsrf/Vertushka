@@ -39,6 +39,7 @@ from app.services.notification_service import (
     merge_wishlist_stores,
     upsert_notification,
 )
+from app.services.radar_status import condition_ok, record_radar_event
 
 logger = logging.getLogger(__name__)
 
@@ -120,6 +121,8 @@ async def _run(db: AsyncSession) -> None:
             continue
 
         related = listings_by_record.get(str(record.id), [])
+        # Фильтр по «Состоянию релиза» (для watched conditions=None → без фильтра).
+        related = [l for l in related if condition_ok(l.condition, wi.conditions)]
         if not related:
             continue
 
@@ -151,6 +154,7 @@ async def _run(db: AsyncSession) -> None:
             or (min_price is not None and min_price <= threshold)
         )
         push_now = subscribed and within_threshold
+        radar_status = "match" if (subscribed and within_threshold and min_price is not None) else "available"
 
         if push_now and min_price is not None:
             push_body = f"от {int(min_price)} ₽"
@@ -177,6 +181,9 @@ async def _run(db: AsyncSession) -> None:
                     "store_count": 1,
                     "stores": [store_payload],
                     "store": store_payload,  # для merge_data_fn в bump-path
+                    "on_radar": subscribed,
+                    "radar_status": radar_status if subscribed else None,
+                    "threshold_rub": (float(threshold) if threshold is not None else None),
                 },
                 push_title=(f"«{record.title}» снова в продаже" if push_now else None),
                 push_body=push_body,
@@ -187,6 +194,10 @@ async def _run(db: AsyncSession) -> None:
             )
             if notif is not None and is_new:
                 emitted_per_user[owner_id].append(notif)
+            # Хронология радара (только subscribed; дедуп внутри).
+            await record_radar_event(
+                db, wi, radar_status, min_price, getattr(cheapest.store, "name", None)
+            )
         except Exception:
             logger.exception(
                 "Failed to upsert wishlist_in_stock for user=%s record=%s",
@@ -255,6 +266,7 @@ async def _emit_alt_versions(
             continue
         mid = str(getattr(wanted, "discogs_master_id", "") or "")
         related = instock_by_master.get(mid, [])
+        related = [l for l in related if condition_ok(l.condition, wi.conditions)]
         if not related:
             continue
 
@@ -301,6 +313,8 @@ async def _emit_alt_versions(
                     "store_count": 1,
                     "stores": [store_payload],
                     "store": store_payload,
+                    "on_radar": subscribed,
+                    "radar_status": "alt" if subscribed else None,
                 },
                 push_title=(f"Другое издание «{wanted.title}» в продаже" if push_now else None),
                 push_body=(f"от {int(min_price)} ₽" if push_now and min_price is not None else None),
@@ -311,6 +325,9 @@ async def _emit_alt_versions(
             )
             if notif is not None and is_new:
                 emitted_per_user[wi.wishlist.user_id].append(notif)
+            await record_radar_event(
+                db, wi, "alt", min_price, getattr(cheapest.store, "name", None)
+            )
         except Exception:
             logger.exception(
                 "Failed to upsert wishlist_in_stock_alt for user=%s record=%s",
@@ -501,6 +518,7 @@ async def _run_price_drop(db: AsyncSession) -> None:
         )
         within_threshold = threshold is None or new <= threshold
         push_now = subscribed and within_threshold
+        radar_status = "match" if (subscribed and within_threshold) else "price_drop"
 
         try:
             notif, is_new = await upsert_notification(
@@ -519,6 +537,9 @@ async def _run_price_drop(db: AsyncSession) -> None:
                     "new_price_rub": new,
                     "min_price_rub": new,
                     "drop_pct": drop_pct,
+                    "on_radar": subscribed,
+                    "radar_status": radar_status if subscribed else None,
+                    "threshold_rub": (threshold if threshold is not None else None),
                 },
                 push_title=(f"«{record.title}» подешевела" if push_now else None),
                 push_body=(f"{int(old)} → {int(new)} ₽" if push_now else None),
@@ -528,6 +549,7 @@ async def _run_price_drop(db: AsyncSession) -> None:
             )
             if notif is not None and is_new:
                 emitted += 1
+            await record_radar_event(db, wi, radar_status, new, None)
         except Exception:
             logger.exception(
                 "Failed to upsert wishlist_price_drop for user=%s record=%s",

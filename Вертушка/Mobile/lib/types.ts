@@ -494,6 +494,17 @@ export interface RadarResponse {
   limit?: number;
 }
 
+export interface RadarEvent {
+  status: RadarStatus | string;
+  price_rub: number | null;
+  store_name: string | null;
+  created_at: string;
+}
+
+export interface RadarEventsResponse {
+  events: RadarEvent[];
+}
+
 export interface PriceHistoryPoint {
   date: string; // YYYY-MM-DD
   min_price_rub: number | null;

@@ -247,3 +247,17 @@ class RadarResponse(BaseModel):
     match_count: int = 0  # сколько в зоне покупки (для бейджа кнопки)
     limit: int = 5        # максимум пластинок на радаре
 
+
+class RadarEventItem(BaseModel):
+    """Одна запись хронологии смен статуса на радаре."""
+    model_config = ConfigDict(from_attributes=True)
+
+    status: RadarStatus | str
+    price_rub: Decimal | None = None
+    store_name: str | None = None
+    created_at: datetime
+
+
+class RadarEventsResponse(BaseModel):
+    events: list[RadarEventItem] = []
+

@@ -14,6 +14,7 @@ from app.models.user import User
 from app.models.record import Record
 from app.models.wishlist import Wishlist, WishlistItem, WishlistFolder, wishlist_folder_items
 from app.models.store_listing import StoreListing, ListingStatus
+from app.models.radar_status_event import RadarStatusEvent
 from app.models.gift_booking import GiftBooking, GiftStatus
 from app.api.auth import get_current_user, get_current_user_optional
 from app.services.cover_storage import ensure_cover_cached
@@ -34,6 +35,8 @@ from app.schemas.wishlist import (
     RadarResponse,
     RadarItem,
     RadarAlt,
+    RadarEventItem,
+    RadarEventsResponse,
 )
 from app.schemas.record import RecordBrief
 from app.schemas.collection import CollectionItemResponse
@@ -294,6 +297,35 @@ async def get_radar(
         )
 
     return RadarResponse(items=out, count=len(out), match_count=match_count, limit=RADAR_MAX)
+
+
+@router.get("/radar/events/{item_id}", response_model=RadarEventsResponse)
+async def get_radar_events(
+    item_id: UUID,
+    limit: int = 20,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Хронология смен статуса пластинки на радаре (для шторки цены)."""
+    wi = (
+        await db.execute(
+            select(WishlistItem).join(Wishlist).where(
+                WishlistItem.id == item_id,
+                Wishlist.user_id == current_user.id,
+            )
+        )
+    ).scalar_one_or_none()
+    if wi is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Элемент не найден")
+    rows = (
+        await db.execute(
+            select(RadarStatusEvent)
+            .where(RadarStatusEvent.wishlist_item_id == item_id)
+            .order_by(RadarStatusEvent.created_at.desc())
+            .limit(min(max(limit, 1), 100))
+        )
+    ).scalars().all()
+    return RadarEventsResponse(events=[RadarEventItem.model_validate(r) for r in rows])
 
 
 @router.post("/items", response_model=WishlistItemResponse, status_code=status.HTTP_201_CREATED)

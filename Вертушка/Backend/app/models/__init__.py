@@ -18,6 +18,7 @@ from app.models.user_achievement import UserAchievement
 from app.models.store import Store
 from app.models.store_listing import StoreListing, ListingStatus, MatchMethod
 from app.models.listing_price_history import ListingPriceHistory
+from app.models.radar_status_event import RadarStatusEvent
 from app.models.offer_click import OfferClick
 from app.models.conversation import Conversation, ConversationParticipant, Message
 from app.models.message_reaction import MessageReaction
@@ -39,6 +40,7 @@ __all__ = [
     "FollowRequest",
     "FollowRequestStatus",
     "ProfileShare",
+    "RadarStatusEvent",
     "SearchCache",
     "UserRecordPhoto",
     "CollectionValueSnapshot",

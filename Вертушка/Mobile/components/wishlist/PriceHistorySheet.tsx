@@ -14,7 +14,15 @@ import { Colors, Typography, Spacing, BorderRadius } from '../../constants/theme
 import { PriceSparkline } from '../PriceSparkline';
 import { RadarIcon } from '../RadarIcon';
 import { api } from '../../lib/api';
-import { PriceHistoryResponse, RadarStatus } from '../../lib/types';
+import { PriceHistoryResponse, RadarStatus, RadarEvent } from '../../lib/types';
+
+const RADAR_EVENT_LABEL: Record<string, string> = {
+  available: 'Появилась в продаже',
+  match: 'Подошла под порог',
+  alt: 'Появилась альтернатива',
+  price_drop: 'Подешевела',
+  absent: 'Пропала из продажи',
+};
 
 export interface PriceHistorySheetData {
   itemId: string;
@@ -57,12 +65,15 @@ export const PriceHistorySheet = forwardRef<PriceHistorySheetRef, Props>(
     const sheetRef = useRef<BottomSheetModal>(null);
     const [data, setData] = useState<PriceHistorySheetData | null>(null);
     const [history, setHistory] = useState<PriceHistoryResponse | null>(null);
+    const [radarEvents, setRadarEvents] = useState<RadarEvent[]>([]);
 
     const present = useCallback((d: PriceHistorySheetData) => {
       setData(d);
       setHistory(null);
+      setRadarEvents([]);
       sheetRef.current?.present();
       api.getPriceHistory(d.recordId, 90).then(setHistory).catch(() => {});
+      api.getRadarEvents(d.itemId, 20).then((r) => setRadarEvents(r.events)).catch(() => {});
     }, []);
 
     useImperativeHandle(ref, () => ({ present }), [present]);
@@ -74,17 +85,14 @@ export const PriceHistorySheet = forwardRef<PriceHistorySheetRef, Props>(
       [],
     );
 
-    // Минимальный «event feed» из точек истории (полноценные события — follow-up).
-    const events = (() => {
-      if (!history) return [];
-      const pts = history.points.filter((p) => p.min_price_rub != null).slice(-4).reverse();
-      return pts.map((p, i) => ({
-        date: dm(p.date),
-        price: p.min_price_rub as number,
-        label: i === 0 ? 'Актуальная цена' : 'Цена была',
-        drop: i === 0 && pts.length > 1 && (p.min_price_rub as number) < (pts[1].min_price_rub as number),
-      }));
-    })();
+    // Хронология статусов радара (реальные события из radar_status_events).
+    const events = radarEvents.slice(0, 6).map((e) => ({
+      label: RADAR_EVENT_LABEL[e.status] ?? 'Обновление',
+      date: dm(e.created_at),
+      price: e.price_rub,
+      store: e.store_name,
+      drop: e.status === 'price_drop' || e.status === 'match',
+    }));
 
     const pill = data ? STATUS_PILL[data.status] : STATUS_PILL.available;
     const cover = data?.coverUrl ?? null;
@@ -145,9 +153,15 @@ export const PriceHistorySheet = forwardRef<PriceHistorySheetRef, Props>(
               <Text style={styles.histTitle}>История</Text>
               {events.map((e, i) => (
                 <View key={i} style={[styles.histRow, i < events.length - 1 && styles.histRowBorder]}>
-                  <Text style={styles.histLabel}>{e.drop ? 'Подешевела' : e.label}</Text>
+                  <View style={styles.histLeft}>
+                    <Text style={styles.histLabel}>{e.label}</Text>
+                    {e.store ? <Text style={styles.histStore}>{e.store}</Text> : null}
+                  </View>
                   <Text style={styles.histMeta}>
-                    {e.date} · <Text style={{ color: e.drop ? Colors.success : Colors.textSecondary, fontWeight: '700' }}>{fmt(e.price)} ₽</Text>
+                    {e.date}
+                    {e.price != null ? (
+                      <> · <Text style={{ color: e.drop ? Colors.success : Colors.textSecondary, fontWeight: '700' }}>{fmt(e.price)} ₽</Text></>
+                    ) : null}
                   </Text>
                 </View>
               ))}
@@ -199,7 +213,9 @@ const styles = StyleSheet.create({
   histTitle: { ...Typography.bodyBold, color: Colors.text, marginBottom: 8 },
   histRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 11 },
   histRowBorder: { borderBottomWidth: 1, borderBottomColor: Colors.divider },
+  histLeft: { flex: 1 },
   histLabel: { fontSize: 14, color: Colors.text },
+  histStore: { fontSize: 12, color: Colors.textMuted, marginTop: 1 },
   histMeta: { fontSize: 13, color: Colors.textSecondary, fontVariant: ['tabular-nums'] },
   btnRow: { flexDirection: 'row', gap: 12, marginTop: 22 },
   primaryBtn: { flex: 1, alignItems: 'center', paddingVertical: 17, backgroundColor: Colors.royalBlue, borderRadius: 16 },
