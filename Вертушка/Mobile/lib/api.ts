@@ -19,6 +19,7 @@ import {
   WishlistItem,
   WishlistFolder,
   PriceHistoryResponse,
+  RadarResponse,
   SearchFilters,
   MasterSearchResponse,
   MasterRelease,
@@ -989,12 +990,17 @@ class ApiClient {
 
   async updateWishlistItem(
     itemId: string,
-    patch: Partial<Pick<WishlistItem, 'notify_mode' | 'price_threshold_rub' | 'priority' | 'notes'>>,
+    patch: Partial<Pick<WishlistItem, 'notify_mode' | 'price_threshold_rub' | 'conditions' | 'priority' | 'notes'>>,
   ): Promise<WishlistItem> {
     const response = await this.client.put<WishlistItem>(
       `/wishlists/records/${itemId}`,
       patch,
     );
+    return response.data;
+  }
+
+  async getRadar(): Promise<RadarResponse> {
+    const response = await this.client.get<RadarResponse>('/wishlists/radar');
     return response.data;
   }
 

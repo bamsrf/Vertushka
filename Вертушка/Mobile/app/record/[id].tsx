@@ -1,7 +1,7 @@
 /**
  * Экран детальной информации о пластинке — Blue Gradient Edition
  */
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -9,12 +9,10 @@ import {
   ScrollView,
   ActivityIndicator,
   Alert,
-  Platform,
   TouchableOpacity,
 } from 'react-native';
 import { toast } from '../../lib/toast';
 import * as Haptics from 'expo-haptics';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import { Icon } from '@/components/ui';
@@ -44,6 +42,8 @@ import { VinylColorTag } from '../../components/VinylColorTag';
 import { VinylSpinner } from '../../components/VinylSpinner';
 import { OffersBlock } from '../../components/OffersBlock';
 import { PriceSparkline } from '../../components/PriceSparkline';
+import { RadarIcon } from '../../components/RadarIcon';
+import { ThresholdSheet, type ThresholdSheetRef } from '../../components/wishlist/ThresholdSheet';
 import { parseVinylColor } from '../../lib/vinylColor';
 import { TierFeatureBlock, allRarityTiers } from '../../components/RarityAura';
 
@@ -131,6 +131,12 @@ export default function RecordDetailScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [priceHistory, setPriceHistory] = useState<PriceHistoryResponse | null>(null);
+  const thresholdSheetRef = useRef<ThresholdSheetRef>(null);
+  const radarPulse = useSharedValue(0);
+  const radarPulseStyle = useAnimatedStyle(() => ({
+    opacity: (1 - radarPulse.value) * 0.55,
+    transform: [{ scale: 1 + radarPulse.value * 1.2 }],
+  }));
   const hasPreview = Boolean(previewTitle || previewCover || previewArtist);
 
   // Динамика цены — грузим лениво после появления записи. Тихо игнорим ошибку:
@@ -192,6 +198,7 @@ export default function RecordDetailScreen() {
     wishlistItemId: string | null;
     wishlistNotifyMode?: import('@/lib/types').WishlistNotifyMode;
     wishlistPriceThreshold?: number | null;
+    wishlistConditions?: import('@/lib/types').WishlistCondition[] | null;
   } => {
     if (!record) {
       return { status: 'not_added', copiesCount: 0, collectionItemId: null, wishlistItemId: null };
@@ -245,6 +252,7 @@ export default function RecordDetailScreen() {
         wishlistItemId: wishlistItem.id,
         wishlistNotifyMode: wishlistItem.notify_mode ?? 'watched',
         wishlistPriceThreshold: wishlistItem.price_threshold_rub ?? null,
+        wishlistConditions: wishlistItem.conditions ?? null,
       };
     }
 
@@ -391,80 +399,27 @@ export default function RecordDetailScreen() {
     );
   };
 
-  const handleToggleWishlistBell = async () => {
+  // Тап по радар-иконке: включаем слежку (если ещё watched), один sonar-пульс,
+  // и открываем меню порога. Порог и состояние задаются в самом sheet.
+  const handleRadarTap = () => {
     const status = getRecordStatus();
-    if (status.status !== 'in_wishlist' || !status.wishlistItemId) return;
-
-    const next = status.wishlistNotifyMode === 'subscribed' ? 'watched' : 'subscribed';
-    Haptics.impactAsync(
-      next === 'subscribed'
-        ? Haptics.ImpactFeedbackStyle.Medium
-        : Haptics.ImpactFeedbackStyle.Light,
-    ).catch(() => {});
-
-    try {
-      await setWishlistNotifyMode(status.wishlistItemId, next);
-      if (next === 'subscribed') {
-        // Разово объясняем, что даёт колокольчик — потом молчим.
-        const seen = await AsyncStorage.getItem('wishlist_bell_hint_seen');
-        if (!seen) {
-          await AsyncStorage.setItem('wishlist_bell_hint_seen', '1');
-          Alert.alert(
-            'Следим за пластинкой',
-            'Пришлём пуш, когда появится в продаже или подешевеет.',
-          );
-        } else {
-          toast.success('Следим за пластинкой');
-        }
-      } else {
-        toast.success('Уведомления выключены');
-      }
-    } catch (error: any) {
-      toast.error('Не удалось изменить уведомления');
+    if (status.status !== 'in_wishlist' || !status.wishlistItemId || !record) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+    // единичный пульс
+    radarPulse.value = 0;
+    radarPulse.value = withTiming(1, { duration: 520, easing: Easing.out(Easing.quad) });
+    if (status.wishlistNotifyMode !== 'subscribed') {
+      setWishlistNotifyMode(status.wishlistItemId, 'subscribed').catch(() => {});
     }
-  };
-
-  const handleBellLongPress = async () => {
-    const status = getRecordStatus();
-    if (status.status !== 'in_wishlist' || !status.wishlistItemId) return;
-    const itemId = status.wishlistItemId;
-    const current = status.wishlistPriceThreshold;
-
-    const apply = async (raw: string | undefined) => {
-      const trimmed = (raw ?? '').replace(/[^\d]/g, '');
-      const value = trimmed ? Number(trimmed) : null;
-      try {
-        await setWishlistPriceThreshold(itemId, value);
-        toast.success(value ? `Порог: дешевле ${value} ₽` : 'Порог снят');
-      } catch {
-        toast.error('Не удалось сохранить порог');
-      }
-    };
-
-    if (Platform.OS === 'ios') {
-      Alert.prompt(
-        'Порог цены',
-        'Пуш только когда дешевле, ₽. Пусто — при любой цене.',
-        [
-          { text: 'Отмена', style: 'cancel' },
-          ...(current ? [{ text: 'Убрать порог', style: 'destructive' as const, onPress: () => apply('') }] : []),
-          { text: 'Сохранить', onPress: (v?: string) => apply(v) },
-        ],
-        'plain-text',
-        current ? String(current) : '',
-        'number-pad',
-      );
-    } else {
-      // Android: Alert.prompt недоступен — быстрый тумблер «снять/оставить».
-      if (current) {
-        Alert.alert('Порог цены', `Сейчас: дешевле ${current} ₽`, [
-          { text: 'Отмена', style: 'cancel' },
-          { text: 'Убрать порог', style: 'destructive', onPress: () => apply('') },
-        ]);
-      } else {
-        toast.info('Порог цены задаётся на iOS');
-      }
-    }
+    const priceHint =
+      record.estimated_price_median_rub ?? record.estimated_price_min_rub ?? null;
+    thresholdSheetRef.current?.present({
+      itemId: status.wishlistItemId,
+      recordId: record.id,
+      currentPrice: priceHint,
+      threshold: status.wishlistPriceThreshold ?? null,
+      conditions: status.wishlistConditions ?? null,
+    });
   };
 
   const handleRemoveFromFolder = async () => {
@@ -1004,18 +959,15 @@ export default function RecordDetailScreen() {
               />
               <TouchableOpacity
                 style={[styles.bellButton, subscribed && styles.bellButtonActive]}
-                onPress={handleToggleWishlistBell}
-                onLongPress={subscribed ? handleBellLongPress : undefined}
-                delayLongPress={300}
-                accessibilityRole="switch"
-                accessibilityState={{ checked: subscribed }}
-                accessibilityLabel={subscribed ? 'Отключить уведомления о цене' : 'Уведомить о появлении и цене'}
-                accessibilityHint={subscribed ? 'Удержание — задать порог цены' : undefined}
+                onPress={handleRadarTap}
+                accessibilityRole="button"
+                accessibilityLabel={subscribed ? 'Настроить радар и порог цены' : 'Поставить на радар'}
                 hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               >
-                <Icon
-                  name={subscribed ? 'bell' : 'bell-slash'}
-                  size={20}
+                <Animated.View style={[styles.radarPulseRing, radarPulseStyle]} pointerEvents="none" />
+                <RadarIcon
+                  size={22}
+                  variant={subscribed ? 'on' : 'off'}
                   color={subscribed ? '#FFFFFF' : Colors.textSecondary}
                 />
                 {subscribed && recordStatus.wishlistPriceThreshold ? (
@@ -1063,6 +1015,8 @@ export default function RecordDetailScreen() {
         onSelectFolder={handleAddRecordToFolder}
         selectedRecordIds={record ? [record.id] : []}
       />
+
+      <ThresholdSheet ref={thresholdSheetRef} />
     </View>
   );
 }
@@ -1335,9 +1289,18 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: Colors.surface,
     borderRadius: BorderRadius.md,
+    overflow: 'visible',
   },
   bellButtonActive: {
     backgroundColor: Colors.royalBlue,
+  },
+  radarPulseRing: {
+    position: 'absolute',
+    width: 56,
+    height: 56,
+    borderRadius: BorderRadius.md,
+    borderWidth: 2,
+    borderColor: Colors.royalBlue,
   },
   bellThresholdDot: {
     position: 'absolute',

@@ -13,6 +13,7 @@ from app.database import get_db
 from app.models.user import User
 from app.models.record import Record
 from app.models.wishlist import Wishlist, WishlistItem, WishlistFolder, wishlist_folder_items
+from app.models.store_listing import StoreListing, ListingStatus
 from app.models.gift_booking import GiftBooking, GiftStatus
 from app.api.auth import get_current_user, get_current_user_optional
 from app.services.cover_storage import ensure_cover_cached
@@ -30,6 +31,9 @@ from app.schemas.wishlist import (
     WishlistFolderResponse,
     WishlistFolderWithItems,
     WishlistFolderItemsAdd,
+    RadarResponse,
+    RadarItem,
+    RadarAlt,
 )
 from app.schemas.record import RecordBrief
 from app.schemas.collection import CollectionItemResponse
@@ -84,6 +88,7 @@ async def get_my_wishlist(
             record=item.record,
             notify_mode=item.notify_mode,
             price_threshold_rub=item.price_threshold_rub,
+            conditions=item.conditions,
             is_booked=item.gift_booking is not None,
             gift_booking=GiftBookingInfo(
                 id=item.gift_booking.id,
@@ -93,6 +98,164 @@ async def get_my_wishlist(
             ) if item.gift_booking else None
         ) for item in wishlist.items]
     )
+
+
+# ── Радар ────────────────────────────────────────────────────────────────────
+
+_MIN_DROP = None  # (не используется здесь; статусы считаются напрямую)
+
+
+def _grade_of(condition_raw: str | None) -> str | None:
+    """Сырой `StoreListing.condition` → канон-грейд ('sealed'|'mint'|'vg_plus'|'vg').
+
+    Неизвестное/пустое → None (лениво: считаем подходящим при любом фильтре, чтобы
+    не прятать реальные предложения из-за нераспознанного текста состояния).
+    """
+    if not condition_raw:
+        return None
+    c = condition_raw.strip().lower()
+    if any(k in c for k in ("seal", "запечат", "ss", "new", "новая")):
+        return "sealed"
+    if "vg+" in c or "vg plus" in c or "very good plus" in c:
+        return "vg_plus"
+    if any(k in c for k in ("mint", "nm", "m-", "m/", "идеальн")):
+        return "mint"
+    if "vg" in c or "very good" in c or "хорош" in c:
+        return "vg"
+    return None
+
+
+def _condition_ok(condition_raw: str | None, accepted: list | None) -> bool:
+    """Проходит ли листинг по выбранным грейдам. accepted=None → любое."""
+    if not accepted:
+        return True
+    grade = _grade_of(condition_raw)
+    if grade is None:
+        return True  # нераспознанное — не отсеиваем
+    return grade in accepted
+
+
+def _radar_radius(status: str, price: float | None, threshold: float | None) -> float:
+    """0..1: 0 — у центра (зона покупки), 1 — внешний край."""
+    if status == "match":
+        if threshold and price is not None and threshold > 0:
+            return round(0.15 + 0.15 * min(1.0, price / threshold), 3)
+        return 0.2
+    if status == "available":
+        if threshold and price is not None and threshold > 0:
+            over = (price - threshold) / threshold
+            return round(0.4 + min(0.4, over), 3)
+        return 0.6  # порог не задан — середина
+    if status == "alt":
+        return 0.85
+    return 0.92  # absent
+
+
+@router.get("/radar", response_model=RadarResponse)
+async def get_radar(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Радар: subscribed-пластинки с вычисленным статусом, ценой по состоянию и позицией."""
+    items = (
+        await db.execute(
+            select(WishlistItem)
+            .join(Wishlist)
+            .where(
+                Wishlist.user_id == current_user.id,
+                WishlistItem.notify_mode == "subscribed",
+            )
+            .options(selectinload(WishlistItem.record))
+        )
+    ).scalars().all()
+    if not items:
+        return RadarResponse(items=[], count=0, match_count=0)
+
+    records = {i.record.id: i.record for i in items if i.record}
+    record_ids = list(records.keys())
+    masters: dict[str, list] = {}
+    for rec in records.values():
+        mid = getattr(rec, "discogs_master_id", None)
+        if mid:
+            masters.setdefault(str(mid), []).append(rec.id)
+
+    # In_stock листинги: для записей радара И для записей-аналогов (тот же мастер).
+    listing_q = (
+        select(StoreListing, Record.id.label("rec_id"), Record.discogs_master_id.label("mid"))
+        .join(Record, StoreListing.matched_record_id == Record.id)
+        .where(StoreListing.status == ListingStatus.IN_STOCK)
+    )
+    conds = [StoreListing.matched_record_id.in_(record_ids)]
+    if masters:
+        conds.append(Record.discogs_master_id.in_(list(masters.keys())))
+    from sqlalchemy import or_ as _or
+    listing_rows = (await db.execute(listing_q.where(_or(*conds)))).all()
+
+    # Бакеты: по exact record и по master.
+    exact_by_record: dict[str, list[StoreListing]] = {}
+    by_master: dict[str, list[tuple[StoreListing, str]]] = {}
+    for listing, rec_id, mid in listing_rows:
+        if rec_id in record_ids:
+            exact_by_record.setdefault(str(rec_id), []).append(listing)
+        if mid:
+            by_master.setdefault(str(mid), []).append((listing, str(rec_id)))
+
+    out: list[RadarItem] = []
+    match_count = 0
+    for wi in items:
+        rec = wi.record
+        if not rec:
+            continue
+        accepted = wi.conditions
+        threshold = float(wi.price_threshold_rub) if wi.price_threshold_rub is not None else None
+
+        exact = [
+            l for l in exact_by_record.get(str(rec.id), [])
+            if l.price_rub is not None and _condition_ok(l.condition, accepted)
+        ]
+        lowest = min((float(l.price_rub) for l in exact), default=None)
+
+        alt_payload = None
+        if exact:
+            if threshold is not None and lowest is not None and lowest <= threshold:
+                status_v = "match"
+                match_count += 1
+            else:
+                status_v = "available"
+        else:
+            # аналог: in_stock листинг другой записи того же мастера
+            mid = str(getattr(rec, "discogs_master_id", "") or "")
+            alt_candidates = [
+                (l, rid) for (l, rid) in by_master.get(mid, [])
+                if rid != str(rec.id) and l.price_rub is not None and _condition_ok(l.condition, accepted)
+            ]
+            if alt_candidates:
+                status_v = "alt"
+                cheapest_alt, alt_rid = min(alt_candidates, key=lambda x: x[0].price_rub)
+                alt_rec = records.get(cheapest_alt.matched_record_id)
+                alt_payload = RadarAlt(
+                    record_id=cheapest_alt.matched_record_id,
+                    title=getattr(alt_rec, "title", None),
+                    cover_url=getattr(alt_rec, "cover_image_url", None),
+                    price_rub=cheapest_alt.price_rub,
+                )
+            else:
+                status_v = "absent"
+
+        out.append(
+            RadarItem(
+                wishlist_item_id=wi.id,
+                record=RecordBrief.model_validate(rec),
+                status=status_v,
+                lowest_price_rub=(lowest if status_v in ("match", "available") else None),
+                threshold_rub=wi.price_threshold_rub,
+                conditions=accepted,
+                radius=_radar_radius(status_v, lowest, threshold),
+                alt=alt_payload,
+            )
+        )
+
+    return RadarResponse(items=out, count=len(out), match_count=match_count)
 
 
 @router.post("/items", response_model=WishlistItemResponse, status_code=status.HTTP_201_CREATED)
@@ -222,6 +385,7 @@ async def add_to_wishlist(
         record=record,
         notify_mode=item.notify_mode,
         price_threshold_rub=item.price_threshold_rub,
+        conditions=item.conditions,
         is_booked=False,
         gift_booking=None
     )
@@ -268,6 +432,8 @@ async def update_wishlist_item(
     # producer сам применяет порог лишь для subscribed-item'ов.
     if "price_threshold_rub" in data.model_fields_set:
         item.price_threshold_rub = data.price_threshold_rub
+    if "conditions" in data.model_fields_set:
+        item.conditions = data.conditions
 
     await db.commit()
     await db.refresh(item)
@@ -284,6 +450,7 @@ async def update_wishlist_item(
         record=item.record,
         notify_mode=item.notify_mode,
         price_threshold_rub=item.price_threshold_rub,
+        conditions=item.conditions,
         is_booked=item.gift_booking is not None,
         gift_booking=GiftBookingInfo(
             id=item.gift_booking.id,
@@ -603,6 +770,7 @@ async def search_wishlist(
         record=item.record,
         notify_mode=item.notify_mode,
         price_threshold_rub=item.price_threshold_rub,
+        conditions=item.conditions,
         is_booked=item.gift_booking is not None,
         gift_booking=GiftBookingInfo(
             id=item.gift_booking.id,
@@ -786,6 +954,7 @@ def _wishlist_item_to_response(item: WishlistItem) -> WishlistItemResponse:
         record=item.record,
         notify_mode=item.notify_mode,
         price_threshold_rub=item.price_threshold_rub,
+        conditions=item.conditions,
         is_booked=item.gift_booking is not None,
         gift_booking=GiftBookingInfo(
             id=item.gift_booking.id,

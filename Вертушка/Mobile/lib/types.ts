@@ -459,6 +459,32 @@ export interface GiftBookingInfo {
 }
 
 export type WishlistNotifyMode = 'watched' | 'subscribed';
+export type WishlistCondition = 'sealed' | 'mint' | 'vg_plus' | 'vg';
+export type RadarStatus = 'match' | 'available' | 'alt' | 'absent';
+
+export interface RadarAlt {
+  record_id: string;
+  title: string | null;
+  cover_url: string | null;
+  price_rub: number | null;
+}
+
+export interface RadarItem {
+  wishlist_item_id: string;
+  record: VinylRecord;
+  status: RadarStatus;
+  lowest_price_rub: number | null;
+  threshold_rub: number | null;
+  conditions: WishlistCondition[] | null;
+  radius: number; // 0..1
+  alt: RadarAlt | null;
+}
+
+export interface RadarResponse {
+  items: RadarItem[];
+  count: number;
+  match_count: number;
+}
 
 export interface PriceHistoryPoint {
   date: string; // YYYY-MM-DD
@@ -487,6 +513,8 @@ export interface WishlistItem {
   notify_mode?: WishlistNotifyMode;
   // Порог «уведомить, когда дешевле X ₽». null/undefined = любое появление.
   price_threshold_rub?: number | null;
+  // Принятые грейды состояния для радара. null/undefined = любое.
+  conditions?: WishlistCondition[] | null;
 }
 
 export interface WishlistFolder {

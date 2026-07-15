@@ -3,12 +3,13 @@
  * Переключатель Моё / Хочу, editorial заголовок, expanded cards
  */
 import { useEffect, useCallback, useState, useRef } from 'react';
-import { View, StyleSheet, Alert, TouchableOpacity, Text, Animated, ScrollView, LayoutAnimation, UIManager, Platform } from 'react-native';
+import { View, StyleSheet, Alert, TouchableOpacity, Text, Animated, ScrollView, LayoutAnimation, UIManager, Platform, Easing } from 'react-native';
 import { toast } from '../../lib/toast';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { Icon } from '@/components/ui';
+import { RadarIcon } from '../../components/RadarIcon';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import { AnimatedGradientText } from '../../components/AnimatedGradientText';
@@ -87,6 +88,9 @@ export default function CollectionScreen() {
   const viewIconAnim = useRef(new Animated.Value(0)).current; // 0 = grid, 1 = list
   const filterMenuAnim = useRef(new Animated.Value(0)).current; // 0 = closed, 1 = open
   const sortMenuAnim = useRef(new Animated.Value(0)).current;   // 0 = closed, 1 = open
+  const radarPulse = useRef(new Animated.Value(0)).current;     // радар-кнопка sonar-loop
+  const radarPulse2 = useRef(new Animated.Value(0)).current;    // второе кольцо (стаггер)
+  const [radarMatchCount, setRadarMatchCount] = useState(0);
 
   const filterMenuOpen = useRef(false);
   const sortMenuOpen = useRef(false);
@@ -262,6 +266,30 @@ export default function CollectionScreen() {
     setIsSelectionMode(false);
     setSelectedItems(new Set());
   }, [activeTab]);
+
+  // Радар-кнопка: постоянный sonar-пульс (два кольца со стаггером) + счётчик для бейджа.
+  useEffect(() => {
+    const mk = (v: Animated.Value) =>
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(v, { toValue: 1, duration: 2200, easing: Easing.out(Easing.quad), useNativeDriver: true }),
+          Animated.timing(v, { toValue: 0, duration: 0, useNativeDriver: true }),
+        ]),
+      );
+    const l1 = mk(radarPulse);
+    l1.start();
+    const t = setTimeout(() => mk(radarPulse2).start(), 1100);
+    return () => {
+      l1.stop();
+      radarPulse2.stopAnimation();
+      clearTimeout(t);
+    };
+  }, [radarPulse, radarPulse2]);
+
+  useEffect(() => {
+    if (activeTab !== 'wishlist') return;
+    api.getRadar().then((r) => setRadarMatchCount(r.match_count)).catch(() => {});
+  }, [activeTab, wishlistItems]);
 
   // Анимация смены кнопки Выбрать ↔ Отмена + скрытие меню
   useEffect(() => {
@@ -919,6 +947,33 @@ export default function CollectionScreen() {
               <Icon name="swap-vertical-outline" size={18} color={Colors.royalBlue} />
             </TouchableOpacity>
           )}
+
+          {/* Radar button — только на вишлисте, пульсирует, ведёт на экран радара */}
+          {!isSelectionMode && activeTab === 'wishlist' && (
+            <View style={styles.radarBtnWrap}>
+              {[radarPulse, radarPulse2].map((v, i) => (
+                <Animated.View
+                  key={i}
+                  pointerEvents="none"
+                  style={[
+                    styles.radarPulseRing,
+                    {
+                      opacity: v.interpolate({ inputRange: [0, 0.15, 1], outputRange: [0, 0.55, 0] }),
+                      transform: [{ scale: v.interpolate({ inputRange: [0, 1], outputRange: [1, 2.6] }) }],
+                    },
+                  ]}
+                />
+              ))}
+              <TouchableOpacity style={styles.radarButton} onPress={() => router.push('/radar' as any)} activeOpacity={0.85}>
+                <RadarIcon size={20} color="#fff" variant="on" />
+              </TouchableOpacity>
+              {radarMatchCount > 0 && (
+                <View style={styles.radarBadge}>
+                  <Text style={styles.radarBadgeTxt}>{radarMatchCount}</Text>
+                </View>
+              )}
+            </View>
+          )}
         </View>
 
         {/* Filter dropdown */}
@@ -1298,6 +1353,47 @@ const styles = StyleSheet.create({
   },
   filterButtonActive: {
     backgroundColor: Colors.royalBlue,
+  },
+  radarBtnWrap: {
+    width: 36,
+    height: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  radarPulseRing: {
+    position: 'absolute',
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    borderWidth: 1.5,
+    borderColor: Colors.royalBlue,
+  },
+  radarButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: Colors.royalBlue,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  radarBadge: {
+    position: 'absolute',
+    top: -4,
+    right: -4,
+    minWidth: 16,
+    height: 16,
+    paddingHorizontal: 4,
+    borderRadius: 8,
+    backgroundColor: Colors.success,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.5,
+    borderColor: Colors.background,
+  },
+  radarBadgeTxt: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#fff',
   },
   filterButtonActiveText: {
     ...Typography.caption,

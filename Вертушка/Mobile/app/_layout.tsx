@@ -326,6 +326,7 @@ function RootLayout() {
             }}
           />
           <Stack.Screen name="record/[id]" />
+          <Stack.Screen name="radar" />
           <Stack.Screen name="market/index" options={{ animation: 'fade' }} />
           <Stack.Screen name="market/store/[slug]" />
           <Stack.Screen name="folder/[id]" />

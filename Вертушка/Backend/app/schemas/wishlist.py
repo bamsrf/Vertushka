@@ -8,6 +8,8 @@ from uuid import UUID
 from pydantic import BaseModel, EmailStr, Field, ConfigDict
 
 NotifyMode = Literal["watched", "subscribed"]
+WishlistCondition = Literal["sealed", "mint", "vg_plus", "vg"]
+RadarStatus = Literal["match", "available", "alt", "absent"]
 
 from app.schemas.record import RecordBrief
 from app.models.gift_booking import GiftStatus
@@ -29,6 +31,8 @@ class WishlistItemUpdate(BaseModel):
     notify_mode: NotifyMode | None = None
     # Порог «уведомить, когда дешевле X ₽». None = любое появление/падение.
     price_threshold_rub: Decimal | None = Field(None, ge=0)
+    # Принятые грейды состояния (['sealed','mint','vg_plus','vg']). None = любое.
+    conditions: list[WishlistCondition] | None = None
 
 
 class GiftBookingInfo(BaseModel):
@@ -58,6 +62,7 @@ class WishlistItemResponse(BaseModel):
     gift_booking: GiftBookingInfo | None = None
     notify_mode: NotifyMode = "watched"
     price_threshold_rub: Decimal | None = None
+    conditions: list[WishlistCondition] | None = None
 
 
 class WishlistResponse(BaseModel):
@@ -198,4 +203,35 @@ class WishlistFolderWithItems(WishlistFolderResponse):
 class WishlistFolderItemsAdd(BaseModel):
     """Bulk-добавление items в папку"""
     wishlist_item_ids: list[UUID] = Field(..., min_length=1)
+
+
+# ── Радар ──────────────────────────────────────────────────────────────────
+
+class RadarAlt(BaseModel):
+    """Данные альтернативной версии (другой прессинг того же мастера) в наличии."""
+    record_id: UUID
+    title: str | None = None
+    cover_url: str | None = None
+    price_rub: Decimal | None = None
+
+
+class RadarItem(BaseModel):
+    """Одна пластинка на радаре — с вычисленным статусом и позицией."""
+    model_config = ConfigDict(from_attributes=True)
+
+    wishlist_item_id: UUID
+    record: RecordBrief
+    status: RadarStatus
+    lowest_price_rub: Decimal | None = None
+    threshold_rub: Decimal | None = None
+    conditions: list[WishlistCondition] | None = None
+    radius: float  # 0..1: 0 = у центра (зона покупки), 1 = внешний край
+    alt: RadarAlt | None = None
+
+
+class RadarResponse(BaseModel):
+    """Ответ GET /wishlists/radar."""
+    items: list[RadarItem] = []
+    count: int = 0
+    match_count: int = 0  # сколько в зоне покупки (для бейджа кнопки)
 

@@ -7,7 +7,7 @@ from datetime import datetime
 from decimal import Decimal
 from sqlalchemy import String, DateTime, ForeignKey, Text, Integer, Boolean, Table, Column, Numeric
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import UUID, JSONB
 
 from app.database import Base
 
@@ -185,6 +185,13 @@ class WishlistItem(Base):
     # Порог цены для push. None = уведомлять при любом появлении/падении.
     price_threshold_rub: Mapped[Decimal | None] = mapped_column(
         Numeric(12, 2),
+        nullable=True,
+    )
+
+    # Принятые грейды состояния для радара (['sealed','mint','vg_plus','vg']).
+    # None = любое состояние. Фильтрует «самую низкую подходящую цену» и статус.
+    conditions: Mapped[list | None] = mapped_column(
+        JSONB,
         nullable=True,
     )
     

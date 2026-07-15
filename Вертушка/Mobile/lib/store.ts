@@ -40,6 +40,7 @@ import {
   CollectionStats,
   WishlistItem,
   WishlistNotifyMode,
+  WishlistCondition,
   WishlistFolder,
   CollectionTab,
   SearchFilters,
@@ -600,6 +601,7 @@ interface CollectionState {
   removeFromWishlist: (itemId: string, skipRefetch?: boolean) => Promise<void>;
   setWishlistNotifyMode: (itemId: string, mode: WishlistNotifyMode) => Promise<void>;
   setWishlistPriceThreshold: (itemId: string, value: number | null) => Promise<void>;
+  setWishlistConditions: (itemId: string, conditions: WishlistCondition[] | null) => Promise<void>;
   moveToCollection: (wishlistItemId: string) => Promise<void>;
 
   // Folder actions
@@ -768,6 +770,21 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
     });
     try {
       await api.updateWishlistItem(itemId, { price_threshold_rub: value });
+    } catch (error) {
+      set({ wishlistItems: prev });
+      throw error;
+    }
+  },
+
+  setWishlistConditions: async (itemId, conditions) => {
+    const prev = get().wishlistItems;
+    set({
+      wishlistItems: prev.map((wi) =>
+        wi.id === itemId ? { ...wi, conditions } : wi,
+      ),
+    });
+    try {
+      await api.updateWishlistItem(itemId, { conditions });
     } catch (error) {
       set({ wishlistItems: prev });
       throw error;
