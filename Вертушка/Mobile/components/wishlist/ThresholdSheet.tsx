@@ -13,7 +13,6 @@ import {
   View,
   TextInput,
   TouchableOpacity,
-  PanResponder,
   Alert,
   type LayoutChangeEvent,
 } from 'react-native';
@@ -23,11 +22,13 @@ import {
   BottomSheetBackdrop,
   type BottomSheetBackdropProps,
 } from '@gorhom/bottom-sheet';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
   useAnimatedProps,
+  runOnJS,
 } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
 import { Colors, Typography } from '../../constants/theme';
@@ -65,9 +66,13 @@ const CONDITION_OPTIONS: { key: WishlistCondition; label: string }[] = [
 const DEFAULT_CONDITIONS: WishlistCondition[] = ['sealed', 'mint'];
 const STEP = 100;
 
-const fmt = (n: number) => Math.round(n).toLocaleString('ru-RU');
+const fmt = (n: number) => (Number.isFinite(n) ? Math.round(n) : 0).toLocaleString('ru-RU');
 const roundTo = (n: number, step: number) => Math.max(0, Math.round(n / step) * step);
 const clamp = (n: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, n));
+// Цены с бэка могут приходить как NaN (absent-пластинки) — приводим к number|null,
+// т.к. `??` ловит только null/undefined и NaN протекал бы во все расчёты границ.
+const finite = (n: unknown): number | null =>
+  typeof n === 'number' && Number.isFinite(n) ? n : null;
 
 // Группировка разрядов пробелом — worklet-safe (без toLocaleString в UI-потоке).
 function groupWorklet(n: number): string {
@@ -97,10 +102,12 @@ export const ThresholdSheet = forwardRef<ThresholdSheetRef, Props>(({ onSaved },
 
   // Границы: мин.90д … выше текущей (порог можно и выше цены).
   const bounds = useMemo(() => {
-    const base = current ?? (amount > 0 ? amount : 5000);
-    const hi = Math.max(base * 1.6, base + 3000, amount + 100);
+    const amt = Number.isFinite(amount) ? amount : 0;
+    const base = current ?? (amt > 0 ? amt : 5000);
+    const hi = Math.max(base * 1.6, base + 3000, amt + 100);
     const lo = low ?? Math.min(base * 0.4, base - 500);
-    return { lo: Math.max(0, Math.floor(lo)), hi: Math.max(Math.ceil(hi), lo + 500) };
+    const loF = Math.max(0, Math.floor(lo));
+    return { lo: loF, hi: Math.max(Math.ceil(hi), loF + 500) };
   }, [current, low, amount]);
 
   // UI-поток: позиция thumb (px) + зеркала границ/ширины для worklet'ов.
@@ -109,7 +116,7 @@ export const ThresholdSheet = forwardRef<ThresholdSheetRef, Props>(({ onSaved },
   const sHi = useSharedValue(1);
   const sW = useSharedValue(260);
   const dragging = useRef(false);
-  const dragBase = useRef(0);
+  const dragBase = useSharedValue(0);
 
   // Синхра thumb из state (кроме момента перетаскивания).
   useEffect(() => {
@@ -122,53 +129,74 @@ export const ThresholdSheet = forwardRef<ThresholdSheetRef, Props>(({ onSaved },
     }
   }, [amount, bounds, trackW]);
 
-  const pan = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: () => true,
-      onPanResponderGrant: () => {
-        dragging.current = true;
-        dragBase.current = thumbX.value;
-      },
-      onPanResponderMove: (_e, g) => {
-        thumbX.value = clamp(dragBase.current + g.dx, 0, sW.value);
-      },
-      onPanResponderRelease: () => {
-        dragging.current = false;
-        const w = sW.value || 1;
-        const v = sLo.value + (thumbX.value / w) * (sHi.value - sLo.value);
-        setAmount(roundTo(v, 50));
-      },
-      onPanResponderTerminate: () => {
-        dragging.current = false;
-      },
-    }),
-  ).current;
+  // Жест на react-native-gesture-handler (как у самого bottom-sheet), чтобы
+  // вертикальный джиттер при зажатии не «угонял» касание в свайп-закрытие листа.
+  // activeOffsetX — заявляем горизонтальное намерение; failOffsetY НЕ задаём, поэтому
+  // дрожь по вертикали не отменяет перетаскивание.
+  const setDragging = useCallback((v: boolean) => {
+    dragging.current = v;
+  }, []);
+  const commitAmount = useCallback((v: number) => {
+    setAmount(roundTo(Number.isFinite(v) ? v : 0, 50));
+  }, []);
+  const pan = useMemo(
+    () =>
+      Gesture.Pan()
+        .activeOffsetX([-6, 6])
+        .onBegin(() => {
+          dragBase.value = thumbX.value;
+          runOnJS(setDragging)(true);
+        })
+        .onUpdate((e) => {
+          const w = sW.value || 1;
+          thumbX.value = Math.max(0, Math.min(w, dragBase.value + e.translationX));
+        })
+        .onEnd(() => {
+          const w = sW.value || 1;
+          const v = sLo.value + (thumbX.value / w) * (sHi.value - sLo.value);
+          runOnJS(commitAmount)(v);
+        })
+        .onFinalize(() => {
+          runOnJS(setDragging)(false);
+        }),
+    [setDragging, commitAmount],
+  );
 
-  const thumbStyle = useAnimatedStyle(() => ({ transform: [{ translateX: thumbX.value - 13 }] }));
-  const fillStyle = useAnimatedStyle(() => ({ width: thumbX.value }));
+  const thumbStyle = useAnimatedStyle(() => ({ transform: [{ translateX: Math.round(thumbX.value) - 13 }] }));
+  const fillStyle = useAnimatedStyle(() => ({ width: Math.round(thumbX.value) }));
   const amountProps = useAnimatedProps(() => {
     const w = sW.value || 1;
     const v = sLo.value + (thumbX.value / w) * (sHi.value - sLo.value);
-    return { text: groupWorklet(Math.round(v / 50) * 50) } as any;
+    const safe = Number.isFinite(v) ? Math.round(v / 50) * 50 : 0;
+    return { text: groupWorklet(safe) } as any;
   });
 
   const present = useCallback((d: ThresholdSheetData) => {
     setData(d);
-    const initial = d.threshold ?? (d.currentPrice ? roundTo(d.currentPrice * 0.9, 100) : 0);
-    setAmount(initial);
-    setCurrent(d.currentPrice ?? null);
+    const cp = finite(d.currentPrice);
+    const th = finite(d.threshold);
+    const amt0 = th ?? (cp ? roundTo(cp * 0.9, 100) : 0);
+    setAmount(amt0);
+    setCurrent(cp);
     setLow(null);
     setConds(d.conditions && d.conditions.length ? d.conditions : DEFAULT_CONDITIONS);
+    // Синхронно засеваем sharedValue'ы границ/позиции ДО показа листа — иначе первый
+    // кадр считает по дефолтам (sLo=0/sHi=1) и мелькают «единичные цифры» до useEffect.
+    const base0 = cp ?? (amt0 > 0 ? amt0 : 5000);
+    const lo0 = Math.max(0, Math.floor(Math.min(base0 * 0.4, base0 - 500)));
+    const hi0 = Math.max(Math.ceil(Math.max(base0 * 1.6, base0 + 3000, amt0 + 100)), lo0 + 500);
+    sLo.value = lo0;
+    sHi.value = hi0;
+    thumbX.value = clamp(hi0 > lo0 ? ((amt0 - lo0) / (hi0 - lo0)) * sW.value : sW.value / 2, 0, sW.value);
     sheetRef.current?.present();
     api
       .getPriceHistory(d.recordId, 90)
       .then((res) => {
-        const pts = res.points.filter((p) => p.min_price_rub != null);
-        const latest = pts.length ? pts[pts.length - 1].min_price_rub : d.currentPrice ?? null;
-        setCurrent((prev) => prev ?? latest ?? null);
-        setLow(res.historical_low_rub ?? null);
-        if (!d.threshold && latest) setAmount(roundTo(latest * 0.9, 100));
+        const pts = res.points.filter((p) => finite(p.min_price_rub) != null);
+        const latest = pts.length ? finite(pts[pts.length - 1].min_price_rub) : cp;
+        setCurrent((prev) => prev ?? latest);
+        setLow(finite(res.historical_low_rub));
+        if (th == null && latest != null) setAmount(roundTo(latest * 0.9, 100));
       })
       .catch(() => {});
   }, []);
@@ -255,10 +283,9 @@ export const ThresholdSheet = forwardRef<ThresholdSheetRef, Props>(({ onSaved },
           />
           <Text style={styles.rub}> ₽</Text>
         </View>
-        <Text style={styles.context}>
-          {current ? `сейчас ${fmt(current)} ₽` : 'цена уточняется'}
-          {low ? ` · мин. за 90 дней: ${fmt(low)} ₽` : ''}
-        </Text>
+        {low ? (
+          <Text style={styles.context}>мин. за 90 дней: {fmt(low)} ₽</Text>
+        ) : null}
 
         <View style={styles.sliderRow}>
           <TouchableOpacity style={styles.sideBtn} onPress={() => nudge(-STEP)} hitSlop={8} activeOpacity={0.7}>
@@ -269,15 +296,16 @@ export const ThresholdSheet = forwardRef<ThresholdSheetRef, Props>(({ onSaved },
             <View style={styles.track} onLayout={onTrackLayout}>
               <View style={styles.trackBg} />
               <Animated.View style={[styles.fill, fillStyle]} />
-              <Animated.View
-                style={[styles.thumb, thumbStyle]}
-                {...pan.panHandlers}
-                hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
-              />
+              <GestureDetector gesture={pan}>
+                <Animated.View
+                  style={[styles.thumb, thumbStyle]}
+                  hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
+                />
+              </GestureDetector>
             </View>
             <View style={styles.sliderLabels}>
               <Text style={styles.sliderLabel}>{low ? `мин. ${fmt(low)} ₽` : ''}</Text>
-              <Text style={styles.sliderLabel}>{current ? `текущая ${fmt(current)} ₽` : ''}</Text>
+              <Text style={styles.sliderLabel} />
             </View>
           </View>
 
@@ -334,8 +362,8 @@ const styles = StyleSheet.create({
   sideTxt: { fontFamily: 'Inter_700Bold', fontSize: 24, color: Colors.royalBlue, marginTop: -2 },
   trackWrap: { flex: 1 },
   track: { height: 44, justifyContent: 'center' },
-  trackBg: { position: 'absolute', left: 0, right: 0, height: 6, borderRadius: 9999, backgroundColor: '#E3E6F3' },
-  fill: { position: 'absolute', left: 0, height: 6, borderRadius: 9999, backgroundColor: Colors.royalBlue },
+  trackBg: { position: 'absolute', left: 0, right: 0, height: 6, borderRadius: 3, backgroundColor: '#E3E6F3' },
+  fill: { position: 'absolute', left: 0, height: 6, borderRadius: 3, backgroundColor: Colors.royalBlue },
   thumb: { position: 'absolute', left: 0, width: 26, height: 26, borderRadius: 13, backgroundColor: '#fff', borderWidth: 3, borderColor: Colors.royalBlue, shadowColor: Colors.royalBlue, shadowOpacity: 0.35, shadowRadius: 6, shadowOffset: { width: 0, height: 2 }, elevation: 3 },
   sliderLabels: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 6 },
   sliderLabel: { ...Typography.caption, color: Colors.textMuted, fontVariant: ['tabular-nums'] },

@@ -1,7 +1,7 @@
 """
 API для работы с вишлистами
 """
-from datetime import datetime
+from datetime import datetime, timedelta
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
@@ -140,6 +140,11 @@ def _condition_ok(condition_raw: str | None, accepted: list | None) -> bool:
 
 
 RADAR_MAX = 5  # максимум подписанных пластинок на радаре
+# Окно свежести: на радаре учитываем только листинги, перепроверенные за N часов.
+# Гарантированное протухание (weekly_cleanup_stale) — лишь через 30 дней, а
+# stock_refresh_active берёт stale>6ч с лимитом на магазин, поэтому фантомный
+# IN_STOCK может жить днями и «дёргать» самую дешёвую цену. Окно это отсекает.
+RADAR_FRESHNESS_HOURS = 48
 
 
 def _radar_radius(status: str, price: float | None, threshold: float | None) -> float:
@@ -189,10 +194,16 @@ async def get_radar(
             masters.setdefault(str(mid), []).append(rec.id)
 
     # In_stock листинги: для записей радара И для записей-аналогов (тот же мастер).
+    # Фикс A: только свежие (перепроверенные за RADAR_FRESHNESS_HOURS) — иначе
+    # протухшие фантомные офферы гоняют «самую дешёвую» цену.
+    fresh_cutoff = datetime.utcnow() - timedelta(hours=RADAR_FRESHNESS_HOURS)
     listing_q = (
         select(StoreListing, Record.id.label("rec_id"), Record.discogs_master_id.label("mid"))
         .join(Record, StoreListing.matched_record_id == Record.id)
-        .where(StoreListing.status == ListingStatus.IN_STOCK)
+        .where(
+            StoreListing.status == ListingStatus.IN_STOCK,
+            StoreListing.last_seen_at >= fresh_cutoff,
+        )
     )
     conds = [StoreListing.matched_record_id.in_(record_ids)]
     if masters:
@@ -235,7 +246,8 @@ async def get_radar(
             l for l in exact_by_record.get(str(rec.id), [])
             if l.price_rub is not None and _condition_ok(l.condition, accepted)
         ]
-        exact.sort(key=lambda l: float(l.price_rub))
+        # Tie-break по id (Фикс B): при равных ценах выбор оффера стабилен.
+        exact.sort(key=lambda l: (float(l.price_rub), str(l.id)))
         lowest = float(exact[0].price_rub) if exact else None
         buy_url = exact[0].url if exact else None
 
@@ -248,7 +260,7 @@ async def get_radar(
             if rid != str(rec.id) and l.price_rub is not None and _condition_ok(l.condition, accepted)
         ]
         if alt_candidates:
-            cheapest_alt, alt_rid = min(alt_candidates, key=lambda x: float(x[0].price_rub))
+            cheapest_alt, alt_rid = min(alt_candidates, key=lambda x: (float(x[0].price_rub), str(x[0].id)))
             alt_rec = alt_records.get(cheapest_alt.matched_record_id)
             alt_payload = RadarAlt(
                 record_id=cheapest_alt.matched_record_id,

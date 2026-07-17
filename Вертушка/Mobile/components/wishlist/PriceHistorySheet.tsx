@@ -10,9 +10,11 @@ import {
   BottomSheetBackdrop,
   type BottomSheetBackdropProps,
 } from '@gorhom/bottom-sheet';
+import { useRouter } from 'expo-router';
 import { Colors, Typography, Spacing, BorderRadius } from '../../constants/theme';
 import { PriceSparkline } from '../PriceSparkline';
 import { RadarIcon } from '../RadarIcon';
+import { Icon } from '@/components/ui';
 import { api } from '../../lib/api';
 import { PriceHistoryResponse, RadarStatus, RadarEvent } from '../../lib/types';
 
@@ -63,6 +65,7 @@ const STATUS_PILL: Record<RadarStatus, { label: string; color: string; bg: strin
 export const PriceHistorySheet = forwardRef<PriceHistorySheetRef, Props>(
   ({ onOpenStore, onEditThreshold }, ref) => {
     const sheetRef = useRef<BottomSheetModal>(null);
+    const router = useRouter();
     const [data, setData] = useState<PriceHistorySheetData | null>(null);
     const [history, setHistory] = useState<PriceHistoryResponse | null>(null);
     const [radarEvents, setRadarEvents] = useState<RadarEvent[]>([]);
@@ -77,6 +80,14 @@ export const PriceHistorySheet = forwardRef<PriceHistorySheetRef, Props>(
     }, []);
 
     useImperativeHandle(ref, () => ({ present }), [present]);
+
+    // Переход в карточку релиза (по тапу на обложку и по кнопке «Открыть релиз»).
+    const openRelease = useCallback(() => {
+      const rid = data?.recordId;
+      if (!rid) return;
+      sheetRef.current?.dismiss();
+      router.push(`/record/${rid}` as any);
+    }, [data?.recordId, router]);
 
     const renderBackdrop = useCallback(
       (props: BottomSheetBackdropProps) => (
@@ -107,14 +118,20 @@ export const PriceHistorySheet = forwardRef<PriceHistorySheetRef, Props>(
       >
         <BottomSheetScrollView contentContainerStyle={styles.container}>
           <View style={styles.headerRow}>
-            {cover ? (
-              <Image source={{ uri: cover }} style={styles.cover} />
-            ) : (
-              <View style={[styles.cover, styles.coverPlaceholder]} />
-            )}
+            <TouchableOpacity activeOpacity={0.8} onPress={openRelease}>
+              {cover ? (
+                <Image source={{ uri: cover }} style={styles.cover} />
+              ) : (
+                <View style={[styles.cover, styles.coverPlaceholder]} />
+              )}
+            </TouchableOpacity>
             <View style={styles.headerText}>
               {data?.artist ? <Text style={styles.artist}>{data.artist.toUpperCase()}</Text> : null}
               <Text style={styles.title} numberOfLines={2}>{data?.title}</Text>
+              <TouchableOpacity style={styles.openRelease} onPress={openRelease} activeOpacity={0.7} hitSlop={8}>
+                <Text style={styles.openReleaseTxt}>Открыть релиз</Text>
+                <Icon name="chevron-forward" size={13} color={Colors.royalBlue} />
+              </TouchableOpacity>
             </View>
           </View>
 
@@ -200,6 +217,8 @@ const styles = StyleSheet.create({
   headerText: { flex: 1, paddingTop: 2 },
   artist: { fontSize: 11, fontFamily: 'Inter_600SemiBold', letterSpacing: 1, color: Colors.textSecondary },
   title: { ...Typography.h3, color: Colors.text, marginTop: 2 },
+  openRelease: { flexDirection: 'row', alignItems: 'center', gap: 2, marginTop: 6, alignSelf: 'flex-start' },
+  openReleaseTxt: { fontSize: 13, fontFamily: 'Inter_600SemiBold', color: Colors.royalBlue },
   priceRow: { flexDirection: 'row', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginTop: 18 },
   price: { fontFamily: 'Inter_800ExtraBold', fontSize: 28, color: Colors.text, fontVariant: ['tabular-nums'] },
   priceHint: { fontSize: 12, color: Colors.textSecondary, marginTop: 6 },
