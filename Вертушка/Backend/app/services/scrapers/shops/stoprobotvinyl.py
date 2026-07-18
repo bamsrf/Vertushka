@@ -187,11 +187,11 @@ class StoprobotVinylParser(BaseStoreParser):
 
         # === Vinyl color ===
         # Поле «Цвет» в характеристиках — самое надёжное (например «Purple translucent»).
+        # Чёрный НЕ обнуляем: он нужен матчингу офферов, чтобы конфликт семьи
+        # цвета (чёрный листинг ↔ цветная запись) понижал пресс до 'album'
+        # (см. offers.pressing_tier). Скрытие бейджа чёрного — на отдаче (_to_response).
         color_raw = chars.get("Цвет")
         vinyl_color = color_raw or infer_vinyl_color(title_tag)
-        if vinyl_color and vinyl_color.lower() == "black":
-            # Чёрный — дефолт, в карточке не показываем (как другие парсеры)
-            vinyl_color = None
 
         # === Status ===
         stock_node = soup.find("div", class_="product-stock")

@@ -117,6 +117,14 @@ async def get_record_offers(
     return offers
 
 
+def _display_color(raw: str | None) -> str | None:
+    """Цвет для показа в карточке оффера. Чёрный — дефолт, бейдж не рисуем
+    (как исторически делали парсеры). В БД чёрный при этом хранится честно —
+    он нужен матчингу (pressing_tier), поэтому прячем только на отдаче.
+    """
+    return None if color_family(raw) == "black" else raw
+
+
 def pressing_tier(listing: StoreListing, record_color_fam: str | None) -> str:
     """'exact' | 'album' — тот ли это пресс или просто тот же альбом.
 
@@ -165,7 +173,7 @@ def _to_response(
         ),
         price_rub=listing.price_rub,
         condition=listing.condition,
-        vinyl_color=listing.vinyl_color_raw,
+        vinyl_color=_display_color(listing.vinyl_color_raw),
         format=listing.format_raw,
         # Preview-URL: только UTM, без affiliate-subid. Полный wrapped URL с
         # subid Mobile получит из POST /offers/{id}/click.
