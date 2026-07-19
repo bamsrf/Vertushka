@@ -48,8 +48,9 @@ async def _resolve_cover_live(
 ) -> str | None:
     """Синхронный резолв обложки для release без URL в индексе — показать
     реальную обложку вместо заглушки (первый заход). Порядок по цене:
-    CAA-оффлайн (бесплатно, mb_discogs_map) → Deezer (бесплатно) → Discogs
-    (последним, под лимитером 60/мин + interactive-reserve). Найденное пишем в
+    CAA-оффлайн (бесплатно, mb_discogs_map) → Deezer → iTunes → Yandex (все
+    бесплатные) → Discogs (последним, под лимитером 60/мин + interactive-reserve).
+    Yandex перед Discogs добирает русский/советский слой. Найденное пишем в
     индекс → следующий заход отдаёт 302 из БД без повторного резолва.
     """
     url = None
@@ -64,6 +65,20 @@ async def _resolve_cover_live(
             dz = await cover_by_meta(artist, title, year=year)
             if dz:
                 url = dz.url
+        except Exception:
+            pass
+    if not url and artist and title:
+        try:
+            from app.services.cover_fallback import cover_url_by_artist_title
+            url = await cover_url_by_artist_title(artist, title)
+        except Exception:
+            pass
+    if not url and artist and title:
+        try:
+            from app.services.yandex_music import cover_by_meta as yandex_cover_by_meta
+            yc = await yandex_cover_by_meta(artist, title, year=year)
+            if yc:
+                url = yc.url
         except Exception:
             pass
     if not url:

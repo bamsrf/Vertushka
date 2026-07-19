@@ -148,6 +148,19 @@ async def lifespan(app: FastAPI):
             scheduler.add_job(run_scheduled_batch, 'interval', minutes=2,
                               id='cover_backfill_deezer', max_instances=1, coalesce=True)
 
+            # Доп. источники обложек для хвоста, не покрытого Deezer: iTunes
+            # (западный латинский остаток) и Yandex (русский/советский + транслит
+            # слой, которого нет в Discogs/Deezer). Каждый — своя worklist-таблица
+            # (анти-джойн к discogs_master_covers → только ещё не закрытые мастера)
+            # + свой gate-маркер /app/uploads/.backfill_{itunes,yandex}_enabled.
+            from app.scripts.backfill_covers import run_scheduled_batch as run_backfill_source
+            scheduler.add_job(run_backfill_source, 'interval', minutes=3,
+                              args=['itunes'], id='cover_backfill_itunes',
+                              max_instances=1, coalesce=True)
+            scheduler.add_job(run_backfill_source, 'interval', minutes=2,
+                              args=['yandex'], id='cover_backfill_yandex',
+                              max_instances=1, coalesce=True)
+
             # ---- Парсеры магазинов винила (под env SCRAPERS_ENABLED) ----
             if os.environ.get("SCRAPERS_ENABLED", "false").lower() == "true":
                 from app.tasks.scraper_tasks import (
