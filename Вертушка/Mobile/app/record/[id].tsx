@@ -44,6 +44,7 @@ import { OffersBlock } from '../../components/OffersBlock';
 import { PriceSparkline } from '../../components/PriceSparkline';
 import { RadarIcon } from '../../components/RadarIcon';
 import { ThresholdSheet, type ThresholdSheetRef } from '../../components/wishlist/ThresholdSheet';
+import { useRadarReopen } from '../../lib/radarReopen';
 import { parseVinylColor } from '../../lib/vinylColor';
 import { TierFeatureBlock, allRarityTiers } from '../../components/RarityAura';
 
@@ -187,6 +188,18 @@ export default function RecordDetailScreen() {
         .catch(() => {});
       fetchWishlistItems().catch(() => {});
     }, [fetchCollections, fetchCollectionItems, fetchWishlistItems])
+  );
+
+  // Возврат с /radar после «Радар заполнен» → переоткрываем ту же шторку порога,
+  // чтобы юзер сразу дозакинул релиз (место мог освободить на радаре).
+  useFocusEffect(
+    useCallback(() => {
+      const pending = useRadarReopen.getState().pending;
+      if (!pending || pending.recordId !== id) return;
+      useRadarReopen.getState().clear();
+      const t = setTimeout(() => thresholdSheetRef.current?.present(pending), 350);
+      return () => clearTimeout(t);
+    }, [id])
   );
 
   const getRecordStatus = (): {
@@ -1016,7 +1029,7 @@ export default function RecordDetailScreen() {
         selectedRecordIds={record ? [record.id] : []}
       />
 
-      <ThresholdSheet ref={thresholdSheetRef} />
+      <ThresholdSheet ref={thresholdSheetRef} onOpenRadar={() => router.push('/radar' as any)} />
     </View>
   );
 }

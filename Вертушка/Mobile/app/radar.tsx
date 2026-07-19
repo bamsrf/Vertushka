@@ -32,6 +32,7 @@ import { AltVersionSheet, type AltVersionSheetRef } from '../components/wishlist
 import { ThresholdSheet, type ThresholdSheetRef } from '../components/wishlist/ThresholdSheet';
 import { api, getCoverUrl, resolveMediaUrl } from '../lib/api';
 import { useAuthStore } from '../lib/store';
+import { useRadarReopen } from '../lib/radarReopen';
 import { RadarItem, RadarResponse, RadarStatus } from '../lib/types';
 
 const STATUS_COLOR: Record<RadarStatus, string> = {
@@ -150,6 +151,7 @@ export default function RadarScreen() {
   const user = useAuthStore((s) => s.user);
   const [data, setData] = useState<RadarResponse | null>(null);
   const [loading, setLoading] = useState(true);
+  const reopenPending = useRadarReopen((s) => s.pending);
 
   const historyRef = useRef<PriceHistorySheetRef>(null);
   const altRef = useRef<AltVersionSheetRef>(null);
@@ -268,6 +270,29 @@ export default function RadarScreen() {
         ) : null}
       </View>
 
+      {reopenPending ? (
+        <View style={styles.reopenBar}>
+          <Text style={styles.reopenTxt}>
+            {items.length >= limit
+              ? 'Радар заполнен. Убери один релиз, чтобы вернуться и добавить новый.'
+              : 'Место освободилось — можно вернуться и добавить релиз.'}
+          </Text>
+          {items.length < limit ? (
+            <TouchableOpacity
+              style={styles.reopenBtn}
+              onPress={() => {
+                Haptics.selectionAsync().catch(() => {});
+                router.back();
+              }}
+              activeOpacity={0.9}
+            >
+              <Icon name="arrow-back" size={16} color="#fff" />
+              <Text style={styles.reopenBtnTxt}>Вернуться и добавить</Text>
+            </TouchableOpacity>
+          ) : null}
+        </View>
+      ) : null}
+
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
         <View style={[styles.stage, { width: STAGE, height: STAGE }]}>
           {[STAGE, STAGE * 0.78, STAGE * 0.56, STAGE * 0.34].map((d, i) => (
@@ -334,7 +359,7 @@ export default function RadarScreen() {
         </View>
       ) : null}
 
-      <PriceHistorySheet ref={historyRef} onEditThreshold={onEditThreshold} onOpenStore={onOpenStore} />
+      <PriceHistorySheet ref={historyRef} onEditThreshold={onEditThreshold} onOpenStore={onOpenStore} onRemoved={() => load()} />
       <AltVersionSheet ref={altRef} onConfirm={() => load()} />
       <ThresholdSheet ref={thresholdRef} onSaved={() => load()} />
     </View>
@@ -363,6 +388,10 @@ const styles = StyleSheet.create({
   hSub: { fontSize: 13, color: 'rgba(255,255,255,0.6)', marginTop: 3 },
   slots: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 9999, backgroundColor: 'rgba(91,106,245,0.18)', borderWidth: 1, borderColor: 'rgba(91,106,245,0.4)' },
   slotsTxt: { fontSize: 14, fontFamily: 'Inter_700Bold', color: '#B7C0FF', fontVariant: ['tabular-nums'] },
+  reopenBar: { marginHorizontal: 16, marginBottom: 4, padding: 14, borderRadius: 16, backgroundColor: 'rgba(91,106,245,0.14)', borderWidth: 1, borderColor: 'rgba(91,106,245,0.35)', gap: 10 },
+  reopenTxt: { fontSize: 13.5, lineHeight: 19, fontFamily: 'Inter_500Medium', color: '#D6DBFF' },
+  reopenBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, paddingVertical: 11, borderRadius: 9999, backgroundColor: Colors.royalBlue },
+  reopenBtnTxt: { color: '#fff', fontFamily: 'Inter_600SemiBold', fontSize: 14.5 },
   scroll: { alignItems: 'center', paddingBottom: 20, flexGrow: 1, justifyContent: 'center' },
   stage: { marginTop: 20, alignItems: 'center', justifyContent: 'center' },
   ring: { position: 'absolute', borderWidth: 1, borderColor: '#4A5FD8' },

@@ -3,7 +3,7 @@
  * Переиспользует PriceSparkline + /records/{id}/price-history. Кнопки «В магазин»/«Порог».
  */
 import React, { forwardRef, useImperativeHandle, useRef, useState, useCallback } from 'react';
-import { StyleSheet, Text, View, TouchableOpacity, Image } from 'react-native';
+import { StyleSheet, Text, View, TouchableOpacity, Image, Alert } from 'react-native';
 import {
   BottomSheetModal,
   BottomSheetScrollView,
@@ -16,6 +16,8 @@ import { PriceSparkline } from '../PriceSparkline';
 import { RadarIcon } from '../RadarIcon';
 import { Icon } from '@/components/ui';
 import { api } from '../../lib/api';
+import { toast } from '../../lib/toast';
+import { useCollectionStore } from '../../lib/store';
 import { PriceHistoryResponse, RadarStatus, RadarEvent } from '../../lib/types';
 
 const RADAR_EVENT_LABEL: Record<string, string> = {
@@ -46,6 +48,7 @@ export interface PriceHistorySheetRef {
 interface Props {
   onOpenStore?: (data: PriceHistorySheetData) => void;
   onEditThreshold?: (data: PriceHistorySheetData) => void;
+  onRemoved?: () => void;
 }
 
 const fmt = (n: number) => Math.round(n).toLocaleString('ru-RU');
@@ -63,9 +66,10 @@ const STATUS_PILL: Record<RadarStatus, { label: string; color: string; bg: strin
 };
 
 export const PriceHistorySheet = forwardRef<PriceHistorySheetRef, Props>(
-  ({ onOpenStore, onEditThreshold }, ref) => {
+  ({ onOpenStore, onEditThreshold, onRemoved }, ref) => {
     const sheetRef = useRef<BottomSheetModal>(null);
     const router = useRouter();
+    const removeRadar = useCollectionStore((s) => s.removeWishlistRadar);
     const [data, setData] = useState<PriceHistorySheetData | null>(null);
     const [history, setHistory] = useState<PriceHistoryResponse | null>(null);
     const [radarEvents, setRadarEvents] = useState<RadarEvent[]>([]);
@@ -88,6 +92,32 @@ export const PriceHistorySheet = forwardRef<PriceHistorySheetRef, Props>(
       sheetRef.current?.dismiss();
       router.push(`/record/${rid}` as any);
     }, [data?.recordId, router]);
+
+    // Удаление прямо из карточки радара — с подтверждением.
+    const handleRemove = useCallback(() => {
+      if (!data) return;
+      Alert.alert(
+        'Убрать с радара?',
+        `«${data.title}» перестанет отслеживаться.`,
+        [
+          { text: 'Отмена', style: 'cancel' },
+          {
+            text: 'Убрать',
+            style: 'destructive',
+            onPress: async () => {
+              try {
+                await removeRadar(data.itemId);
+                sheetRef.current?.dismiss();
+                toast.success('Убрали с радара');
+                onRemoved?.();
+              } catch {
+                toast.error('Не удалось убрать радар');
+              }
+            },
+          },
+        ],
+      );
+    }, [data, removeRadar, onRemoved]);
 
     const renderBackdrop = useCallback(
       (props: BottomSheetBackdropProps) => (
@@ -133,6 +163,9 @@ export const PriceHistorySheet = forwardRef<PriceHistorySheetRef, Props>(
                 <Icon name="chevron-forward" size={13} color={Colors.royalBlue} />
               </TouchableOpacity>
             </View>
+            <TouchableOpacity style={styles.deleteBtn} onPress={handleRemove} activeOpacity={0.8} hitSlop={8}>
+              <Icon name="trash-outline" size={20} color={Colors.error} />
+            </TouchableOpacity>
           </View>
 
           <View style={styles.priceRow}>
@@ -215,6 +248,7 @@ const styles = StyleSheet.create({
   cover: { width: 76, height: 76, borderRadius: 14, backgroundColor: Colors.surfaceHover },
   coverPlaceholder: { backgroundColor: Colors.surfaceHover },
   headerText: { flex: 1, paddingTop: 2 },
+  deleteBtn: { width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(229,72,77,0.10)' },
   artist: { fontSize: 11, fontFamily: 'Inter_600SemiBold', letterSpacing: 1, color: Colors.textSecondary },
   title: { ...Typography.h3, color: Colors.text, marginTop: 2 },
   openRelease: { flexDirection: 'row', alignItems: 'center', gap: 2, marginTop: 6, alignSelf: 'flex-start' },

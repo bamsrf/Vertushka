@@ -31,10 +31,13 @@ import Animated, {
   runOnJS,
 } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
+import { router } from 'expo-router';
 import { Colors, Typography } from '../../constants/theme';
+import { RadarIcon } from '../RadarIcon';
 import { api } from '../../lib/api';
 import { toast } from '../../lib/toast';
 import { useCollectionStore } from '../../lib/store';
+import { useRadarReopen } from '../../lib/radarReopen';
 import { WishlistCondition } from '../../lib/types';
 
 const AnimatedTextInput = Animated.createAnimatedComponent(TextInput);
@@ -54,6 +57,7 @@ export interface ThresholdSheetRef {
 
 interface Props {
   onSaved?: () => void;
+  onOpenRadar?: () => void;
 }
 
 const CONDITION_OPTIONS: { key: WishlistCondition; label: string }[] = [
@@ -87,7 +91,7 @@ function groupWorklet(n: number): string {
   return out;
 }
 
-export const ThresholdSheet = forwardRef<ThresholdSheetRef, Props>(({ onSaved }, ref) => {
+export const ThresholdSheet = forwardRef<ThresholdSheetRef, Props>(({ onSaved, onOpenRadar }, ref) => {
   const sheetRef = useRef<BottomSheetModal>(null);
   const insets = useSafeAreaInsets();
   const saveRadar = useCollectionStore((s) => s.saveWishlistRadar);
@@ -228,7 +232,18 @@ export const ThresholdSheet = forwardRef<ThresholdSheetRef, Props>(({ onSaved },
       if (e?.response?.status === 409 && detail?.code === 'radar_limit') {
         Alert.alert(
           'Радар заполнен',
-          `Можно добавить максимум ${detail.limit ?? 5} релизов. Убери один, чтобы добавить новый.`,
+          `Можно добавить максимум ${detail.limit ?? 5} релизов. Открой радар и убери один, чтобы добавить новый.`,
+          [
+            { text: 'Отмена', style: 'cancel' },
+            {
+              text: 'Открыть радар',
+              onPress: () => {
+                // Запоминаем шторку, чтобы переоткрыть её после возврата с /radar.
+                useRadarReopen.getState().set(data);
+                router.push('/radar' as any);
+              },
+            },
+          ],
         );
       } else {
         toast.error('Не удалось сохранить');
@@ -270,6 +285,20 @@ export const ThresholdSheet = forwardRef<ThresholdSheetRef, Props>(({ onSaved },
       backgroundStyle={styles.sheetBg}
     >
       <BottomSheetView style={styles.container}>
+        {onOpenRadar ? (
+          <TouchableOpacity
+            style={styles.radarBtn}
+            onPress={() => {
+              Haptics.selectionAsync().catch(() => {});
+              sheetRef.current?.dismiss();
+              onOpenRadar();
+            }}
+            activeOpacity={0.8}
+            hitSlop={8}
+          >
+            <RadarIcon size={20} color="#fff" />
+          </TouchableOpacity>
+        ) : null}
         <Text style={styles.title}>Порог цены</Text>
         <Text style={styles.subtitle}>Пуш, когда цена опустится ниже</Text>
 
@@ -352,6 +381,7 @@ const styles = StyleSheet.create({
   handle: { backgroundColor: '#D3D7E6', width: 40 },
   container: { paddingHorizontal: 24, paddingBottom: 34, paddingTop: 6 },
   title: { ...Typography.h2, color: Colors.text, textAlign: 'center' },
+  radarBtn: { position: 'absolute', top: 2, right: 24, zIndex: 10, width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.royalBlue },
   subtitle: { ...Typography.bodySmall, color: Colors.textSecondary, textAlign: 'center', marginTop: 5 },
   amountRow: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'center', marginTop: 20 },
   amount: { fontFamily: 'Inter_800ExtraBold', fontSize: 52, color: Colors.royalBlue, fontVariant: ['tabular-nums'], letterSpacing: -1, padding: 0, textAlign: 'center', minWidth: 120 },
