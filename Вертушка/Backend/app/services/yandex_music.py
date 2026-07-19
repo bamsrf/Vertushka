@@ -75,6 +75,26 @@ class YandexCover:
     url: str  # 1000x1000 публичный avatars.yandex.net URL
 
 
+@dataclass
+class YandexAlbum:
+    album_id: int
+    url: str | None            # обложка 1000x1000
+    year: int | None
+    genre: str | None
+    tracklist: list[dict]      # [{position, title, duration}] — album-level
+
+
+_ALBUM_URL = "https://api.music.yandex.net/albums/{album_id}/with-tracks"
+
+
+def _fmt_dur_ms(ms: int | None) -> str | None:
+    """Миллисекунды → 'M:SS' (формат треклиста как в Discogs/Deezer)."""
+    if not ms or ms <= 0:
+        return None
+    sec = ms // 1000
+    return f"{sec // 60}:{sec % 60:02d}"
+
+
 def _cover_url(cover_uri: str | None) -> str | None:
     """coverUri вида `avatars.yandex.net/.../%%` → полноразмерный https-URL."""
     if not cover_uri:
@@ -100,18 +120,14 @@ def _album_year(item: dict) -> int | None:
         return None
 
 
-async def cover_by_meta(
-    artist: str,
-    title: str,
-    year: int | None = None,
-    *,
-    year_tolerance: int = 1,
-) -> YandexCover | None:
-    """Лучший матч обложки альбома в Yandex Music по нормализованным метаданным.
+async def _best_album_match(
+    artist: str, title: str, year: int | None, *, require_cover: bool,
+) -> dict | None:
+    """Лучший альбом-кандидат Yandex по нормализованным метаданным, либо None.
 
     Матч: artist И title проходят substring-гейт (напрямую или через транслит).
     При нескольких кандидатах год — мягкий тайбрейк (у переизданий release-дата
-    отличается, обложка та же). Возвращает 1000x1000 URL или None.
+    отличается, обложка та же). require_cover — отсеять кандидатов без coverUri.
     """
     artist_n = normalize_artist(artist)
     title_n = normalize_title(title)
@@ -135,7 +151,7 @@ async def cover_by_meta(
     for item in items:
         artists = item.get("artists") or []
         item_artist = artists[0].get("name", "") if artists else ""
-        if not _cover_url(item.get("coverUri")):
+        if require_cover and not _cover_url(item.get("coverUri")):
             continue
         if _matches(artist_n, item_artist, is_artist=True) and \
            _matches(title_n, item.get("title", ""), is_artist=False):
@@ -152,6 +168,70 @@ async def cover_by_meta(
             diff = abs(ry - year) if ry is not None else 999
             if best_diff is None or diff < best_diff:
                 best_diff, best = diff, item
+    return best
 
+
+async def cover_by_meta(
+    artist: str,
+    title: str,
+    year: int | None = None,
+    *,
+    year_tolerance: int = 1,
+) -> YandexCover | None:
+    """Обложка альбома Yandex (1000x1000 URL) по метаданным, либо None."""
+    best = await _best_album_match(artist, title, year, require_cover=True)
+    if not best:
+        return None
     url = _cover_url(best.get("coverUri"))
     return YandexCover(url=url) if url else None
+
+
+async def _tracklist_by_album_id(album_id: int) -> list[dict]:
+    """Треклист album-level из /albums/{id}/with-tracks → [{position,title,duration}].
+
+    ВАЖНО: это стриминг-издание (album-level), НЕ конкретный винил-прессинг —
+    позиции числовые, бонусы/порядок могут отличаться. «Достаточно хороший»
+    fallback для релизов вне Discogs. На ошибку/пусто — [].
+    """
+    try:
+        await _throttle()
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            r = await client.get(_ALBUM_URL.format(album_id=album_id), headers={"User-Agent": _UA})
+            r.raise_for_status()
+            volumes = (r.json().get("result") or {}).get("volumes") or []
+    except (httpx.HTTPError, ValueError):
+        logger.debug("Yandex tracklist failed for album %s", album_id, exc_info=True)
+        return []
+
+    out: list[dict] = []
+    pos = 1
+    for vol in volumes:
+        for tr in vol:
+            title = tr.get("title")
+            if not title:
+                continue
+            out.append({
+                "position": str(pos),
+                "title": title,
+                "duration": _fmt_dur_ms(tr.get("durationMs")),
+            })
+            pos += 1
+    return out
+
+
+async def album_by_meta(
+    artist: str, title: str, year: int | None = None,
+) -> YandexAlbum | None:
+    """Полный альбом Yandex (обложка + год + жанр + треклист) для обогащения
+    записей вне Discogs. Матч — как в cover_by_meta. На промах — None."""
+    best = await _best_album_match(artist, title, year, require_cover=False)
+    if not best:
+        return None
+    album_id = int(best["id"])
+    return YandexAlbum(
+        album_id=album_id,
+        url=_cover_url(best.get("coverUri")),
+        year=_album_year(best),
+        genre=best.get("genre"),
+        tracklist=await _tracklist_by_album_id(album_id),
+    )

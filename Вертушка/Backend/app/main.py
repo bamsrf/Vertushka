@@ -161,6 +161,12 @@ async def lifespan(app: FastAPI):
                               args=['yandex'], id='cover_backfill_yandex',
                               max_instances=1, coalesce=True)
 
+            # Yandex-обогащение существующих записей вне Discogs (source='store'):
+            # добор обложки/года/треклиста. Гейт — флаг YANDEX_MATCH_ENABLED.
+            from app.tasks.yandex_enrich_tasks import enrich_store_native_yandex
+            scheduler.add_job(enrich_store_native_yandex, 'interval', minutes=10,
+                              id='yandex_enrich_store_native', max_instances=1, coalesce=True)
+
             # ---- Парсеры магазинов винила (под env SCRAPERS_ENABLED) ----
             if os.environ.get("SCRAPERS_ENABLED", "false").lower() == "true":
                 from app.tasks.scraper_tasks import (

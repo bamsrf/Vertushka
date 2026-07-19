@@ -65,6 +65,20 @@ class Record(Base):
         nullable=True,
     )
 
+    # --- Yandex-native enrichment (релизы вне Discogs, source='store') ---
+    # Альбом Yandex, из которого взяты обложка/год/треклист (аналог
+    # spotify_album_id). См. listing_matcher шаг 5.5 + enrich_store_native_yandex.
+    yandex_album_id: Mapped[str | None] = mapped_column(
+        String(64),
+        nullable=True,
+    )
+    # cover/year/genre/tracklist из Yandex (аналог discogs_data). Треклист
+    # отдаётся на detail-экране для записей вне Discogs.
+    yandex_data: Mapped[dict | None] = mapped_column(
+        JSONB,
+        nullable=True,
+    )
+
     # Discogs данные
     discogs_id: Mapped[str | None] = mapped_column(
         String(50),

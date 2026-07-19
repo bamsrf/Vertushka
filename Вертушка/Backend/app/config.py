@@ -37,7 +37,11 @@ class Settings(BaseSettings):
     discogs_token_encryption_key: str = Field(default="", alias="DISCOGS_TOKEN_ENCRYPTION_KEY")
     # Drip-прогрев обложек простаивающими токенами app-bucket (cover_drip_tasks)
     cover_drip_enabled: bool = Field(default=True, alias="COVER_DRIP_ENABLED")
-    
+
+    # Yandex-native матчинг (шаг 5.5): создавать записи вне Discogs из Yandex.
+    # OFF по умолчанию — включать осознанно, мгновенный откат без деплоя.
+    yandex_match_enabled: bool = Field(default=False, alias="YANDEX_MATCH_ENABLED")
+
     # OpenAI API (распознавание обложки)
     openai_api_key: str = Field(default="", alias="OPENAI_API_KEY")
 

@@ -544,6 +544,22 @@ async def match_listing(listing: StoreListing, db: AsyncSession) -> bool:
             _apply_match(listing, rec, Decimal("0.850"), MatchMethod.DISCOGS_FETCH)
             return True
 
+    # 5.5) Yandex-native: Discogs ничего не знает, но релиз есть в Yandex Music
+    # (русский/советский слой вне Discogs). Создаём запись СРАЗУ (без 7-дневного
+    # store-native gate) с настоящей обложкой/годом/треклистом из Yandex. За
+    # флагом YANDEX_MATCH_ENABLED (OFF по умолчанию) — аддитивно, срабатывает
+    # только когда все Discogs-шаги промахнулись, иначе падаем в шаг 6.
+    from app.config import get_settings
+    if (
+        get_settings().yandex_match_enabled
+        and listing.artist_raw and listing.title_raw
+        and not _is_accessory(listing)
+    ):
+        rec = await _try_yandex_native(listing, db)
+        if rec:
+            _apply_match(listing, rec, Decimal("0.900"), MatchMethod.YANDEX_NATIVE)
+            return True
+
     # 6) Store-native fallback: Discogs ничего не знает про этот релиз
     # (типичный кейс — русский инди вне Discogs). Создаём Record из данных
     # самого листинга. Под anti-noise gate (см. _should_create_store_native):
@@ -905,6 +921,102 @@ async def _create_store_native_record(
     logger.info(
         "store-native: created Record %s for listing %s (artist=%s title=%s year=%s)",
         rec.id, listing.id, listing.artist_raw, listing.title_raw, listing.year_raw,
+    )
+    return rec
+
+
+async def _try_yandex_native(
+    listing: StoreListing, db: AsyncSession,
+) -> Record | None:
+    """Создать (или обогатить существующую) запись вне Discogs из Yandex Music.
+
+    Вызывается только когда весь Discogs-каскад промахнулся. Идентичность —
+    та же, что у store-native (source='store'), поэтому переиспользуем дедуп
+    _find_store_native_duplicate + partial unique index и НЕ добавляем новой
+    guard-поверхности. Отличие от шага 6: срабатывает сразу (без persist/
+    cross-shop gate) и кладёт настоящие обложку/год/треклист из Yandex.
+
+    На промах Yandex → None, вызывающий падает в обычный store-native (шаг 6).
+    """
+    from sqlalchemy.exc import IntegrityError
+
+    from app.services.yandex_music import album_by_meta
+
+    try:
+        album = await album_by_meta(listing.artist_raw, listing.title_raw, listing.year_raw)
+    except Exception:
+        logger.debug("yandex album lookup failed", exc_info=True)
+        album = None
+    if not album:
+        return None
+
+    year = listing.year_raw or album.year
+    yandex_data = {
+        "album_id": album.album_id,
+        "cover_image_url": album.url,
+        "year": album.year,
+        "genre": album.genre,
+        "tracklist": album.tracklist,
+    }
+    raw = listing.raw_payload or {}
+
+    # Дедуп: тот же релиз мог быть уже создан (store-native из другого магазина).
+    # Обогащаем его Yandex-данными, если ещё нет, и возвращаем.
+    existing = await _find_store_native_duplicate(
+        db, artist=listing.artist_raw, title=listing.title_raw, year=year,
+    )
+    if existing:
+        if not existing.yandex_album_id:
+            existing.yandex_album_id = str(album.album_id)
+            existing.yandex_data = yandex_data
+            if album.url and not existing.cover_image_url:
+                existing.cover_image_url = album.url
+            if year and not existing.year:
+                existing.year = year
+            if album.tracklist and not existing.tracklist:
+                existing.tracklist = album.tracklist
+        return existing
+
+    rec = Record(
+        source="store",
+        discogs_id=None,
+        artist=listing.artist_raw,
+        title=listing.title_raw,
+        year=year,
+        format_type=listing.format_raw,
+        # Обложка из Yandex приоритетнее фото магазина (реальный album art).
+        cover_image_url=album.url or raw.get("image_url"),
+        label=raw.get("label"),
+        catalog_number=normalize_catalog(raw.get("catalog_number")),
+        barcode=normalize_barcode(raw.get("barcode")),
+        yandex_album_id=str(album.album_id),
+        yandex_data=yandex_data,
+        # tracklist сразу → detail отдаёт без Discogs-пути (_ensure_...payload
+        # выходит на not discogs_id, поэтому не перетрёт).
+        tracklist=album.tracklist or None,
+    )
+    # NESTED SAVEPOINT — тот же паттерн, что _create_store_native_record: partial
+    # unique index uq_store_native_artist_title_year может дать IntegrityError
+    # при гонке, откат sp сохраняет outer-транзакцию.
+    sp = await db.begin_nested()
+    db.add(rec)
+    try:
+        await db.flush()
+        await sp.commit()
+    except IntegrityError:
+        await sp.rollback()
+        return await _find_store_native_duplicate(
+            db, artist=listing.artist_raw, title=listing.title_raw, year=year,
+        )
+
+    # Зеркалим обложку Yandex (стабильный avatars.yandex.net URL).
+    if rec.cover_image_url:
+        from app.services.cover_storage import schedule_store_native_cover_cache
+        schedule_store_native_cover_cache(rec.id, rec.cover_image_url)
+
+    logger.info(
+        "yandex-native: created Record %s for listing %s (artist=%s title=%s year=%s album_id=%s)",
+        rec.id, listing.id, listing.artist_raw, listing.title_raw, year, album.album_id,
     )
     return rec
 
