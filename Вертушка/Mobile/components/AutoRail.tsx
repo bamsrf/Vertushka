@@ -26,6 +26,7 @@ import Animated, {
   runOnJS,
 } from 'react-native-reanimated';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import { useIsFocused } from '@react-navigation/native';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { ms } from '../lib/responsive';
@@ -71,6 +72,13 @@ interface AutoRailProps {
    * year/format/want. Получает PublicProfileRecord и возвращает любой ReactNode.
    */
   itemBadgeRenderer?: (record: PublicProfileRecord) => ReactNode;
+  /**
+   * Внешняя пауза авто-движения. Когда true — кадровый цикл полностью
+   * деактивируется (`setActive(false)`), рейл замирает на текущей позиции.
+   * Используется, например, когда рейл перекрыт другим слоем (Маркет).
+   * Пауза строго обратима: снятие → рейл продолжает с той же позиции.
+   */
+  paused?: boolean;
 }
 
 export function AutoRail({
@@ -83,12 +91,21 @@ export function AutoRail({
   headerActionLabel,
   onHeaderActionPress,
   itemBadgeRenderer,
+  paused = false,
 }: AutoRailProps) {
   const tx = useSharedValue(0);
   const startTx = useSharedValue(0);
   const isPanning = useSharedValue(false);
   const isPaused = useSharedValue(false);
   const halfWidthSV = useSharedValue(0);
+  // Внешняя пауза (проп `paused`, напр. рейл перекрыт Маркет-слоем) — гейтим её
+  // ВНУТРИ worklet'а через shared value, а НЕ через frameCb.setActive из JS.
+  // Причина: `paused` флипается из worklet-жеста выхода из Маркета (runOnJS →
+  // setState), а старт/стоп кадрового цикла из JS-эффекта в этот момент даёт
+  // JS↔UI-гонку — иногда финально регистрируется stop, и рейл «залипает».
+  // Запись shared value идемпотентна и гонок не создаёт. setActive оставляем
+  // только под фокус таба (фокус не связан с жестом — гонки нет).
+  const externallyPaused = useSharedValue(false);
 
   const [rowWidth, setRowWidth] = useState(0);
 
@@ -143,13 +160,45 @@ export function AutoRail({
   }, []);
 
   // UI-thread авто-движение: каждый кадр сдвигаем tx на speed * dt.
-  useFrameCallback((frame) => {
-    if (isPanning.value || isPaused.value) return;
+  // externallyPaused читаем ВНУТРИ worklet'а — пауза по `paused` не трогает
+  // active-состояние кадрового цикла, поэтому гонки старт/стоп нет. Когда пауза,
+  // tx замирает → useAnimatedStyle не пересчитывается → композитинг встаёт
+  // (та же экономия, что и setActive), а на снятии рейл едет дальше с места.
+  const frameCb = useFrameCallback((frame) => {
+    if (isPanning.value || isPaused.value || externallyPaused.value) return;
     const w = halfWidthSV.value;
     if (!w) return;
     const dt = frame.timeSincePreviousFrame ?? 16;
     tx.value = tx.value - SCROLL_PX_PER_MS * dt;
   });
+
+  const focused = useIsFocused();
+  const hasItems = !!items && items.length > 0;
+
+  // (1) Активация кадрового цикла — ТОЛЬКО по фокусу таба. Уход с таба целиком
+  // гасит колбэк (экран невидим). Фокус меняется вне жестов → гонки нет.
+  // НЕ вызываем cancelAnimation(tx): отмена withDecay-инерции убивает её
+  // completion-колбэк scheduleResume, из-за чего isPaused залипает в true.
+  useEffect(() => {
+    frameCb.setActive(focused && hasItems);
+  }, [focused, hasItems, frameCb]);
+
+  // (2) Внешняя пауза (`paused`, напр. рейл перекрыт Маркет-слоем) — гейт в
+  // worklet'е через shared value (без гонки старт/стоп).
+  // На СНЯТИИ паузы форсим resume: сбрасываем залипшую gesture-паузу. isPaused
+  // мог остаться true, если пользователь флик­нул рейл перед входом в Маркет —
+  // тогда withDecay-инерция была отменена, а её scheduleResume не вызвался.
+  // Без этого сброса витрина замирает навсегда после выхода из Маркета.
+  useEffect(() => {
+    externallyPaused.value = paused;
+    if (!paused) {
+      if (resumeTimer.current) {
+        clearTimeout(resumeTimer.current);
+        resumeTimer.current = null;
+      }
+      isPaused.value = false;
+    }
+  }, [paused, externallyPaused, isPaused]);
 
   // Визуальная нормализация в [-w, 0] — даёт бесшовный цикл и работает
   // одинаково для авто-движения, драга и инерции.

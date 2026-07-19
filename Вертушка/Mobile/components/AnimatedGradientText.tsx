@@ -12,9 +12,11 @@ import Animated, {
   useAnimatedProps,
   withRepeat,
   withTiming,
+  cancelAnimation,
   Easing,
   interpolateColor,
 } from 'react-native-reanimated';
+import { useIsFocused } from '@react-navigation/native';
 import { AnimatedGradientPalette } from '../constants/theme';
 
 const AnimatedLinearGradient = Animated.createAnimatedComponent(LinearGradient);
@@ -35,7 +37,16 @@ export const AnimatedGradientText = React.memo(function AnimatedGradientText({
 }: AnimatedGradientTextProps) {
   const progress = useSharedValue(0);
 
+  // Бесконечная анимация крутится только когда экран в фокусе. При уходе на
+  // другой таб — cancelAnimation, чтобы не пересобирать нативный градиент
+  // каждый кадр впустую (нагрев/разряд). Возврат в фокус перезапускает цикл.
+  const focused = useIsFocused();
+
   useEffect(() => {
+    if (!focused) {
+      cancelAnimation(progress);
+      return;
+    }
     progress.value = 0;
     progress.value = withRepeat(
       withTiming(PRESET_COUNT, {
@@ -44,7 +55,8 @@ export const AnimatedGradientText = React.memo(function AnimatedGradientText({
       }),
       -1,
     );
-  }, [duration]);
+    return () => cancelAnimation(progress);
+  }, [duration, focused]);
 
   const animatedProps = useAnimatedProps(() => {
     const raw = progress.value % PRESET_COUNT;

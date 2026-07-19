@@ -864,6 +864,7 @@ export default function SearchScreen() {
             items={newReleases}
             showYear
             onPick={handleNewReleasePick}
+            paused={committed}
           />
         </Section>
       )}
@@ -883,6 +884,7 @@ export default function SearchScreen() {
             titleColor={Colors.royalBlue}
             items={marketAsProfileRecords}
             onPick={handleMarketPick}
+            paused={committed}
             headerActionLabel="Смотреть все →"
             onHeaderActionPress={handleMarketShowAll}
             itemBadgeRenderer={(r) => {
