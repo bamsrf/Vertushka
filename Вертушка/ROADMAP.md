@@ -189,7 +189,7 @@ ROADMAP.md — это _верхнеуровневый зонтик_. Кажды�
 | M3. Свои пластинки | [PLAN_USER_SUBMITTED_RECORDS.md](docs/plans/USER_SUBMITTED_RECORDS.md) | ✅ есть, ядро в проде |
 | M4. Импорт | `docs/plans/PLAN_COLLECTION_IMPORT.md` | 🆕 (Discogs OAuth-импорт уже в проде) |
 | M5. Достижения | [`/plans/PLAN_ACHIEVEMENTS.md`](docs/plans/PLAN_ACHIEVEMENTS.md) | ✅ есть, зашиты в продукт |
-| M6. Парсинг РФ | [PARSING.md](docs/plans/PARSING.md) + [SHOPS_PARSING.md](docs/plans/SHOPS_PARSING.md) | ✅ есть, 5 парсеров в проде |
+| M6. Парсинг РФ | [PARSING.md](docs/plans/PARSING.md) + [SHOPS_PARSING.md](docs/plans/SHOPS_PARSING.md) + [STORE_ONBOARDING_STRATEGY.md](docs/plans/STORE_ONBOARDING_STRATEGY.md) | ✅ есть, 5 парсеров в проде; онбординг-стратегия 🆕 |
 | M7. Магазины-партнёры | `docs/plans/PLAN_AFFILIATE_FLOW.md` | 🆕 будет в начале M7 (общая стратегия — в [PLAN_MONETIZATION.md](docs/plans/PLAN_MONETIZATION.md)) |
 | M8. P2P | [PLAN_P2P_MARKETPLACE.md](docs/plans/PLAN_P2P_MARKETPLACE.md) | ✅ спек готов (2026-05-12) |
 | M9. Рекомендации | `docs/plans/PLAN_RECOMMENDATIONS.md` | 🆕 |
