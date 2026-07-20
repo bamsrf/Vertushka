@@ -273,8 +273,11 @@ export default function CollectionScreen() {
     setSelectedItems(new Set());
   }, [activeTab]);
 
-  // Радар-кнопка: постоянный sonar-пульс (два кольца со стаггером) + счётчик для бейджа.
+  // Радар-кнопка: sonar-пульс (два кольца со стаггером). Перезапускаем при каждом
+  // показе кнопки — иначе после размонтирования (уход с вишлиста) нативный луп
+  // отрывается от вьюхи и по возвращении кольца застывают на одном кадре.
   useEffect(() => {
+    if (activeTab !== 'wishlist' || isSelectionMode) return;
     const mk = (v: Animated.Value) =>
       Animated.loop(
         Animated.sequence([
@@ -282,15 +285,21 @@ export default function CollectionScreen() {
           Animated.timing(v, { toValue: 0, duration: 0, useNativeDriver: true }),
         ]),
       );
+    radarPulse.setValue(0);
+    radarPulse2.setValue(0);
     const l1 = mk(radarPulse);
     l1.start();
-    const t = setTimeout(() => mk(radarPulse2).start(), 1100);
+    let l2: Animated.CompositeAnimation | undefined;
+    const t = setTimeout(() => {
+      l2 = mk(radarPulse2);
+      l2.start();
+    }, 1100);
     return () => {
-      l1.stop();
-      radarPulse2.stopAnimation();
       clearTimeout(t);
+      l1.stop();
+      l2?.stop();
     };
-  }, [radarPulse, radarPulse2]);
+  }, [activeTab, isSelectionMode, radarPulse, radarPulse2]);
 
   useEffect(() => {
     if (activeTab !== 'wishlist') return;

@@ -53,7 +53,18 @@ const STATUS_LABEL: Record<RadarStatus, string> = {
 const BAND_ORDER: RadarStatus[] = ['match', 'available', 'alt', 'absent'];
 const COVER = 50;
 
-const fmt = (n: number) => Math.round(n).toLocaleString('ru-RU');
+// Компактный формат: 3990 → «4к», 3500 → «3,5к», 990 → «990», 1 250 000 → «1,3 млн»
+const fmt = (n: number) => {
+  const abs = Math.abs(n);
+  if (abs < 1000) return String(Math.round(n));
+  const compact = (value: number, suffix: string) => {
+    const rounded = Math.round(value * 10) / 10;
+    const str = (Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1)).replace('.', ',');
+    return `${str} ${suffix}`;
+  };
+  if (abs < 1_000_000) return compact(n / 1000, 'к').replace(' к', 'к');
+  return compact(n / 1_000_000, 'млн');
+};
 
 interface Placed {
   item: RadarItem;
