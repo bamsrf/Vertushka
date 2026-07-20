@@ -40,6 +40,17 @@ _lock = asyncio.Lock()
 _last = 0.0
 _MIN_INTERVAL = 0.25
 
+# «Артисты», по которым искать альбом бессмысленно — это не исполнитель, а
+# тип релиза/серия: сборники (V/A), саундтреки (OST), детские серии. Пропускаем
+# БЕЗ запроса к Yandex (иначе гарантированный промах × сотни записей). Значения
+# — уже нормализованные (normalize_artist: casefold + без пунктуации).
+_SKIP_ARTISTS = frozenset({
+    "various", "va", "v a", "various artists", "va various artists",
+    "ost", "o s t", "soundtrack", "original soundtrack",
+    "сборник", "сборники", "детская пластинка", "детские пластинки",
+    "разные исполнители",
+})
+
 # Кириллица → латиница (GOST-подобно) для сопоставления транслита Discogs
 # с кириллицей Yandex. Результат ещё проходит normalize_* (снимет пунктуацию).
 _TRANSLIT = {
@@ -166,7 +177,7 @@ async def _best_album_match(
     title_c = _strip_noise(title)
     artist_n = normalize_artist(artist_c)
     title_n = normalize_title(title_c)
-    if not artist_n or not title_n or artist_n == "various":
+    if not artist_n or not title_n or artist_n in _SKIP_ARTISTS:
         return None
 
     params = {"text": f"{artist_c} {title_c}", "type": "album", "page": "0"}
