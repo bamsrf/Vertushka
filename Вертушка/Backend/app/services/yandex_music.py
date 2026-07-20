@@ -57,17 +57,48 @@ def _translit(s: str) -> str:
     return "".join(_TRANSLIT.get(ch, ch) for ch in s)
 
 
+# Винил/издательский шум в метаданных магазина, которого нет в названии альбома
+# на Yandex: «(2LP, цветной винил)», «(моно)», «Виниловая пластинка», «Спектакль».
+# Чистим И строку запроса (иначе Yandex по мусору не находит), И перед normalize.
+_RU_NOISE = re.compile(
+    r"\b("
+    r"виниловая\s+пластинка|пластинк\w*|винил\w*|"
+    r"цветн\w+|прозрачн\w+|"
+    r"моно|стерео|переиздани\w+|спектакль|коллекци\w+|"
+    r"\d+\s*lp|lp|ep"
+    r")\b",
+    re.IGNORECASE,
+)
+_BRACKETS = re.compile(r"[\(\[][^\)\]]*[\)\]]")
+
+
+def _strip_noise(s: str) -> str:
+    """Снять винил/издательский шум для строки запроса Yandex. Скобочные группы
+    у store-листингов почти всегда шум ((2LP, цветной винил)/(моно)) — режем."""
+    if not s:
+        return s
+    s = _BRACKETS.sub(" ", s)
+    s = _RU_NOISE.sub(" ", s)
+    return re.sub(r"\s+", " ", s).strip()
+
+
+def _forms(norm_str: str, norm_fn) -> set[str]:
+    """Формы для сравнения: сама нормализованная строка + её транслит (если в
+    ней кириллица). Даёт общее латинское пространство для сопоставления."""
+    forms = {norm_str}
+    if _HAS_CYR.search(norm_str):
+        forms.add(norm_fn(_translit(norm_str)))
+    return {f for f in forms if f}
+
+
 def _matches(query_norm: str, cand_raw: str, *, is_artist: bool) -> bool:
-    """substring-гейт в обе стороны: напрямую ИЛИ через транслит кандидата."""
+    """substring-гейт в обе стороны, ДВУСТОРОННИЙ транслит: обе стороны сводим к
+    формам {кириллица, латиница}. Ловит и «Наутилус Помпилиус» (запрос) vs
+    «Nautilus Pompilius» (Yandex), и обратный случай."""
     norm = normalize_artist if is_artist else normalize_title
-    cand_norm = norm(cand_raw)
-    if cand_norm and (query_norm in cand_norm or cand_norm in query_norm):
-        return True
-    if _HAS_CYR.search(cand_norm):
-        cand_tr = norm(_translit(cand_norm))
-        if cand_tr and (query_norm in cand_tr or cand_tr in query_norm):
-            return True
-    return False
+    qf = _forms(query_norm, norm)
+    cf = _forms(norm(cand_raw), norm)
+    return any(q in c or c in q for q in qf for c in cf)
 
 
 @dataclass
@@ -129,12 +160,16 @@ async def _best_album_match(
     При нескольких кандидатах год — мягкий тайбрейк (у переизданий release-дата
     отличается, обложка та же). require_cover — отсеять кандидатов без coverUri.
     """
-    artist_n = normalize_artist(artist)
-    title_n = normalize_title(title)
+    # Чистим винил/издательский шум ДО запроса и нормализации: у store-листингов
+    # title типа «Золотой Век (2LP, цветной винил)» — по такому Yandex молчит.
+    artist_c = _strip_noise(artist)
+    title_c = _strip_noise(title)
+    artist_n = normalize_artist(artist_c)
+    title_n = normalize_title(title_c)
     if not artist_n or not title_n or artist_n == "various":
         return None
 
-    params = {"text": f"{artist} {title}", "type": "album", "page": "0"}
+    params = {"text": f"{artist_c} {title_c}", "type": "album", "page": "0"}
     try:
         await _throttle()
         async with httpx.AsyncClient(timeout=15.0) as client:
