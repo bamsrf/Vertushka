@@ -25,18 +25,27 @@ import re
 # (напр. «Red/Blue» → red). Намеренно НЕ включаем неспецифичные токены
 # (clear/marbled/splatter/translucent/coloured/цветной) — они не дают семью,
 # не годятся для доказательства конфликта.
+# EN-токены — по границе слова (\b), иначе «red» ловится внутри «colouRED»,
+# «hundRED» и т.п. (главный источник ложного «red» в цвете оффера). RU-стемы
+# оставлены как префиксы — там подстрочных коллизий на практике нет. teal/
+# turquoise добавлены: без них «Teal [Translucent Electric Teal]» с Discogs
+# давал family=None → конфликт с цветом оффера не доказывался.
+# sql_color_family() транслирует \b → \y (граница слова в Postgres) — держать в
+# синхроне.
 _FAMILY_PATTERNS: list[tuple[str, str]] = [
-    ("black", r"black|чёрн|чорн"),
-    ("white", r"white|бел"),
-    ("red", r"red|красн"),
-    ("blue", r"blue|син|голуб"),
-    ("green", r"green|зелён|зелен"),
-    ("yellow", r"yellow|жёлт|желт"),
-    ("orange", r"orange|оранж"),
-    ("purple", r"purple|фиолет"),
-    ("pink", r"pink|розов"),
-    ("gold", r"gold|золот"),
-    ("silver", r"silver|серебр"),
+    ("black", r"\bblack\b|чёрн|чорн"),
+    ("white", r"\bwhite\b|бел"),
+    ("teal", r"\bteal\b|бирюз"),
+    ("turquoise", r"\bturquoise\b|тиркойз"),
+    ("red", r"\bred\b|красн"),
+    ("blue", r"\bblue\b|син|голуб"),
+    ("green", r"\bgreen\b|зелён|зелен"),
+    ("yellow", r"\byellow\b|жёлт|желт"),
+    ("orange", r"\borange\b|оранж"),
+    ("purple", r"\bpurple\b|фиолет"),
+    ("pink", r"\bpink\b|розов"),
+    ("gold", r"\bgold\b|золот"),
+    ("silver", r"\bsilver\b|серебр"),
 ]
 
 _COMPILED: list[tuple[str, re.Pattern[str]]] = [
@@ -66,8 +75,10 @@ def sql_color_family(col_expr: str) -> str:
     `col_expr` подставляется как есть — передавай только доверенные имена
     колонок/выражений (не пользовательский ввод).
     """
+    # Postgres ARE не знает \b — транслируем в \y (граница слова). RU-стемы без
+    # \b проходят как есть.
     branches = "\n".join(
-        f"      WHEN lower({col_expr}) ~ '({pat})' THEN '{fam}'"
+        f"      WHEN lower({col_expr}) ~ '({pat.replace(chr(92) + 'b', chr(92) + 'y')})' THEN '{fam}'"
         for fam, pat in _FAMILY_PATTERNS
     )
     return f"""CASE

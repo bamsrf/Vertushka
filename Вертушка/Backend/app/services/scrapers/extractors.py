@@ -244,24 +244,60 @@ def find_discogs_release_url(html: str) -> str | None:
 # ---- Цвет винила ------------------------------------------------------- #
 
 
-_COLOR_KEYWORDS = [
-    "black", "чёрный", "чорный", "white", "белый", "red", "красный",
-    "blue", "синий", "голубой", "green", "зелёный", "зеленый",
-    "yellow", "жёлтый", "желтый", "orange", "оранжевый",
-    "purple", "фиолетовый", "pink", "розовый", "clear", "прозрачный",
-    "splatter", "брызги", "marbled", "мрамор", "splash",
-    "translucent", "transparent", "gold", "золотой", "silver", "серебряный",
-    "coloured", "color", "цветной",
+# (каноничный EN-цвет, regex EN+RU-синонимов). Порядок = приоритет при
+# мульти-цвете. Матч ТОЛЬКО по границам слова (\b / стем+граница) — иначе
+# «red» ложно ловится внутри «colouRED», «hundRED», «pRED­ator» и т.п.
+# EN — целые слова (\bred\b), RU — стем с явными окончаниями (без «\w*» там,
+# где стем совпадает с другим словом: «син…» иначе цепляет «сингл»).
+# Namely возвращаем КАНОНИЧНЫЙ EN-токен — Mobile parseVinylColor его понимает
+# (orange→#FB8C00, teal→#00897B и т.д.). Generic-слова (coloured/color/цветной)
+# НАМЕРЕННО не дают цвет: они не называют конкретный оттенок и в старом коде
+# были главным источником ложного «red».
+_VINYL_COLORS: list[tuple[str, str]] = [
+    ("teal",      r"\bteal\b|\bбирюз\w*"),
+    ("turquoise", r"\bturquoise\b|\bтиркойз\w*"),
+    ("purple",    r"\bpurple\b|\bviolet\b|\bфиолет\w*"),
+    ("pink",      r"\bpink\b|\bрозов\w*"),
+    ("red",       r"\bred\b|\bкрасн\w*"),
+    ("orange",    r"\borange\b|\bоранж\w*"),
+    ("amber",     r"\bamber\b|\bянтар\w*"),
+    ("yellow",    r"\byellow\b|\bжёлт\w*|\bжелт\w*"),
+    ("gold",      r"\bgold(?:en)?\b|\bзолот\w*"),
+    ("green",     r"\bgreen\b|\bзелён\w*|\bзелен\w*"),
+    ("blue",      r"\bblue\b|\bсин(?:ий|яя|ее|его|ем|ими|их)\b|\bголуб\w*"),
+    ("silver",    r"\bsilver\b|\bсеребр\w*"),
+    ("grey",      r"\bgrey\b|\bgray\b|\bсер(?:ый|ая|ое|ого|ым|ых)\b"),
+    ("cream",     r"\bcream\b|\bкремов\w*"),
+    ("white",     r"\bwhite\b|\bбел(?:ый|ая|ое|ого|ым|ых)\b"),
+    ("black",     r"\bblack\b|\bчёрн\w*|\bчорн\w*"),
+    ("clear",     r"\bclear\b|\btransparent\b|\btranslucent\b|\bпрозрачн\w*"),
+    ("splatter",  r"\bsplatter\b|\bsplash\b|\bбрызг\w*"),
+    ("marble",    r"\bmarbl\w*|\bмрамор\w*"),
+]
+
+_COMPILED_COLORS: list[tuple[str, re.Pattern[str]]] = [
+    (canon, re.compile(pat, re.I)) for canon, pat in _VINYL_COLORS
+]
+
+# Сигнал «это цвет самого винила»: слово-цвет стоит прямо перед vinyl/винил/LP
+# (опц. через «coloured»). «RSD26 Orange Vinyl» → orange, даже если в описании
+# обложки есть другие цвета. Это самый надёжный признак цвета пресса.
+_VINYL_CUE = r"(?:vinyl|винил|lp|пластинк\w*)"
+_COLOR_NEAR_CUE: list[tuple[str, re.Pattern[str]]] = [
+    (canon, re.compile(rf"(?:{pat})\s+(?:colou?red\s+)?{_VINYL_CUE}", re.I))
+    for canon, pat in _VINYL_COLORS
 ]
 
 
 def infer_vinyl_color(text: str | None) -> str | None:
     if not text:
         return None
-    text_lower = text.lower()
-    for kw in _COLOR_KEYWORDS:
-        if kw in text_lower:
-            # вернём найденное слово (как пользователь видит на сайте)
-            idx = text_lower.find(kw)
-            return text[idx:idx + len(kw)]
+    # 1) Приоритет — цвет, примыкающий к «vinyl/винил/LP» (цвет пресса).
+    for canon, rx in _COLOR_NEAR_CUE:
+        if rx.search(text):
+            return canon
+    # 2) Fallback — первый известный цвет по приоритету, строго по границам слова.
+    for canon, rx in _COMPILED_COLORS:
+        if rx.search(text):
+            return canon
     return None
