@@ -206,6 +206,40 @@ export interface MarketSearchItem {
 export type MarketFormatFilter = 'vinyl' | 'cd' | 'cassette';
 export type MarketSortMode = 'price_asc' | 'newest';
 
+/** Одна опция фильтра со счётчиком доступных карточек (data-driven чипы). */
+export interface MarketFacetItem {
+  key: string;
+  label: string;
+  count: number;
+}
+
+/** Доступные фильтры Маркета со счётчиками (GET /market/facets). Только опции
+ * с count > 0 — чтобы не рисовать пустые чипы. */
+export interface MarketFacetsResponse {
+  genres: MarketFacetItem[];
+  features: MarketFacetItem[];
+}
+
+/** Полный набор активных фильтров Маркета. format — одиночный, genres/features —
+ * мультивыбор (канонические ключи). */
+export interface MarketFilters {
+  format: MarketFormatFilter | 'all';
+  genres: string[];
+  features: string[];
+}
+
+/** Пустые фильтры — дефолт. Хелпер, чтобы не расходились инициализация/сброс. */
+export const EMPTY_MARKET_FILTERS: MarketFilters = {
+  format: 'all',
+  genres: [],
+  features: [],
+};
+
+/** Есть ли хоть один активный фильтр — для isSearchActive и кнопки сброса. */
+export function hasActiveFilters(f: MarketFilters): boolean {
+  return f.format !== 'all' || f.genres.length > 0 || f.features.length > 0;
+}
+
 export type OfferSort = 'price' | 'rating';
 
 /**

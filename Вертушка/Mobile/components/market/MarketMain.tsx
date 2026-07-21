@@ -26,7 +26,8 @@ import Animated, {
 import { Icon } from '../ui/Icon';
 import { api, resolveMediaUrl } from '../../lib/api';
 import { STORES_TTL_MS, useMarketStore } from '../../lib/marketStore';
-import type { MarketFormatFilter, MarketSearchItem } from '../../lib/types';
+import type { MarketSearchItem, MarketFilters, MarketFacetsResponse } from '../../lib/types';
+import { EMPTY_MARKET_FILTERS, hasActiveFilters } from '../../lib/types';
 
 import MarketSection, { type MarketStoreData } from './MarketSection';
 import MarketSearchResults from './MarketSearchResults';
@@ -158,8 +159,19 @@ export function MarketMain({ onScroll, scrollEnabled = true, paddingTop, pullFra
   const setMarketStores = useMarketStore((s) => s.setStores);
   const [marketSearch, setMarketSearch] = useState('');
   const [debouncedQuery, setDebouncedQuery] = useState('');
-  const [marketFormatFilter, setMarketFormatFilter] = useState<MarketFormatFilter | 'all'>('all');
+  const [filters, setFilters] = useState<MarketFilters>(EMPTY_MARKET_FILTERS);
+  const [facets, setFacets] = useState<MarketFacetsResponse | null>(null);
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Фасеты (доступные жанры/особенности со счётчиками) — грузим один раз при
+  // маунте. Ошибку глотаем: FilterBar просто не покажет жанр/особенности.
+  useEffect(() => {
+    let cancelled = false;
+    api.getMarketFacets()
+      .then((res) => { if (!cancelled) setFacets(res); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => {
     if (searchTimer.current) clearTimeout(searchTimer.current);
@@ -217,8 +229,15 @@ export function MarketMain({ onScroll, scrollEnabled = true, paddingTop, pullFra
   const [searchLoading, setSearchLoading] = useState(false);
 
   const isSearchActive = useMemo(() => {
-    return debouncedQuery.length >= 2 || marketFormatFilter !== 'all';
-  }, [debouncedQuery, marketFormatFilter]);
+    return debouncedQuery.length >= 2 || hasActiveFilters(filters);
+  }, [debouncedQuery, filters]);
+
+  // Сериализуем фильтры в стабильный ключ для deps эффекта поиска — иначе новый
+  // объект filters на каждый рендер перезапускал бы запрос.
+  const filtersKey = useMemo(
+    () => `${filters.format}|${[...filters.genres].sort().join(',')}|${[...filters.features].sort().join(',')}`,
+    [filters],
+  );
 
   useEffect(() => {
     if (!isSearchActive) {
@@ -230,7 +249,9 @@ export function MarketMain({ onScroll, scrollEnabled = true, paddingTop, pullFra
     setSearchLoading(true);
     api.searchMarket({
       q: debouncedQuery.length >= 2 ? debouncedQuery : undefined,
-      format: marketFormatFilter === 'all' ? null : marketFormatFilter,
+      format: filters.format === 'all' ? null : filters.format,
+      genres: filters.genres,
+      features: filters.features,
       sort: 'price_asc',
       limit: 50,
     })
@@ -238,7 +259,9 @@ export function MarketMain({ onScroll, scrollEnabled = true, paddingTop, pullFra
       .catch(() => { if (!cancelled) setSearchItems([]); })
       .finally(() => { if (!cancelled) setSearchLoading(false); });
     return () => { cancelled = true; };
-  }, [isSearchActive, debouncedQuery, marketFormatFilter]);
+    // filtersKey покрывает format/genres/features; filters читаем внутри.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isSearchActive, debouncedQuery, filtersKey]);
 
   const handleStorePress = useCallback((slug: string) => {
     router.push(`/market/store/${slug}` as any);
@@ -276,8 +299,9 @@ export function MarketMain({ onScroll, scrollEnabled = true, paddingTop, pullFra
               searchValue={marketSearch}
               onSearchChange={setMarketSearch}
               onSearchSubmit={Keyboard.dismiss}
-              formatFilter={marketFormatFilter}
-              onFormatChange={setMarketFormatFilter}
+              filters={filters}
+              onFiltersChange={setFilters}
+              facets={facets}
               totalStores={marketStores.length}
               totalItems={marketStores.reduce((sum, s) => sum + s.totalCount, 0)}
               onStorePress={handleStorePress}

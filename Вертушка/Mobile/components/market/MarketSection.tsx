@@ -21,7 +21,8 @@ import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 
 import MarketHeader from './MarketHeader';
 import MarketSearchInput from './MarketSearchInput';
-import FormatChips, { type MarketFormat } from './FormatChips';
+import FilterBar from './FilterBar';
+import type { MarketFilters, MarketFacetsResponse } from '../../lib/types';
 import StoreCarousel from './StoreCarousel';
 import { type MarketCarouselCardData } from './MarketCarouselCard';
 
@@ -40,8 +41,10 @@ interface MarketSectionProps {
   onSearchChange: (v: string) => void;
   onSearchSubmit?: () => void;
 
-  formatFilter: MarketFormat;
-  onFormatChange: (f: MarketFormat) => void;
+  filters: MarketFilters;
+  onFiltersChange: (f: MarketFilters) => void;
+  /** Доступные жанры/особенности из /market/facets (null → ещё грузится). */
+  facets: MarketFacetsResponse | null;
 
   // Метрики (для subtitle: «N магазинов · M шт.»). Если не передано —
   // считаем из stores.
@@ -63,8 +66,9 @@ export function MarketSection({
   searchValue,
   onSearchChange,
   onSearchSubmit,
-  formatFilter,
-  onFormatChange,
+  filters,
+  onFiltersChange,
+  facets,
   totalStores,
   totalItems,
   onStorePress,
@@ -92,7 +96,7 @@ export function MarketSection({
           onChangeText={onSearchChange}
           onSubmit={onSearchSubmit}
         />
-        <FormatChips value={formatFilter} onChange={onFormatChange} />
+        <FilterBar filters={filters} onChange={onFiltersChange} facets={facets} />
       </View>
 
       {stores.map((store, idx) => (

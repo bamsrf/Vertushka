@@ -29,8 +29,8 @@ import MarketSection, {
   type MarketStoreData,
 } from '../../components/market/MarketSection';
 import HotStockTag from '../../components/HotStockTag';
-import { type MarketFormat } from '../../components/market/FormatChips';
 import { type MarketCarouselCardData } from '../../components/market/MarketCarouselCard';
+import { type MarketFilters, EMPTY_MARKET_FILTERS } from '../../lib/types';
 
 // ────────────────────────────────────────────────────────────────────────
 // Mock data — реальные обложки берём из Discogs CDN (пока нет своих).
@@ -70,7 +70,7 @@ export default function MarketDemoScreen() {
   const scrollRef = useRef<Animated.ScrollView>(null);
 
   const [searchValue, setSearchValue] = useState('');
-  const [format, setFormat] = useState<MarketFormat>('all');
+  const [filters, setFilters] = useState<MarketFilters>(EMPTY_MARKET_FILTERS);
   const onScroll = useAnimatedScrollHandler({
     onScroll: (e) => {
       scrollY.value = e.contentOffset.y;
@@ -144,8 +144,9 @@ export default function MarketDemoScreen() {
           stores={MOCK_STORES}
           searchValue={searchValue}
           onSearchChange={setSearchValue}
-          formatFilter={format}
-          onFormatChange={setFormat}
+          filters={filters}
+          onFiltersChange={setFilters}
+          facets={null}
           onStorePress={(slug) => console.log('store press', slug)}
           onItemPress={(item, slug) => console.log('item press', item.id, slug)}
         />

@@ -63,6 +63,7 @@ import {
   MarketSearchItem,
   MarketFormatFilter,
   MarketSortMode,
+  MarketFacetsResponse,
   RecordOffersSummary,
   RecordOffersFullResponse,
 } from './types';
@@ -699,15 +700,33 @@ class ApiClient {
     opts: {
       q?: string;
       format?: MarketFormatFilter | null;
+      /** Ключи жанров (мульти). Отправляем строкой через запятую. */
+      genres?: string[];
+      /** Особенности (мульти): 'colored' | 'limited' | 'new'. */
+      features?: string[];
       sort?: MarketSortMode;
       limit?: number;
     } = {},
   ): Promise<MarketSearchItem[]> {
-    const { q, format, sort = 'price_asc', limit = 50 } = opts;
+    const { q, format, genres, features, sort = 'price_asc', limit = 50 } = opts;
     const params: Record<string, string | number> = { sort, limit };
     if (q && q.trim().length >= 2) params.q = q.trim();
     if (format) params.format = format;
+    // Жанры — comma-joined строкой (бэк сплитит): надёжнее array-сериализации.
+    if (genres && genres.length > 0) params.genre = genres.join(',');
+    // Особенности — отдельные bool-флаги, чтобы бэк-клаузы читались явно.
+    if (features?.includes('colored')) params.colored = 'true';
+    if (features?.includes('limited')) params.limited = 'true';
+    if (features?.includes('new')) params.new = 'true';
     return this.deduplicatedGet<MarketSearchItem[]>('/market/search', { params });
+  }
+
+  /**
+   * Доступные фильтры Маркета (жанры + особенности) со счётчиками. Только
+   * опции с count > 0 — Mobile рисует чипы строго по наличию.
+   */
+  async getMarketFacets(): Promise<MarketFacetsResponse> {
+    return this.deduplicatedGet<MarketFacetsResponse>('/market/facets');
   }
 
   /**
