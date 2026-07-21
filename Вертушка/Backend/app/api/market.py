@@ -33,12 +33,15 @@ from app.schemas.offer import (
     MarketSearchItem,
     MarketStoreInfo,
     MarketCarouselItem,
+    MarketFacetItem,
+    MarketFacetsResponse,
 )
 from app.services.cache import cache
 from app.services.cover_storage import (
     _download_cover_background,
     schedule_store_native_cover_cache,
 )
+from app.services.vinyl_color import sql_color_family
 
 logger = logging.getLogger(__name__)
 
@@ -46,13 +49,78 @@ router = APIRouter()
 
 STALE_AFTER_DAYS = 7
 NEW_TODAY_HOURS = 24
+NEW_ARRIVAL_DAYS = 30  # окно фильтра «Новинки» (first_seen_at)
+
+# ────────────────────────────────────────────────────────────────────────
+# Фасеты фильтров: жанр (data-driven) + особенности.
+#
+# Жанр — канонический ключ (что шлёт Mobile) → ILIKE-паттерны по r.genre.
+# Discogs кладёт в genre верхнеуровневые жанры («Rock», «Hip Hop», склеенные
+# «Electronic, Rock»), поэтому матч подстрокой ILIKE ANY, а не строгим `=`.
+# Порядок = порядок чипов в UI. Правишь тут — фронт подхватит через /facets.
+# ────────────────────────────────────────────────────────────────────────
+GENRES: list[tuple[str, str, list[str]]] = [
+    ("rock",       "Rock",        ["%rock%"]),
+    ("electronic", "Electronic",  ["%electronic%"]),
+    ("hiphop",     "Hip Hop",     ["%hip hop%", "%hip-hop%"]),
+    ("jazz",       "Jazz",        ["%jazz%"]),
+    ("pop",        "Pop",         ["%pop%"]),
+    ("funk",       "Funk / Soul", ["%funk%", "%soul%"]),
+    ("classical",  "Classical",   ["%classical%"]),
+]
+_GENRE_PATTERNS: dict[str, list[str]] = {key: pats for key, _label, pats in GENRES}
+_GENRE_LABELS: dict[str, str] = {key: label for key, label, _pats in GENRES}
+
+# Особенности: ключ → (label, SQL-предикат). Предикаты — доверенные строки (не
+# пользовательский ввод), sql_color_family подставляет только имя колонки.
+_COLORED_PRED = (
+    f"(({sql_color_family('sl.vinyl_color_raw')}) IS NOT NULL "
+    f"AND ({sql_color_family('sl.vinyl_color_raw')}) <> 'black')"
+)
+FEATURES: list[tuple[str, str, str]] = [
+    ("colored", "Цветной винил", _COLORED_PRED),
+    ("limited", "Лимитка",       "r.is_limited = true"),
+    ("new",     "Новинки",       "sl.first_seen_at >= :new_cutoff"),
+]
+_FEATURE_LABELS: dict[str, str] = {key: label for key, label, _pred in FEATURES}
+_FEATURE_PREDS: dict[str, str] = {key: pred for key, _label, pred in FEATURES}
+
+
+def _filters_clause(
+    genre: Optional[list[str]],
+    colored: bool,
+    limited: bool,
+    new: bool,
+) -> tuple[str, dict]:
+    """(SQL fragment, bind params) для фильтров жанра и особенностей.
+
+    Пустые фильтры → ("", {}) → поведение как без фильтров. Неизвестные ключи
+    жанра тихо игнорируются (нет паттернов → не в clause).
+    """
+    sql = ""
+    params: dict = {}
+    if genre:
+        pats: list[str] = []
+        for key in genre:
+            pats.extend(_GENRE_PATTERNS.get(key, []))
+        if pats:
+            sql += " AND r.genre ILIKE ANY(:genre_pats)"
+            params["genre_pats"] = pats
+    if colored:
+        sql += f" AND {_FEATURE_PREDS['colored']}"
+    if limited:
+        sql += f" AND {_FEATURE_PREDS['limited']}"
+    if new:
+        sql += f" AND {_FEATURE_PREDS['new']}"
+        params["new_cutoff"] = datetime.utcnow() - timedelta(days=NEW_ARRIVAL_DAYS)
+    return sql, params
 
 # Cache-namespace зашит с версией: при изменении формы ответа (например,
 # дедупа по master_id вместо record_id) бампаем суффикс — старые ключи
 # в Redis самотухнут по TTL, а свежие запросы сразу получают новую логику.
 CACHE_NS_STORES = "market_stores:v3"
 CACHE_NS_STORE_LISTINGS = "market_store_listings:v4"
-CACHE_NS_SEARCH = "market_search:v5"
+CACHE_NS_SEARCH = "market_search:v6"  # v6: + фильтры genre/colored/limited/new в ключе
 CACHE_TTL_STORES = 1800       # 30 мин — список магазинов меняется редко
 CACHE_TTL_LISTINGS = 600      # 10 мин — карусели чаще обновляем
 CACHE_TTL_SEARCH = 300        # 5 мин — поиск свежее
@@ -446,6 +514,10 @@ async def get_store_all(
 async def search_market(
     q: str | None = Query(None, description="Текстовый поиск по artist/title"),
     format: str | None = Query(None, description="vinyl | cd | cassette"),
+    genre: str | None = Query(None, description="Ключи жанров через запятую (мульти): rock,jazz"),
+    colored: bool = Query(False, description="Только цветной винил"),
+    limited: bool = Query(False, description="Только лимитки (r.is_limited)"),
+    new: bool = Query(False, description="Только новинки (first_seen ≤ 30 дней)"),
     sort: Literal["price_asc", "newest"] = Query("price_asc"),
     limit: int = Query(50, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
@@ -455,7 +527,10 @@ async def search_market(
     Если у юзера пустой `q` — возвращаем последние new-arrivals (sort=newest
     или sort=price_asc по дефолту самые дешёвые сверху).
     """
+    # genre приходит строкой «rock,jazz» — надёжнее array-сериализации на клиенте.
+    genre_list = [g for g in (genre.split(",") if genre else []) if g]
     fmt_sql, fmt_params = _format_clause(format)
+    filt_sql, filt_params = _filters_clause(genre_list, colored, limited, new)
     cutoff = datetime.utcnow() - timedelta(days=STALE_AFTER_DAYS)
 
     order_clause = (
@@ -469,7 +544,14 @@ async def search_market(
         q_clause = " AND (r.artist ILIKE :q OR r.title ILIKE :q)"
         q_params["q"] = f"%{q.strip()}%"
 
-    cache_key = f"search:{q or ''}:{format or 'all'}:{sort}:{limit}"
+    # Cache-key ОБЯЗАН включать все фильтры — иначе отфильтрованный результат
+    # прилетит из кэша нефильтрованного запроса (или наоборот). genre сортируем
+    # для стабильности ключа независимо от порядка чипов.
+    genre_key = ",".join(sorted(genre_list)) if genre_list else ""
+    cache_key = (
+        f"search:{q or ''}:{format or 'all'}:{sort}:{limit}"
+        f":g={genre_key}:c={int(colored)}:l={int(limited)}:n={int(new)}"
+    )
     cached = await cache.get(CACHE_NS_SEARCH, cache_key)
     if cached is not None:
         return [MarketSearchItem.model_validate(item) for item in cached]
@@ -499,6 +581,7 @@ async def search_market(
               AND r.merged_into_id IS NULL
               AND COALESCE(r.cover_local_path, r.cover_image_url, sl.raw_payload->>'image_url') IS NOT NULL
               {fmt_sql}
+              {filt_sql}
               {q_clause}
             GROUP BY COALESCE(r.discogs_master_id, r.id::text)
         )
@@ -514,7 +597,7 @@ async def search_market(
         """
     )
 
-    params = {"cutoff": cutoff, "limit": limit, **fmt_params, **q_params}
+    params = {"cutoff": cutoff, "limit": limit, **fmt_params, **filt_params, **q_params}
     rows = (await db.execute(sql, params)).mappings().all()
 
     items = [
@@ -542,3 +625,81 @@ async def search_market(
     )
     schedule_market_cover_preload(it.record_id for it in items)
     return items
+
+
+@router.get(
+    "/market/facets",
+    response_model=MarketFacetsResponse,
+    summary="Доступные фильтры Маркета (жанры + особенности) со счётчиками",
+)
+async def market_facets(db: AsyncSession = Depends(get_db)) -> MarketFacetsResponse:
+    """Считает, сколько карточек в наличии под каждой опцией фильтра.
+
+    База — та же, что у /market/search (active-магазин, in_stock, matched, есть
+    обложка, не stale), дедуп по master_id. Возвращаем только опции с count > 0,
+    чтобы Mobile не рисовал пустые чипы. Гранулярность:
+      • genre / limited — на уровне записи (репрезентативный / bool_or);
+      • colored / new    — на уровне листинга (bool_or) — группа считается, если
+        ХОТЯ БЫ один её листинг цветной / свежий (так же, как фильтрует search).
+    """
+    cache_key = "facets:v1"
+    cached = await cache.get(CACHE_NS_SEARCH, cache_key)
+    if cached is not None:
+        return MarketFacetsResponse.model_validate(cached)
+
+    cutoff = datetime.utcnow() - timedelta(days=STALE_AFTER_DAYS)
+    new_cutoff = datetime.utcnow() - timedelta(days=NEW_ARRIVAL_DAYS)
+
+    genre_selects = ",\n            ".join(
+        f"count(*) FILTER (WHERE genre ILIKE ANY(:g_{key})) AS g_{key}"
+        for key, _label, _pats in GENRES
+    )
+    genre_params = {f"g_{key}": pats for key, _label, pats in GENRES}
+
+    sql = text(
+        f"""
+        WITH agg AS (
+            SELECT
+                COALESCE(r.discogs_master_id, r.id::text) AS dedup_key,
+                MIN(r.genre) AS genre,
+                bool_or(r.is_limited) AS is_limited,
+                bool_or({_COLORED_PRED}) AS colored,
+                bool_or(sl.first_seen_at >= :new_cutoff) AS is_new
+            FROM store_listings sl
+            JOIN stores s ON s.id = sl.store_id
+            JOIN records r ON r.id = sl.matched_record_id
+            WHERE s.is_active = true
+              AND sl.status = 'in_stock'
+              AND sl.matched_record_id IS NOT NULL
+              AND sl.price_rub IS NOT NULL
+              AND sl.last_seen_at >= :cutoff
+              AND r.merged_into_id IS NULL
+              AND COALESCE(r.cover_local_path, r.cover_image_url, sl.raw_payload->>'image_url') IS NOT NULL
+            GROUP BY COALESCE(r.discogs_master_id, r.id::text)
+        )
+        SELECT
+            {genre_selects},
+            count(*) FILTER (WHERE colored) AS f_colored,
+            count(*) FILTER (WHERE is_limited) AS f_limited,
+            count(*) FILTER (WHERE is_new) AS f_new
+        FROM agg
+        """
+    )
+    row = (
+        await db.execute(sql, {"cutoff": cutoff, "new_cutoff": new_cutoff, **genre_params})
+    ).mappings().one()
+
+    genres = [
+        MarketFacetItem(key=key, label=label, count=row[f"g_{key}"])
+        for key, label, _pats in GENRES
+        if (row[f"g_{key}"] or 0) > 0
+    ]
+    features = [
+        MarketFacetItem(key=key, label=_FEATURE_LABELS[key], count=row[col])
+        for key, col in (("colored", "f_colored"), ("limited", "f_limited"), ("new", "f_new"))
+        if (row[col] or 0) > 0
+    ]
+
+    resp = MarketFacetsResponse(genres=genres, features=features)
+    await cache.set(CACHE_NS_SEARCH, cache_key, resp.model_dump(mode="json"), ttl=CACHE_TTL_SEARCH)
+    return resp

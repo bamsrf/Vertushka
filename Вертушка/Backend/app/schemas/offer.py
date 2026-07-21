@@ -227,3 +227,22 @@ class MarketSearchItem(BaseModel):
 
 MarketFormatFilter = Literal["vinyl", "cd", "cassette"]
 MarketSortMode = Literal["price_asc", "newest"]
+
+
+class MarketFacetItem(BaseModel):
+    """Одна опция фильтра с числом доступных карточек (data-driven чипы)."""
+
+    key: str = Field(..., description="Канонический ключ (rock / colored / …)")
+    label: str = Field(..., description="Человекочитаемая метка для чипа")
+    count: int = Field(..., description="Сколько карточек в наличии под этой опцией")
+
+
+class MarketFacetsResponse(BaseModel):
+    """Доступные фильтры Маркета со счётчиками — только опции с count > 0.
+
+    Позволяет Mobile рисовать чипы жанров/особенностей строго по наличию, а не
+    хардкодом (иначе показали бы «Jazz», а там пусто).
+    """
+
+    genres: list[MarketFacetItem] = []
+    features: list[MarketFacetItem] = []
