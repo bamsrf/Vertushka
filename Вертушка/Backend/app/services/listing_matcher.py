@@ -97,6 +97,11 @@ def _is_accessory(listing: StoreListing) -> bool:
 # убирает шум, поведение порога остаётся прежним.
 _NORM_PUNCT_RE = re.compile(r"[^\w\s]", re.UNICODE)
 _NORM_WS_RE = re.compile(r"\s+")
+# Кириллица в artist/title → уверенный сигнал российского релиза. Store-native
+# запись создаётся только когда Discogs релиз не знает; кириллический артист не
+# из Discogs почти всегда российский инди-релиз — проставляем country='Russia',
+# чтобы валюация и is_local_country работали корректно (см. _create_store_native_record).
+_CYRILLIC_RE = re.compile(r"[а-яёА-ЯЁ]")
 # SQL-зеркало нормализации: {col} → lower + не-alnum→пробел. Применяется к
 # колонкам records.artist/title и store_listings.artist_raw/title_raw.
 _SQL_NORM = "lower(regexp_replace({col}, '[^[:alnum:] ]+', ' ', 'g'))"
@@ -878,6 +883,10 @@ async def _create_store_native_record(
     if existing:
         return existing
 
+    # Кириллица в артисте/названии → уверенно российский релиз (см. _CYRILLIC_RE).
+    _has_cyr = bool(
+        _CYRILLIC_RE.search(f"{listing.artist_raw or ''} {listing.title_raw or ''}")
+    )
     rec = Record(
         source="store",
         discogs_id=None,
@@ -885,6 +894,7 @@ async def _create_store_native_record(
         title=listing.title_raw,
         year=listing.year_raw,
         format_type=listing.format_raw,
+        country="Russia" if _has_cyr else None,
         cover_image_url=raw.get("image_url"),
         label=raw.get("label"),
         catalog_number=normalize_catalog(raw.get("catalog_number")),

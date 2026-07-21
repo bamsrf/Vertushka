@@ -140,6 +140,30 @@ async def _enrich_response_with_rub(
 
     base_price = response.estimated_price_median or response.estimated_price_min
     if not base_price:
+        # Discogs-оценки нет — единственный случай, когда цена уходит пустой:
+        # store-native релиз (discogs_id=NULL, напр. «Антоха МС – Родня») либо
+        # РФ-пресс, которого нет в маркетплейсе Discogs. СТРОГО здесь, не трогая
+        # пути с уже существующей ценой, пробуем реальные листинги магазинов.
+        # Медиана по matched_record_id уже учитывает «качество версии» (разные
+        # прессы матчер разводит в разные Record). Ничего не нашли — возвращаем
+        # как раньше, пусто. Работает для любой страны: marketplace_price_range
+        # фильтрует по matched_record_id, не по country.
+        if record is not None and db is not None:
+            try:
+                market = await marketplace_price_range(record.id, db)
+                if market:
+                    response.price_source = market.source
+                    response.price_offers_count = market.offers_count
+                    response.estimated_price_min_rub = market.min_rub
+                    response.estimated_price_median_rub = market.median_rub
+                    response.estimated_price_max_rub = market.max_rub
+                    # base_price нет → markup относительно Discogs-оценки не определён
+                    response.ru_markup = None
+            except Exception:
+                logger.exception(
+                    "Failed to fetch marketplace price for base-less record %s",
+                    getattr(record, "id", None),
+                )
         return response
     try:
         rate = await get_usd_rub_rate()
