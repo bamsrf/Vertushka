@@ -121,6 +121,23 @@ async def _enrich_response_with_rub(
 
     Для импорта остаётся компонентная формула из pricing.py (discogs_import_estimate).
     """
+    # Цвет прототипа/чипа — резолвим из реального оффера (Вариант B), чтобы Mobile
+    # отрисовал верный цвет с первого кадра без «моргания». Делаем ДО ценовых
+    # early-return'ов, чтобы поле было на всех путях. Фолбэк — Discogs-цвет; ошибку
+    # глотаем, ответ не блокируем.
+    response.display_vinyl_color = response.vinyl_color_raw
+    if record is not None and db is not None:
+        try:
+            from app.api.offers import resolve_display_vinyl_color
+
+            resolved = await resolve_display_vinyl_color(
+                record.id, response.vinyl_color_raw, db
+            )
+            if resolved:
+                response.display_vinyl_color = resolved
+        except Exception:
+            logger.exception("Failed to resolve display vinyl color")
+
     base_price = response.estimated_price_median or response.estimated_price_min
     if not base_price:
         return response

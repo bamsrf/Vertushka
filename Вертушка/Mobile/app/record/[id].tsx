@@ -156,6 +156,7 @@ export default function RecordDetailScreen() {
       alive = false;
     };
   }, [record?.id]);
+
   const [showActionSheet, setShowActionSheet] = useState(false);
   const [showFolderPicker, setShowFolderPicker] = useState(false);
 
@@ -736,7 +737,7 @@ export default function RecordDetailScreen() {
                 <Text style={styles.metaText}>{record.country}</Text>
               </View>
             ) : null}
-            <VinylColorTag vinylColorRaw={record.vinyl_color_raw} />
+            <VinylColorTag vinylColorRaw={record.display_vinyl_color ?? record.vinyl_color_raw} />
           </View>
         </View>
 
@@ -761,7 +762,7 @@ export default function RecordDetailScreen() {
 
         {/* Цвет винила */}
         {(() => {
-          const colorConfig = parseVinylColor(record.vinyl_color_raw);
+          const colorConfig = parseVinylColor(record.display_vinyl_color ?? record.vinyl_color_raw);
           if (!colorConfig.isColored) return null;
           return (
             <View style={styles.vinylSpinnerContainer}>

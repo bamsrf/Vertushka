@@ -73,6 +73,10 @@ export interface VinylRecord {
   format_type?: string;
   format_description?: string;
   vinyl_color_raw?: string;
+  /** Цвет для показа (прототип/чип), уже разрешён бэком из реального оффера
+   * этого релиза (exact > album), иначе Discogs-цвет. Приходит готовым в GET
+   * записи — рисуем сразу, без второго запроса. Пусто → фолбэк на vinyl_color_raw. */
+  display_vinyl_color?: string;
   barcode?: string;
   estimated_price_min?: number;
   estimated_price_max?: number;

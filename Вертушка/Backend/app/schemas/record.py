@@ -57,6 +57,11 @@ class RecordResponse(BaseModel):
     format_type: str | None
     format_description: str | None
     vinyl_color_raw: str | None = None
+    # Цвет винила для показа (прототип/чип) — уже разрешён на бэке: цвет реального
+    # in-stock оффера этого релиза (exact > album, самый дешёвый), иначе фолбэк на
+    # vinyl_color_raw из Discogs. Позволяет Mobile отрисовать верный цвет с первого
+    # кадра, без второго запроса и «моргания». None → используй vinyl_color_raw.
+    display_vinyl_color: str | None = None
     barcode: str | None
     estimated_price_min: float | None
     estimated_price_max: float | None

@@ -147,6 +147,47 @@ def pressing_tier(listing: StoreListing, record_color_fam: str | None) -> str:
     return "exact" if conf >= 0.95 else "album"
 
 
+async def resolve_display_vinyl_color(
+    record_id: UUID,
+    record_color_raw: str | None,
+    db: AsyncSession,
+) -> str | None:
+    """Цвет винила для прототипа/чипа на детальной записи — из реального оффера.
+
+    Магазин = то, что реально приедет покупателю, поэтому цвет берём из in-stock
+    оффера ЭТОГО релиза: приоритет — точный пресс (exact), иначе доступный
+    album-оффер того же релиза; среди равных — самый дешёвый. Возвращаем сырой
+    `vinyl_color_raw` листинга (включая «black» — Mobile сам решит, что чёрный
+    не крутить). None → офферов с цветом нет, вызывающий откатывается на
+    Discogs-цвет.
+
+    Берём только листинги, матченные на ЭТУ запись (matched_record_id) —
+    alt-version'ы других релизов не тянем: у релиза свой цвет. Если парсер не
+    смог уверенно распознать цвет, `vinyl_color_raw` листинга = NULL и такой
+    оффер сюда не попадёт (гард от битых данных — цвет не «прыгнет» на мусор).
+    """
+    cutoff = datetime.utcnow() - timedelta(days=STALE_AFTER_DAYS)
+    stmt = (
+        select(StoreListing)
+        .where(StoreListing.matched_record_id == record_id)
+        .where(StoreListing.status.in_((ListingStatus.IN_STOCK, ListingStatus.PREORDER)))
+        .where(StoreListing.last_seen_at >= cutoff)
+        .where(StoreListing.vinyl_color_raw.isnot(None))
+        .order_by(StoreListing.price_rub.asc().nulls_last())
+    )
+    res = await db.execute(stmt)
+    listings = list(res.scalars().all())
+    if not listings:
+        return None
+
+    record_color_fam = color_family(record_color_raw)
+    # exact-пресс с цветом приоритетнее album; порядок по цене уже задан (asc),
+    # поэтому первый в пуле — самый дешёвый.
+    exact = [li for li in listings if pressing_tier(li, record_color_fam) == "exact"]
+    pool = exact or listings
+    return pool[0].vinyl_color_raw
+
+
 def _to_response(
     listing: StoreListing,
     *,
