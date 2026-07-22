@@ -54,6 +54,9 @@ const FORMAT_OPTIONS: { key: MarketFormatFilter | 'all'; label: string }[] = [
 ];
 
 const DUR_MORPH = 220;
+// Ember-акцент Маркета (dark accent.ember) — иконки категорий на тёмном
+// градиенте иначе сливаются с фоном.
+const EMBER = '#FF7A4A';
 
 interface FilterBarProps {
   filters: MarketFilters;
@@ -228,8 +231,10 @@ function Chip({ label, icon, active, badge, chevron, variant = 'default', onPres
           <Icon
             name={icon}
             size={14}
-            color={showEmber || isBack ? 'onBrand' : isReset ? 'secondary' : active ? 'onBrand' : 'secondary'}
-            style={{ opacity: showEmber || isBack || active ? 1 : 0.75 }}
+            // На активном ember-фоне и у «назад» — белая; у сброса — приглушённая;
+            // у неактивной категории — ember-оранжевая (иначе тонет в фоне).
+            color={showEmber || isBack ? 'onBrand' : isReset ? 'secondary' : EMBER}
+            style={{ opacity: 1 }}
           />
         ) : null}
         <Text style={[styles.label, (showEmber || isBack) && styles.labelActive, isReset && styles.labelReset]}>
