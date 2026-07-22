@@ -60,14 +60,20 @@ NEW_RELEASE_LOOKBACK_YEARS = 1  # «свежий релиз»: год ≥ тек
 # «Electronic, Rock»), поэтому матч подстрокой ILIKE ANY, а не строгим `=`.
 # Порядок = порядок чипов в UI. Правишь тут — фронт подхватит через /facets.
 # ────────────────────────────────────────────────────────────────────────
+# Паттерны матчатся и по r.genre (верхний уровень: «Hip Hop», «Rock»), и по
+# r.style (суб-жанр: «Boom Bap», «Techno», «Indie Rock»). Поэтому у каждого жанра
+# и его верхнее имя, и характерные стили — иначе `%hip hop%` не ловит запись с
+# genre='Electronic' + style='Trap'. Порядок = порядок чипов.
 GENRES: list[tuple[str, str, list[str]]] = [
-    ("rock",       "Rock",        ["%rock%"]),
-    ("electronic", "Electronic",  ["%electronic%"]),
-    ("hiphop",     "Hip Hop",     ["%hip hop%", "%hip-hop%"]),
-    ("jazz",       "Jazz",        ["%jazz%"]),
-    ("pop",        "Pop",         ["%pop%"]),
-    ("funk",       "Funk / Soul", ["%funk%", "%soul%"]),
-    ("classical",  "Classical",   ["%classical%"]),
+    ("rock",       "Rock",        ["%rock%", "%punk%", "%metal%", "%grunge%", "%shoegaze%", "%hardcore%"]),
+    ("electronic", "Electronic",  ["%electronic%", "%techno%", "%house%", "%ambient%", "%idm%",
+                                    "%drum%bass%", "%synth%", "%downtempo%", "%trance%", "%dubstep%", "%electro%"]),
+    ("hiphop",     "Hip Hop",     ["%hip hop%", "%hip-hop%", "%boom bap%", "%trap%", "%g-funk%",
+                                    "%gangsta%", "%conscious%", "%rap%"]),
+    ("jazz",       "Jazz",        ["%jazz%", "%bebop%", "%swing%", "%fusion%", "%bossa%"]),
+    ("pop",        "Pop",         ["%pop%", "%ballad%"]),
+    ("funk",       "Funk / Soul", ["%funk%", "%soul%", "%disco%", "%rhythm & blues%", "%r&b%"]),
+    ("classical",  "Classical",   ["%classical%", "%baroque%", "%romantic%", "%opera%", "%contemporary%"]),
 ]
 _GENRE_PATTERNS: dict[str, list[str]] = {key: pats for key, _label, pats in GENRES}
 _GENRE_LABELS: dict[str, str] = {key: label for key, label, _pats in GENRES}
@@ -110,7 +116,8 @@ def _filters_clause(
         for key in genre:
             pats.extend(_GENRE_PATTERNS.get(key, []))
         if pats:
-            sql += " AND r.genre ILIKE ANY(:genre_pats)"
+            # Матч и по genre (верхний уровень), и по style (суб-жанр) — шире recall.
+            sql += " AND (r.genre ILIKE ANY(:genre_pats) OR r.style ILIKE ANY(:genre_pats))"
             params["genre_pats"] = pats
     if colored:
         sql += f" AND {_FEATURE_PREDS['colored']}"
@@ -127,7 +134,7 @@ def _filters_clause(
 # в Redis самотухнут по TTL, а свежие запросы сразу получают новую логику.
 CACHE_NS_STORES = "market_stores:v3"
 CACHE_NS_STORE_LISTINGS = "market_store_listings:v4"
-CACHE_NS_SEARCH = "market_search:v7"  # v7: «Новинки» = свежий год + first_seen (было только first_seen)
+CACHE_NS_SEARCH = "market_search:v8"  # v8: жанр матчится и по r.style (+суб-жанры)
 CACHE_TTL_STORES = 1800       # 30 мин — список магазинов меняется редко
 CACHE_TTL_LISTINGS = 600      # 10 мин — карусели чаще обновляем
 CACHE_TTL_SEARCH = 300        # 5 мин — поиск свежее
@@ -659,7 +666,7 @@ async def market_facets(db: AsyncSession = Depends(get_db)) -> MarketFacetsRespo
     new_year = datetime.utcnow().year - NEW_RELEASE_LOOKBACK_YEARS
 
     genre_selects = ",\n            ".join(
-        f"count(*) FILTER (WHERE genre ILIKE ANY(:g_{key})) AS g_{key}"
+        f"count(*) FILTER (WHERE genre ILIKE ANY(:g_{key}) OR style ILIKE ANY(:g_{key})) AS g_{key}"
         for key, _label, _pats in GENRES
     )
     genre_params = {f"g_{key}": pats for key, _label, pats in GENRES}
@@ -670,6 +677,7 @@ async def market_facets(db: AsyncSession = Depends(get_db)) -> MarketFacetsRespo
             SELECT
                 COALESCE(r.discogs_master_id, r.id::text) AS dedup_key,
                 MIN(r.genre) AS genre,
+                MIN(r.style) AS style,
                 bool_or(r.is_limited) AS is_limited,
                 bool_or({_COLORED_PRED}) AS colored,
                 bool_or({_NEW_PRED}) AS is_new
