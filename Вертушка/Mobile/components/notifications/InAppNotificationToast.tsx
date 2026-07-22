@@ -23,6 +23,7 @@ import { Colors, Spacing, Typography, BorderRadius } from '@/constants/theme';
 import { Icon } from '@/components/ui';
 import { resolveMediaUrl } from '@/lib/api';
 import { useNotificationsStore } from '@/lib/notificationsStore';
+import { routeForPush } from '@/lib/pushRouting';
 
 export interface ToastPayload {
   id: string;
@@ -116,50 +117,10 @@ export const InAppNotificationToastHost: React.FC = () => {
 
   const handleTap = useCallback(() => {
     if (!current) return;
-    const data = current.data || {};
-    const type = data.type as string | undefined;
-    const recordId = (data.record_id || data.recordId) as string | undefined;
-    const username = data.username as string | undefined;
-    const entityId = data.entity_id as string | undefined;
-
     useNotificationsStore.getState().fetchUnreadCount();
     dismiss();
-
-    if (type === 'follow_request') {
-      router.push('/social/follow-requests');
-      return;
-    }
-    if (type === 'message' || type === 'message_request') {
-      const convId = (data.conversation_id as string | undefined) || entityId;
-      if (convId) router.push(`/messages/${convId}` as any);
-      else router.push('/messages');
-      return;
-    }
-    if (type === 'achievement_unlocked' || type === 'milestone_unlocked') {
-      router.push('/achievements');
-      return;
-    }
-    if ((type === 'gift_booked' || type === 'gift_confirmed') && entityId) {
-      router.push(`/gift/${entityId}` as any);
-      return;
-    }
-    if ((type === 'wishlist_in_stock' || type === 'wishlist_price_drop') && recordId) {
-      router.push(`/record/${recordId}` as any);
-      return;
-    }
-    if (type === 'new_follower' && username) {
-      router.push(`/user/${username}` as any);
-      return;
-    }
-    if (recordId) {
-      router.push(`/record/${recordId}` as any);
-      return;
-    }
-    if (username) {
-      router.push(`/user/${username}` as any);
-      return;
-    }
-    router.push('/notifications');
+    // Единая маршрутизация с OS-пушем — тап по тосту ведёт в тот же раздел.
+    router.push(routeForPush(current.data || {}) as any);
   }, [current, dismiss, router]);
 
   if (!current) return null;

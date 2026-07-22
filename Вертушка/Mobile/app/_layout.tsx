@@ -28,6 +28,7 @@ import {
 import { useNotificationsStore } from '../lib/notificationsStore';
 import { api } from '../lib/api';
 import { registerPushToken } from '../lib/push';
+import { routeForPush } from '../lib/pushRouting';
 
 // Sentry загружается только если пакет установлен (не в Expo Go)
 type SentryStub = { init: (c: object) => void; wrap: <T>(c: T) => T };
@@ -98,6 +99,9 @@ function RootLayout() {
   // Интро-заставка маскота — играет один раз за холодный старт, поверх UI,
   // сразу после того как скрылся native splash. См. MascotIntro / ТЗ §6.
   const [introDone, setIntroDone] = useState(false);
+  // Целевой путь тапнутого пуша, ожидающий готовности навигации/авторизации.
+  // Стейт (не ref), чтобы установка из listener/cold-start триггерила flush-эффект.
+  const [pendingRoute, setPendingRoute] = useState<string | null>(null);
 
   const [fontsLoaded] = useFonts({
     Inter_400Regular,
@@ -144,54 +148,24 @@ function RootLayout() {
       }
     });
 
-    // Tap: пользователь нажал на push
+    // Tap по OS-пушу (warm): не навигируем сразу — кладём цель в pendingRoute,
+    // flush-эффект доведёт до раздела, когда навигация/авторизация готовы.
     responseListener.current = Notifications.addNotificationResponseReceivedListener((response) => {
       const data = response.notification.request.content.data as Record<string, unknown>;
-      const type = data?.type as string | undefined;
-      const recordId = (data?.record_id || data?.recordId) as string | undefined;
-      const username = data?.username as string | undefined;
-      const entityId = data?.entity_id as string | undefined;
-      const code = data?.code as string | undefined;
-
-      if (type === 'follow_request') {
-        router.push('/social/follow-requests');
-        return;
-      }
-      if (type === 'message' || type === 'message_request') {
-        const convId = (data?.conversation_id as string | undefined) || entityId;
-        router.push((convId ? `/messages/${convId}` : '/messages') as any);
-        return;
-      }
-      if (type === 'digest_wishlist_in_stock') {
-        router.push('/notifications');
-        return;
-      }
-      if (type === 'achievement_unlocked' || type === 'milestone_unlocked') {
-        router.push(code ? (`/achievements?code=${code}` as any) : '/achievements');
-        return;
-      }
-      if ((type === 'gift_booked' || type === 'gift_confirmed') && entityId) {
-        router.push(`/gift/${entityId}` as any);
-        return;
-      }
-      if ((type === 'wishlist_in_stock' || type === 'wishlist_price_drop') && recordId) {
-        router.push(`/record/${recordId}` as any);
-        return;
-      }
-      if (type === 'new_follower' && username) {
-        router.push(`/user/${username}` as any);
-        return;
-      }
-      if (recordId) {
-        router.push(`/record/${recordId}` as any);
-        return;
-      }
-      if (username) {
-        router.push(`/user/${username}` as any);
-        return;
-      }
-      router.push('/notifications');
+      setPendingRoute(routeForPush(data));
     });
+
+    // Cold start: приложение запущено ТАПОМ по пушу (было закрыто). Живой listener
+    // такой «запускающий» ответ не гарантирует — читаем его явно, иначе тап уводил
+    // на дефолтный экран («бросало на полпути»).
+    Notifications.getLastNotificationResponseAsync()
+      .then((response) => {
+        if (response) {
+          const data = response.notification.request.content.data as Record<string, unknown>;
+          setPendingRoute(routeForPush(data));
+        }
+      })
+      .catch(() => {});
 
     return () => {
       notificationListener.current?.remove();
@@ -296,6 +270,19 @@ function RootLayout() {
       router.replace('/(auth)/login');
     }
   }, [isAuthenticated, isLoading, router]);
+
+  // Flush pending deep-link из тапнутого пуша. Ждём готовности навигации (шрифты/
+  // онбординг), окончания загрузки авторизации И самой авторизации — иначе
+  // auth-redirect на /(auth)/login перебьёт push и юзер не доедет до раздела.
+  // requestAnimationFrame — гарантия, что корневой Stack уже смонтирован.
+  useEffect(() => {
+    if (!pendingRoute) return;
+    if (isAuthenticated && !isLoading && fontsLoaded && onboardingReady) {
+      const target = pendingRoute;
+      setPendingRoute(null);
+      requestAnimationFrame(() => router.push(target as any));
+    }
+  }, [pendingRoute, isAuthenticated, isLoading, fontsLoaded, onboardingReady, router]);
 
   if (!fontsLoaded || isLoading || !onboardingReady) {
     return null;
