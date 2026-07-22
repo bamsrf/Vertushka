@@ -289,9 +289,23 @@ _COLOR_NEAR_CUE: list[tuple[str, re.Pattern[str]]] = [
 ]
 
 
-def infer_vinyl_color(text: str | None) -> str | None:
+def infer_vinyl_color(
+    text: str | None,
+    *,
+    exclude: str | list[str] | None = None,
+) -> str | None:
+    """Цвет винила из текста листинга. exclude — артист/альбом, которые надо
+    вырезать ПЕРЕД поиском: цвет в НАЗВАНИИ («Красный Свет», «Green Monster»,
+    «Голубые Гитары») — это не цвет пресса, а ложный сигнал. Без этого фильтр
+    «цветной винил» ловил кучу чёрных пластинок с цветным словом в названии.
+    """
     if not text:
         return None
+    if exclude:
+        tokens = [exclude] if isinstance(exclude, str) else exclude
+        for tok in tokens:
+            if tok and tok.strip():
+                text = re.sub(re.escape(tok.strip()), " ", text, flags=re.I)
     # 1) Приоритет — цвет, примыкающий к «vinyl/винил/LP» (цвет пресса).
     for canon, rx in _COLOR_NEAR_CUE:
         if rx.search(text):

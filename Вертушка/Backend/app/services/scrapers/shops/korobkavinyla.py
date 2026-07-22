@@ -154,7 +154,7 @@ class KorobkaVinylaParser(BaseStoreParser):
             artist_raw=artist,
             year_raw=parse_year(full_text),
             format_raw=infer_format(full_text) or "LP",
-            vinyl_color_raw=infer_vinyl_color(full_text),
+            vinyl_color_raw=infer_vinyl_color(full_text, exclude=[artist, album]),
             # Магазин нового товара — состояние всегда запечатанный нов.
             condition="Новый (Mint)",
             price_rub=price,

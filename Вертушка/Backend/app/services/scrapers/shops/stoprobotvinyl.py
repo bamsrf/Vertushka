@@ -191,7 +191,7 @@ class StoprobotVinylParser(BaseStoreParser):
         # цвета (чёрный листинг ↔ цветная запись) понижал пресс до 'album'
         # (см. offers.pressing_tier). Скрытие бейджа чёрного — на отдаче (_to_response).
         color_raw = chars.get("Цвет")
-        vinyl_color = color_raw or infer_vinyl_color(title_tag)
+        vinyl_color = color_raw or infer_vinyl_color(title_tag, exclude=[artist, album])
 
         # === Status ===
         stock_node = soup.find("div", class_="product-stock")

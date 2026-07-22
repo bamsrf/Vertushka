@@ -168,7 +168,10 @@ class VinylRuParser(BaseStoreParser):
         )
 
         # === Vinyl color ===
-        vinyl_color = infer_vinyl_color(title_tag) or infer_vinyl_color(html[:5000])
+        vinyl_color = (
+            infer_vinyl_color(title_tag, exclude=[artist, album])
+            or infer_vinyl_color(html[:5000], exclude=[artist, album])
+        )
 
         # === Status ===
         if _PREORDER_KW_RE.search(title_tag) or _PREORDER_KW_RE.search(buy_text):

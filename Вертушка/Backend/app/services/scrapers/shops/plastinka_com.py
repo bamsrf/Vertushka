@@ -127,7 +127,7 @@ class PlastinkaComParser(BaseStoreParser):
         descr_meta = _meta_content(soup, "og:description", attr="property") or ""
         full_text = f"{title_tag}\n{descr_meta}"
         format_raw = infer_format(full_text) or "LP"
-        vinyl_color = infer_vinyl_color(full_text)
+        vinyl_color = infer_vinyl_color(full_text, exclude=[artist, album])
 
         return ListingDTO(
             external_id=external_id,
