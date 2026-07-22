@@ -26,6 +26,7 @@ interface NotificationsState {
   socialLoading: boolean;
   socialRefreshing: boolean;
   socialLoaded: boolean;
+  socialError: boolean;
 
   fetchUnreadCount: () => Promise<number>;
   loadPersonal: (opts?: { refresh?: boolean }) => Promise<void>;
@@ -57,6 +58,7 @@ export const useNotificationsStore = create<NotificationsState>((set, get) => ({
   socialLoading: false,
   socialRefreshing: false,
   socialLoaded: false,
+  socialError: false,
 
   async fetchUnreadCount() {
     try {
@@ -115,9 +117,12 @@ export const useNotificationsStore = create<NotificationsState>((set, get) => ({
         socialItems: resp.items,
         socialNextCursor: resp.next_cursor ?? null,
         socialLoaded: true,
+        socialError: false,
       });
     } catch {
-      // ignore
+      // Ошибка загрузки ≠ «нет активности»: помечаем, чтобы UI показал retry,
+      // а не «Лента пуста» (иначе сбой сервера неотличим от пустого фида).
+      set({ socialError: true, socialLoaded: true });
     } finally {
       set({ socialLoading: false, socialRefreshing: false });
     }

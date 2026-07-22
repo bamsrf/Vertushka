@@ -27,6 +27,7 @@ import { XV2 } from '@/components/icons/v2';
 import { NotificationItem } from '@/components/notifications/NotificationItem';
 import { SocialFeedRow } from '@/components/notifications/SocialFeedRow';
 import { NotificationsEmpty } from '@/components/notifications/NotificationsEmpty';
+import { WishlistDigestSheet, type DigestRecord } from '@/components/notifications/WishlistDigestSheet';
 import { useNotificationsStore } from '@/lib/notificationsStore';
 import { prewarmAchievementPins } from '@/lib/achievementAssets';
 import { groupByDateBucket } from '@/lib/notificationsGrouping';
@@ -61,6 +62,7 @@ export default function NotificationsScreen() {
     socialLoading,
     socialRefreshing,
     socialNextCursor,
+    socialError,
     unreadCount,
     loadPersonal,
     loadMorePersonal,
@@ -99,7 +101,7 @@ export default function NotificationsScreen() {
       let added = false;
       for (const v of viewableItems) {
         const it = v.item as NotificationItemType | undefined;
-        if (it && typeof it.id === 'string' && !it.read_at) {
+        if (it && typeof it.id === 'string' && it.id !== WL_DIGEST_ID && !it.read_at) {
           pendingSeen.current.add(it.id);
           added = true;
         }
@@ -292,23 +294,49 @@ export default function NotificationsScreen() {
     else if (tab === 'social' && socialNextCursor) loadMoreSocial();
   }, [tab, personalNextCursor, socialNextCursor, loadMorePersonal, loadMoreSocial]);
 
-  const personalSections = useMemo(
-    () => groupByDateBucket(collapseByDedup(personalItems)),
-    [personalItems],
+  const [digestVisible, setDigestVisible] = useState(false);
+  const { personalSections, digestRecords, digestCollapsedIds } = useMemo(() => {
+    const { list, records, collapsedIds } = buildWishlistDigest(collapseByDedup(personalItems));
+    return {
+      personalSections: groupByDateBucket(list),
+      digestRecords: records,
+      digestCollapsedIds: collapsedIds,
+    };
+  }, [personalItems]);
+
+  const handleOpenDigest = useCallback(() => {
+    Haptics.selectionAsync().catch(() => {});
+    setDigestVisible(true);
+    // Открыл дайджест = увидел все свёрнутые алерты → гасим их unread.
+    if (digestCollapsedIds.length > 0) markManyRead(digestCollapsedIds);
+  }, [digestCollapsedIds, markManyRead]);
+
+  const handleOpenDigestRecord = useCallback(
+    (recordId: string) => {
+      router.push(`/record/${recordId}` as any);
+    },
+    [router],
   );
   const socialSections = useMemo(() => groupByDateBucket(socialItems), [socialItems]);
 
-  const renderPersonal = ({ item }: { item: NotificationItemType }) => (
-    <NotificationItem
-      item={item}
-      onPress={handlePersonalPress}
-      onAcceptFollow={handleAcceptFollow}
-      onRejectFollow={handleRejectFollow}
-      onMarkRead={(it) => markRead(it.id)}
-      onDelete={(it) => removePersonal(it.id)}
-      onLongPress={handleLongPress}
-    />
-  );
+  const renderPersonal = ({ item }: { item: NotificationItemType }) => {
+    // Синтетическая дайджест-строка: тап открывает поп-ап с корешками, без
+    // swipe-delete/long-press (удалять/снузить нечего — это виртуальная свёртка).
+    if (item.id === WL_DIGEST_ID) {
+      return <NotificationItem item={item} onPress={handleOpenDigest} />;
+    }
+    return (
+      <NotificationItem
+        item={item}
+        onPress={handlePersonalPress}
+        onAcceptFollow={handleAcceptFollow}
+        onRejectFollow={handleRejectFollow}
+        onMarkRead={(it) => markRead(it.id)}
+        onDelete={(it) => removePersonal(it.id)}
+        onLongPress={handleLongPress}
+      />
+    );
+  };
   const renderSocial = ({ item }: { item: SocialFeedItem }) => (
     <SocialFeedRow item={item} onPress={handleSocialPress} />
   );
@@ -420,12 +448,21 @@ export default function NotificationsScreen() {
           onEndReachedThreshold={0.4}
           ListEmptyComponent={
             !socialLoading ? (
-              <NotificationsEmpty
-                title="Лента пуста"
-                subtitle="Подпишись на других коллекционеров, чтобы видеть их новые пластинки, подарки и ачивки."
-                ctaLabel="Найти коллекционеров"
-                onCtaPress={handleFindUsers}
-              />
+              socialError ? (
+                <NotificationsEmpty
+                  title="Не удалось загрузить"
+                  subtitle="Проверь соединение и попробуй ещё раз."
+                  ctaLabel="Обновить"
+                  onCtaPress={() => loadSocial({ refresh: true })}
+                />
+              ) : (
+                <NotificationsEmpty
+                  title="Лента пуста"
+                  subtitle="Подпишись на других коллекционеров, чтобы видеть их новые пластинки, подарки и ачивки."
+                  ctaLabel="Найти коллекционеров"
+                  onCtaPress={handleFindUsers}
+                />
+              )
             ) : (
               <View style={styles.spinner}><ActivityIndicator color={Colors.royalBlue} /></View>
             )
@@ -435,8 +472,81 @@ export default function NotificationsScreen() {
           }
         />
       )}
+
+      <WishlistDigestSheet
+        visible={digestVisible}
+        onClose={() => setDigestVisible(false)}
+        records={digestRecords}
+        onOpenRecord={handleOpenDigestRecord}
+      />
     </GestureHandlerRootView>
   );
+}
+
+// Синтетический id дайджест-строки + минимум пластинок для свёртки.
+const WL_DIGEST_ID = '__wishlist_digest__';
+const WL_DIGEST_MIN = 3;
+
+/** Собрать DigestRecord из wishlist_in_stock: самый дешёвый магазин как цель. */
+function toDigestRecord(it: NotificationItemType): DigestRecord {
+  const data = (it.data || {}) as Record<string, any>;
+  const stores: any[] = Array.isArray(data.stores) ? data.stores : [];
+  const priced = stores.filter((s) => s?.price_rub != null).sort((a, b) => a.price_rub - b.price_rub);
+  const cheapest = priced[0] ?? stores[0] ?? null;
+  return {
+    record_id: String(data.record_id ?? it.entity_id ?? ''),
+    title: String(data.record_title ?? 'Пластинка'),
+    artist: (data.record_artist as string | undefined) ?? null,
+    cover_url: (data.cover_url as string | undefined) ?? null,
+    min_price_rub: (data.min_price_rub ?? data.price_rub ?? null) as number | null,
+    store_count: (data.store_count as number | undefined) ?? (stores.length || 1),
+    store: cheapest
+      ? {
+          listing_id: cheapest.listing_id ?? null,
+          url: cheapest.url ?? null,
+          name: cheapest.name ?? null,
+          price_rub: cheapest.price_rub ?? null,
+        }
+      : null,
+  };
+}
+
+/**
+ * Свёртка непрочитанных `wishlist_in_stock` в одну дайджест-строку
+ * «N пластинок снова в продаже» (если их ≥WL_DIGEST_MIN). Убирает 12 отдельных
+ * строк складского шума. Возвращает новый список + записи для поп-апа + id
+ * свёрнутых уведомлений (чтобы пометить прочитанными при открытии).
+ */
+function buildWishlistDigest(items: NotificationItemType[]): {
+  list: NotificationItemType[];
+  records: DigestRecord[];
+  collapsedIds: string[];
+} {
+  const wl = items.filter((i) => i.type === 'wishlist_in_stock' && !i.read_at);
+  if (wl.length < WL_DIGEST_MIN) return { list: items, records: [], collapsedIds: [] };
+
+  const rest = items.filter((i) => !(i.type === 'wishlist_in_stock' && !i.read_at));
+  const records = wl.map(toDigestRecord);
+  const collapsedIds = wl.map((i) => i.id);
+  const newest = wl.reduce((a, b) =>
+    new Date(b.bumped_at || b.created_at).getTime() > new Date(a.bumped_at || a.created_at).getTime()
+      ? b
+      : a,
+  );
+  const digest: NotificationItemType = {
+    id: WL_DIGEST_ID,
+    type: 'digest_wishlist_in_stock',
+    dedup_key: null,
+    entity_type: null,
+    entity_id: null,
+    data: { count: wl.length },
+    created_at: newest.created_at,
+    bumped_at: newest.bumped_at || newest.created_at,
+    occurrences: wl.length,
+    read_at: null,
+    actor: null,
+  };
+  return { list: [digest, ...rest], records, collapsedIds };
 }
 
 /**
