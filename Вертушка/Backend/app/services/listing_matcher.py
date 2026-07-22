@@ -450,8 +450,8 @@ async def match_listing(listing: StoreListing, db: AsyncSession) -> bool:
         if m:
             rec = await _find_by_discogs_id(db, m.group(1))
             if rec:
-                _apply_match(listing, rec, Decimal("1.000"), MatchMethod.DISCOGS_URL)
-                return True
+                if _apply_match(listing, rec, Decimal("1.000"), MatchMethod.DISCOGS_URL):
+                    return True
 
     # 2) Barcode
     barcode_raw = raw.get("barcode") or listing.raw_payload.get("barcode") if listing.raw_payload else None
@@ -459,16 +459,16 @@ async def match_listing(listing: StoreListing, db: AsyncSession) -> bool:
     if barcode:
         rec = await _find_by_barcode(db, barcode)
         if rec:
-            _apply_match(listing, rec, Decimal("1.000"), MatchMethod.BARCODE)
-            return True
+            if _apply_match(listing, rec, Decimal("1.000"), MatchMethod.BARCODE):
+                return True
 
     # 3) Catalog
     catalog = normalize_catalog(raw.get("catalog_number"))
     if catalog:
         rec = await _find_by_catalog(db, catalog)
         if rec:
-            _apply_match(listing, rec, Decimal("0.900"), MatchMethod.CATALOG)
-            return True
+            if _apply_match(listing, rec, Decimal("0.900"), MatchMethod.CATALOG):
+                return True
 
     # 3.5) Exact dump lookup (barcode/catalog) ДО fuzzy — §A WS-A2.
     # barcode/catalog опознают КОНКРЕТНЫЙ пресс; локальный fuzzy (шаг 4)
@@ -491,8 +491,8 @@ async def match_listing(listing: StoreListing, db: AsyncSession) -> bool:
             entry, method, conf = exact_dump
             rec = await _get_or_create_record_from_dump(db, entry)
             if rec:
-                _apply_match(listing, rec, conf, method)
-                return True
+                if _apply_match(listing, rec, conf, method):
+                    return True
 
     # 4) Fuzzy
     candidates = await _fuzzy_candidates(db, listing.artist_raw, listing.title_raw)
@@ -503,8 +503,8 @@ async def match_listing(listing: StoreListing, db: AsyncSession) -> bool:
             if score > best_score:
                 best, best_score = rec, score
         if best and best_score >= FUZZY_THRESHOLD:
-            _apply_match(listing, best, Decimal(str(round(best_score, 3))), MatchMethod.FUZZY)
-            return True
+            if _apply_match(listing, best, Decimal(str(round(best_score, 3))), MatchMethod.FUZZY):
+                return True
 
     # 4.5) Slim Discogs Dump (local index) — barcode/catalog/fuzzy lookup
     # ДО on-demand Discogs API. Покрытие дампа 80%+ от всех релизов, поиск
@@ -522,15 +522,15 @@ async def match_listing(listing: StoreListing, db: AsyncSession) -> bool:
         entry, method, conf = dump_hit
         rec = await _get_or_create_record_from_dump(db, entry)
         if rec:
-            _apply_match(listing, rec, conf, method)
-            return True
+            if _apply_match(listing, rec, conf, method):
+                return True
 
     # 5) On-demand Discogs fetch — отдельная задача (не блокируем матчер)
     if barcode or catalog:
         rec = await _try_discogs_fetch(db, barcode=barcode, catalog=catalog)
         if rec:
-            _apply_match(listing, rec, Decimal("0.950"), MatchMethod.DISCOGS_FETCH)
-            return True
+            if _apply_match(listing, rec, Decimal("0.950"), MatchMethod.DISCOGS_FETCH):
+                return True
 
     # 5b) Fallback on-demand fetch by artist+title — для магазинов без barcode
     # (например, Plastinka.com публикует только название/артиста, без EAN).
@@ -546,8 +546,8 @@ async def match_listing(listing: StoreListing, db: AsyncSession) -> bool:
             year=listing.year_raw,
         )
         if rec:
-            _apply_match(listing, rec, Decimal("0.850"), MatchMethod.DISCOGS_FETCH)
-            return True
+            if _apply_match(listing, rec, Decimal("0.850"), MatchMethod.DISCOGS_FETCH):
+                return True
 
     # 5.5) Yandex-native: Discogs ничего не знает, но релиз есть в Yandex Music
     # (русский/советский слой вне Discogs). Создаём запись СРАЗУ (без 7-дневного
@@ -562,8 +562,8 @@ async def match_listing(listing: StoreListing, db: AsyncSession) -> bool:
     ):
         rec = await _try_yandex_native(listing, db)
         if rec:
-            _apply_match(listing, rec, Decimal("0.900"), MatchMethod.YANDEX_NATIVE)
-            return True
+            if _apply_match(listing, rec, Decimal("0.900"), MatchMethod.YANDEX_NATIVE):
+                return True
 
     # 6) Store-native fallback: Discogs ничего не знает про этот релиз
     # (типичный кейс — русский инди вне Discogs). Создаём Record из данных
@@ -575,17 +575,37 @@ async def match_listing(listing: StoreListing, db: AsyncSession) -> bool:
     if await _should_create_store_native(listing, db):
         rec = await _create_store_native_record(listing, db)
         if rec:
-            _apply_match(listing, rec, Decimal("1.000"), MatchMethod.STORE_NATIVE)
-            return True
+            if _apply_match(listing, rec, Decimal("1.000"), MatchMethod.STORE_NATIVE):
+                return True
 
     return False
 
 
-def _apply_match(listing: StoreListing, rec: Record, conf: Decimal, method: str) -> None:
+def _apply_match(listing: StoreListing, rec: Record, conf: Decimal, method: str) -> bool:
+    """Привязывает листинг к записи. Возвращает False (не привязывает), если
+    носитель конфликтует — единый рубеж для ВСЕХ методов.
+
+    Раньше гейт формата жил только в fuzzy (_fuzzy_score), а точные методы
+    (barcode/catalog/discogs_url/exact-dump) привязывали без проверки → CD-оффер
+    липнул к винил-релизу Discogs, и хедер записи врал «Винил». Теперь любой
+    метод проходит через эту проверку; при конфликте вызывающий проваливается к
+    следующему методу (в пределе — store-native с верным форматом или unmatched).
+
+    STORE_NATIVE исключаем: запись создаётся ИЗ листинга, формат совпадает по
+    построению; гейт тут только рисковал бы ложным отказом на собственной записи.
+    Гейт срабатывает лишь когда ОБА носителя известны и различны (Box Set /
+    неизвестное → None → не штрафуем).
+    """
+    if method != MatchMethod.STORE_NATIVE:
+        lf = _format_family(listing.format_raw)
+        rf = _format_family(rec.format_type)
+        if lf and rf and lf != rf:
+            return False
     listing.matched_record_id = rec.id
     listing.match_confidence = conf
     listing.match_method = method
     listing.matched_at = datetime.utcnow()
+    return True
 
     # Харвест обложки магазина: если у нас нет обложки на этот discogs-релиз,
     # осаждаем бесплатную картинку из уже загруженного листинга в индекс +

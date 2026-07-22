@@ -49,7 +49,8 @@ router = APIRouter()
 
 STALE_AFTER_DAYS = 7
 NEW_TODAY_HOURS = 24
-NEW_ARRIVAL_DAYS = 30  # окно фильтра «Новинки» (first_seen_at)
+NEW_ARRIVAL_DAYS = 30  # окно «недавно появился в продаже» (first_seen_at)
+NEW_RELEASE_LOOKBACK_YEARS = 1  # «свежий релиз»: год ≥ текущий − 1
 
 # ────────────────────────────────────────────────────────────────────────
 # Фасеты фильтров: жанр (data-driven) + особенности.
@@ -77,10 +78,15 @@ _COLORED_PRED = (
     f"(({sql_color_family('sl.vinyl_color_raw')}) IS NOT NULL "
     f"AND ({sql_color_family('sl.vinyl_color_raw')}) <> 'black')"
 )
+# «Новинки» (вариант C): свежий релиз (r.year ≥ текущий−1) И недавно появился в
+# продаже (first_seen ≤ 30д). Только first_seen мало: при онбординге магазина ВСЕ
+# его листинги (включая советское старьё) получают свежий first_seen → в
+# «Новинках» висело бы старьё. Двойное условие оставляет реально новое.
+_NEW_PRED = "sl.first_seen_at >= :new_cutoff AND r.year >= :new_year"
 FEATURES: list[tuple[str, str, str]] = [
     ("colored", "Цветной винил", _COLORED_PRED),
     ("limited", "Лимитка",       "r.is_limited = true"),
-    ("new",     "Новинки",       "sl.first_seen_at >= :new_cutoff"),
+    ("new",     "Новинки",       _NEW_PRED),
 ]
 _FEATURE_LABELS: dict[str, str] = {key: label for key, label, _pred in FEATURES}
 _FEATURE_PREDS: dict[str, str] = {key: pred for key, _label, pred in FEATURES}
@@ -113,6 +119,7 @@ def _filters_clause(
     if new:
         sql += f" AND {_FEATURE_PREDS['new']}"
         params["new_cutoff"] = datetime.utcnow() - timedelta(days=NEW_ARRIVAL_DAYS)
+        params["new_year"] = datetime.utcnow().year - NEW_RELEASE_LOOKBACK_YEARS
     return sql, params
 
 # Cache-namespace зашит с версией: при изменении формы ответа (например,
@@ -120,7 +127,7 @@ def _filters_clause(
 # в Redis самотухнут по TTL, а свежие запросы сразу получают новую логику.
 CACHE_NS_STORES = "market_stores:v3"
 CACHE_NS_STORE_LISTINGS = "market_store_listings:v4"
-CACHE_NS_SEARCH = "market_search:v6"  # v6: + фильтры genre/colored/limited/new в ключе
+CACHE_NS_SEARCH = "market_search:v7"  # v7: «Новинки» = свежий год + first_seen (было только first_seen)
 CACHE_TTL_STORES = 1800       # 30 мин — список магазинов меняется редко
 CACHE_TTL_LISTINGS = 600      # 10 мин — карусели чаще обновляем
 CACHE_TTL_SEARCH = 300        # 5 мин — поиск свежее
@@ -649,6 +656,7 @@ async def market_facets(db: AsyncSession = Depends(get_db)) -> MarketFacetsRespo
 
     cutoff = datetime.utcnow() - timedelta(days=STALE_AFTER_DAYS)
     new_cutoff = datetime.utcnow() - timedelta(days=NEW_ARRIVAL_DAYS)
+    new_year = datetime.utcnow().year - NEW_RELEASE_LOOKBACK_YEARS
 
     genre_selects = ",\n            ".join(
         f"count(*) FILTER (WHERE genre ILIKE ANY(:g_{key})) AS g_{key}"
@@ -664,7 +672,7 @@ async def market_facets(db: AsyncSession = Depends(get_db)) -> MarketFacetsRespo
                 MIN(r.genre) AS genre,
                 bool_or(r.is_limited) AS is_limited,
                 bool_or({_COLORED_PRED}) AS colored,
-                bool_or(sl.first_seen_at >= :new_cutoff) AS is_new
+                bool_or({_NEW_PRED}) AS is_new
             FROM store_listings sl
             JOIN stores s ON s.id = sl.store_id
             JOIN records r ON r.id = sl.matched_record_id
@@ -686,7 +694,7 @@ async def market_facets(db: AsyncSession = Depends(get_db)) -> MarketFacetsRespo
         """
     )
     row = (
-        await db.execute(sql, {"cutoff": cutoff, "new_cutoff": new_cutoff, **genre_params})
+        await db.execute(sql, {"cutoff": cutoff, "new_cutoff": new_cutoff, "new_year": new_year, **genre_params})
     ).mappings().one()
 
     genres = [
