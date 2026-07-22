@@ -93,12 +93,17 @@ async def upsert_notification(
     push_cap_key: str | None = None,
     priority: int = PRIORITY_FEED,
     merge_data_fn: Callable[[dict, dict], dict] | None = None,
+    should_resurface: Callable[[dict, dict], bool] | None = None,
 ) -> tuple[Notification | None, bool]:
     """Bump-or-create.
 
     1) Если у юзера уже есть unread запись с этим dedup_key → bump:
        occurrences++, bumped_at=now, data = merge_data_fn(old, new) (если задана).
        Push НЕ слать — юзер ещё не прочитал предыдущий.
+       Anti-churn: если задан `should_resurface(old_data, new_data)` и он вернул
+       False — данные всё равно мержим (stores не теряем), но bumped_at и
+       occurrences НЕ трогаем: строка не всплывает наверх и не крутит «обновлено
+       N×» на ре-флипах наличия по той же/худшей цене.
     2) Если последняя запись прочитана, но snoozed_until > now → skip.
     3) Иначе → INSERT. Push идёт, если push_title/body заданы и priority<=2.
 
@@ -119,6 +124,7 @@ async def upsert_notification(
         new_data=data,
         priority=priority,
         merge_data_fn=merge_data_fn,
+        should_resurface=should_resurface,
     )
     if bumped is not None:
         return bumped, False
@@ -166,6 +172,7 @@ async def upsert_notification(
             new_data=data,
             priority=priority,
             merge_data_fn=merge_data_fn,
+            should_resurface=should_resurface,
         )
         return bumped, False
 
@@ -203,6 +210,7 @@ async def _find_and_bump_unread(
     new_data: dict[str, Any] | None,
     priority: int,
     merge_data_fn: Callable[[dict, dict], dict] | None,
+    should_resurface: Callable[[dict, dict], bool] | None = None,
 ) -> Notification | None:
     existing = await db.scalar(
         select(Notification)
@@ -215,16 +223,29 @@ async def _find_and_bump_unread(
     )
     if existing is None:
         return None
-    existing.occurrences = (existing.occurrences or 1) + 1
-    existing.bumped_at = now
+
+    # Anti-churn: решаем ДО мержа, всплывать ли строка. По умолчанию — да
+    # (историческое поведение). Guard сравнивает старые/новые data (напр. цену).
+    old_data = dict(existing.data or {})
+    resurface = True
+    if should_resurface is not None:
+        try:
+            resurface = should_resurface(old_data, new_data or {})
+        except Exception:
+            resurface = True  # на ошибке guard'а не роняем нить — ведём себя как раньше
+
     if merge_data_fn is not None:
-        existing.data = merge_data_fn(existing.data or {}, new_data or {})
+        existing.data = merge_data_fn(old_data, new_data or {})
     elif new_data:
-        merged = dict(existing.data or {})
+        merged = dict(old_data)
         merged.update(new_data)
         existing.data = merged
-    if priority < (existing.priority or PRIORITY_FEED):
-        existing.priority = priority
+
+    if resurface:
+        existing.occurrences = (existing.occurrences or 1) + 1
+        existing.bumped_at = now
+        if priority < (existing.priority or PRIORITY_FEED):
+            existing.priority = priority
     await db.flush()
     return existing
 

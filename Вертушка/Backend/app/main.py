@@ -107,6 +107,7 @@ async def lifespan(app: FastAPI):
                 emit_wishlist_in_stock_notifications,
                 emit_weekly_wishlist_digest,
                 emit_wishlist_price_drop_notifications,
+                emit_wishlist_absent_notifications,
                 cleanup_price_history,
             )
             from app.tasks.cover_drip_tasks import drip_covers_batch
@@ -134,6 +135,7 @@ async def lifespan(app: FastAPI):
             scheduler.add_job(daily_tick_achievements, 'cron', hour=6, minute=0, id='achievements_daily_tick')
             scheduler.add_job(emit_wishlist_in_stock_notifications, 'interval', minutes=15, id='wishlist_in_stock_notifications')
             scheduler.add_job(emit_wishlist_price_drop_notifications, 'interval', minutes=15, id='wishlist_price_drop_notifications')
+            scheduler.add_job(emit_wishlist_absent_notifications, 'interval', minutes=15, id='wishlist_absent_notifications')
             scheduler.add_job(emit_weekly_wishlist_digest, 'cron', day_of_week='mon', hour=10, minute=0, id='weekly_wishlist_digest')
             scheduler.add_job(cleanup_price_history, 'cron', hour=3, minute=30, id='price_history_cleanup')
             # Drip-прогрев обложек: каждую минуту, тратит только простой app-bucket'а

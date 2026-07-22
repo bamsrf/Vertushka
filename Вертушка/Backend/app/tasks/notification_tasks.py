@@ -46,8 +46,9 @@ logger = logging.getLogger(__name__)
 # Окно: новые/изменённые listing'и за последние N минут (с запасом перед интервалом запуска).
 RECENT_WINDOW_MINUTES = 20
 
-# Минимальное падение цены, которое считаем значимым (5%) — шум ±пары % не шлём.
-MIN_DROP_PCT = 0.05
+# Минимальное падение цены, которое считаем значимым (10%) — шум мелких колебаний
+# не шлём. Раньше было 5%, подняли: 5-9% редко меняет решение о покупке.
+MIN_DROP_PCT = 0.10
 
 # Горизонт истории, в котором ищем «прошлую цену» для LAG (снапшоты редкие —
 # пишутся лишь при смене, так что окно широкое, но скан ограничен).
@@ -58,6 +59,26 @@ WEEKLY_DIGEST_LOOKBACK_DAYS = 7
 
 # Максимум превью-обложек в data.items недельного digest.
 DIGEST_PREVIEW_LIMIT = 10
+
+
+def _resurface_on_price_improvement(old_data: dict, new_data: dict) -> bool:
+    """Anti-churn guard для wishlist-нитей.
+
+    Строка всплывает наверх (bumped_at/occurrences) только если цена реально
+    улучшилась относительно уже показанной. Повторное «снова в наличии» по той
+    же/худшей цене — не новость: мержим stores, но не воскрешаем и не крутим
+    «обновлено N×». Если старой цены не было (первое наполнение) — всплываем.
+    """
+    old_min = old_data.get("min_price_rub")
+    new_min = new_data.get("min_price_rub")
+    if new_min is None:
+        return False
+    if old_min is None:
+        return True
+    try:
+        return float(new_min) < float(old_min)
+    except (TypeError, ValueError):
+        return True
 
 
 async def emit_wishlist_in_stock_notifications() -> None:
@@ -191,6 +212,7 @@ async def _run(db: AsyncSession) -> None:
                 push_cap_key=(f"wl_item:{record.id}" if push_now else None),
                 priority=PRIORITY_PUSH if push_now else PRIORITY_QUIET,
                 merge_data_fn=merge_wishlist_stores,
+                should_resurface=_resurface_on_price_improvement,
             )
             if notif is not None and is_new:
                 emitted_per_user[owner_id].append(notif)
@@ -322,6 +344,7 @@ async def _emit_alt_versions(
                 push_cap_key=(f"wl_alt:{wanted.id}" if push_now else None),
                 priority=PRIORITY_PUSH if push_now else PRIORITY_QUIET,
                 merge_data_fn=merge_wishlist_stores,
+                should_resurface=_resurface_on_price_improvement,
             )
             if notif is not None and is_new:
                 emitted_per_user[wi.wishlist.user_id].append(notif)
@@ -488,6 +511,29 @@ async def _run_price_drop(db: AsyncSession) -> None:
             best_drop[record_id] = (old, new)
 
     record_ids = list(best_drop.keys())
+
+    # HIGH-сигнал: исторический минимум цены. Берём min(price) по всей доступной
+    # истории in-stock снапшотов. `new` уже записан в историю, поэтому если он ≤
+    # исторического минимума — это и есть новый (или повторный) минимум.
+    all_time_low: dict[UUID, float] = {}
+    low_rows = (
+        await db.execute(
+            select(
+                ListingPriceHistory.record_id,
+                func.min(ListingPriceHistory.price_rub),
+            )
+            .where(
+                ListingPriceHistory.record_id.in_(record_ids),
+                ListingPriceHistory.status == ListingStatus.IN_STOCK,
+                ListingPriceHistory.price_rub.is_not(None),
+            )
+            .group_by(ListingPriceHistory.record_id)
+        )
+    ).all()
+    for rid, min_price in low_rows:
+        if min_price is not None:
+            all_time_low[rid] = float(min_price)
+
     wishlist_items = (
         await db.execute(
             select(WishlistItem)
@@ -517,8 +563,23 @@ async def _run_price_drop(db: AsyncSession) -> None:
             else None
         )
         within_threshold = threshold is None or new <= threshold
-        push_now = subscribed and within_threshold
+        # HIGH-сигнал: новый исторический минимум цены. Пробивает push даже для
+        # watched-айтемов (без порога) — «дешевле, чем когда-либо» реально меняет
+        # решение о покупке. Порог 1₽ гасит копеечный шум округлений.
+        low = all_time_low.get(wi.record_id)
+        is_all_time_low = low is not None and new <= low + 1.0
+        push_now = (subscribed and within_threshold) or is_all_time_low
         radar_status = "match" if (subscribed and within_threshold) else "price_drop"
+
+        if is_all_time_low:
+            push_title = f"«{record.title}» — новый минимум"
+            push_body = f"{int(new)} ₽ (было {int(old)})"
+        elif push_now:
+            push_title = f"«{record.title}» подешевела"
+            push_body = f"{int(old)} → {int(new)} ₽"
+        else:
+            push_title = None
+            push_body = None
 
         try:
             notif, is_new = await upsert_notification(
@@ -537,15 +598,17 @@ async def _run_price_drop(db: AsyncSession) -> None:
                     "new_price_rub": new,
                     "min_price_rub": new,
                     "drop_pct": drop_pct,
+                    "all_time_low": is_all_time_low,
                     "on_radar": subscribed,
                     "radar_status": radar_status if subscribed else None,
                     "threshold_rub": (threshold if threshold is not None else None),
                 },
-                push_title=(f"«{record.title}» подешевела" if push_now else None),
-                push_body=(f"{int(old)} → {int(new)} ₽" if push_now else None),
+                push_title=push_title,
+                push_body=push_body,
                 push_image=(getattr(record, "cover_image_url", None) if push_now else None),
                 push_cap_key=(f"wl_drop:{record.id}" if push_now else None),
                 priority=PRIORITY_PUSH if push_now else PRIORITY_QUIET,
+                should_resurface=_resurface_on_price_improvement,
             )
             if notif is not None and is_new:
                 emitted += 1
@@ -560,6 +623,94 @@ async def _run_price_drop(db: AsyncSession) -> None:
     await db.commit()
     if emitted:
         logger.info("emit_wishlist_price_drop: emitted=%d", emitted)
+
+
+async def emit_wishlist_absent_notifications() -> None:
+    """Идемпотентная фоновая задача — каждые 15 минут фиксирует «пропала из наличия».
+
+    Ловит matched-листинги, недавно ушедшие в OUT_OF_STOCK/REMOVED, у которых НЕ
+    осталось ни одного in-stock листинга на ту же запись → пишет radar-событие
+    `absent` (для «Истории» в шторке цены — «маркетплейс продал»). Только для
+    subscribed-айтемов (watched историю радара не ведёт). Push НЕ шлём — исчезновение
+    само по себе не решение о покупке; это летопись, а не алерт.
+    """
+    try:
+        async with async_session_maker() as db:
+            await _run_absent(db)
+    except Exception:
+        logger.exception("emit_wishlist_absent_notifications failed")
+
+
+async def _run_absent(db: AsyncSession) -> None:
+    now = datetime.utcnow()
+    window_start = now - timedelta(minutes=RECENT_WINDOW_MINUTES)
+
+    gone = (
+        await db.execute(
+            select(StoreListing)
+            .where(
+                StoreListing.status.in_(
+                    [ListingStatus.OUT_OF_STOCK, ListingStatus.REMOVED]
+                ),
+                StoreListing.matched_record_id.is_not(None),
+                StoreListing.updated_at >= window_start,
+            )
+            .options(selectinload(StoreListing.store))
+        )
+    ).scalars().all()
+    if not gone:
+        return
+
+    record_ids = list({l.matched_record_id for l in gone if l.matched_record_id})
+
+    # Записи, у которых ещё остался хоть один in-stock листинг, — не «пропали».
+    still_instock = set(
+        (
+            await db.execute(
+                select(StoreListing.matched_record_id)
+                .where(
+                    StoreListing.matched_record_id.in_(record_ids),
+                    StoreListing.status == ListingStatus.IN_STOCK,
+                )
+                .distinct()
+            )
+        ).scalars().all()
+    )
+    truly_gone = [rid for rid in record_ids if rid not in still_instock]
+    if not truly_gone:
+        return
+
+    # По одному «последнему магазину» на запись — для store_name в событии.
+    store_by_record: dict[UUID, StoreListing] = {}
+    for l in gone:
+        if l.matched_record_id in truly_gone:
+            store_by_record.setdefault(l.matched_record_id, l)
+
+    wishlist_items = (
+        await db.execute(
+            select(WishlistItem)
+            .join(Wishlist)
+            .where(WishlistItem.record_id.in_(truly_gone))
+            .options(
+                selectinload(WishlistItem.wishlist),
+                selectinload(WishlistItem.record),
+            )
+        )
+    ).scalars().all()
+
+    recorded = 0
+    for wi in wishlist_items:
+        if wi.notify_mode != "subscribed":
+            continue  # radar-историю ведём только для подписанных айтемов
+        listing = store_by_record.get(wi.record_id)
+        store_name = getattr(listing.store, "name", None) if listing else None
+        # record_radar_event сам дедупит (тот же статус+цена подряд → skip).
+        await record_radar_event(db, wi, "absent", None, store_name)
+        recorded += 1
+
+    await db.commit()
+    if recorded:
+        logger.info("emit_wishlist_absent: recorded=%d absent events", recorded)
 
 
 async def cleanup_price_history() -> None:
