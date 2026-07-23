@@ -11,7 +11,12 @@
 export function routeForPush(data: Record<string, unknown> | undefined): string {
   const type = data?.type as string | undefined;
   const recordId = (data?.record_id || data?.recordId) as string | undefined;
-  const username = data?.username as string | undefined;
+  // Бэкенд кладёт имя автора события в actor_username (соцсобытия) и
+  // sender_username (чат). Ключа `username` в payload'ах нет ни у одного типа —
+  // читать только его значило уводить new_follower в ленту вместо профиля.
+  const username = (data?.username ||
+    data?.actor_username ||
+    data?.sender_username) as string | undefined;
   const entityId = data?.entity_id as string | undefined;
   const code = data?.code as string | undefined;
 
@@ -27,10 +32,14 @@ export function routeForPush(data: Record<string, unknown> | undefined): string 
   if ((type === 'gift_booked' || type === 'gift_confirmed') && entityId) {
     return `/gift/${entityId}`;
   }
+  if (type === 'wishlist_in_stock_alt') {
+    // Push сообщает, что в продаже ДРУГОЕ издание. Ведём на него, а не на
+    // желаемую пластинку: у той листингов нет, и юзер упирается в тупик.
+    const altId = (data?.alt_record_id as string | undefined) || recordId;
+    if (altId) return `/record/${altId}`;
+  }
   if (
-    (type === 'wishlist_in_stock' ||
-      type === 'wishlist_in_stock_alt' ||
-      type === 'wishlist_price_drop') &&
+    (type === 'wishlist_in_stock' || type === 'wishlist_price_drop') &&
     recordId
   ) {
     return `/record/${recordId}`;

@@ -39,6 +39,7 @@ from app.services.notification_service import (
     merge_wishlist_stores,
     upsert_notification,
 )
+from app.services import push_copy
 from app.services.radar_status import condition_ok, record_radar_event
 
 logger = logging.getLogger(__name__)
@@ -177,12 +178,15 @@ async def _run(db: AsyncSession) -> None:
         push_now = subscribed and within_threshold
         radar_status = "match" if (subscribed and within_threshold and min_price is not None) else "available"
 
-        if push_now and min_price is not None:
-            push_body = f"от {int(min_price)} ₽"
-        elif push_now:
-            push_body = "Появилась в продаже"
+        if push_now:
+            push_title, push_body = push_copy.wishlist_in_stock(
+                artist=getattr(record, "artist", None),
+                title=record.title,
+                min_price=min_price,
+                store_name=getattr(cheapest.store, "name", None),
+            )
         else:
-            push_body = None
+            push_title = push_body = None
 
         try:
             notif, is_new = await upsert_notification(
@@ -206,7 +210,7 @@ async def _run(db: AsyncSession) -> None:
                     "radar_status": radar_status if subscribed else None,
                     "threshold_rub": (float(threshold) if threshold is not None else None),
                 },
-                push_title=(f"«{record.title}» снова в продаже" if push_now else None),
+                push_title=push_title,
                 push_body=push_body,
                 push_image=(getattr(record, "cover_image_url", None) if push_now else None),
                 push_cap_key=(f"wl_item:{record.id}" if push_now else None),
@@ -314,6 +318,16 @@ async def _emit_alt_versions(
         )
         push_now = subscribed and within_threshold
 
+        if push_now:
+            alt_push_title, alt_push_body = push_copy.wishlist_in_stock_alt(
+                artist=getattr(wanted, "artist", None),
+                title=wanted.title,
+                min_price=min_price,
+                store_name=getattr(cheapest.store, "name", None),
+            )
+        else:
+            alt_push_title = alt_push_body = None
+
         try:
             notif, is_new = await upsert_notification(
                 db,
@@ -338,8 +352,8 @@ async def _emit_alt_versions(
                     "on_radar": subscribed,
                     "radar_status": "alt" if subscribed else None,
                 },
-                push_title=(f"Другое издание «{wanted.title}» в продаже" if push_now else None),
-                push_body=(f"от {int(min_price)} ₽" if push_now and min_price is not None else None),
+                push_title=alt_push_title,
+                push_body=alt_push_body,
                 push_image=(getattr(alt_record, "cover_image_url", None) if push_now else None),
                 push_cap_key=(f"wl_alt:{wanted.id}" if push_now else None),
                 priority=PRIORITY_PUSH if push_now else PRIORITY_QUIET,
@@ -371,19 +385,8 @@ def _build_store_payload(listing: StoreListing) -> dict:
     }
 
 
-def _plural_records(n: int) -> str:
-    mod10, mod100 = n % 10, n % 100
-    if 11 <= mod100 <= 14:
-        return "пластинок"
-    if mod10 == 1:
-        return "пластинка"
-    if 2 <= mod10 <= 4:
-        return "пластинки"
-    return "пластинок"
-
-
 async def emit_weekly_wishlist_digest() -> None:
-    """Недельный digest-push «N пластинок из вишлиста снова в продаже».
+    """Недельный digest-push «За неделю: N пластинок из вишлиста».
 
     Push-only: in-app лента уже наполнена индивидуальными `wishlist_in_stock`
     (тихими, без push) из 15-минутного джоба. Здесь мы лишь раз в неделю
@@ -398,38 +401,49 @@ async def emit_weekly_wishlist_digest() -> None:
 
 
 async def _run_weekly_digest(db: AsyncSession) -> None:
-    from sqlalchemy import func
-
     from app.services.push import send_push
 
     now = datetime.utcnow()
     lookback = now - timedelta(days=WEEKLY_DIGEST_LOOKBACK_DAYS)
 
-    # Сколько непрочитанных wishlist_in_stock накопилось у каждого юзера за неделю.
+    # Тянем сами строки (а не COUNT): из data.record_artist собираем имена для
+    # body — «Miles Davis, Bill Evans, John Coltrane». Ради них дайджест и открывают.
     rows = await db.execute(
-        select(Notification.user_id, func.count(Notification.id))
+        select(Notification.user_id, Notification.data)
         .where(
             Notification.type == "wishlist_in_stock",
             Notification.read_at.is_(None),
             Notification.created_at >= lookback,
         )
-        .group_by(Notification.user_id)
+        .order_by(Notification.bumped_at.desc())
     )
-    counts = rows.all()
+
+    counts: dict[UUID, int] = defaultdict(int)
+    artists_by_user: dict[UUID, list[str]] = defaultdict(list)
+    for user_id, data in rows.all():
+        counts[user_id] += 1
+        d = data or {}
+        # Артист, а если его не сохранили — название пластинки: пустой body хуже.
+        artist = (d.get("record_artist") or d.get("record_title") or "").strip()
+        # Дедуп: один артист мог появиться несколькими пластинками.
+        if artist and artist not in artists_by_user[user_id]:
+            artists_by_user[user_id].append(artist)
+
     if not counts:
         return
 
     sent = 0
-    for user_id, count in counts:
-        if not count:
-            continue
+    for user_id, count in counts.items():
+        title, body = push_copy.weekly_digest(
+            count=count, artists=artists_by_user[user_id]
+        )
         try:
             ok = await send_push(
                 db,
                 user_id,
                 notification_type="digest_wishlist_in_stock",
-                title=f"{count} {_plural_records(count)} из вишлиста снова в продаже",
-                body="Открой ленту, чтобы посмотреть",
+                title=title,
+                body=body,
                 data={"type": "digest_wishlist_in_stock", "count": count},
             )
             if ok:
@@ -512,10 +526,11 @@ async def _run_price_drop(db: AsyncSession) -> None:
 
     record_ids = list(best_drop.keys())
 
-    # HIGH-сигнал: исторический минимум цены. Берём min(price) по всей доступной
-    # истории in-stock снапшотов. `new` уже записан в историю, поэтому если он ≤
-    # исторического минимума — это и есть новый (или повторный) минимум.
-    all_time_low: dict[UUID, float] = {}
+    # HIGH-сигнал: исторический минимум цены. Берём min(price) по истории in-stock
+    # снапшотов СТРОГО ДО текущего окна: `new` уже записан в историю, и если его не
+    # исключить, min всегда равен new и сравнение вырождается в тавтологию.
+    # Побочная польза: previous_low — настоящее «прошлый минимум N ₽» для текста push.
+    previous_low: dict[UUID, float] = {}
     low_rows = (
         await db.execute(
             select(
@@ -526,13 +541,14 @@ async def _run_price_drop(db: AsyncSession) -> None:
                 ListingPriceHistory.record_id.in_(record_ids),
                 ListingPriceHistory.status == ListingStatus.IN_STOCK,
                 ListingPriceHistory.price_rub.is_not(None),
+                ListingPriceHistory.captured_at < window_start,
             )
             .group_by(ListingPriceHistory.record_id)
         )
     ).all()
     for rid, min_price in low_rows:
         if min_price is not None:
-            all_time_low[rid] = float(min_price)
+            previous_low[rid] = float(min_price)
 
     wishlist_items = (
         await db.execute(
@@ -566,17 +582,27 @@ async def _run_price_drop(db: AsyncSession) -> None:
         # HIGH-сигнал: новый исторический минимум цены. Пробивает push даже для
         # watched-айтемов (без порога) — «дешевле, чем когда-либо» реально меняет
         # решение о покупке. Порог 1₽ гасит копеечный шум округлений.
-        low = all_time_low.get(wi.record_id)
-        is_all_time_low = low is not None and new <= low + 1.0
+        # Сравниваем с минимумом ДО этого прогона. Нет истории — заявлять «дешевле
+        # не было» не на чем, уходим в обычный price-drop.
+        prev_low = previous_low.get(wi.record_id)
+        is_all_time_low = prev_low is not None and new <= prev_low
         push_now = (subscribed and within_threshold) or is_all_time_low
         radar_status = "match" if (subscribed and within_threshold) else "price_drop"
 
         if is_all_time_low:
-            push_title = f"«{record.title}» — новый минимум"
-            push_body = f"{int(new)} ₽ (было {int(old)})"
+            push_title, push_body = push_copy.wishlist_all_time_low(
+                title=record.title,
+                new_price=new,
+                previous_low=prev_low,
+            )
         elif push_now:
-            push_title = f"«{record.title}» подешевела"
-            push_body = f"{int(old)} → {int(new)} ₽"
+            push_title, push_body = push_copy.wishlist_price_drop(
+                artist=getattr(record, "artist", None),
+                title=record.title,
+                old_price=old,
+                new_price=new,
+                drop_pct=drop_pct,
+            )
         else:
             push_title = None
             push_body = None

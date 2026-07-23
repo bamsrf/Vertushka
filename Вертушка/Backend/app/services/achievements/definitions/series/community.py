@@ -385,7 +385,7 @@ DEFINITIONS: list[AchievementDefinition] = [
     AchievementDefinition(
         code=K3_CODE,
         title_ru="Квартирник",
-        description_ru="5 подписчиков с реальными коллекциями.",
+        description_ru="5 подписчиков с реальными коллекциями: аккаунт старше 30 дней и минимум 10 пластинок.",
         description_done_ru="5 подписчиков с коллекциями набрано.",
         series="community",
         tier=AchievementTier.SIMPLE,
@@ -397,7 +397,7 @@ DEFINITIONS: list[AchievementDefinition] = [
     AchievementDefinition(
         code=K4_CODE,
         title_ru="Хедлайнер",
-        description_ru="50 подписчиков с реальными коллекциями.",
+        description_ru="50 подписчиков с реальными коллекциями: аккаунт старше 30 дней и минимум 10 пластинок.",
         description_done_ru="50 подписчиков с коллекциями набрано.",
         series="community",
         tier=AchievementTier.RARE,
@@ -409,7 +409,7 @@ DEFINITIONS: list[AchievementDefinition] = [
     AchievementDefinition(
         code=K7_CODE,
         title_ru="Бэкстейдж",
-        description_ru="10 взаимных подписок с реальными юзерами.",
+        description_ru="10 взаимных подписок с реальными юзерами: аккаунт старше 30 дней и минимум 10 пластинок.",
         description_done_ru="10 взаимных подписок набрано.",
         series="community",
         tier=AchievementTier.NOTABLE,
@@ -485,8 +485,8 @@ DEFINITIONS: list[AchievementDefinition] = [
     AchievementDefinition(
         code=META_CODE,
         title_ru="Резидент",
-        description_ru="Закрой K4, K7 и K13 — главные ветки сообщества.",
-        description_done_ru="K4, K7 и K13 закрыты.",
+        description_ru="Открой «Хедлайнер», «Бэкстейдж» и «Уолл-стрит» — вершины трёх веток сообщества.",
+        description_done_ru="«Хедлайнер», «Бэкстейдж» и «Уолл-стрит» закрыты.",
         series="community",
         tier=AchievementTier.EPIC,
         is_hidden=False,

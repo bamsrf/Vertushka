@@ -114,9 +114,14 @@ async def _emit_impl(
         try:
             from app.services.notification_service import create_notification
             from app.services.achievements.registry import get_definition
+            from app.services import push_copy
             for code in sorted(unlocked_now):
                 defn = get_definition(code)
                 title = defn.title_ru if defn else code
+                push_title, push_body = push_copy.achievement_unlocked(
+                    title_ru=title,
+                    flavor_ru=getattr(defn, "flavor_ru", "") if defn else "",
+                )
                 await create_notification(
                     db,
                     user_id=user_id,
@@ -128,8 +133,8 @@ async def _emit_impl(
                         "icon_slug": defn.icon_slug if defn else "",
                         "title": title,
                     },
-                    push_title="Новая ачивка!",
-                    push_body=f"Ты разблокировал «{title}»",
+                    push_title=push_title,
+                    push_body=push_body,
                 )
             await db.commit()
         except Exception:

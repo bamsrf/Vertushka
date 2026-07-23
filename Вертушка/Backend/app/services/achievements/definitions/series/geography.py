@@ -269,7 +269,7 @@ DEFINITIONS: list[AchievementDefinition] = [
     AchievementDefinition(
         code=D6_CODE,
         title_ru="Британский почерк",
-        description_ru="3 коллекционки из UK.",
+        description_ru="3 коллекционки из UK: дороже $100, до 3 копий в продаже и до 200 владельцев.",
         description_done_ru="3 коллекционки из UK собрано.",
         series="geography",
         tier=AchievementTier.RARE,
@@ -293,8 +293,8 @@ DEFINITIONS: list[AchievementDefinition] = [
     AchievementDefinition(
         code=META_CODE,
         title_ru="Атлас",
-        description_ru="D3 + любые 3 из D4–D7.",
-        description_done_ru="D3 и три ветки D4–D7 закрыты.",
+        description_ru="Открой «Кругосветку» и любые три страновые ачивки серии.",
+        description_done_ru="«Кругосветка» и три страновые ветки закрыты.",
         series="geography",
         tier=AchievementTier.EPIC,
         is_hidden=False,

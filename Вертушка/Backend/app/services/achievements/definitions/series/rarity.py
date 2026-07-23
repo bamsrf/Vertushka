@@ -150,8 +150,8 @@ DEFINITIONS: list[AchievementDefinition] = [
     AchievementDefinition(
         code=C1_CODE,
         title_ru="Тираж ограничен",
-        description_ru="Добавь 5 лимиток в коллекцию.",
-        description_done_ru="5 лимиток в коллекции.",
+        description_ru="Добавь 5 лимиток: Limited Edition, Numbered, Promo, Test Pressing или White Label.",
+        description_done_ru="5 лимиток в коллекции — Limited Edition, Numbered, Promo и им подобные.",
         series="rarity",
         tier=AchievementTier.SIMPLE,
         is_hidden=False,
@@ -162,7 +162,7 @@ DEFINITIONS: list[AchievementDefinition] = [
     AchievementDefinition(
         code=C2_CODE,
         title_ru="По счёту",
-        description_ru="Добери 25 лимиток.",
+        description_ru="Добери 25 лимиток — изданий с пометкой Limited, Numbered, Promo, Test Pressing или White Label.",
         description_done_ru="25 лимиток собрано.",
         series="rarity",
         tier=AchievementTier.RARE,
@@ -174,8 +174,8 @@ DEFINITIONS: list[AchievementDefinition] = [
     AchievementDefinition(
         code=C3_CODE,
         title_ru="Сокровище",
-        description_ru="Найди первую коллекционку.",
-        description_done_ru="Первая коллекционка найдена.",
+        description_ru="Найди первую коллекционку: дороже $100, не больше 3 копий в продаже и до 200 владельцев на Discogs.",
+        description_done_ru="Первая коллекционка найдена — дороже $100 и почти без предложений на рынке.",
         series="rarity",
         tier=AchievementTier.NOTABLE,
         is_hidden=False,
@@ -186,7 +186,7 @@ DEFINITIONS: list[AchievementDefinition] = [
     AchievementDefinition(
         code=C4_CODE,
         title_ru="Шкаф редкостей",
-        description_ru="5 коллекционок на полке.",
+        description_ru="5 коллекционок: каждая дороже $100, до 3 копий в продаже и до 200 владельцев.",
         description_done_ru="5 коллекционок на полке.",
         series="rarity",
         tier=AchievementTier.RARE,
@@ -198,7 +198,7 @@ DEFINITIONS: list[AchievementDefinition] = [
     AchievementDefinition(
         code=C5_CODE,
         title_ru="Кладовая",
-        description_ru="15 коллекционок.",
+        description_ru="15 коллекционок — дороже $100, до 3 копий в продаже и до 200 владельцев каждая.",
         description_done_ru="15 коллекционок собрано.",
         series="rarity",
         tier=AchievementTier.EPIC,
@@ -210,8 +210,8 @@ DEFINITIONS: list[AchievementDefinition] = [
     AchievementDefinition(
         code=C6_CODE,
         title_ru="Хочу горячего",
-        description_ru="5 горячих пластинок одновременно в вишлисте.",
-        description_done_ru="5 горячих пластинок в вишлисте.",
+        description_ru="5 горячих пластинок одновременно в вишлисте. Горячая — та, что хотят в 1,5 раза чаще, чем имеют.",
+        description_done_ru="5 пластинок в вишлисте, которых хотят в 1,5 раза больше людей, чем владеют.",
         series="rarity",
         tier=AchievementTier.NOTABLE,
         is_hidden=False,
@@ -222,8 +222,8 @@ DEFINITIONS: list[AchievementDefinition] = [
     AchievementDefinition(
         code=C7_CODE,
         title_ru="Тренд на полке",
-        description_ru="10 горячих пластинок в коллекции.",
-        description_done_ru="10 горячих пластинок в коллекции.",
+        description_ru="10 горячих пластинок в коллекции. Горячая — та, что хотят в 1,5 раза чаще, чем имеют.",
+        description_done_ru="10 пластинок, которых хотят в 1,5 раза больше людей, чем владеют.",
         series="rarity",
         tier=AchievementTier.RARE,
         is_hidden=False,
@@ -234,8 +234,8 @@ DEFINITIONS: list[AchievementDefinition] = [
     AchievementDefinition(
         code=META_CODE,
         title_ru="Грааль",
-        description_ru="Открой C2 + C5 + C7.",
-        description_done_ru="C2, C5 и C7 открыты.",
+        description_ru="Открой «По счёту», «Кладовую» и «Тренд на полке».",
+        description_done_ru="«По счёту», «Кладовая» и «Тренд на полке» открыты.",
         series="rarity",
         tier=AchievementTier.EPIC,
         is_hidden=False,

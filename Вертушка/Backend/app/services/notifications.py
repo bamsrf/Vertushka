@@ -100,19 +100,19 @@ async def send_booking_notification_to_owner(
     включил reveal_gifter_to_owner на вишлисте), упоминаем дарителя.
     """
     if gifter_name:
-        subject = f"{gifter_name} хочет подарить вам пластинку!"
+        subject = f"{gifter_name} дарит тебе пластинку"
         anon_line = f"<p>Подарок забронировал(а) <strong>{gifter_name}</strong>.</p>"
     else:
-        subject = "Кто-то хочет подарить вам пластинку!"
+        subject = "Кто-то хочет подарить тебе пластинку"
         anon_line = '<p style="color: #6B6B6B;">Кто именно — сюрприз! Вы узнаете, когда получите подарок.</p>'
 
     html_body = f"""
     <div style="font-family: Arial, sans-serif; max-width: 500px; margin: 0 auto;">
         <h2 style="color: #1A1A1A;">Кто-то забронировал подарок</h2>
-        <p>Пластинка <strong>{record_title}</strong> из вашего вишлиста была забронирована.</p>
+        <p>Пластинка <strong>{record_title}</strong> из твоего вишлиста забронирована.</p>
         {anon_line}
         <hr style="border: none; border-top: 1px solid #E5E5E5; margin: 20px 0;">
-        <p style="color: #9B9B9B; font-size: 12px;">Вертушка — ваша коллекция винила</p>
+        <p style="color: #9B9B9B; font-size: 12px;">Вертушка — твоя коллекция винила</p>
     </div>
     """
     await _send_email(owner_email, subject, html_body)
@@ -145,7 +145,7 @@ async def send_booking_confirmation_to_gifter(
         <a href="{cancel_url}" style="display:inline-block;color:#6B7080;font-size:13px;text-decoration:underline;">Хочу отменить бронь</a>
       </div>
       <div style="padding:16px 32px 24px;border-top:1px solid rgba(27,29,38,0.08);">
-        <p style="margin:0;color:#9096A6;font-size:12px;">Вертушка — ваша коллекция винила</p>
+        <p style="margin:0;color:#9096A6;font-size:12px;">Вертушка — твоя коллекция винила</p>
       </div>
     </div>
     """
@@ -156,15 +156,15 @@ async def send_gift_received_to_gifter(gifter_email: str, gifter_name: str, reco
     """
     Email дарителю: подарок был получен!
     """
-    subject = "Ваш подарок был получен!"
+    subject = "Твой подарок получен"
     html_body = f"""
     <div style="font-family: Arial, sans-serif; max-width: 500px; margin: 0 auto;">
         <h2 style="color: #1A1A1A;">Подарок получен!</h2>
         <p>Привет, {gifter_name}!</p>
         <p><strong>{owner_name}</strong> добавил(а) пластинку <strong>{record_title}</strong> в свою коллекцию.</p>
-        <p>Ваш подарок оценён по достоинству!</p>
+        <p>Подарок оценён по достоинству.</p>
         <hr style="border: none; border-top: 1px solid #E5E5E5; margin: 20px 0;">
-        <p style="color: #9B9B9B; font-size: 12px;">Вертушка — ваша коллекция винила</p>
+        <p style="color: #9B9B9B; font-size: 12px;">Вертушка — твоя коллекция винила</p>
     </div>
     """
     await _send_email(gifter_email, subject, html_body)
@@ -204,7 +204,7 @@ async def send_booking_verification_to_gifter(
         </p>
       </div>
       <div style="padding:16px 32px 24px;border-top:1px solid rgba(27,29,38,0.08);">
-        <p style="margin:0;color:#9096A6;font-size:12px;">Вертушка — ваша коллекция винила</p>
+        <p style="margin:0;color:#9096A6;font-size:12px;">Вертушка — твоя коллекция винила</p>
       </div>
     </div>
     """
@@ -225,14 +225,14 @@ async def send_booking_cancelled_to_owner(owner_email: str, record_title: str):
       <div style="padding:32px;">
         <h2 style="margin:0 0 8px;color:#1B1D26;font-size:22px;font-weight:700;">Бронь снята</h2>
         <p style="color:#6B7080;font-size:15px;line-height:1.6;margin:0 0 16px;">
-          Пластинка <strong style="color:#1B1D26;">{record_title}</strong> снова доступна другим дарителям из вашего вишлиста.
+          Пластинка <strong style="color:#1B1D26;">{record_title}</strong> снова доступна другим дарителям из твоего вишлиста.
         </p>
         <p style="color:#9096A6;font-size:13px;line-height:1.6;margin:0;">
           Имя того, кто бронировал, мы не раскрываем — это сюрприз останется сюрпризом.
         </p>
       </div>
       <div style="padding:16px 32px 24px;border-top:1px solid rgba(27,29,38,0.08);">
-        <p style="margin:0;color:#9096A6;font-size:12px;">Вертушка — ваша коллекция винила</p>
+        <p style="margin:0;color:#9096A6;font-size:12px;">Вертушка — твоя коллекция винила</p>
       </div>
     </div>
     """
@@ -267,7 +267,7 @@ async def send_booking_auto_released_to_gifter(
         </p>
       </div>
       <div style="padding:16px 32px 24px;border-top:1px solid rgba(27,29,38,0.08);">
-        <p style="margin:0;color:#9096A6;font-size:12px;">Вертушка — ваша коллекция винила</p>
+        <p style="margin:0;color:#9096A6;font-size:12px;">Вертушка — твоя коллекция винила</p>
       </div>
     </div>
     """
@@ -301,7 +301,7 @@ async def send_wishlist_item_removed_to_gifter(
         </p>
       </div>
       <div style="padding:16px 32px 24px;border-top:1px solid rgba(27,29,38,0.08);">
-        <p style="margin:0;color:#9096A6;font-size:12px;">Вертушка — ваша коллекция винила</p>
+        <p style="margin:0;color:#9096A6;font-size:12px;">Вертушка — твоя коллекция винила</p>
       </div>
     </div>
     """
@@ -315,16 +315,16 @@ async def send_booking_reminder_email(booking: GiftBooking):
     settings = get_settings()
     cancel_url = f"{settings.app_url}/api/gifts/{booking.id}/cancel?cancel_token={booking.cancel_token}"
 
-    subject = "Напоминание: ваше бронирование подарка скоро истекает"
+    subject = "Бронь подарка истекает через неделю"
     html_body = f"""
     <div style="font-family: Arial, sans-serif; max-width: 500px; margin: 0 auto;">
         <h2 style="color: #1A1A1A;">Напоминание о бронировании</h2>
         <p>Привет, {booking.gifter_name}!</p>
-        <p>Ваше бронирование подарка истекает через 7 дней.</p>
-        <p>Если планы изменились, вы можете <a href="{cancel_url}">отменить бронирование</a>.</p>
+        <p>Бронь подарка истекает через 7 дней.</p>
+        <p>Если планы изменились — можно <a href="{cancel_url}">отменить бронирование</a>.</p>
         <p>Если ничего не делать, по истечении срока бронь будет автоматически освобождена, и пластинка снова станет доступна другим дарителям.</p>
         <hr style="border: none; border-top: 1px solid #E5E5E5; margin: 20px 0;">
-        <p style="color: #9B9B9B; font-size: 12px;">Вертушка — ваша коллекция винила</p>
+        <p style="color: #9B9B9B; font-size: 12px;">Вертушка — твоя коллекция винила</p>
     </div>
     """
     await _send_email(booking.gifter_email, subject, html_body)

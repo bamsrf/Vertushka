@@ -144,8 +144,8 @@ DEFINITIONS: list[AchievementDefinition] = [
     AchievementDefinition(
         code=META_CODE,
         title_ru="Эпидемия",
-        description_ru="INV_ten + INV_active_circle + INV_chain.",
-        description_done_ru="INV_ten, круг и цепочка закрыты.",
+        description_ru="Открой «Тренд», «Живой круг» и «Цепочку».",
+        description_done_ru="«Тренд», «Живой круг» и «Цепочка» закрыты.",
         series="invitations",
         tier=AchievementTier.LEGEND,
         is_hidden=False,

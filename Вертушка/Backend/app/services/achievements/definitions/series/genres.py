@@ -220,8 +220,8 @@ DEFINITIONS: list[AchievementDefinition] = [
     AchievementDefinition(
         code=META_CODE,
         title_ru="Эрудит",
-        description_ru="F2 + любые 3 из F3–F6.",
-        description_done_ru="F2 и три ветки F3–F6 закрыты.",
+        description_ru="Открой «Всеядного» и любые три жанровые ачивки серии.",
+        description_done_ru="«Всеядный» и три жанровые ветки закрыты.",
         series="genres",
         tier=AchievementTier.EPIC,
         is_hidden=False,

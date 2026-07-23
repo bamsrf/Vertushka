@@ -558,6 +558,8 @@ async def add_record_to_collection(
         total = int(total or 0)
         if total in (100, 500, 1000):
             from app.services.notification_service import create_notification
+            from app.services import push_copy
+            milestone_title, milestone_body = push_copy.milestone_collection(total=total)
             await create_notification(
                 db,
                 user_id=current_user.id,
@@ -567,11 +569,11 @@ async def add_record_to_collection(
                 data={
                     "milestone": f"collection_{total}",
                     "count": total,
-                    "title": f"{total} пластинок в коллекции 🎉",
+                    "title": milestone_title,
                     "cover_url": getattr(record, "cover_image_url", None),
                 },
-                push_title=f"{total} пластинок в коллекции 🎉",
-                push_body="Поздравляем с вехой! Поделись с друзьями.",
+                push_title=milestone_title,
+                push_body=milestone_body,
             )
             await db.commit()
     except Exception:

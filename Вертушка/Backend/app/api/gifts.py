@@ -328,12 +328,19 @@ async def book_gift(
         if owner:
             try:
                 from app.services.notification_service import create_notification
+                from app.services import push_copy
                 reveal_gifter = item.wishlist.reveal_gifter_to_owner
-                push_body = (
-                    f"{booking.gifter_name} забронировал(а) «{item.record.title}»"
-                    if reveal_gifter
-                    else f"Кто-то забронировал «{item.record.title}» из твоего вишлиста"
-                )
+                if reveal_gifter:
+                    push_title, push_body = push_copy.gift_booked_revealed(
+                        gifter_name=booking.gifter_name,
+                        artist=item.record.artist,
+                        title=item.record.title,
+                    )
+                else:
+                    push_title, push_body = push_copy.gift_booked_anonymous(
+                        artist=item.record.artist,
+                        title=item.record.title,
+                    )
                 await create_notification(
                     db,
                     user_id=owner.id,
@@ -348,7 +355,7 @@ async def book_gift(
                         "cover_url": item.record.cover_image_url,
                         "anonymous": not reveal_gifter,
                     },
-                    push_title="Подарок забронирован",
+                    push_title=push_title,
                     push_body=push_body,
                 )
                 await db.commit()
@@ -701,7 +708,11 @@ async def complete_booking(
     if gifter_user_id is not None and record is not None:
         try:
             from app.services.notification_service import create_notification
+            from app.services import push_copy
             owner_name = current_user.display_name or current_user.username
+            _confirmed_title, _confirmed_body = push_copy.gift_confirmed(
+                owner_name=owner_name, title=record.title
+            )
             await create_notification(
                 db,
                 user_id=gifter_user_id,
@@ -715,8 +726,8 @@ async def complete_booking(
                     "record_artist": record.artist,
                     "cover_url": record.cover_image_url,
                 },
-                push_title="Подарок получен 🎁",
-                push_body=f"{owner_name} получил(а) твой подарок «{record.title}»",
+                push_title=_confirmed_title,
+                push_body=_confirmed_body,
             )
         except Exception:
             logger.exception("Failed to create gift_confirmed notification")

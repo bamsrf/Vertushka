@@ -45,6 +45,16 @@ async def _is_profile_private(db: AsyncSession, user_id: UUID) -> bool:
     return bool(flag)
 
 
+async def _collection_size(db: AsyncSession, user_id: UUID) -> int:
+    """Сколько пластинок в коллекции — для body социальных пушей."""
+    total = await db.scalar(
+        select(func.count(CollectionItem.id))
+        .join(Collection, CollectionItem.collection_id == Collection.id)
+        .where(Collection.user_id == user_id)
+    )
+    return int(total or 0)
+
+
 async def _pending_request_id(
     db: AsyncSession,
     requester_id: UUID,
@@ -873,7 +883,13 @@ async def follow_user(
         await db.flush()
 
         from app.services.notification_service import create_notification
+        from app.services import push_copy
         actor_name = current_user.display_name or current_user.username
+        push_title, push_body = push_copy.follow_request(
+            name=actor_name,
+            username=current_user.username,
+            collection_count=await _collection_size(db, current_user.id),
+        )
         await create_notification(
             db,
             user_id=user_id,
@@ -885,8 +901,8 @@ async def follow_user(
                 "actor_username": current_user.username,
                 "actor_display_name": current_user.display_name,
             },
-            push_title="Новый запрос на подписку",
-            push_body=f"{actor_name} хочет на тебя подписаться",
+            push_title=push_title,
+            push_body=push_body,
             push_image=absolute_media_url(current_user.avatar_url),
         )
 
@@ -906,7 +922,13 @@ async def follow_user(
     await db.flush()
 
     from app.services.notification_service import create_notification
+    from app.services import push_copy
     actor_name = current_user.display_name or current_user.username
+    push_title, push_body = push_copy.new_follower(
+        name=actor_name,
+        username=current_user.username,
+        collection_count=await _collection_size(db, current_user.id),
+    )
     await create_notification(
         db,
         user_id=user_id,
@@ -918,8 +940,8 @@ async def follow_user(
             "actor_username": current_user.username,
             "actor_display_name": current_user.display_name,
         },
-        push_title="Новый подписчик",
-        push_body=f"{actor_name} подписался(ась) на тебя",
+        push_title=push_title,
+        push_body=push_body,
         push_image=absolute_media_url(current_user.avatar_url),
     )
 
@@ -1164,7 +1186,9 @@ async def approve_follow_request(
     await db.flush()
 
     from app.services.notification_service import create_notification
+    from app.services import push_copy
     approver_name = current_user.display_name or current_user.username
+    _approved_title, _approved_body = push_copy.follow_approved(name=approver_name)
     await create_notification(
         db,
         user_id=req.requester_id,
@@ -1177,8 +1201,8 @@ async def approve_follow_request(
             "actor_display_name": current_user.display_name,
             "approved": True,
         },
-        push_title="Запрос одобрен",
-        push_body=f"{approver_name} принял(а) твою подписку",
+        push_title=_approved_title,
+        push_body=_approved_body,
         push_image=absolute_media_url(current_user.avatar_url),
     )
 

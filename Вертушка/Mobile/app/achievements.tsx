@@ -352,7 +352,7 @@ const HOW_TO_UNLOCK: Record<string, string> = {
   K5_views_x100: 'Поделись профилем — нужно 100 просмотров.',
   K6_views_x1000: '1 000 просмотров публичного профиля.',
   K7_mutual_x10: '10 взаимных подписок с активными юзерами.',
-  META_community: 'Закрой K4, K6 и K7 — главные ветки сообщества.',
+  META_community: 'Открой «Хедлайнер», «Бэкстейдж» и «Уолл-стрит» — вершины трёх веток сообщества.',
 };
 
 function howToUnlockText(item: AchievementItem): string | null {

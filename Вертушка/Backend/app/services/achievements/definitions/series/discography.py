@@ -122,8 +122,8 @@ DEFINITIONS: list[AchievementDefinition] = [
     AchievementDefinition(
         code=META_CODE,
         title_ru="Учёный",
-        description_ru="H2 + H4 + H5 (любые).",
-        description_done_ru="H2, H4 и H5 закрыты.",
+        description_ru="Открой «Полную», «Археолога» и «Лейбл-фаната».",
+        description_done_ru="«Полная», «Археолог» и «Лейбл-фанат» закрыты.",
         series="discography",
         tier=AchievementTier.LEGEND,
         is_hidden=False,
