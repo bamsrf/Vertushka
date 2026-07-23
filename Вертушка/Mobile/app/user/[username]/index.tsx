@@ -588,8 +588,10 @@ export default function UserProfileScreen() {
         return true;
       }
       if (!following) {
+        // Бронь недоступна, но это не повод в тупик — пусть откроется сам релиз
+        // (обложка, версия, «где купить»). Навигацию делает caller.
         toast.info('Подпишитесь', 'Бронь подарков доступна подписчикам');
-        return true;
+        return false;
       }
       setBookingItem(item);
       return true;
@@ -756,6 +758,16 @@ export default function UserProfileScreen() {
     },
     [isWishlistTab, wishlistItems, isOwn, tryOpenBooking, router],
   );
+
+  // Из шита брони — уйти на карточку самой версии релиза (там же OffersBlock
+  // с живыми предложениями магазинов). Шит закрываем, чтобы не остался поверх.
+  const handleOpenBookingRecord = useCallback(() => {
+    const recordId = bookingItem?.record?.id;
+    if (!recordId) return;
+    setBookingItem(null);
+    setBookingMessage('');
+    router.push(`/record/${recordId}`);
+  }, [bookingItem, router]);
 
   if (isLoading) {
     return (
@@ -1161,7 +1173,13 @@ export default function UserProfileScreen() {
               </TouchableOpacity>
             </View>
             {bookingItem ? (
-              <View style={styles.modalRecRow}>
+              <TouchableOpacity
+                style={styles.modalRecRow}
+                activeOpacity={0.75}
+                onPress={handleOpenBookingRecord}
+                accessibilityRole="button"
+                accessibilityLabel="Открыть релиз и посмотреть, где купить"
+              >
                 <View style={styles.modalRecCover}>
                   {bookingItem.record.cover_image_url ? (
                     <Image
@@ -1183,8 +1201,13 @@ export default function UserProfileScreen() {
                   <Text numberOfLines={2} style={styles.modalRecTitle}>
                     {bookingItem.record.title}
                   </Text>
+                  <View style={styles.modalRecLinkRow}>
+                    <Icon name="storefront" size={13} color={PP.cobalt} />
+                    <Text style={styles.modalRecLinkTxt}>Открыть релиз · где купить</Text>
+                  </View>
                 </View>
-              </View>
+                <Icon name="chevron-forward" size={18} color={PP.mute} />
+              </TouchableOpacity>
             ) : null}
             <Text style={styles.modalInfo}>
               Бронь анонимная — владелец увидит только метку «Забронировано». Срок 60 дней.
@@ -1521,6 +1544,8 @@ const styles = StyleSheet.create({
     backgroundColor: PP.lavender,
   },
   modalRecTitle: { fontSize: ms(14), color: PP.ink, fontWeight: '700', marginTop: 2 },
+  modalRecLinkRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 5 },
+  modalRecLinkTxt: { fontSize: ms(11.5), color: PP.cobalt, fontWeight: '600' },
   modalInfo: { fontSize: ms(12.5), color: PP.slate, lineHeight: ms(18), marginBottom: 12 },
   input: {
     height: 46, paddingHorizontal: 14, borderRadius: 14,
