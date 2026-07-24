@@ -18,6 +18,7 @@ import { Header } from '../../../components/Header';
 import { api } from '../../../lib/api';
 import { cleanArtistName } from '../../../lib/format';
 import { MasterRelease, Track } from '../../../lib/types';
+import { putVersionsPrefetch } from '../../../lib/versionsPrefetch';
 import { Colors, Typography, Spacing, BorderRadius } from '../../../constants/theme';
 
 export default function MasterScreen() {
@@ -62,12 +63,16 @@ export default function MasterScreen() {
     }
   };
 
+  // per_page=50, а не 1: total в ответе тот же (счётчик не страдает), но запрос
+  // греет ТУ ЖЕ запись кэша, которую попросит экран версий, и сам список едет
+  // в префетч. Раньше pp1 грел бесполезный ключ, и тап начинал загрузку с нуля.
   const loadVersionsCount = async () => {
     if (!id) return;
 
     try {
-      const response = await api.getMasterVersions(id, 1, 1);
+      const response = await api.getMasterVersions(id, 1, 50);
       setVersionsCount(response.total);
+      putVersionsPrefetch(id, response.results, response.total);
     } catch (err) {
       console.error('Error loading versions count:', err);
     }

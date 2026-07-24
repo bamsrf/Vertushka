@@ -19,6 +19,7 @@ import { VersionCard } from '../../../components/VersionCard';
 import { api } from '../../../lib/api';
 import { toast } from '../../../lib/toast';
 import { MasterVersion } from '../../../lib/types';
+import { takeVersionsPrefetch } from '../../../lib/versionsPrefetch';
 import { Colors, Typography, Spacing, BorderRadius } from '../../../constants/theme';
 
 type FormatFilter = 'all' | 'vinyl' | 'cd' | 'cassette' | 'box_set';
@@ -42,11 +43,15 @@ export default function VersionsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
 
-  const [versions, setVersions] = useState<MasterVersion[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  // Первая отрисовка из префетча мастер-экрана — список появляется в тот же
+  // кадр, что и сам экран, без спиннера. Ниже loadVersions всё равно сходит на
+  // бэк и перезапишет данные свежими (обложки/флаги могли долечиться).
+  const prefetched = useMemo(() => (id ? takeVersionsPrefetch(id) : null), [id]);
+  const [versions, setVersions] = useState<MasterVersion[]>(prefetched?.results ?? []);
+  const [isLoading, setIsLoading] = useState(!prefetched);
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
-  const [total, setTotal] = useState(0);
+  const [total, setTotal] = useState(prefetched?.total ?? 0);
   const [activeFilter, setActiveFilter] = useState<FormatFilter>('all');
   // Retry обложек: бэк добирает covers фоном (thumbs + get_release ~10-15с) и
   // пишет enriched-кэш. Перезапрашиваем КАЖДУЮ загруженную страницу — не только
@@ -60,7 +65,7 @@ export default function VersionsScreen() {
 
   useEffect(() => {
     coverRetryAttempts.current = {};
-    loadVersions();
+    loadVersions(1, Boolean(prefetched));
     return () => {
       coverRetryTimers.current.forEach(clearTimeout);
       coverRetryTimers.current = [];
@@ -90,7 +95,10 @@ export default function VersionsScreen() {
     coverRetryAttempts.current[pageNum] = attempt + 1;
     const timer = setTimeout(async () => {
       try {
-        const resp = await api.getMasterVersions(id, pageNum, 50);
+        // fresh=true — ретрай обязан пробивать nginx-кэш: частичный ответ теперь
+        // кэшируется на 60с (раньше был no-store), и без cache-buster'а ретрай
+        // получил бы ту же версию с дырами вместо долеченной.
+        const resp = await api.getMasterVersions(id, pageNum, 50, true);
         mergeCovers(resp.results);
         scheduleCoverRetry(pageNum, resp.results);
       } catch {
@@ -100,11 +108,13 @@ export default function VersionsScreen() {
     coverRetryTimers.current.push(timer);
   };
 
-  const loadVersions = async (pageNum = 1) => {
+  // silent — фоновое обновление поверх префетча: список уже на экране, спиннер
+  // поверх него был бы регрессом ощущаемой скорости.
+  const loadVersions = async (pageNum = 1, silent = false) => {
     if (!id) return;
     if (pageNum > 1 && isLoading) return;
 
-    setIsLoading(true);
+    if (!silent) setIsLoading(true);
 
     try {
       const response = await api.getMasterVersions(id, pageNum, 50);

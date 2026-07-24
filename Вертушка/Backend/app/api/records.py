@@ -286,6 +286,69 @@ async def _ensure_record_price_data_bg(record_id: UUID, discogs_id: str) -> None
         logger.exception("Background price fetch failed for record %s", record_id)
 
 
+# Сколько ждём inline-обогащение карточки релиза, прежде чем отдать что есть.
+# Локальные/бесплатные источники треклиста (таблица дампа, MB, Deezer) укладываются
+# сюда с запасом; в этот бюджет не влезает только поход в Discogs под нагруженным
+# token-bucket'ом — ровно тот случай, ради которого watchdog и ставится.
+RECORD_ENRICH_INLINE_SEC = 6.0
+
+_record_enrich_tasks: set[asyncio.Task] = set()
+
+
+async def _ensure_record_payload_bounded(record: Record, db: AsyncSession) -> None:
+    """Обогащение записи с ограничением по времени, без потери работы.
+
+    Таск открывает СОБСТВЕННУЮ сессию (_enrich_record_bg), поэтому переживает
+    закрытие request-сессии и спокойно дописывает данные после ответа. shield
+    защищает его от отмены по таймауту: мы перестаём ждать, но работа идёт.
+
+    Успели в бюджет — refresh подтягивает свежие поля в request-сессию, ответ
+    уходит полным. Не успели — уходит текущее состояние записи.
+    """
+    # Гарда на discogs_id тут НЕТ намеренно: у store-native записей его нет, но
+    # _ensure_record_artist_data умеет линковать артиста по имени через
+    # artist-search. Ранний выход по discogs_id отрезал бы им артиста совсем.
+    needs_payload = not record.tracklist
+    needs_artist = not (record.discogs_data or {}).get("artist_thumb_image_url")
+    if not needs_payload and not needs_artist:
+        return
+
+    task = asyncio.create_task(_enrich_record_bg(record.id, record.discogs_id))
+    _record_enrich_tasks.add(task)
+    task.add_done_callback(_record_enrich_tasks.discard)
+    try:
+        await asyncio.wait_for(asyncio.shield(task), timeout=RECORD_ENRICH_INLINE_SEC)
+    except asyncio.TimeoutError:
+        return
+    except Exception:
+        logger.debug("inline record enrich failed for %s", record.discogs_id, exc_info=True)
+        return
+    try:
+        await db.refresh(record)
+    except Exception:
+        logger.debug("record refresh after enrich failed", exc_info=True)
+
+
+async def _enrich_record_bg(record_id: UUID, discogs_id: str | None) -> None:
+    """payload + artist для существующей записи, в своей сессии.
+
+    discogs_id может быть None (store-native) — он тут только для логов.
+    """
+    from app.database import async_session_maker
+    try:
+        async with async_session_maker() as db:
+            res = await db.execute(select(Record).where(Record.id == record_id))
+            rec = res.scalar_one_or_none()
+            if not rec:
+                return
+            # Порядок: payload ПЕРЕД artist_data — artist берёт artist_id из
+            # уже прогретого get_release-кэша и не ходит в сеть повторно.
+            await _ensure_record_discogs_payload(rec, db)
+            await _ensure_record_artist_data(rec, db)
+    except Exception:
+        logger.exception("_enrich_record_bg failed for %s (discogs_id=%s)", record_id, discogs_id)
+
+
 async def _enrich_stub_bg(record_id: UUID, discogs_id: str) -> None:
     """Фоновое обогащение stub-записи созданной из discogs_releases_index.
 
@@ -335,16 +398,18 @@ async def _ensure_record_artist_data(record: Record, db: AsyncSession) -> None:
 
     artist_id = discogs_data.get("artist_id")
 
-    # Если artist_id нет — достаём из Discogs по release ID
+    # Если artist_id нет — достаём из Discogs по release ID.
+    # get_release, а НЕ сырой _get: сырой ходил в сеть мимо Redis-кэша релизов,
+    # причём обычно сразу после того, как _ensure_record_discogs_payload уже
+    # скачал ровно этот релиз через get_release. Через кэшируемый метод тот же
+    # artist_id достаётся из готового payload'а — в типичном потоке ноль сети.
     if not artist_id and record.discogs_id:
         try:
             discogs = DiscogsService()
-            release_raw = await discogs._get(
-                f"{discogs.BASE_URL}/releases/{record.discogs_id}"
+            data = await discogs.get_release(
+                record.discogs_id, priority=Priority.ENRICHMENT
             )
-            artists = release_raw.get("artists", [])
-            if artists:
-                artist_id = str(artists[0].get("id"))
+            artist_id = data.get("artist_id")
         except Exception:
             logger.exception("Failed to fetch artist_id from Discogs for record %s", record.discogs_id)
             return
@@ -1810,14 +1875,12 @@ async def get_record(
     ):
         asyncio.create_task(_schedule_store_native_discogs_match(record.id))
 
-    # Порядок важен: payload ПЕРЕД artist_data.
-    # _ensure_record_discogs_payload может догрузить полный Discogs release
-    # с tracklist'ом — и положить туда же artist_id, что потом сэкономит
-    # _ensure_record_artist_data один HTTP-запрос.
+    # Обогащение под watchdog'ом — как в get_record_by_discogs_id: успели в
+    # бюджет, отдаём полную карточку; не успели — отдаём что есть, а таск
+    # доживает в фоне и дописывает поля в БД.
     # Price data — fire-and-forget: не блокирует ответ, подтягивается фоном.
     # Следующее открытие карточки уже покажет цены из БД.
-    await _ensure_record_discogs_payload(record, db)
-    await _ensure_record_artist_data(record, db)
+    await _ensure_record_payload_bounded(record, db)
     if not record.estimated_price_min and not record.estimated_price_median and record.discogs_id:
         asyncio.create_task(_ensure_record_price_data_bg(record.id, record.discogs_id))
 
@@ -1851,9 +1914,20 @@ async def get_record_by_discogs_id(
     record = result.scalar_one_or_none()
 
     if record:
-        # Порядок: payload ПЕРЕД artist_data. Price — fire-and-forget.
-        await _ensure_record_discogs_payload(record, db)
-        await _ensure_record_artist_data(record, db)
+        # Обогащение под watchdog'ом, а не «сколько понадобится».
+        #
+        # Было: два последовательных await прямо в request-path. Каждый мог уйти
+        # в Discogs, а там token-bucket с acquire(timeout=30) и до 3 попыток с
+        # Retry-After — под нагрузкой карточка релиза висела десятки секунд и
+        # добивала axios-таймаут в 60с. Именно это видно как «долго грузится при
+        # нажатии на версию».
+        #
+        # Стало: shield + короткий таймаут. Успели за RECORD_ENRICH_INLINE_SEC —
+        # юзер получает полную карточку, как и раньше. Не успели — получает то,
+        # что уже есть, а таск ДОЖИВАЕТ в фоне (shield не даёт его отменить) и
+        # дописывает данные в БД. Ничего не пропадает: на следующем заходе (или
+        # на клиентском refetch) поля уже на месте.
+        await _ensure_record_payload_bounded(record, db)
         if not record.estimated_price_min and not record.estimated_price_median and record.discogs_id:
             asyncio.create_task(_ensure_record_price_data_bg(record.id, record.discogs_id))
 
@@ -2312,19 +2386,13 @@ async def get_master_versions(
     if cached_enriched:
         resp_obj = MasterVersionsResponse(**cached_enriched)
         # Если в кэше остались версии без обложки (master/versions thumb пуст) —
-        # один раз в 6ч добираем их через get_release фоном и переписываем кэш
-        # (durable-персист в дамп). no-store на этот ответ, чтобы следующий заход
-        # дошёл до уже залеченного кэша, а не до часового nginx-кэша пустого.
+        # один раз в 6ч добираем их фоном и переписываем кэш (durable-персист
+        # в дамп). Заголовок кэширования выставляет _set_versions_cache_header
+        # уже ПОСЛЕ master-fallback — см. его docstring.
         has_uncovered = any(
             not (v.cover_image_url or v.thumb_image_url) for v in resp_obj.results
         )
         if has_uncovered:
-            # КРИТИЧНО: пока в ответе есть версии без обложки — НИКОГДА не отдаём
-            # max-age, иначе nginx закэширует частичный (с закрывашками) ответ на
-            # час, и телефон будет ловить x-cache-status:HIT со старыми пустотами,
-            # даже после того как Redis-enriched долечился. no-store → запрос
-            # всегда доходит до бэка и берёт свежий (долеченный) Redis-кэш.
-            response.headers["Cache-Control"] = "no-store"
             # Заодно раз в 6ч пинаем фоновую дозагрузку обложек (get_release).
             if await cache.set_nx(
                 "master_versions_straggler", enriched_ck, "1", ttl=21600
@@ -2344,8 +2412,7 @@ async def get_master_versions(
                 for v in resp_obj.results:
                     if not (v.cover_image_url or v.thumb_image_url):
                         v.cover_image_url = mc_url
-        else:
-            response.headers["Cache-Control"] = "public, max-age=3600"
+        _set_versions_cache_header(response, resp_obj, complete=not has_uncovered)
         return resp_obj
 
     # Local-first: discogs_releases_index содержит все 13M releases с master_id.
@@ -2362,39 +2429,21 @@ async def get_master_versions(
         # дыры на response-time и позволяет пропустить inline-watchdog Discogs.
         master_cover_url = await _master_cover_url(db, master_id)
 
-        # P3: inline short-watchdog. Если у большинства версий нет обложки —
-        # пробуем 1 вызов Discogs прямо сейчас (≤4с) и мёржим thumbs в ответ.
-        # get_master_versions Redis-кэшируется → фоновый таск ниже добьёт остаток
-        # из кэша без второго токена. На таймаут/ошибку — тихий fallback на retry.
         covered = sum(
             1 for v in versions.results if v.cover_image_url or v.thumb_image_url
         )
-        # covered считается ТОЛЬКО по per-release источникам (records/index) —
-        # master-fallback не учитываем, иначе фоновый enrich точных обложек
-        # перестанет триггериться. Но при наличии master-обложки inline-вызов
-        # Discogs (до 4с ожидания юзером) пропускаем: дыры закроет fallback
-        # ниже, а точные обложки дольёт background _enrich_covers_from_api.
+        # Был inline short-watchdog: при отсутствии мастер-обложки делали 1 вызов
+        # Discogs ПРЯМО В REQUEST-PATH с ожиданием до 4с. Убран — это единственный
+        # блокирующий юзера вызов Discogs на этом экране, и он же самый бесполезный:
+        # мёржил ровно те thumb'ы, которые через секунды дольёт фоновый
+        # _enrich_covers_from_api, уже бесплатными источниками.
+        # Вместо него — прогрев МАСТЕР-обложки: 1 вызов get_master фоном, с капом
+        # и 6ч-локом, результат ложится в discogs_master_covers навсегда. Со
+        # следующего захода дыры закрывает response-time fallback без сети, и
+        # выигрывает не только этот экран, но и мастер-карточка с сеткой артиста.
         if covered < len(versions.results) / 2 and not master_cover_url:
-            try:
-                api_resp = await asyncio.wait_for(
-                    DiscogsService().get_master_versions(
-                        master_id=master_id, page=page, per_page=per_page,
-                        creds=user_creds(current_user),
-                    ),
-                    timeout=4,
-                )
-                cover_by_id = {
-                    v.release_id: (v.cover_image_url or v.thumb_image_url)
-                    for v in api_resp.results
-                    if v.cover_image_url or v.thumb_image_url
-                }
-                for v in versions.results:
-                    if not v.cover_image_url and not v.thumb_image_url:
-                        c = cover_by_id.get(v.release_id)
-                        if c:
-                            v.cover_image_url = c
-            except Exception:
-                pass
+            from app.services.cover_warm import schedule_warm_masters_by_id
+            schedule_warm_masters_by_id([master_id])
 
         # Фоновый таск: персист обложек в PG (durable, мимо Redis-TTL), мёрж
         # версий, отсутствующих в дампе, и запись enriched-кэша. Вызов
@@ -2493,13 +2542,6 @@ async def get_master_versions(
         # Все виденные — можно сразу записать enriched-кэш
         await cache.set("master_versions_enriched", enriched_ck, versions.model_dump(), TTL_MASTER_VERSIONS)
 
-    # local-first ответ может быть неполным: обложки и версии, отсутствующие в
-    # дампе, дотягиваются фоном в master_versions_enriched. Если разрешить nginx
-    # кэшировать этот ответ (max-age=3600), он час отдаёт версию без обложек, а
-    # клиентский retry попадает в nginx-кэш и не доходит до enriched в Redis.
-    # no-store → retry проходит до бэка и получает обогащённый ответ.
-    response.headers["Cache-Control"] = "no-store"
-
     # Response-time fallback: оставшиеся дыры закрываем master-обложкой.
     # ВАЖНО: строго после всех model_dump() выше — bg-таски и enriched-кэш
     # снимаются БЕЗ fallback'а, per-release лечение не подавляется.
@@ -2508,7 +2550,47 @@ async def get_master_versions(
             if not v.cover_image_url and not v.thumb_image_url:
                 v.cover_image_url = master_cover_url
 
+    # Заголовок — строго после fallback'а: он решает, «дырявый» ли ответ глазами
+    # юзера, а не по внутреннему признаку «есть ли точная per-release обложка».
+    _set_versions_cache_header(response, versions, complete=False)
+
     return versions
+
+
+def _set_versions_cache_header(
+    response: Response,
+    versions: MasterVersionsResponse,
+    *,
+    complete: bool,
+) -> None:
+    """Ставит Cache-Control на ответ versions-экрана по «дырявости» ответа.
+
+    Раньше правило было бинарным: любой не-полный ответ → no-store. А не-полным
+    он бывает почти всегда (дамп Discogs не несёт image URLs), поэтому nginx-кэш
+    на этом эндпоинте был фактически выключен для большинства мастеров — каждый
+    заход каждого юзера доходил до Python и до PG.
+
+    Лестница из трёх ступеней:
+      - complete (у всех версий есть ТОЧНАЯ per-release обложка) → 1 час;
+      - дыры закрыты master-обложкой (юзер видит нормальную сетку, просто менее
+        точные обложки) → 60 сек: edge-кэш снимает основную массу запросов, а
+        через минуту подтянется долеченная версия;
+      - остались видимые закрывашки → no-store, как и было: такой ответ нельзя
+        замораживать на edge даже на минуту.
+
+    Клиентские cover-ретраи обязаны нести cache-buster (`_r`), иначе на второй
+    ступени они попадут в nginx-кэш и лечение обложек встанет. См.
+    Mobile/app/master/[id]/versions.tsx.
+    """
+    if complete:
+        response.headers["Cache-Control"] = "public, max-age=3600"
+        return
+    still_uncovered = any(
+        not (v.cover_image_url or v.thumb_image_url) for v in versions.results
+    )
+    response.headers["Cache-Control"] = (
+        "no-store" if still_uncovered else "public, max-age=60"
+    )
 
 
 async def _master_cover_url(db: AsyncSession, master_id: str) -> str | None:
@@ -2563,6 +2645,7 @@ async def _fetch_versions_from_local_index(
                     dri.discogs_id::text AS release_id,
                     dri.artist, dri.title, dri.year, dri.country,
                     dri.format_type, dri.label, dri.catalog_norm,
+                    dri.is_collectible,
                     COALESCE(
                         CASE WHEN r.cover_local_path IS NOT NULL
                              THEN '/uploads/' || r.cover_local_path END,
@@ -2594,6 +2677,10 @@ async def _fetch_versions_from_local_index(
             major_formats=[row["format_type"]] if row["format_type"] else [],
             thumb_image_url=None,
             cover_image_url=row["cover_image_url"],
+            # Durable-флаг: посчитан однажды фоновым таском, живёт в дампе.
+            # Плашка редкости видна СРАЗУ на холодном мастере, если релиз уже
+            # проверяли когда-либо — без единого вызова Discogs.
+            is_collectible=bool(row["is_collectible"]),
         )
         for row in rows
     ]
@@ -2676,18 +2763,30 @@ async def _enrich_covers_from_api(
                     v.cover_image_url = c
                     changed = True
 
-        # 1b) Для версий всё ещё без cover добираем обложку из get_release.
-        # master/versions отдаёт thumb=null для части переизданий (винил-репрессы),
-        # но у самого релиза images есть (это и видно при тапе в деталь). Bounded
-        # cap+watchdog — чтобы не повторить 60s-фан-аут экрана артиста.
-        # cap 30: одна heal-волна закрывает и крупные мастера; 10s-watchdog ниже
-        # всё равно держит время, sem 5 ограничивает параллельность к Discogs.
+        # 1a-pre) Перечитываем обложки из дамп-индекса — ноль сети.
+        # КРИТИЧНО для экономии: cover_warm и Deezer-backfill пишут найденные
+        # обложки в discogs_releases_index.cover_image_url, но enriched-кэш их
+        # никогда не перечитывал. Из-за этого бесплатно прогретые обложки были
+        # невидимы до истечения Redis-TTL (3 дня), а мы тем временем добирали
+        # ТЕ ЖЕ обложки платными вызовами Discogs.
         still = [
             v for v in versions.results
             if not v.cover_image_url and not v.thumb_image_url
-        ][:30]
+        ]
+        if still:
+            merged = await _covers_from_index([v.release_id for v in still])
+            if merged:
+                for v in still:
+                    url = merged.get(v.release_id)
+                    if url:
+                        v.cover_image_url = url
+                        changed = True
+                still = [
+                    v for v in still
+                    if not v.cover_image_url and not v.thumb_image_url
+                ]
 
-        # 1a-bis) Сначала CAA по офлайн-маппингу mb_discogs_map: has_front
+        # 1a-bis) CAA по офлайн-маппингу mb_discogs_map: has_front
         # известен из дампа CAA-индекса → URL строится БЕЗ единого сетевого
         # вызова. Схлопывает большинство страглеров до нуля Discogs-запросов.
         if still:
@@ -2721,31 +2820,41 @@ async def _enrich_covers_from_api(
                         if not v.cover_image_url and not v.thumb_image_url
                     ]
 
+        # 1b) Оставшиеся — через бесплатную лестницу cover_warm.
+        # Раньше здесь был фан-аут get_release_cover до 30 вызовов Discogs на
+        # страницу, причём БЕЗ попытки бесплатных источников. warm_dump_covers
+        # ходит по той же цели в порядке CAA-by-id → CAA-by-barcode → Deezer →
+        # Discogs (бюджет 3 на батч) → iTunes, дедуплицирует релизы Redis-локом
+        # на 6ч и персистит результат в дамп. Слайс — ПОСЛЕ всех бесплатных
+        # шагов выше: те работают по всей странице, режем только платный хвост.
+        # Незакрытые остаются без лока и достанутся следующему заходу/ретраю.
+        still = still[:_COVER_WARM_SLICE]
+
         if still:
-            sem = asyncio.Semaphore(5)
-
-            async def _one_cover(v):
-                async with sem:
-                    try:
-                        # get_release_cover, НЕ get_release: полный get_release
-                        # параллельно тянет marketplace/stats — для обложки это
-                        # 2× расход окна Discogs впустую (цены тут не нужны).
-                        return v.release_id, await discogs.get_release_cover(v.release_id)
-                    except Exception:
-                        return v.release_id, None
-
-            tasks = [asyncio.create_task(_one_cover(v)) for v in still]
-            done, pending = await asyncio.wait(tasks, timeout=10)
-            for t in pending:
-                t.cancel()
+            still_ids = [
+                v.release_id for v in still
+                if v.release_id and v.release_id.isdigit()
+            ]
             release_covers: dict[str, str] = {}
-            for t in done:
+            if still_ids:
                 try:
-                    rid, cov = t.result()
-                    if cov:
-                        release_covers[rid] = cov
+                    from app.services.cover_warm import warm_dump_covers
+                    # Бесплатные источники сначала, Discogs — только в рамках
+                    # бюджета батча. warm_dump_covers сам персистит найденное в
+                    # discogs_releases_index, поэтому результат просто
+                    # перечитываем оттуда (и он остаётся всем юзерам навсегда).
+                    # Watchdog щедрый (таск фоновый, юзер его не ждёт) и это
+                    # намеренно: _warm_batch коммитит один раз в конце, поэтому
+                    # отмена по таймауту потеряла бы всю работу батча, а id уже
+                    # были бы залочены на 6ч → дыры в обложках на эти 6 часов.
+                    # Отсюда же маленький слайс: батч последовательный.
+                    await asyncio.wait_for(
+                        warm_dump_covers(still_ids, discogs_budget=_COVER_DISCOGS_BUDGET),
+                        timeout=60,
+                    )
                 except Exception:
-                    pass
+                    logger.debug("cover warm delegation failed", exc_info=True)
+                release_covers = await _covers_from_index(still_ids)
             if release_covers:
                 for v in versions.results:
                     if (
@@ -2807,6 +2916,116 @@ async def _enrich_covers_from_api(
         await cache.delete("master_versions_lock", lock_key)
 
 
+# Сколько версий за раз отдаём в бесплатную лестницу cover_warm. Батч там
+# последовательный (MB-троттл 1 rps), поэтому слайс маленький: незакрытые
+# остаются без Redis-лока и достаются следующему заходу или клиентскому ретраю.
+_COVER_WARM_SLICE = 8
+# Бюджет Discogs-вызовов внутри одного такого батча. Было до 30 на страницу
+# прямым фан-аутом get_release_cover — теперь потолок втрое ниже, и то лишь
+# после того как отработали CAA, barcode-CAA и Deezer.
+_COVER_DISCOGS_BUDGET = 3
+
+
+async def _covers_from_index(release_ids: list[str]) -> dict[str, str]:
+    """Обложки из discogs_releases_index — ноль сетевых вызовов.
+
+    Единая точка чтения того, что напрогревали бесплатные источники
+    (cover_warm, Deezer-backfill, CAA) в дамп. Без этого enriched-кэш жил своей
+    жизнью и переспрашивал у Discogs уже добытые обложки.
+    """
+    ids = [int(r) for r in release_ids if r and r.isdigit()]
+    if not ids:
+        return {}
+    try:
+        from app.database import async_session_maker
+        async with async_session_maker() as session:
+            rows = (await session.execute(
+                text(
+                    "SELECT discogs_id::text AS did, cover_image_url "
+                    "FROM discogs_releases_index "
+                    "WHERE discogs_id = ANY(:ids) AND cover_image_url IS NOT NULL"
+                ),
+                {"ids": ids},
+            )).mappings().all()
+        return {r["did"]: r["cover_image_url"] for r in rows}
+    except Exception:
+        logger.debug("cover index lookup failed", exc_info=True)
+        return {}
+
+
+# Максимум per-release проб /marketplace/stats на одну страницу версий.
+# Пре-фильтр по have обычно оставляет 5–15 кандидатов; cap — потолок на случай
+# мастера, где дамп не знает community-счётчиков (have is None у всех).
+COLLECTIBLE_PROBE_CAP = 25
+# Через сколько дней перепроверяем is_collectible. Флаг зависит от рыночной
+# цены и числа лотов — раз в ~месяц достаточно, чтобы поймать сдвиги, но редко
+# достаточно, чтобы не жечь /marketplace/stats. Совпадает по духу с TTL_RELEASE.
+COLLECTIBLE_RECHECK_DAYS = 30
+
+
+async def _collectible_flags_from_index(release_ids: list[str]) -> dict[str, bool]:
+    """Ранее посчитанные is_collectible из discogs_releases_index.
+
+    Ключ экономии: релиз проверяется на редкость раз в COLLECTIBLE_RECHECK_DAYS,
+    а не раз в TTL Redis. Отсутствие ключа в ответе означает «не проверяли (или
+    проверка протухла)», а не «не редкий».
+
+    Окно свежести обязательно: is_collectible зависит от цены и числа лотов на
+    маркете, а они меняются. Без окна однажды записанный флаг замёрз бы навсегда
+    — релиз, подорожавший до порога, никогда бы не получил плашку.
+    """
+    ids = [int(r) for r in release_ids if r and r.isdigit()]
+    if not ids:
+        return {}
+    try:
+        from app.database import async_session_maker
+        async with async_session_maker() as session:
+            rows = (await session.execute(
+                text(
+                    "SELECT discogs_id::text AS did, is_collectible "
+                    "FROM discogs_releases_index "
+                    "WHERE discogs_id = ANY(:ids) "
+                    "AND collectible_checked_at > now() - make_interval(days => :days)"
+                ),
+                {"ids": ids, "days": COLLECTIBLE_RECHECK_DAYS},
+            )).mappings().all()
+        return {r["did"]: bool(r["is_collectible"]) for r in rows}
+    except Exception:
+        # Колонки может не быть до применения миграции — fail-open: просто
+        # посчитаем заново, как раньше.
+        logger.debug("collectible index lookup unavailable", exc_info=True)
+        return {}
+
+
+async def _persist_collectible_flags(flags: dict[str, bool]) -> None:
+    """Пишет результат проверки в discogs_releases_index (durable, для всех юзеров).
+
+    Пишем и false тоже — «проверено и не редкий» экономит столько же вызовов,
+    сколько «проверено и редкий».
+    """
+    ids_true = [int(r) for r, f in flags.items() if f and r.isdigit()]
+    ids_false = [int(r) for r, f in flags.items() if not f and r.isdigit()]
+    if not ids_true and not ids_false:
+        return
+    try:
+        from app.database import async_session_maker
+        async with async_session_maker() as session:
+            for ids, value in ((ids_true, True), (ids_false, False)):
+                if not ids:
+                    continue
+                await session.execute(
+                    text(
+                        "UPDATE discogs_releases_index "
+                        "SET is_collectible = :val, collectible_checked_at = now() "
+                        "WHERE discogs_id = ANY(:ids)"
+                    ),
+                    {"val": value, "ids": ids},
+                )
+            await session.commit()
+    except Exception:
+        logger.debug("collectible persist skipped", exc_info=True)
+
+
 async def _enrich_collectible_async(
     *,
     master_id: str,
@@ -2816,10 +3035,29 @@ async def _enrich_collectible_async(
     unseen_ids: list[str],
     enriched_ck: str,
 ) -> None:
-    """Фоновое обогащение is_collectible через discogs.get_release.
+    """Фоновое обогащение is_collectible — без N×get_release.
+
+    Было: get_release на КАЖДУЮ невиданную версию. Один get_release на холодном
+    релизе — это /releases/{id} + /marketplace/stats + (master, artist) → ~2
+    сетевых вызова даже с кэшами. На странице в 50 версий это ~100 вызовов
+    Discogs при глобальном окне 60/мин: одно открытие экрана выжирало две минуты
+    общего лимита и ставило всех остальных юзеров в очередь token-bucket'а.
+
+    Стало — три уровня отсечения, флаг остаётся тем же и по тем же порогам:
+      1) durable-кэш: is_collectible, уже посчитанный когда-либо для этого
+         релиза, лежит в discogs_releases_index → 0 вызовов (переживает Redis-TTL);
+      2) пре-фильтр по have: условие требует have <= COLLECTIBLE_MAX_HAVE, а have
+         приходит бесплатно из stats.community мастер-versions (один вызов на всю
+         страницу, обычно уже в Redis после _enrich_covers_from_api). Массовые
+         прессы отсеиваются без единого запроса;
+      3) на выживших — только /marketplace/stats/{id} (1 вызов вместо ~2),
+         cap COLLECTIBLE_PROBE_CAP от самых редких (have ASC).
+
+    Результат пишется в discogs_releases_index, поэтому второй заход на тот же
+    мастер стоит 0 вызовов Discogs — навсегда, а не на 3 дня Redis-TTL.
 
     Single-flight: Redis-lock не даёт двум воркерам обогащать одну страницу
-    параллельно. Watchdog 120 сек защищает от вечного зависания.
+    параллельно. Watchdog 60 сек защищает от вечного зависания.
     По завершении пишет master_versions_enriched, чтобы следующий заход
     юзера попал в кэш.
     """
@@ -2834,38 +3072,102 @@ async def _enrich_collectible_async(
         unseen_versions = [v for v in versions.results if v.release_id in unseen_set]
 
         discogs = DiscogsService()
-        sem = asyncio.Semaphore(5)
 
-        async def fetch_flags(v):
+        # (1) Durable-кэш флага из дамп-индекса — считаем каждый релиз один раз
+        # за всё время. Закрывает повторные заходы на тот же мастер в ноль.
+        known = await _collectible_flags_from_index(
+            [v.release_id for v in unseen_versions]
+        )
+        for v in versions.results:
+            if known.get(v.release_id):
+                v.is_collectible = True
+        candidates = [
+            v for v in unseen_versions if v.release_id not in known
+        ]
+
+        # (2) have из stats.community: один get_master_versions на страницу
+        # (в Redis после _enrich_covers_from_api → обычно 0 вызовов). Версии, у
+        # которых have уже проставлен из API-ветки, не требуют и этого.
+        if candidates and any(v.have is None for v in candidates):
+            try:
+                api_resp = await discogs.get_master_versions(
+                    master_id=master_id, page=page, per_page=per_page
+                )
+                have_by_id = {
+                    av.release_id: av.have
+                    for av in api_resp.results
+                    if av.have is not None
+                }
+                for v in candidates:
+                    if v.have is None:
+                        v.have = have_by_id.get(v.release_id)
+            except Exception:
+                logger.debug("collectible: have-prefilter unavailable for %s", master_id)
+
+        # Пробуем ТОЛЬКО тех, по кому вердикт будет достоверным:
+        #   - have известен и > порога → is_collectible невозможен по определению,
+        #     сеть не трогаем вовсе (ниже запишем false);
+        #   - have неизвестен → вызов бессмысленно тратить: compute_is_collectible
+        #     трактует None как 0, и массовый пресс получил бы плашку по одной
+        #     цене. Старый код такого не допускал — have всегда приходил из
+        #     get_release. Оставляем непроверенным, вернёмся когда have появится.
+        # Сортировка have ASC — сначала заведомо редкие, они и упираются в cap.
+        probes = [
+            v for v in candidates
+            if v.have is not None and v.have <= DiscogsService.COLLECTIBLE_MAX_HAVE
+        ]
+        probes.sort(key=lambda v: v.have or 0)
+        probes = probes[:COLLECTIBLE_PROBE_CAP]
+
+        sem = asyncio.Semaphore(5)
+        checked: dict[str, bool] = {}
+
+        async def fetch_flag(v):
             async with sem:
                 try:
-                    # Priority.ENRICHMENT — не дренит token-bucket UI-запросов.
-                    data = await discogs.get_release(v.release_id, priority=Priority.ENRICHMENT)
-                    v.is_canon = v.is_canon or bool(data.get("is_canon"))
-                    v.is_collectible = v.is_collectible or bool(data.get("is_collectible"))
-                    v.is_limited = v.is_limited or bool(data.get("is_limited"))
-                    v.is_hot = v.is_hot or bool(data.get("is_hot"))
-                    # Обложка: берём из get_release если версия ещё без cover
-                    if not v.cover_image_url and not v.thumb_image_url:
-                        cover = data.get("cover_image") or data.get("cover_image_url")
-                        thumb = data.get("thumb_image") or data.get("thumb_image_url")
-                        if cover:
-                            v.cover_image_url = cover
-                        elif thumb:
-                            v.thumb_image_url = thumb
+                    # Только marketplace/stats — не полный get_release.
+                    # Priority.ENRICHMENT внутри _get_price_stats: не дренит
+                    # token-bucket UI-запросов.
+                    stats = await discogs._get_price_stats(v.release_id)
                 except Exception:
-                    pass
+                    return
+                if stats is None:
+                    # _get_price_stats глушит 429/сетевые ошибки и отдаёт None —
+                    # неотличимо от «на маркете пусто». Persist'ить false нельзя:
+                    # транзиентный сбой навсегда погасил бы плашку у редкого
+                    # релиза. Не знаем — не записываем, проверим в следующий раз.
+                    return
+                # Отрицательный результат фиксируем: иначе каждый заход
+                # перепроверял бы одни и те же «не редкие» релизы.
+                flag = DiscogsService.compute_is_collectible(stats, v.have)
+                checked[v.release_id] = flag
+                if flag:
+                    v.is_collectible = True
 
-        try:
-            await asyncio.wait_for(
-                asyncio.gather(*[fetch_flags(v) for v in unseen_versions]),
-                timeout=120,
-            )
-        except asyncio.TimeoutError:
-            logger.warning(
-                "master_versions enrichment timeout master_id=%s page=%s",
-                master_id, page,
-            )
+        if probes:
+            try:
+                await asyncio.wait_for(
+                    asyncio.gather(*[fetch_flag(v) for v in probes]),
+                    timeout=60,
+                )
+            except asyncio.TimeoutError:
+                logger.warning(
+                    "master_versions enrichment timeout master_id=%s page=%s",
+                    master_id, page,
+                )
+
+        # Пре-фильтр по have — тоже знание: релиз с have > порога не станет
+        # collectible, фиксируем false, чтобы больше его не трогать.
+        for v in candidates:
+            if (
+                v.release_id not in checked
+                and v.have is not None
+                and v.have > DiscogsService.COLLECTIBLE_MAX_HAVE
+            ):
+                checked[v.release_id] = False
+
+        if checked:
+            await _persist_collectible_flags(checked)
 
         # Мёрджим с уже имеющимся кэшем: если _enrich_covers_from_api успел
         # записать thumb'ы — не затираем их нулями из нашего versions объекта.

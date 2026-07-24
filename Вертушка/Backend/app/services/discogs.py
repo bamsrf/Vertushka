@@ -536,6 +536,49 @@ class DiscogsService:
         "original press",
     )
 
+    @staticmethod
+    def _price_stat_value(stats: dict | None, key: str) -> float | None:
+        """Достаёт число из price_stats: значение либо скаляр, либо {'value': N}."""
+        if not stats:
+            return None
+        obj = stats.get(key)
+        if isinstance(obj, dict):
+            obj = obj.get("value")
+        try:
+            return float(obj) if obj is not None else None
+        except (TypeError, ValueError):
+            return None
+
+    @classmethod
+    def compute_is_collectible(cls, price_stats: dict | None, have: int | None) -> bool:
+        """is_collectible из price_stats (/marketplace/stats) + community.have.
+
+        Вынесено из _compute_rarity_flags, чтобы фоновое обогащение экрана версий
+        считало флаг по ТЕМ ЖЕ порогам, но без полного get_release: have приходит
+        бесплатно из stats.community мастер-versions, а из сети нужен только
+        /marketplace/stats/{id}. Экономит ~2 вызова Discogs на каждую версию.
+        """
+        if not price_stats:
+            return False
+        num_for_sale = price_stats.get("num_for_sale")
+        try:
+            num_for_sale_int = int(num_for_sale) if num_for_sale is not None else None
+        except (TypeError, ValueError):
+            return False
+        if num_for_sale_int is None:
+            return False
+        price_usd = (
+            cls._price_stat_value(price_stats, "median_price")
+            or cls._price_stat_value(price_stats, "lowest_price")
+        )
+        if price_usd is None:
+            return False
+        return (
+            price_usd >= cls.COLLECTIBLE_MIN_PRICE_USD
+            and num_for_sale_int <= cls.COLLECTIBLE_MAX_FOR_SALE
+            and (have or 0) <= cls.COLLECTIBLE_MAX_HAVE
+        )
+
     @classmethod
     def _compute_rarity_flags(
         cls,
@@ -574,40 +617,9 @@ class DiscogsService:
         # Цену берём median_price, при отсутствии — fallback на lowest_price
         # (median Discogs возвращает только если было ≥2 продаж — у редких
         # часто null, тогда lowest_price это «единственное предложение»).
-        is_collectible = False
         community = release_data.get("community") or {}
         have = community.get("have") or 0
-
-        def _price_value(stats: dict | None, key: str) -> float | None:
-            if not stats:
-                return None
-            obj = stats.get(key)
-            if isinstance(obj, dict):
-                obj = obj.get("value")
-            try:
-                return float(obj) if obj is not None else None
-            except (TypeError, ValueError):
-                return None
-
-        if price_stats:
-            num_for_sale = price_stats.get("num_for_sale")
-            try:
-                num_for_sale_int = int(num_for_sale) if num_for_sale is not None else None
-            except (TypeError, ValueError):
-                num_for_sale_int = None
-            price_usd = (
-                _price_value(price_stats, "median_price")
-                or _price_value(price_stats, "lowest_price")
-            )
-
-            if (
-                price_usd is not None
-                and num_for_sale_int is not None
-                and price_usd >= cls.COLLECTIBLE_MIN_PRICE_USD
-                and num_for_sale_int <= cls.COLLECTIBLE_MAX_FOR_SALE
-                and have <= cls.COLLECTIBLE_MAX_HAVE
-            ):
-                is_collectible = True
+        is_collectible = cls.compute_is_collectible(price_stats, have)
 
         # is_limited: any structural marker in formats[].descriptions
         is_limited = False
@@ -1102,6 +1114,8 @@ class DiscogsService:
                 major_formats=major_formats if major_formats else [],
                 thumb_image_url=item.get("thumb"),
                 cover_image_url=self._thumb_to_cover(item.get("thumb")),
+                have=have,
+                want=want,
                 is_hot=is_hot,
             ))
 

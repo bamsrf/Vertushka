@@ -809,15 +809,26 @@ class ApiClient {
     return this.deduplicatedGet<MasterRelease>(`/records/masters/${masterId}`);
   }
 
+  /**
+   * Версии мастер-релиза.
+   *
+   * fresh=true добавляет cache-buster `_r` — обязателен для cover-ретраев.
+   * Бэк отдаёт частичный (дыры закрыты master-обложкой) ответ с max-age=60,
+   * и без буста ретрай попал бы в nginx-кэш вместо долеченного ответа.
+   * proxy_cache_key на проде включает $is_args$args, так что параметр
+   * гарантированно разводит записи кэша.
+   */
   async getMasterVersions(
     masterId: string,
     page = 1,
-    perPage = 50
+    perPage = 50,
+    fresh = false
   ): Promise<MasterVersionsResponse> {
-    const params = {
+    const params: Record<string, string | number> = {
       page,
       per_page: perPage,
     };
+    if (fresh) params._r = Date.now();
 
     return this.deduplicatedGet<MasterVersionsResponse>(`/records/masters/${masterId}/versions`, { params });
   }

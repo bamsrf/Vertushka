@@ -198,6 +198,12 @@ class MasterVersion(BaseModel):
     major_formats: list[str] = []
     thumb_image_url: str | None = None
     cover_image_url: str | None = None
+    # Community-счётчики из stats.community мастер-versions response. Приходят
+    # бесплатно вместе со списком версий (один вызов на страницу) и работают как
+    # дешёвый пре-фильтр для is_collectible: условие требует have <= 200, поэтому
+    # массовые прессы отсеиваются БЕЗ похода в /marketplace/stats на каждую версию.
+    have: int | None = None
+    want: int | None = None
     # Rarity-флаги, подмешиваются из локальной БД (или вычисляются on-the-fly где можно)
     is_first_press: bool = False  # тир закрыт, поле остаётся для обратной совместимости
     is_canon: bool = False
