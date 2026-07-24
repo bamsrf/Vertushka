@@ -1,5 +1,54 @@
 version: '3.8'
 
+# Общие поля обоих цветов api (api-blue / api-green). Верхний уровень + x-префикс
+# — canonical место для reusable-anchor: compose не пытается инстанцировать его
+# как сервис.
+x-api-common: &api-common
+  # Явный image-тег: оба цвета делят ОДИН образ (иначе compose собрал бы
+  # backend-api-blue и backend-api-green отдельно). Деплой билдит его один раз,
+  # активный цвет стартует из него.
+  image: vertushka_api:latest
+  build:
+    context: .
+    dockerfile: Dockerfile
+  restart: always
+  # Кап памяти: runaway OOM-killer прибьёт ВНУТРИ контейнера, хост и sshd не
+  # задохнутся (инцидент 07-10, падение №2 = swap-thrash). 1000m: после
+  # cover-scan резидентная CLIP-модель даёт ~715MB пика → 800 было впритык
+  # (89%), 1000 даёт headroom. В покое активен один цвет; на время деплоя оба
+  # (idle-boot ~500MB каждый) — влезает в 4GB с запасом.
+  mem_limit: 1000m
+  labels:
+    - autoheal=true   # autoheal-сайдкар рестартит при unhealthy
+  env_file:
+    - .env.prod
+  environment:
+    - DATABASE_URL=postgresql+asyncpg://${DB_USER}:${DB_PASSWORD}@db:5432/vertushka
+    - REDIS_URL=redis://redis:6379/0
+    - IS_SCHEDULER=false
+  # 1 воркер: cover-scan грузит резидентную CLIP ONNX-модель (~350MB + арены)
+  # в КАЖДЫЙ воркер → 2 × CLIP = OOM на 2GB (инцидент 07-10, 2-й воркер умирал).
+  # Один воркер + ONNX mem-флаги (cover_matcher.py) = ~500MB под капом 800.
+  # Изоляция воркеров не нужна: в аварию оба легли одинаково, защита =
+  # autoheal + statement_timeout + короткие транзакции + idle-txn backstop.
+  command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1 --proxy-headers --forwarded-allow-ips '*'
+  # healthcheck дёргает /health; при зависании воркеров (лок-шторм 07:55)
+  # проверка падает → autoheal рестартит api за ~1 мин, без человека. Деплой
+  # ждёт этот же статус healthy у нового цвета перед переключением nginx.
+  healthcheck:
+    test: ["CMD-SHELL", "python -c \"import httpx,sys; sys.exit(0 if httpx.get('http://localhost:8000/health',timeout=3).status_code==200 else 1)\""]
+    interval: 15s
+    timeout: 5s
+    retries: 3
+    start_period: 40s
+  volumes:
+    - uploads_data:/app/uploads
+  depends_on:
+    db:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+
 services:
   # База данных PostgreSQL
   db:
@@ -34,48 +83,22 @@ services:
       timeout: 5s
       retries: 5
 
-  # API сервер (2 воркера)
-  api:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: vertushka_api
-    restart: always
-    # Кап памяти: runaway OOM-killer прибьёт ВНУТРИ контейнера, хост и sshd не
-    # задохнутся (инцидент 07-10, падение №2 = swap-thrash). 1000m: после
-    # cover-scan резидентная CLIP-модель даёт ~715MB пика → 800 было впритык
-    # (89%), 1000 даёт headroom. Host worst-case ~1.6GB/1.96GB (api1000 + db +
-    # scheduler600 + glitchtip) — влезает.
-    mem_limit: 1000m
-    labels:
-      - autoheal=true   # autoheal-сайдкар рестартит при unhealthy
-    env_file:
-      - .env.prod
-    environment:
-      - DATABASE_URL=postgresql+asyncpg://${DB_USER}:${DB_PASSWORD}@db:5432/vertushka
-      - REDIS_URL=redis://redis:6379/0
-      - IS_SCHEDULER=false
-    # 1 воркер: cover-scan грузит резидентную CLIP ONNX-модель (~350MB + арены)
-    # в КАЖДЫЙ воркер → 2 × CLIP = OOM на 2GB (инцидент 07-10, 2-й воркер умирал).
-    # Один воркер + ONNX mem-флаги (cover_matcher.py) = ~500MB под капом 800.
-    # Изоляция воркеров не нужна: в аварию оба легли одинаково, защита =
-    # autoheal + statement_timeout + короткие транзакции + idle-txn backstop.
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1 --proxy-headers --forwarded-allow-ips '*'
-    # healthcheck дёргает /health; при зависании воркеров (лок-шторм 07:55)
-    # проверка падает → autoheal рестартит api за ~1 мин, без человека.
-    healthcheck:
-      test: ["CMD-SHELL", "python -c \"import httpx,sys; sys.exit(0 if httpx.get('http://localhost:8000/health',timeout=3).status_code==200 else 1)\""]
-      interval: 15s
-      timeout: 5s
-      retries: 3
-      start_period: 40s
-    volumes:
-      - uploads_data:/app/uploads
-    depends_on:
-      db:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
+  # API сервер (blue-green, zero-downtime деплой).
+  #
+  # Два цвета-сервиса (api-blue / api-green) из ОДНОГО образа, различаются только
+  # именем контейнера. В покое поднят ровно один цвет; во время деплоя второй
+  # стартует на ~40-60с, nginx переключается на него после healthy, старый
+  # гасится (см. scripts/deploy.sh). profiles не дают голому `up -d` поднять оба.
+  # Общие поля — в anchor &api-common на верхнем уровне файла.
+  api-blue:
+    <<: *api-common
+    container_name: vertushka_api_blue
+    profiles: ["blue"]
+
+  api-green:
+    <<: *api-common
+    container_name: vertushka_api_green
+    profiles: ["green"]
 
   # Планировщик задач (отдельный контейнер, 1 воркер)
   scheduler:
@@ -120,12 +143,17 @@ services:
       - "443:443"
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      # Переключаемый апстрим (blue↔green). Деплой переписывает этот файл на
+      # хосте и делает `nginx -s reload`. Отдельный файл, чтобы не трогать
+      # основной конфиг на каждом деплое.
+      - ./nginx/active_upstream.conf:/etc/nginx/active_upstream.conf:ro
       - ./certbot/conf:/etc/letsencrypt:ro
       - ./certbot/www:/var/www/certbot:ro
       - nginx_cache:/var/cache/nginx
       - uploads_data:/app/uploads:ro      # nginx раздаёт обложки как статику
-    depends_on:
-      - api
+    # depends_on на api НЕТ намеренно: цвет резолвится в рантайме через Docker
+    # DNS (resolver в nginx.conf), а хард-зависимость на конкретный цвет ломала
+    # бы старт nginx, когда активен другой цвет.
 
   # Certbot для SSL сертификатов
   certbot:

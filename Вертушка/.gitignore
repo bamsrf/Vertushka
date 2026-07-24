@@ -18,3 +18,8 @@ Design/style-pack-achievements.zip
 tier2_target_ids.txt
 tracklists.csv
 *_releases.xml.gz
+
+# blue-green: runtime-состояние активного цвета живёт только на проде
+# (deploy.sh пишет/читает). Держим вне git, чтобы не конфликтовать со stash/pop
+# при git pull. active_upstream.conf ОСТАЁТСЯ в репо — он нужен для nginx-mount.
+Backend/nginx/.active_color

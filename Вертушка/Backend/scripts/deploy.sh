@@ -60,45 +60,128 @@ if [ "$AVAIL_MB" -lt 1000 ]; then
     fi
 fi
 
-# Сборка обоих сервисов из общего Dockerfile.
-# api и scheduler — один образ под капотом, разница только в IS_SCHEDULER env var.
-# Если билдить только api — scheduler застрянет на старом образе.
-echo "🔨 Собираю Docker образы (api + scheduler)..."
-docker compose -f docker-compose.prod.yml build api scheduler
+# ===========================================================================
+# BLUE-GREEN ДЕПЛОЙ API (zero-downtime)
+# ===========================================================================
+# Один образ, два цвета-контейнера (vertushka_api_blue / _green). В покое активен
+# один. Деплой поднимает второй, ждёт его healthy, переключает nginx graceful
+# reload'ом, гасит старый. Если новый цвет не поднялся — nginx НЕ переключается,
+# старый продолжает обслуживать → безопасный авто-rollback.
+#
+# ВАЖНО про миграции: они применяются ДО подъёма нового цвета и работают на живой
+# схеме, которую в момент перекрытия читает ещё и СТАРЫЙ цвет. Поэтому миграции
+# обязаны быть backward-compatible (только additive: nullable-колонки, новые
+# таблицы/индексы; без DROP/RENAME/NOT NULL без дефолта). Breaking-изменение —
+# отдельным двухфазным деплоем.
+COMPOSE="docker compose -f docker-compose.prod.yml"
+STATE_FILE="nginx/.active_color"
+UPSTREAM_FILE="nginx/active_upstream.conf"
 
-# Применение миграций ДО подъёма новой версии — если миграция упадёт,
-# прод-контейнер останется на старой версии и старой схеме (no downtime).
-echo "📊 Применяю миграции базы данных..."
-docker compose -f docker-compose.prod.yml run --rm -e PYTHONPATH=/app api alembic upgrade head
+echo "🔨 Собираю Docker образ (api + scheduler)..."
+$COMPOSE build api-blue scheduler   # api-blue и api-green делят image vertushka_api:latest
 
-# Поднимаем зависимости (db, redis, nginx, metabase) — те что не пересобирали.
-echo "🐳 Поднимаю зависимости..."
-docker compose -f docker-compose.prod.yml up -d
+echo "📊 Применяю миграции базы данных (backward-compatible)..."
+$COMPOSE run --rm -e PYTHONPATH=/app api-blue alembic upgrade head
 
-# Принудительный пересоздание api и scheduler — гарантия что контейнеры
-# подхватят свежесобранный образ. Без этого compose иногда не замечает смену
-# image hash и оставляет контейнер на предыдущем (тогда диск пухнет: новый
-# образ лежит, старый держится живым контейнером).
-# --no-deps — не трогать db/redis/nginx, они уже подняты.
-echo "♻️  Принудительно пересоздаю api и scheduler с новым образом..."
-docker compose -f docker-compose.prod.yml up -d --force-recreate --no-deps api scheduler
+# --- Одноразовый cutover со старой single-api схемы -------------------------
+# Если ещё жив легаси-контейнер vertushka_api (до перехода на blue-green) —
+# переводим стенд на api-blue и пересоздаём nginx (нужно, чтобы подхватить новый
+# volume-mount active_upstream.conf; reload'а недостаточно).
+if docker inspect vertushka_api >/dev/null 2>&1; then
+    echo "🔀 Первый переход на blue-green: поднимаю api-blue..."
+    $COMPOSE --profile blue up -d --no-deps api-blue
+    printf 'set $api_upstream http://vertushka_api_blue:8000;\n' > "$UPSTREAM_FILE"
+    # Ждём healthy нового контейнера ПЕРЕД тем как трогать nginx/легаси.
+    CUT_OK=false
+    for i in $(seq 1 45); do
+        st=$(docker inspect -f '{{.State.Health.Status}}' vertushka_api_blue 2>/dev/null || echo "starting")
+        if [ "$st" = "healthy" ]; then CUT_OK=true; break; fi
+        sleep 2
+    done
+    if [ "$CUT_OK" != "true" ]; then
+        # Не трогаем nginx и НЕ сносим легаси — прод остаётся на старом api.
+        echo -e "${YELLOW}❌ api-blue не поднялся. Cutover прерван, прод остаётся на легаси vertushka_api.${NC}"
+        echo "   Логи: $COMPOSE logs api-blue"
+        $COMPOSE --profile blue stop api-blue 2>/dev/null || true
+        rm -f "$UPSTREAM_FILE.tmp" 2>/dev/null || true
+        # active_upstream.conf вернём к blue-дефолту из git на следующем pull;
+        # старый nginx его ещё не читает (mount появится только при recreate).
+        exit 1
+    fi
+    echo "blue" > "$STATE_FILE"
+    echo "🔁 Пересоздаю nginx (подхватить mount active_upstream.conf)..."
+    $COMPOSE up -d --force-recreate nginx
+    echo "🗑  Сношу легаси-контейнер vertushka_api..."
+    docker rm -sf vertushka_api 2>/dev/null || true
+    ACTIVE="blue"
+else
+    # --- Штатный blue↔green свитч ------------------------------------------
+    ACTIVE=$(cat "$STATE_FILE" 2>/dev/null || echo "blue")
+    [ "$ACTIVE" = "blue" ] && TARGET="green" || TARGET="blue"
+    echo "🎯 Активен: $ACTIVE → поднимаю новый цвет: $TARGET"
 
-# Healthcheck — ждём пока api действительно поднимется (до ~60 сек).
-echo "❤️  Проверяю /health..."
+    # Поднимаем зависимости на случай, если что-то легло (db/redis/nginx/scheduler).
+    # Цвета profile-gated → этот `up -d` их не трогает.
+    $COMPOSE up -d
+
+    $COMPOSE --profile "$TARGET" up -d --no-deps --force-recreate "api-$TARGET"
+
+    echo "❤️  Жду healthy у api-$TARGET (до ~90 сек)..."
+    HEALTHY=false
+    for i in $(seq 1 45); do
+        st=$(docker inspect -f '{{.State.Health.Status}}' "vertushka_api_$TARGET" 2>/dev/null || echo "starting")
+        if [ "$st" = "healthy" ]; then
+            HEALTHY=true
+            echo "   ✅ api-$TARGET healthy (попытка $i)"
+            break
+        fi
+        sleep 2
+    done
+
+    if [ "$HEALTHY" != "true" ]; then
+        echo -e "${YELLOW}❌ api-$TARGET не поднялся. НЕ переключаю трафик — прод остаётся на $ACTIVE.${NC}"
+        echo "   Логи: $COMPOSE logs api-$TARGET"
+        $COMPOSE --profile "$TARGET" stop "api-$TARGET" 2>/dev/null || true
+        exit 1
+    fi
+
+    echo "🔀 Переключаю nginx на $TARGET..."
+    printf 'set $api_upstream http://vertushka_api_%s:8000;\n' "$TARGET" > "$UPSTREAM_FILE"
+    if ! docker exec vertushka_nginx nginx -t 2>/dev/null; then
+        echo -e "${YELLOW}❌ nginx -t не прошёл после свитча. Откатываю upstream на $ACTIVE.${NC}"
+        printf 'set $api_upstream http://vertushka_api_%s:8000;\n' "$ACTIVE" > "$UPSTREAM_FILE"
+        $COMPOSE --profile "$TARGET" stop "api-$TARGET" 2>/dev/null || true
+        exit 1
+    fi
+    docker exec vertushka_nginx nginx -s reload
+    echo "$TARGET" > "$STATE_FILE"
+
+    echo "⏳ Дренаж in-flight запросов на $ACTIVE (5с)..."
+    sleep 5
+    $COMPOSE --profile "$ACTIVE" stop "api-$ACTIVE"
+    ACTIVE="$TARGET"
+fi
+
+# Scheduler — единственный, не за nginx, краткий простой допустим.
+echo "♻️  Пересоздаю scheduler..."
+$COMPOSE up -d --force-recreate --no-deps scheduler
+
+# Внешний healthcheck через nginx — финальная страховка после переключения.
+echo "❤️  Проверяю /health снаружи..."
 HEALTH_URL="https://api.vinyl-vertushka.ru/health"
 HEALTHY=false
 for i in $(seq 1 30); do
     if curl -fsS --max-time 3 "$HEALTH_URL" > /dev/null 2>&1; then
         HEALTHY=true
-        echo "   ✅ api отвечает (попытка $i)"
+        echo "   ✅ api отвечает через nginx (попытка $i), активный цвет: $ACTIVE"
         break
     fi
     sleep 2
 done
 
 if [ "$HEALTHY" != "true" ]; then
-    echo -e "${YELLOW}⚠️  Healthcheck не прошёл за 60 секунд. Проверь логи: docker compose -f docker-compose.prod.yml logs api${NC}"
-    docker compose -f docker-compose.prod.yml ps
+    echo -e "${YELLOW}⚠️  Внешний healthcheck не прошёл за 60с. Активный цвет: $ACTIVE. Логи: $COMPOSE logs api-$ACTIVE${NC}"
+    $COMPOSE ps
     exit 1
 fi
 
