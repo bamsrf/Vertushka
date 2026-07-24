@@ -112,7 +112,7 @@ if docker inspect vertushka_api >/dev/null 2>&1; then
     echo "🔁 Пересоздаю nginx (подхватить mount active_upstream.conf)..."
     $COMPOSE up -d --force-recreate nginx
     echo "🗑  Сношу легаси-контейнер vertushka_api..."
-    docker rm -sf vertushka_api 2>/dev/null || true
+    docker rm -f vertushka_api 2>/dev/null || true   # -f форс-удаляет запущенный
     ACTIVE="blue"
 else
     # --- Штатный blue↔green свитч ------------------------------------------
