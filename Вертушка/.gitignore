@@ -23,3 +23,7 @@ tracklists.csv
 # (deploy.sh пишет/читает). Держим вне git, чтобы не конфликтовать со stash/pop
 # при git pull. active_upstream.conf ОСТАЁТСЯ в репо — он нужен для nginx-mount.
 Backend/nginx/.active_color
+
+# Supabase CLI local state (не коммитить)
+supabase/.temp/
+supabase/.branches/

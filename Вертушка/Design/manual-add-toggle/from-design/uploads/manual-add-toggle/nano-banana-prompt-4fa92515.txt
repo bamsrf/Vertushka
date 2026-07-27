@@ -1,0 +1,44 @@
+NANO BANANA — промпт для наброска (3 состояния тоггла)
+
+Прикрепи к промпту картинки из refs/:
+  • grid.png                  — реальные цветные винилы (так выглядит кноб)
+  • ref-daymode-toggle.png    — форма pill-тоггла (если приложил)
+  • screen-current.png        — текущий экран сканера (контекст)
+  • brand/logo-vinyl.png      — бренд-винил
+
+────────────────────────────────────────────────────────────────────────
+
+A clean iOS app UI mockup sheet on a light off-white (#F4F5F7) background,
+showing ONE floating interactive control in THREE horizontal states,
+left to right.
+
+Shared style: minimal, soft, Apple-like. Rounded pill shapes, subtle drop
+shadows, thin 1px light-grey strokes. Deep-navy (#23244D) accents. Match the
+attached vinyl reference image exactly for the record look (concentric grey
+grooves, deep-navy center label reading "ВЕРТУШКА" with tiny "33 1/3 RPM",
+black center hole, soft highlight top-left).
+
+STATE 1 — "Collapsed FAB": a single circular floating button, 56px, bottom-right
+of a phone screen corner. Inside it the vinyl record from the reference, grey,
+with a faint motion-blur arc suggesting slow spinning. Soft shadow under it.
+
+STATE 2 — "Expanded toggle": the same vinyl now sits as the RIGHT-side KNOB of a
+horizontal pill toggle (like the attached iOS day/night switch). Pill is
+light-grey (#ECEDF0), ~220px wide, 64px tall. On the LEFT of the pill, dark-grey
+bold text "Добавить вручную". The vinyl knob is now COLORED — a vibrant RED
+vinyl (#E53935) keeping the deep-navy center label. Knob rests at the right end.
+
+STATE 3 — "Activated / sliding": same pill, the colored vinyl knob slid to the
+LEFT end of the track with a speed motion-blur trail and small spin lines, as if
+it rolled across. The text "Добавить вручную" is partly covered/faded. A faint
+upward glow hints a new screen opening.
+
+Evenly spaced, each labeled underneath in small grey caption:
+"1 · idle"   "2 · tap"   "3 · slide → open".
+Flat vector mockup, no photo background, no device frame, crisp, designer
+presentation style.
+
+────────────────────────────────────────────────────────────────────────
+ЗАМЕТКА: nano banana иногда ломает кириллицу. Если «ВЕРТУШКА» / «Добавить
+вручную» выйдут кривыми — перегенери или замени на латиницу-плейсхолдер,
+текст всё равно перебивается в Claude Design.

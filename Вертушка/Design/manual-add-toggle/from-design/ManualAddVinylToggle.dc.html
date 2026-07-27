@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+  *{box-sizing:border-box;}
+  body{margin:0;background:#E9EAEE;}
+  @keyframes vspin{from{transform:rotate(0)}to{transform:rotate(360deg)}}
+  @keyframes sheetUp{from{transform:translateY(100%)}to{transform:translateY(0)}}
+  @keyframes fadeIn{from{opacity:0}to{opacity:1}}
+</style>
+</helmet>
+
+<div style="font-family:Inter,sans-serif;min-height:100vh;padding:44px 40px 80px;color:#1C1D3A;">
+
+  <div style="max-width:1180px;margin:0 auto;">
+    <div style="font-weight:800;font-size:34px;letter-spacing:-0.5px;">ManualAddVinylToggle</div>
+    <div style="font-weight:500;font-size:17px;color:#6B6F82;margin-top:8px;max-width:680px;line-height:1.5;">Floating-кнопка входа в «Добавить вручную». Винил-кноб «Вертушка» с рандом-цветом. Tap раскрывает pill, slide кноба влево открывает экран ручного добавления.</div>
+
+    <!-- ===================== SECTION A — COMPONENT ===================== -->
+    <div style="display:flex;align-items:center;gap:12px;margin:44px 0 20px;">
+      <div style="font-weight:800;font-size:13px;letter-spacing:1.5px;color:#9498A6;text-transform:uppercase;">Компонент · 3 состояния</div>
+      <div style="flex:1;height:1px;background:#D7D9E0;"></div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:20px;">
+
+      <!-- STATE 1 collapsed -->
+      <div style="background:#fff;border-radius:22px;padding:28px 24px 22px;box-shadow:0 1px 3px rgba(28,29,58,0.06);">
+        <div style="font-weight:700;font-size:13px;color:#9498A6;">STATE 1 · collapsed</div>
+        <div style="height:150px;display:flex;align-items:center;justify-content:center;">
+          <div style="width:56px;height:56px;filter:drop-shadow(0 8px 18px rgba(28,29,58,0.30));">{{ kGrey56 }}</div>
+        </div>
+        <div style="font-weight:600;font-size:14px;color:#3a3c52;">FAB 56px · серый винил</div>
+        <div style="font-weight:500;font-size:13px;color:#9498A6;margin-top:2px;">медленный спин, мягкая тень</div>
+      </div>
+
+      <!-- STATE 2 expanded -->
+      <div style="background:#fff;border-radius:22px;padding:28px 24px 22px;box-shadow:0 1px 3px rgba(28,29,58,0.06);">
+        <div style="font-weight:700;font-size:13px;color:#9498A6;">STATE 2 · expanded</div>
+        <div style="height:150px;display:flex;align-items:center;justify-content:center;">
+          <div style="position:relative;width:224px;height:64px;border-radius:32px;background:#ECEDF0;box-shadow:0 14px 30px rgba(28,29,58,0.16),0 2px 6px rgba(28,29,58,0.10);">
+            <span style="position:absolute;left:26px;top:0;height:64px;display:flex;align-items:center;width:130px;font-weight:800;font-size:18px;line-height:1.05;color:#23244D;">Добавить вручную</span>
+            <div style="position:absolute;right:4px;top:4px;width:56px;height:56px;filter:drop-shadow(0 6px 12px rgba(229,57,53,0.35));">{{ kRedState }}</div>
+          </div>
+        </div>
+        <div style="font-weight:600;font-size:14px;color:#3a3c52;">pill 224×64 · текст + цветной кноб</div>
+        <div style="font-weight:500;font-size:13px;color:#9498A6;margin-top:2px;">фон #ECEDF0, navy-текст #23244D</div>
+      </div>
+
+      <!-- STATE 3 activated -->
+      <div style="background:#fff;border-radius:22px;padding:28px 24px 22px;box-shadow:0 1px 3px rgba(28,29,58,0.06);">
+        <div style="font-weight:700;font-size:13px;color:#9498A6;">STATE 3 · activated</div>
+        <div style="height:150px;display:flex;align-items:center;justify-content:center;">
+          <div style="position:relative;width:224px;height:64px;border-radius:32px;background:#ECEDF0;box-shadow:0 14px 30px rgba(28,29,58,0.16),0 2px 6px rgba(28,29,58,0.10);">
+            <div style="position:absolute;right:0;bottom:64px;width:120px;height:50px;background:radial-gradient(70% 100% at 72% 100%,rgba(255,255,255,0.9),rgba(255,255,255,0) 72%);"></div>
+            <div style="position:absolute;left:14px;bottom:62px;color:#B9BDD0;font-size:26px;font-weight:300;line-height:1;">⌃</div>
+            <span style="position:absolute;left:26px;top:0;height:64px;display:flex;align-items:center;width:130px;font-weight:800;font-size:18px;color:#23244D;opacity:0.12;">Добавить вручную</span>
+            <div style="position:absolute;left:60px;top:14px;height:36px;width:120px;border-radius:18px;background:linear-gradient(270deg,#E53935 0%,rgba(229,57,53,0) 100%);filter:blur(7px);opacity:0.85;"></div>
+            <svg width="40" height="64" viewBox="0 0 40 64" style="position:absolute;left:-2px;top:0;"><g fill="none" stroke="#1C1D3A" stroke-width="2" stroke-linecap="round" opacity="0.45"><path d="M10 14 A22 22 0 0 0 6 32"/><path d="M7 10 A28 28 0 0 0 2 32"/></g></svg>
+            <div style="position:absolute;left:4px;top:4px;width:56px;height:56px;filter:drop-shadow(0 6px 12px rgba(229,57,53,0.4));">{{ kRedAct }}</div>
+          </div>
+        </div>
+        <div style="font-weight:600;font-size:14px;color:#3a3c52;">кноб уехал влево · motion-trail</div>
+        <div style="font-weight:500;font-size:13px;color:#9498A6;margin-top:2px;">текст затухает, glow вверх → push</div>
+      </div>
+    </div>
+
+    <!-- flow -->
+    <div style="display:flex;align-items:center;flex-wrap:wrap;gap:12px;margin-top:24px;padding:18px 22px;background:#fff;border-radius:18px;box-shadow:0 1px 3px rgba(28,29,58,0.06);font-weight:600;font-size:14px;color:#3a3c52;">
+      <span style="padding:6px 14px;border-radius:20px;background:#F0F1F4;">collapsed</span>
+      <span style="color:#9498A6;font-weight:700;">— tap →</span>
+      <span style="padding:6px 14px;border-radius:20px;background:#F0F1F4;">expanded</span>
+      <span style="color:#9498A6;font-weight:700;">— slide ◄ →</span>
+      <span style="padding:6px 14px;border-radius:20px;background:#F0F1F4;">activated</span>
+      <span style="color:#9498A6;font-weight:700;">→</span>
+      <span style="padding:6px 14px;border-radius:20px;background:#1C1D3A;color:#fff;">экран «Добавить вручную»</span>
+      <span style="margin-left:auto;color:#9498A6;font-weight:500;">тап по pill — фолбэк-триггер · возврат → collapse</span>
+    </div>
+
+    <!-- color demo -->
+    <div style="display:flex;align-items:center;gap:12px;margin:40px 0 20px;">
+      <div style="font-weight:800;font-size:13px;letter-spacing:1.5px;color:#9498A6;text-transform:uppercase;">Цвета кноба · family</div>
+      <div style="flex:1;height:1px;background:#D7D9E0;"></div>
+    </div>
+    <div style="background:#fff;border-radius:22px;padding:30px 24px;box-shadow:0 1px 3px rgba(28,29,58,0.06);display:flex;justify-content:space-around;flex-wrap:wrap;gap:24px;">
+      <div style="text-align:center;"><div style="width:116px;height:116px;margin:0 auto;filter:drop-shadow(0 8px 16px rgba(229,57,53,0.30));">{{ demoRed }}</div><div style="font-weight:700;font-size:14px;margin-top:14px;">red</div><div style="font-weight:500;font-size:13px;color:#9498A6;">#E53935</div></div>
+      <div style="text-align:center;"><div style="width:116px;height:116px;margin:0 auto;filter:drop-shadow(0 8px 16px rgba(30,136,229,0.30));">{{ demoBlue }}</div><div style="font-weight:700;font-size:14px;margin-top:14px;">blue</div><div style="font-weight:500;font-size:13px;color:#9498A6;">#1E88E5</div></div>
+      <div style="text-align:center;"><div style="width:116px;height:116px;margin:0 auto;filter:drop-shadow(0 8px 16px rgba(67,160,71,0.30));">{{ demoGreen }}</div><div style="font-weight:700;font-size:14px;margin-top:14px;">green</div><div style="font-weight:500;font-size:13px;color:#9498A6;">#43A047</div></div>
+      <div style="text-align:center;"><div style="width:116px;height:116px;margin:0 auto;filter:drop-shadow(0 8px 16px rgba(253,216,53,0.35));">{{ demoYellow }}</div><div style="font-weight:700;font-size:14px;margin-top:14px;">yellow</div><div style="font-weight:500;font-size:13px;color:#9498A6;">#FDD835</div></div>
+      <div style="text-align:center;"><div style="width:116px;height:116px;margin:0 auto;filter:drop-shadow(0 8px 16px rgba(251,140,0,0.32));">{{ demoOrange }}</div><div style="font-weight:700;font-size:14px;margin-top:14px;">orange</div><div style="font-weight:500;font-size:13px;color:#9498A6;">#FB8C00</div></div>
+    </div>
+
+    <!-- ===================== SECTION B — SCREENS ===================== -->
+    <div style="display:flex;align-items:center;gap:12px;margin:48px 0 24px;">
+      <div style="font-weight:800;font-size:13px;letter-spacing:1.5px;color:#9498A6;text-transform:uppercase;">Экран сканера · размещение</div>
+      <div style="flex:1;height:1px;background:#D7D9E0;"></div>
+    </div>
+    <div style="font-weight:500;font-size:15px;color:#6B6F82;margin:-6px 0 26px;">Живой прототип — тапни FAB, потяни кноб-винил влево «в трек». FAB якорён в правом нижнем углу над нав-баром (≥16px); в режиме «Обложка» pill не доходит до затвора.</div>
+
+    <div style="display:flex;gap:48px;flex-wrap:wrap;justify-content:center;">
+
+      <!-- ===== SCREEN 1 — БАРКОД ===== -->
+      <div style="text-align:center;">
+        <div data-screen-label="Штрихкод" style="position:relative;width:390px;height:844px;background:#000;border-radius:54px;padding:5px;box-shadow:0 30px 70px rgba(28,29,58,0.28);">
+          <div style="position:relative;width:380px;height:834px;border-radius:49px;overflow:hidden;background:#9aa;">
+            <!-- camera bg -->
+            <div style="position:absolute;inset:0;background:linear-gradient(180deg,#cdd0cb 0%,#c2c6c4 22%,#2a52d8 36%,#2247c6 50%,#caa46f 64%,#b89469 100%);filter:blur(3px) brightness(1.03);"></div>
+            <div style="position:absolute;inset:0;background:radial-gradient(120% 80% at 50% 42%,rgba(0,0,0,0) 48%,rgba(0,0,0,0.22) 100%);"></div>
+            <div style="position:absolute;inset:0;background:linear-gradient(180deg,rgba(0,0,0,0.32) 0%,rgba(0,0,0,0) 16%);"></div>
+
+            <!-- status bar -->
+            <div style="position:absolute;top:0;left:0;right:0;height:54px;z-index:20;display:flex;align-items:center;justify-content:space-between;padding:14px 30px 0;color:#fff;font-weight:600;font-size:16px;pointer-events:none;">
+              <span>11:29</span>
+              <span style="display:flex;align-items:center;gap:8px;">
+                <svg width="19" height="13" viewBox="0 0 19 13" fill="#fff"><rect x="0" y="8" width="3" height="5" rx="1"/><rect x="5" y="5" width="3" height="8" rx="1"/><rect x="10" y="2.5" width="3" height="10.5" rx="1"/><rect x="15" y="0" width="3" height="13" rx="1" opacity="0.5"/></svg>
+                <svg width="18" height="13" viewBox="0 0 18 13" fill="none" stroke="#fff" stroke-width="1.6"><path d="M1 4.2 C5 1, 13 1, 17 4.2" stroke-linecap="round"/><path d="M4 7 C7 5, 11 5, 14 7" stroke-linecap="round"/><circle cx="9" cy="10.5" r="1.3" fill="#fff" stroke="none"/></svg>
+                <span style="display:flex;align-items:center;gap:3px;font-size:14px;font-weight:700;">65
+                  <span style="position:relative;width:24px;height:13px;border:1.5px solid rgba(255,255,255,0.6);border-radius:4px;display:inline-block;"><span style="position:absolute;left:1.5px;top:1.5px;bottom:1.5px;width:60%;background:#fff;border-radius:2px;"></span><span style="position:absolute;right:-3px;top:4px;width:2px;height:5px;background:rgba(255,255,255,0.6);border-radius:0 2px 2px 0;"></span></span>
+                </span>
+              </span>
+            </div>
+            <div style="position:absolute;left:50%;top:11px;transform:translateX(-50%);width:118px;height:34px;background:#000;border-radius:20px;z-index:21;display:flex;align-items:center;justify-content:flex-end;padding-right:14px;"><span style="width:10px;height:10px;border-radius:50%;background:#34c759;"></span></div>
+
+            <!-- title -->
+            <div style="position:absolute;top:62px;left:0;right:0;text-align:center;z-index:18;color:#fff;font-weight:700;font-size:26px;text-shadow:0 1px 10px rgba(0,0,0,0.35);">Сканирование</div>
+
+            <!-- segment -->
+            <div style="position:absolute;top:108px;left:28px;right:28px;height:58px;background:rgba(255,255,255,0.55);backdrop-filter:blur(14px);border-radius:17px;padding:5px;display:flex;gap:4px;z-index:18;box-shadow:0 6px 18px rgba(0,0,0,0.16);">
+              <div style="flex:1;display:flex;align-items:center;justify-content:center;border-radius:13px;background:#fff;box-shadow:0 2px 8px rgba(0,0,0,0.18);font-weight:700;font-size:18px;color:#1C1D3A;">Штрихкод</div>
+              <div style="flex:1;display:flex;align-items:center;justify-content:center;border-radius:13px;font-weight:600;font-size:18px;color:#54555f;">Обложка</div>
+            </div>
+
+            <!-- hint -->
+            <div style="position:absolute;top:184px;left:20px;right:20px;text-align:center;color:#fff;font-weight:500;font-size:17px;text-shadow:0 1px 6px rgba(0,0,0,0.45);z-index:18;">Наведите камеру на штрихкод пластинки</div>
+
+            <!-- scan frame -->
+            <div style="position:absolute;left:54px;top:300px;width:272px;height:250px;z-index:16;">
+              <div style="position:absolute;top:0;left:0;width:46px;height:46px;border-top:5px solid #C9BBE9;border-left:5px solid #C9BBE9;border-radius:12px 0 0 0;"></div>
+              <div style="position:absolute;top:0;right:0;width:46px;height:46px;border-top:5px solid #C9BBE9;border-right:5px solid #C9BBE9;border-radius:0 12px 0 0;"></div>
+              <div style="position:absolute;bottom:0;left:0;width:46px;height:46px;border-bottom:5px solid #C9BBE9;border-left:5px solid #C9BBE9;border-radius:0 0 0 12px;"></div>
+              <div style="position:absolute;bottom:0;right:0;width:46px;height:46px;border-bottom:5px solid #C9BBE9;border-right:5px solid #C9BBE9;border-radius:0 0 12px 0;"></div>
+            </div>
+
+            <!-- CONTROL (collapsed default) -->
+            <div style="position:absolute;right:16px;top:568px;height:64px;z-index:30;">
+              <div style="position:absolute;right:0;bottom:64px;width:120px;height:50px;pointer-events:none;opacity:{{ bcGlowOp }};transition:opacity .25s;background:radial-gradient(70% 100% at 72% 100%,rgba(255,255,255,0.9),rgba(255,255,255,0) 72%);"></div>
+              <div style="position:absolute;right:18px;bottom:60px;pointer-events:none;opacity:{{ bcGlowOp }};transition:opacity .25s;color:#fff;font-size:26px;font-weight:300;text-shadow:0 1px 4px rgba(0,0,0,0.2);">⌃</div>
+              <div onClick="{{ onBcCtrl }}" style="position:absolute;right:0;top:0;height:64px;width:{{ bcPillW }}px;border-radius:32px;background:rgba(236,237,240,{{ bcBgOp }});box-shadow:0 14px 32px rgba(28,29,58,0.20),0 2px 6px rgba(28,29,58,0.12);transition:width .3s cubic-bezier(.22,1,.36,1),background .2s;cursor:pointer;">
+                <span style="position:absolute;left:26px;top:0;height:64px;display:flex;align-items:center;width:130px;font-weight:800;font-size:18px;line-height:1.05;color:#23244D;opacity:{{ bcTextOp }};transition:opacity .15s;pointer-events:none;">Добавить вручную</span>
+                <div style="position:absolute;right:30px;top:14px;height:36px;width:{{ bcTrailW }}px;border-radius:18px;background:linear-gradient(270deg,{{ famHex }} 0%,rgba(255,255,255,0) 100%);filter:blur(7px);opacity:{{ bcTrailOp }};transform:translateX({{ bcKnobX }}px);pointer-events:none;"></div>
+                <svg width="40" height="64" viewBox="0 0 40 64" style="position:absolute;right:-6px;top:0;opacity:{{ bcArcsOp }};pointer-events:none;"><g fill="none" stroke="#1C1D3A" stroke-width="2" stroke-linecap="round" opacity="0.5"><path d="M30 14 A22 22 0 0 1 34 32"/><path d="M33 10 A28 28 0 0 1 38 32"/></g></svg>
+                <div onPointerDown="{{ onBcKnobDown }}" onClick="{{ onBcKnobClick }}" style="position:absolute;right:4px;top:4px;width:56px;height:56px;transform:translateX({{ bcKnobX }}px);transition:{{ bcKnobTrans }};cursor:grab;touch-action:none;filter:drop-shadow(0 6px 14px rgba(28,29,58,0.30));">{{ bcKnobEl }}</div>
+              </div>
+            </div>
+
+            <!-- navbar -->
+            <div style="position:absolute;left:50%;transform:translateX(-50%);bottom:22px;width:300px;height:60px;background:rgba(247,247,250,0.82);backdrop-filter:blur(18px);border-radius:30px;display:flex;align-items:center;justify-content:space-around;z-index:25;box-shadow:0 10px 26px rgba(0,0,0,0.18);">
+              <svg width="26" height="26" viewBox="0 0 26 26" fill="none" stroke="#9498a6" stroke-width="2.4" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="23" y2="23"/></svg>
+              <svg width="30" height="30" viewBox="0 0 30 30" fill="none" stroke="#3D5BF5" stroke-width="3" stroke-linecap="round"><path d="M3 9 V5 a2 2 0 0 1 2-2 h4"/><path d="M21 3 h4 a2 2 0 0 1 2 2 v4"/><path d="M27 21 v4 a2 2 0 0 1-2 2 h-4"/><path d="M9 27 H5 a2 2 0 0 1-2-2 v-4"/><rect x="9" y="9" width="12" height="12" rx="2.5" fill="#3D5BF5" stroke="none"/></svg>
+              <svg width="26" height="26" viewBox="0 0 26 26" fill="none" stroke="#9498a6" stroke-width="2"><circle cx="13" cy="13" r="10.5"/><circle cx="13" cy="13" r="4.5"/><circle cx="13" cy="13" r="1.4" fill="#9498a6" stroke="none"/></svg>
+            </div>
+
+            <!-- manual sheet -->
+            <sc-if value="{{ bcSheetOpen }}" hint-placeholder-val="{{ false }}">
+              <div style="position:absolute;inset:0;z-index:50;">
+                <div onClick="{{ onBcClose }}" style="position:absolute;inset:0;background:rgba(18,18,38,0.34);animation:fadeIn .2s ease;"></div>
+                <div style="position:absolute;left:0;right:0;bottom:0;background:#fff;border-radius:30px 30px 0 0;padding:22px 22px 34px;box-shadow:0 -12px 44px rgba(0,0,0,0.22);animation:sheetUp .32s cubic-bezier(.22,1,.36,1);">
+                  <div style="width:44px;height:5px;border-radius:3px;background:#D7D9E0;margin:0 auto 18px;"></div>
+                  <div style="display:flex;align-items:center;gap:14px;margin-bottom:22px;">
+                    <div style="width:50px;height:50px;flex:none;filter:drop-shadow(0 4px 10px rgba(28,29,58,0.2));">{{ sheetKnob }}</div>
+                    <div><div style="font-weight:800;font-size:21px;color:#1C1D3A;">Добавить вручную</div><div style="font-weight:500;font-size:14px;color:#8A8FA3;">Заполните данные пластинки</div></div>
+                  </div>
+                  <div style="display:flex;flex-direction:column;gap:12px;">
+                    <div style="height:52px;border-radius:14px;background:#F2F3F6;display:flex;align-items:center;padding:0 16px;font-weight:500;color:#9498A6;font-size:15px;">Исполнитель</div>
+                    <div style="height:52px;border-radius:14px;background:#F2F3F6;display:flex;align-items:center;padding:0 16px;font-weight:500;color:#9498A6;font-size:15px;">Название альбома</div>
+                    <div style="display:flex;gap:12px;"><div style="flex:1;height:52px;border-radius:14px;background:#F2F3F6;display:flex;align-items:center;padding:0 16px;font-weight:500;color:#9498A6;font-size:15px;">Год</div><div style="flex:1;height:52px;border-radius:14px;background:#F2F3F6;display:flex;align-items:center;padding:0 16px;font-weight:500;color:#9498A6;font-size:15px;">Жанр</div></div>
+                  </div>
+                  <div onClick="{{ onBcClose }}" style="margin-top:22px;height:54px;border-radius:16px;background:#1C1D3A;color:#fff;font-weight:700;font-size:17px;display:flex;align-items:center;justify-content:center;cursor:pointer;">Закрыть</div>
+                </div>
+              </div>
+            </sc-if>
+          </div>
+        </div>
+        <div style="font-weight:700;font-size:15px;color:#3a3c52;margin-top:18px;">Режим «Штрихкод» — FAB collapsed</div>
+        <div style="font-weight:500;font-size:13px;color:#9498A6;">затвора нет · FAB на той же высоте, над нав-баром</div>
+      </div>
+
+      <!-- ===== SCREEN 2 — ОБЛОЖКА ===== -->
+      <div style="text-align:center;">
+        <div data-screen-label="Обложка" style="position:relative;width:390px;height:844px;background:#000;border-radius:54px;padding:5px;box-shadow:0 30px 70px rgba(28,29,58,0.28);">
+          <div style="position:relative;width:380px;height:834px;border-radius:49px;overflow:hidden;background:#9aa;">
+            <div style="position:absolute;inset:0;background:linear-gradient(180deg,#cdd0cb 0%,#c2c6c4 22%,#2a52d8 36%,#2247c6 50%,#caa46f 64%,#b89469 100%);filter:blur(3px) brightness(1.03);"></div>
+            <div style="position:absolute;inset:0;background:radial-gradient(120% 80% at 50% 42%,rgba(0,0,0,0) 48%,rgba(0,0,0,0.22) 100%);"></div>
+            <div style="position:absolute;inset:0;background:linear-gradient(180deg,rgba(0,0,0,0.32) 0%,rgba(0,0,0,0) 16%);"></div>
+
+            <div style="position:absolute;top:0;left:0;right:0;height:54px;z-index:20;display:flex;align-items:center;justify-content:space-between;padding:14px 30px 0;color:#fff;font-weight:600;font-size:16px;pointer-events:none;">
+              <span>11:29</span>
+              <span style="display:flex;align-items:center;gap:8px;">
+                <svg width="19" height="13" viewBox="0 0 19 13" fill="#fff"><rect x="0" y="8" width="3" height="5" rx="1"/><rect x="5" y="5" width="3" height="8" rx="1"/><rect x="10" y="2.5" width="3" height="10.5" rx="1"/><rect x="15" y="0" width="3" height="13" rx="1" opacity="0.5"/></svg>
+                <svg width="18" height="13" viewBox="0 0 18 13" fill="none" stroke="#fff" stroke-width="1.6"><path d="M1 4.2 C5 1, 13 1, 17 4.2" stroke-linecap="round"/><path d="M4 7 C7 5, 11 5, 14 7" stroke-linecap="round"/><circle cx="9" cy="10.5" r="1.3" fill="#fff" stroke="none"/></svg>
+                <span style="display:flex;align-items:center;gap:3px;font-size:14px;font-weight:700;">65
+                  <span style="position:relative;width:24px;height:13px;border:1.5px solid rgba(255,255,255,0.6);border-radius:4px;display:inline-block;"><span style="position:absolute;left:1.5px;top:1.5px;bottom:1.5px;width:60%;background:#fff;border-radius:2px;"></span><span style="position:absolute;right:-3px;top:4px;width:2px;height:5px;background:rgba(255,255,255,0.6);border-radius:0 2px 2px 0;"></span></span>
+                </span>
+              </span>
+            </div>
+            <div style="position:absolute;left:50%;top:11px;transform:translateX(-50%);width:118px;height:34px;background:#000;border-radius:20px;z-index:21;display:flex;align-items:center;justify-content:flex-end;padding-right:14px;"><span style="width:10px;height:10px;border-radius:50%;background:#34c759;"></span></div>
+
+            <div style="position:absolute;top:62px;left:0;right:0;text-align:center;z-index:18;color:#fff;font-weight:700;font-size:26px;text-shadow:0 1px 10px rgba(0,0,0,0.35);">Сканирование</div>
+
+            <div style="position:absolute;top:108px;left:28px;right:28px;height:58px;background:rgba(255,255,255,0.55);backdrop-filter:blur(14px);border-radius:17px;padding:5px;display:flex;gap:4px;z-index:18;box-shadow:0 6px 18px rgba(0,0,0,0.16);">
+              <div style="flex:1;display:flex;align-items:center;justify-content:center;border-radius:13px;font-weight:600;font-size:18px;color:#54555f;">Штрихкод</div>
+              <div style="flex:1;display:flex;align-items:center;justify-content:center;border-radius:13px;background:#fff;box-shadow:0 2px 8px rgba(0,0,0,0.18);font-weight:700;font-size:18px;color:#1C1D3A;">Обложка</div>
+            </div>
+
+            <div style="position:absolute;top:184px;left:20px;right:20px;text-align:center;color:#fff;font-weight:500;font-size:17px;text-shadow:0 1px 6px rgba(0,0,0,0.45);z-index:18;">Сфотографируйте обложку пластинки</div>
+
+            <!-- scan frame (shorter) -->
+            <div style="position:absolute;left:40px;top:300px;width:300px;height:170px;z-index:16;">
+              <div style="position:absolute;top:0;left:0;width:46px;height:46px;border-top:5px solid #C9BBE9;border-left:5px solid #C9BBE9;border-radius:12px 0 0 0;"></div>
+              <div style="position:absolute;top:0;right:0;width:46px;height:46px;border-top:5px solid #C9BBE9;border-right:5px solid #C9BBE9;border-radius:0 12px 0 0;"></div>
+              <div style="position:absolute;bottom:0;left:0;width:46px;height:46px;border-bottom:5px solid #C9BBE9;border-left:5px solid #C9BBE9;border-radius:0 0 0 12px;"></div>
+              <div style="position:absolute;bottom:0;right:0;width:46px;height:46px;border-bottom:5px solid #C9BBE9;border-right:5px solid #C9BBE9;border-radius:0 0 12px 0;"></div>
+            </div>
+
+            <!-- shutter (center-bottom) -->
+            <div style="position:absolute;left:50%;transform:translateX(-50%);top:650px;width:82px;height:82px;border-radius:50%;border:4px solid rgba(201,173,127,0.95);background:rgba(255,255,255,0.12);z-index:17;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 14px rgba(0,0,0,0.2);">
+              <div style="width:62px;height:62px;border-radius:50%;background:#fff;box-shadow:inset 0 1px 3px rgba(0,0,0,0.15);"></div>
+            </div>
+
+            <!-- CONTROL (expanded default to show clearance) -->
+            <div style="position:absolute;right:16px;top:568px;height:64px;z-index:30;">
+              <div style="position:absolute;right:0;bottom:64px;width:120px;height:50px;pointer-events:none;opacity:{{ cvGlowOp }};transition:opacity .25s;background:radial-gradient(70% 100% at 72% 100%,rgba(255,255,255,0.9),rgba(255,255,255,0) 72%);"></div>
+              <div style="position:absolute;right:18px;bottom:60px;pointer-events:none;opacity:{{ cvGlowOp }};transition:opacity .25s;color:#fff;font-size:26px;font-weight:300;text-shadow:0 1px 4px rgba(0,0,0,0.2);">⌃</div>
+              <div onClick="{{ onCvCtrl }}" style="position:absolute;right:0;top:0;height:64px;width:{{ cvPillW }}px;border-radius:32px;background:rgba(236,237,240,{{ cvBgOp }});box-shadow:0 14px 32px rgba(28,29,58,0.20),0 2px 6px rgba(28,29,58,0.12);transition:width .3s cubic-bezier(.22,1,.36,1),background .2s;cursor:pointer;">
+                <span style="position:absolute;left:26px;top:0;height:64px;display:flex;align-items:center;width:130px;font-weight:800;font-size:18px;line-height:1.05;color:#23244D;opacity:{{ cvTextOp }};transition:opacity .15s;pointer-events:none;">Добавить вручную</span>
+                <div style="position:absolute;right:30px;top:14px;height:36px;width:{{ cvTrailW }}px;border-radius:18px;background:linear-gradient(270deg,{{ famHex }} 0%,rgba(255,255,255,0) 100%);filter:blur(7px);opacity:{{ cvTrailOp }};transform:translateX({{ cvKnobX }}px);pointer-events:none;"></div>
+                <svg width="40" height="64" viewBox="0 0 40 64" style="position:absolute;right:-6px;top:0;opacity:{{ cvArcsOp }};pointer-events:none;"><g fill="none" stroke="#1C1D3A" stroke-width="2" stroke-linecap="round" opacity="0.5"><path d="M30 14 A22 22 0 0 1 34 32"/><path d="M33 10 A28 28 0 0 1 38 32"/></g></svg>
+                <div onPointerDown="{{ onCvKnobDown }}" onClick="{{ onCvKnobClick }}" style="position:absolute;right:4px;top:4px;width:56px;height:56px;transform:translateX({{ cvKnobX }}px);transition:{{ cvKnobTrans }};cursor:grab;touch-action:none;filter:drop-shadow(0 6px 14px rgba(28,29,58,0.30));">{{ cvKnobEl }}</div>
+              </div>
+            </div>
+
+            <!-- clearance guides -->
+            <div style="position:absolute;left:0;right:0;top:632px;height:18px;z-index:29;pointer-events:none;opacity:{{ cvGuideOp }};">
+              <div style="position:absolute;left:166px;right:24px;top:8px;height:1px;border-top:1.5px dashed rgba(255,255,255,0.85);"></div>
+            </div>
+
+            <div style="position:absolute;left:50%;transform:translateX(-50%);bottom:22px;width:300px;height:60px;background:rgba(247,247,250,0.82);backdrop-filter:blur(18px);border-radius:30px;display:flex;align-items:center;justify-content:space-around;z-index:25;box-shadow:0 10px 26px rgba(0,0,0,0.18);">
+              <svg width="26" height="26" viewBox="0 0 26 26" fill="none" stroke="#9498a6" stroke-width="2.4" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="23" y2="23"/></svg>
+              <svg width="30" height="30" viewBox="0 0 30 30" fill="none" stroke="#3D5BF5" stroke-width="3" stroke-linecap="round"><path d="M3 9 V5 a2 2 0 0 1 2-2 h4"/><path d="M21 3 h4 a2 2 0 0 1 2 2 v4"/><path d="M27 21 v4 a2 2 0 0 1-2 2 h-4"/><path d="M9 27 H5 a2 2 0 0 1-2-2 v-4"/><rect x="9" y="9" width="12" height="12" rx="2.5" fill="#3D5BF5" stroke="none"/></svg>
+              <svg width="26" height="26" viewBox="0 0 26 26" fill="none" stroke="#9498a6" stroke-width="2"><circle cx="13" cy="13" r="10.5"/><circle cx="13" cy="13" r="4.5"/><circle cx="13" cy="13" r="1.4" fill="#9498a6" stroke="none"/></svg>
+            </div>
+
+            <sc-if value="{{ cvSheetOpen }}" hint-placeholder-val="{{ false }}">
+              <div style="position:absolute;inset:0;z-index:50;">
+                <div onClick="{{ onCvClose }}" style="position:absolute;inset:0;background:rgba(18,18,38,0.34);animation:fadeIn .2s ease;"></div>
+                <div style="position:absolute;left:0;right:0;bottom:0;background:#fff;border-radius:30px 30px 0 0;padding:22px 22px 34px;box-shadow:0 -12px 44px rgba(0,0,0,0.22);animation:sheetUp .32s cubic-bezier(.22,1,.36,1);">
+                  <div style="width:44px;height:5px;border-radius:3px;background:#D7D9E0;margin:0 auto 18px;"></div>
+                  <div style="display:flex;align-items:center;gap:14px;margin-bottom:22px;">
+                    <div style="width:50px;height:50px;flex:none;filter:drop-shadow(0 4px 10px rgba(28,29,58,0.2));">{{ sheetKnob }}</div>
+                    <div><div style="font-weight:800;font-size:21px;color:#1C1D3A;">Добавить вручную</div><div style="font-weight:500;font-size:14px;color:#8A8FA3;">Заполните данные пластинки</div></div>
+                  </div>
+                  <div style="display:flex;flex-direction:column;gap:12px;">
+                    <div style="height:52px;border-radius:14px;background:#F2F3F6;display:flex;align-items:center;padding:0 16px;font-weight:500;color:#9498A6;font-size:15px;">Исполнитель</div>
+                    <div style="height:52px;border-radius:14px;background:#F2F3F6;display:flex;align-items:center;padding:0 16px;font-weight:500;color:#9498A6;font-size:15px;">Название альбома</div>
+                    <div style="display:flex;gap:12px;"><div style="flex:1;height:52px;border-radius:14px;background:#F2F3F6;display:flex;align-items:center;padding:0 16px;font-weight:500;color:#9498A6;font-size:15px;">Год</div><div style="flex:1;height:52px;border-radius:14px;background:#F2F3F6;display:flex;align-items:center;padding:0 16px;font-weight:500;color:#9498A6;font-size:15px;">Жанр</div></div>
+                  </div>
+                  <div onClick="{{ onCvClose }}" style="margin-top:22px;height:54px;border-radius:16px;background:#1C1D3A;color:#fff;font-weight:700;font-size:17px;display:flex;align-items:center;justify-content:center;cursor:pointer;">Закрыть</div>
+                </div>
+              </div>
+            </sc-if>
+          </div>
+        </div>
+        <div style="font-weight:700;font-size:15px;color:#3a3c52;margin-top:18px;">Режим «Обложка» — FAB expanded (зазоры)</div>
+        <div style="font-weight:500;font-size:13px;color:#9498A6;">pill выше затвора · не доходит до него ≥16px</div>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;knobColor&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;default&quot;:&quot;red&quot;,&quot;options&quot;:[&quot;random&quot;,&quot;red&quot;,&quot;blue&quot;,&quot;green&quot;,&quot;yellow&quot;,&quot;orange&quot;],&quot;tsType&quot;:&quot;string&quot;},&quot;spinIdle&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;}}">
+class Component extends DCLogic {
+  constructor(props){
+    super(props);
+    this.state = { barcode:'collapsed', cover:'expanded', drag:null, sheet:null };
+    this._drag = null;
+    this._suppress = false;
+  }
+  componentDidMount(){
+    this._mv = (e)=>this._onMove(e);
+    this._up = (e)=>this._onUp(e);
+    window.addEventListener('pointermove', this._mv);
+    window.addEventListener('pointerup', this._up);
+  }
+  componentWillUnmount(){
+    window.removeEventListener('pointermove', this._mv);
+    window.removeEventListener('pointerup', this._up);
+  }
+  famHex(){
+    const map={red:'#E53935',blue:'#1E88E5',green:'#43A047',yellow:'#FDD835',orange:'#FB8C00',purple:'#7E57C2'};
+    let k=(this.props&&this.props.knobColor)||'red';
+    if(k==='random'){ if(!this._rand){const a=['red','blue','green','yellow','orange'];this._rand=a[Math.floor(Math.random()*a.length)];} k=this._rand; }
+    return map[k]||'#E53935';
+  }
+  onCtrlClick(screen){
+    if(this._suppress) return;
+    const s=this.state[screen];
+    if(s==='collapsed') this.setState({[screen]:'expanded'});
+    else if(s==='expanded') this.activate(screen);
+  }
+  onKnobClick(screen,e){
+    e.stopPropagation();
+    if(this._suppress) return;
+    if(this.state[screen]==='collapsed') this.setState({[screen]:'expanded'});
+  }
+  onKnobDown(screen,e){
+    if(this.state[screen]!=='expanded') return;
+    e.preventDefault(); e.stopPropagation();
+    this._drag={screen,startX:e.clientX,dx:0,moved:false};
+    this.setState({drag:{screen,dx:0}});
+  }
+  _onMove(e){
+    if(!this._drag) return;
+    const dx=e.clientX-this._drag.startX;
+    this._drag.dx=dx;
+    if(Math.abs(dx)>4) this._drag.moved=true;
+    this.setState({drag:{screen:this._drag.screen,dx}});
+  }
+  _onUp(){
+    if(!this._drag) return;
+    const {screen,dx,moved}=this._drag;
+    this._drag=null;
+    if(moved){ this._suppress=true; setTimeout(()=>{this._suppress=false;},150); }
+    if(dx<=-100){ this.activate(screen); }
+    else if(!moved){ this.activate(screen); }
+    else { this.setState({drag:null}); }
+  }
+  activate(screen){
+    this.setState({[screen]:'activated',drag:null});
+    clearTimeout(this['_t'+screen]);
+    this['_t'+screen]=setTimeout(()=>this.setState({sheet:screen}),650);
+  }
+  reset(screen){
+    clearTimeout(this['_t'+screen]);
+    this.setState({[screen]:'collapsed',sheet:null,drag:null});
+  }
+  computeCtrl(screen,fam){
+    const s=this.state[screen];
+    const d=(this.state.drag&&this.state.drag.screen===screen)?this.state.drag.dx:null;
+    const GREY='#C8CCD2';
+    const o={pillW:64,bgOp:0,knobHex:GREY,knobX:0,textOp:0,glowOp:0,trailOp:0,trailW:0,arcsOp:0,
+      spin:(this.props&&this.props.spinIdle)?'vspin 6s linear infinite':'none',
+      knobTrans:'transform .3s cubic-bezier(.22,1,.36,1)'};
+    if(s==='expanded'){
+      o.pillW=224;o.bgOp=1;o.knobHex=fam;
+      if(d!=null){
+        const kx=Math.max(-160,Math.min(0,d));
+        o.knobX=kx;
+        const p=Math.min(1,-kx/160);
+        o.textOp=1-p;o.trailOp=p;o.trailW=40+p*120;o.arcsOp=p;
+        o.spin=p>0.15?'vspin .5s linear infinite':'none';
+        o.knobTrans='transform 0s';
+      } else { o.knobX=0;o.textOp=1; }
+    } else if(s==='activated'){
+      o.pillW=224;o.bgOp=1;o.knobHex=fam;o.knobX=-160;o.textOp=0;o.glowOp=1;o.trailOp=1;o.trailW=150;o.arcsOp=1;
+      o.spin='vspin .45s linear infinite';
+    }
+    return o;
+  }
+  _hexToRgb(h){const n=parseInt(h.replace('#',''),16);return{r:(n>>16)&255,g:(n>>8)&255,b:n&255};}
+  _rgbToHex(r,g,b){return '#'+[r,g,b].map(v=>Math.max(0,Math.min(255,Math.round(v))).toString(16).padStart(2,'0')).join('');}
+  _darken(h,a){const{r,g,b}=this._hexToRgb(h);return this._rgbToHex(r*(1-a),g*(1-a),b*(1-a));}
+  _saturate(h,sa,br){
+    let{r,g,b}=this._hexToRgb(h);let rn=r/255,gn=g/255,bn=b/255;
+    const mx=Math.max(rn,gn,bn),mn=Math.min(rn,gn,bn);let hh=0,s=0;const l=(mx+mn)/2;
+    if(mx!==mn){const dd=mx-mn;s=l>0.5?dd/(2-mx-mn):dd/(mx+mn);
+      if(mx===rn)hh=(gn-bn)/dd+(gn<bn?6:0);else if(mx===gn)hh=(bn-rn)/dd+2;else hh=(rn-gn)/dd+4;hh/=6;}
+    const sN=Math.min(1,s+sa),lN=Math.min(1,l+br);
+    function h2(p,q,t){if(t<0)t+=1;if(t>1)t-=1;if(t<1/6)return p+(q-p)*6*t;if(t<1/2)return q;if(t<2/3)return p+(q-p)*(2/3-t)*6;return p;}
+    let nr,ng,nb;
+    if(sN===0){nr=ng=nb=lN;}else{const q=lN<0.5?lN*(1+sN):lN+sN-lN*sN;const p=2*lN-q;nr=h2(p,q,hh+1/3);ng=h2(p,q,hh);nb=h2(p,q,hh-1/3);}
+    return this._rgbToHex(nr*255,ng*255,nb*255);
+  }
+  buildVinyl(primary,size){
+    const scale=size/220, cx=size/2, cy=size/2;
+    const bright=this._saturate(primary,0.12,0.1),mid=primary,dark=this._darken(primary,0.28),edge=this._darken(primary,0.48);
+    const edgeR=110*scale,labelR=38*scale,inner=5*scale,gcol=this._darken(primary,0.6);
+    const gc=26;let grooves='';
+    for(let i=0;i<gc;i++){const gr=44*scale+(i/(gc-1))*60*scale;grooves+='<circle cx="'+cx+'" cy="'+cy+'" r="'+gr+'" fill="none" stroke="'+gcol+'" stroke-width="0.5"/>';}
+    const uid=primary.replace('#','')+'_'+size;
+    return '<svg width="'+size+'" height="'+size+'" viewBox="0 0 '+size+' '+size+'" xmlns="http://www.w3.org/2000/svg" style="display:block">'
+      +'<defs><radialGradient id="bg'+uid+'" cx="50%" cy="50%" r="50%">'
+      +'<stop offset="0%" stop-color="'+bright+'"/><stop offset="40%" stop-color="'+mid+'"/>'
+      +'<stop offset="78%" stop-color="'+dark+'"/><stop offset="100%" stop-color="'+edge+'"/></radialGradient>'
+      +'<radialGradient id="hl'+uid+'" cx="32%" cy="26%" r="44%"><stop offset="0%" stop-color="#ffffff" stop-opacity="0.55"/><stop offset="100%" stop-color="#ffffff" stop-opacity="0"/></radialGradient>'
+      +'<clipPath id="cl'+uid+'"><circle cx="'+cx+'" cy="'+cy+'" r="'+edgeR+'"/></clipPath></defs>'
+      +'<circle cx="'+cx+'" cy="'+cy+'" r="'+edgeR+'" fill="url(#bg'+uid+')"/>'
+      +'<g opacity="0.22" clip-path="url(#cl'+uid+')">'+grooves+'</g>'
+      +'<circle cx="'+cx+'" cy="'+cy+'" r="'+(edgeR-1)+'" fill="none" stroke="rgba(0,0,0,0.30)" stroke-width="'+(3*scale)+'"/>'
+      +'<circle cx="'+cx+'" cy="'+cy+'" r="'+(edgeR-3.5*scale)+'" fill="none" stroke="rgba(0,0,0,0.12)" stroke-width="'+(2*scale)+'"/>'
+      +'<circle cx="'+cx+'" cy="'+cy+'" r="'+edgeR+'" fill="url(#hl'+uid+')" clip-path="url(#cl'+uid+')"/>'
+      +'<circle cx="'+cx+'" cy="'+cy+'" r="'+labelR+'" fill="#1C1D3A"/>'
+      +'<text x="'+cx+'" y="'+(cy-11*scale)+'" text-anchor="middle" dominant-baseline="middle" font-size="'+(7.6*scale)+'" fill="#B8BCDB" font-family="Inter, sans-serif" font-weight="800" letter-spacing="'+(1*scale)+'">ВЕРТУШКА</text>'
+      +'<circle cx="'+cx+'" cy="'+cy+'" r="'+inner+'" fill="#000"/>'
+      +'<text x="'+cx+'" y="'+(cy+12*scale)+'" text-anchor="middle" dominant-baseline="middle" font-size="'+(5*scale)+'" fill="#5C6080" font-family="Inter, sans-serif" letter-spacing="'+(1.5*scale)+'">33⅓ RPM</text>'
+      +'</svg>';
+  }
+  vinylEl(primary,size,spin){
+    return React.createElement('div',{style:{width:size+'px',height:size+'px',transformOrigin:'50% 50%',animation:spin,willChange:'transform'},dangerouslySetInnerHTML:{__html:this.buildVinyl(primary,size)}});
+  }
+  renderVals(){
+    const fam=this.famHex();
+    const bc=this.computeCtrl('barcode',fam);
+    const cv=this.computeCtrl('cover',fam);
+    return {
+      kGrey56:this.vinylEl('#C8CCD2',56,bc.spin),
+      kRedState:this.vinylEl('#E53935',56,'none'),
+      kRedAct:this.vinylEl('#E53935',56,'vspin .5s linear infinite'),
+      demoRed:this.vinylEl('#E53935',116,'none'),
+      demoBlue:this.vinylEl('#1E88E5',116,'none'),
+      demoGreen:this.vinylEl('#43A047',116,'none'),
+      demoYellow:this.vinylEl('#FDD835',116,'none'),
+      demoOrange:this.vinylEl('#FB8C00',116,'none'),
+      sheetKnob:this.vinylEl(fam,50,'none'),
+      famHex:fam,
+      bcPillW:bc.pillW,bcBgOp:bc.bgOp,bcTextOp:bc.textOp,bcGlowOp:bc.glowOp,bcTrailOp:bc.trailOp,bcTrailW:bc.trailW,bcKnobX:bc.knobX,bcArcsOp:bc.arcsOp,bcKnobTrans:bc.knobTrans,
+      bcKnobEl:this.vinylEl(bc.knobHex,56,bc.spin),
+      bcSheetOpen:this.state.sheet==='barcode',
+      onBcCtrl:()=>this.onCtrlClick('barcode'),
+      onBcKnobDown:(e)=>this.onKnobDown('barcode',e),
+      onBcKnobClick:(e)=>this.onKnobClick('barcode',e),
+      onBcClose:()=>this.reset('barcode'),
+      cvPillW:cv.pillW,cvBgOp:cv.bgOp,cvTextOp:cv.textOp,cvGlowOp:cv.glowOp,cvTrailOp:cv.trailOp,cvTrailW:cv.trailW,cvKnobX:cv.knobX,cvArcsOp:cv.arcsOp,cvKnobTrans:cv.knobTrans,
+      cvKnobEl:this.vinylEl(cv.knobHex,56,cv.spin),
+      cvSheetOpen:this.state.sheet==='cover',
+      cvGuideOp:this.state.cover==='expanded'?1:0,
+      onCvCtrl:()=>this.onCtrlClick('cover'),
+      onCvKnobDown:(e)=>this.onKnobDown('cover',e),
+      onCvKnobClick:(e)=>this.onKnobClick('cover',e),
+      onCvClose:()=>this.reset('cover'),
+    };
+  }
+}
+</script>
+</body>
+</html>

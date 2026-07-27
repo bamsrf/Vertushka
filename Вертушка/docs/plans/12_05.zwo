@@ -1,0 +1,128 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workout_file>
+    <author>Vladislav Rumyantsev</author>
+    <n>Вт 12.05 - Интервалы 12x400м</n>
+    <sportType>run</sportType>
+    <durationType>time</durationType>
+    <tags/>
+    <workout>
+        <SteadyState Duration="900" Power="0.7">
+            <textevent timeoffset="0" message="Легкий бег - 15 минут"/>
+            <textevent timeoffset="450" message="Половина разминки пройдена"/>
+            <textevent timeoffset="810" message="Скоро начинаем интервалы"/>
+        </SteadyState>
+        <SteadyState Duration="102" Power="1.05">
+            <textevent timeoffset="0" message="Интервал 1/12 - темп 4:00-4:05"/>
+        </SteadyState>
+        <SteadyState Duration="30" Power="0.65">
+            <textevent timeoffset="0" message="50м шагом"/>
+        </SteadyState>
+        <SteadyState Duration="90" Power="0.7">
+            <textevent timeoffset="0" message="150м трусцой"/>
+        </SteadyState>
+        <SteadyState Duration="102" Power="1.05">
+            <textevent timeoffset="0" message="Интервал 2/12 - темп 4:00-4:05"/>
+        </SteadyState>
+        <SteadyState Duration="30" Power="0.65">
+            <textevent timeoffset="0" message="50м шагом"/>
+        </SteadyState>
+        <SteadyState Duration="90" Power="0.7">
+            <textevent timeoffset="0" message="150м трусцой"/>
+        </SteadyState>
+        <SteadyState Duration="102" Power="1.05">
+            <textevent timeoffset="0" message="Интервал 3/12 - темп 4:00-4:05"/>
+        </SteadyState>
+        <SteadyState Duration="30" Power="0.65">
+            <textevent timeoffset="0" message="50м шагом"/>
+        </SteadyState>
+        <SteadyState Duration="90" Power="0.7">
+            <textevent timeoffset="0" message="150м трусцой"/>
+        </SteadyState>
+        <SteadyState Duration="102" Power="1.05">
+            <textevent timeoffset="0" message="Интервал 4/12 - темп 4:00-4:05"/>
+        </SteadyState>
+        <SteadyState Duration="30" Power="0.65">
+            <textevent timeoffset="0" message="50м шагом"/>
+        </SteadyState>
+        <SteadyState Duration="90" Power="0.7">
+            <textevent timeoffset="0" message="150м трусцой"/>
+        </SteadyState>
+        <SteadyState Duration="102" Power="1.05">
+            <textevent timeoffset="0" message="Интервал 5/12 - темп 4:00-4:05"/>
+        </SteadyState>
+        <SteadyState Duration="30" Power="0.65">
+            <textevent timeoffset="0" message="50м шагом"/>
+        </SteadyState>
+        <SteadyState Duration="90" Power="0.7">
+            <textevent timeoffset="0" message="150м трусцой"/>
+        </SteadyState>
+        <SteadyState Duration="90" Power="1.15">
+            <textevent timeoffset="0" message="Интервал 6/12 - темп 3:35-3:45"/>
+        </SteadyState>
+        <SteadyState Duration="30" Power="0.65">
+            <textevent timeoffset="0" message="50м шагом"/>
+        </SteadyState>
+        <SteadyState Duration="90" Power="0.7">
+            <textevent timeoffset="0" message="150м трусцой"/>
+        </SteadyState>
+        <SteadyState Duration="90" Power="1.15">
+            <textevent timeoffset="0" message="Интервал 7/12 - темп 3:35-3:45"/>
+        </SteadyState>
+        <SteadyState Duration="30" Power="0.65">
+            <textevent timeoffset="0" message="50м шагом"/>
+        </SteadyState>
+        <SteadyState Duration="90" Power="0.7">
+            <textevent timeoffset="0" message="150м трусцой"/>
+        </SteadyState>
+        <SteadyState Duration="90" Power="1.15">
+            <textevent timeoffset="0" message="Интервал 8/12 - темп 3:35-3:45"/>
+        </SteadyState>
+        <SteadyState Duration="30" Power="0.65">
+            <textevent timeoffset="0" message="50м шагом"/>
+        </SteadyState>
+        <SteadyState Duration="90" Power="0.7">
+            <textevent timeoffset="0" message="150м трусцой"/>
+        </SteadyState>
+        <SteadyState Duration="90" Power="1.15">
+            <textevent timeoffset="0" message="Интервал 9/12 - темп 3:35-3:45"/>
+        </SteadyState>
+        <SteadyState Duration="30" Power="0.65">
+            <textevent timeoffset="0" message="50м шагом"/>
+        </SteadyState>
+        <SteadyState Duration="90" Power="0.7">
+            <textevent timeoffset="0" message="150м трусцой"/>
+        </SteadyState>
+        <SteadyState Duration="90" Power="1.15">
+            <textevent timeoffset="0" message="Интервал 10/12 - темп 3:35-3:45"/>
+        </SteadyState>
+        <SteadyState Duration="30" Power="0.65">
+            <textevent timeoffset="0" message="50м шагом"/>
+        </SteadyState>
+        <SteadyState Duration="90" Power="0.7">
+            <textevent timeoffset="0" message="150м трусцой"/>
+        </SteadyState>
+        <SteadyState Duration="90" Power="1.15">
+            <textevent timeoffset="0" message="Интервал 11/12 - темп 3:35-3:45"/>
+        </SteadyState>
+        <SteadyState Duration="30" Power="0.65">
+            <textevent timeoffset="0" message="50м шагом"/>
+        </SteadyState>
+        <SteadyState Duration="90" Power="0.7">
+            <textevent timeoffset="0" message="150м трусцой"/>
+        </SteadyState>
+        <SteadyState Duration="90" Power="1.15">
+            <textevent timeoffset="0" message="Интервал 12/12 - темп 3:35-3:45"/>
+        </SteadyState>
+        <SteadyState Duration="30" Power="0.65">
+            <textevent timeoffset="0" message="50м шагом"/>
+        </SteadyState>
+        <SteadyState Duration="90" Power="0.7">
+            <textevent timeoffset="0" message="150м трусцой"/>
+        </SteadyState>
+        <SteadyState Duration="600" Power="0.7">
+            <textevent timeoffset="0" message="Легкий бег - 10 минут"/>
+            <textevent timeoffset="300" message="Половина заминки пройдена"/>
+            <textevent timeoffset="540" message="Скоро завершение тренировки"/>
+        </SteadyState>
+    </workout>
+</workout_file>
