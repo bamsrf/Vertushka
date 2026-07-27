@@ -7,7 +7,7 @@
 | **Репо** | [bamsrf/Vertushka](https://github.com/bamsrf/Vertushka) |
 | **Прод-API** | https://api.vinyl-vertushka.ru/api |
 | **TestFlight / Google Play** | TestFlight build prep ✅, soak в процессе (M2) |
-| **Последнее обновление** | 2026-06-19 |
+| **Последнее обновление** | 2026-07-27 |
 | **Текущий milestone** | M2 (Release prep) параллельно M5/M6 (зашиты в продукт) |
 | **Прогресс** | M0 ✅ · M1 🟨 · M2 🟨 · M3 🟨 · M4 🟨 · M5 🟨 · M6 🟨 · M7 🟨 · M8 ⬜ · M9 ⬜ · M10 🟨 |
 
@@ -271,7 +271,7 @@ ROADMAP.md — это _верхнеуровневый зонтик_. Кажды�
 
 ### M2. Production Release (App Store + Google Play)
 
-**Статус:** ⬜ Not started (но ~65% базы готово — см. PLAN_RELEASE_v2.md)
+**Статус:** 🟨 In progress (~80% базы готово — см. PLAN_RELEASE_v2.md; закрыты UGC-compliance, eas.json, blue-green деплой)
 **Goal:** Приложение опубликовано в App Store **и** Google Play в один день. Стабильно держит 1000 DAU.
 **Why:** Без публичного релиза остальные milestone'ы (P2P, парсинг, рекомендации) — работают на 1 пользователя. Пора собирать фидбек.
 **Owner:** bamsrf
@@ -311,7 +311,7 @@ ROADMAP.md — это _верхнеуровневый зонтик_. Кажды�
 - Условия использования + политика конфиденциальности на сайте (RU + EN)
 
 **Pre-launch риски (выявлено вне исходного плана, 2026-06-19)**
-- 🟥 **UGC-compliance — блокер App Store (Guideline 1.2).** DM и user-submitted records = user-gen контент. В коде есть block, но **нет report-content / report-user и нет rate-limit на сообщения**. Apple требует фильтр + репорт + блок + реакцию ≤24ч. Без этого — реджект. Добавить report-эндпоинт + EULA no-tolerance + rate-limit DM до сабмита.
+- 🟨 **UGC-compliance (Guideline 1.2) — код закрыт, операционка нет.** 2026-07-02 добавлены `Backend/app/api/reports.py` + pre-release compliance pack ([UGC_MODERATION_M2.md](docs/plans/UGC_MODERATION_M2.md)). Осталось операционное: EULA-accept при регистрации, кнопка report на каждом UGC-объекте в мобиле, staff-action бан/удаление, контакт для жалоб в ASC, регламент реакции ≤24ч.
 - ⚠️ **Legal: ToS scraping + Discogs dump.** Публично показываем scraped-данные магазинов + локальный Discogs-дамп. Проверить Discogs API ToS (массовый дамп + редистрибуция) и per-shop robots/ToS **до** публичного релиза — cease-and-desist прилетает после роста, а не на старте.
 - 💡 **Activation-метрика.** DAU=1, тюнить нечего. Зашить одну activation-метрику (первый added record / первый импорт) в Amplitude и вывести Discogs-импорт (M4, уже в проде) прямо в онбординг.
 - ✅ **Off-site backup + restore-drill — закрыто** (см. Changelog ниже, 2026-06-19).
@@ -335,6 +335,9 @@ ROADMAP.md — это _верхнеуровневый зонтик_. Кажды�
 - `Mobile/eas.json`, `Mobile/app.json`, `Backend/scripts/restore_drill.sh`, `Backend/tests/`
 
 #### Changelog
+- **2026-07-24** — blue-green деплой API: zero-downtime cutover через `Backend/nginx/active_upstream.conf` + `deploy.sh`
+- **2026-07-13** — support/demo email переехал на `@vinyl-vertushka.store` (ящик на .store, web/API на .ru); `eas.json` заполнен (`ascAppId`, `appleTeamId`, `serviceAccountKeyPath`)
+- **2026-07-02** — UGC-модерация (Guideline 1.2): `api/reports.py` + pre-release compliance pack; `supportsTablet=false` для v1.0 (iPhone-only, audit A3)
 - **2026-06-19** — data-safety: restore-drill ([scripts/restore_drill.sh](Backend/scripts/restore_drill.sh)) — одноразовый контейнер + sanity; off-site backup в S3/Yandex активирован env в `backup.sh`. Закрыта галка «restore-drill хотя бы раз руками».
 - **2026-06-19** — quality net: первые smoke-тесты ([Backend/tests/](Backend/tests/), 27 шт) на pricing-формулу, транслитерацию, нормализацию и accessory/format-гейты matcher'а
 - **2026-05-31** — TestFlight build prep; self-hosted GlitchTip (sentry.vinyl-vertushka.ru)
@@ -841,8 +844,23 @@ ROADMAP.md — это _верхнеуровневый зонтик_. Кажды�
 
 Хронологическая лента merged PR. Обновляется автоматически (см. секцию 6) — при каждом merged PR в `main` GitHub Action запускает `scripts/sync_roadmap.py`, который дописывает строку сюда и в Changelog соответствующего M-блока.
 
+### 2026-07
+
+- **2026-07-27** — chore(design): маскот-ассеты, manual-add-toggle кит, брифы — _M1_
+- **2026-07-24** — feat(deploy): blue-green api для zero-downtime деплоя (+ фикс `docker rm -f` в cutover); perf(versions): ~130→~15 вызовов Discogs на экран версий — _M2/M6_
+- **2026-07-23** — feat(push): переписан копирайт всех уведомлений + единый `push_copy`; fix(gifts): бронь для неподписчиков больше не упирается в тупик — _M5/M7_
+- **2026-07-22** — feat(notifications): anti-churn, absent-события, push на историческом минимуме, дайджест-свёртка вишлиста + поп-ап с корешками; fix(push): deep-link доводит до нужного раздела; feat(intro): анимация маскота в интро-заставке (Higgsfield→Lottie, webp→JPEG для iOS); feat(market): жанр-фильтр по `r.style` + суб-жанры; fix(market): единый формат-рубеж в матче, «Новинки» = свежий год + `first_seen`; docs: PLAN_NOTIFICATIONS_V3 — _M1/M6_
+- **2026-07-21** — feat(market): фильтры genre/colored/limited/new + `/market/facets` + FilterBar-аккордеон; feat(pricing): цена из листингов для релизов без Discogs-оценки, РФ-country для store-native; feat(records): `display_vinyl_color` — цвет прототипа из оффера; fix(alembic): merge heads — _M6_
+- **2026-07-19/20** — feat(records): Yandex-native релизы вне Discogs (обогащение + шаг матчинга) + двусторонний транслит, пропуск не-артистов; feat(covers): iTunes+Yandex bulk-backfill хвоста обложек; perf(search): гасить авто-рейлы и градиент когда невидимы; docs: ANTIHEAT_PLAN + STORE_ONBOARDING_STRATEGY (store_health) — _M6_
+- **2026-07-15…18** — feat(radar): price-tracking радар — экран, threshold-sheet, backend-эндпоинт, таблица status-событий, radar-typed уведомления, deeplink-переоткрытие sheet (+3 раунда фиксов); feat(icon): маскот-иконка приложения (icon/adaptive/splash/favicon) — _M1/M5_
+- **2026-07-13/14** — feat(wishlist): per-item колокольчик, price-drop алерты, история цен; feat(manual): country picker + on-screen Discogs-поиск; feat(mascot): Lottie-обвязка интро + лоадер; fix(collections/value): оценка коллекции учитывает релизы в папках; docs: UGC_MODERATION_M2, MB_DELTA_REFRESH; chore(appstore): support/demo email → `@vinyl-vertushka.store` — _M1/M2/M3_
+- **2026-07-09…12** — feat(covers): barcode-канал MB→CAA (офлайн-обложки мимо API), живой резолв на промахе индекса; feat(artists): релизы артиста local-first из дамп-индекса; feat(prod): устойчивость и изоляция фоновых задач (Tier 1/3), backfill переживает деплой; feat(notifications): пуши сообщений, аватарки в пушах и ленте, агрегат-бейдж на аватарке; feat(achievements): серия «Кругосветка» (geography D1–D7 + META); perf(mem): CLIP ONNX арены + api 2→1 воркер — _M5/M6_
+- **2026-07-07/08** — feat(covers): Deezer как источник обложек, bulk-backfill хвоста дампа, харвест обложек магазинных листингов; feat(records): Tier 2 — локальные треклисты main-release; feat(auth): восстановление удалённого аккаунта из 30-дневного окна в мобиле — _M2/M6_
+- **2026-07-02…06** — feat(covers): «смерть заглушек» — batch-прогрев мастеров артиста, собственное зеркало `/covers/`, MB/CAA offline mapping, drip warmer, iTunes fallback; feat(artists): local-first дискография (ноль вызовов Discogs), фильтр бутлегов, self-heal обложек; feat(appstore): UGC-модерация (Guideline 1.2) + pre-release compliance pack; fix(ios): `supportsTablet=false` для v1.0; docs: PLAN_FEATURES_RESEARCH_2026 (M11–M14) — _M2/M6_
+
 ### 2026-06
 
+- **2026-06-23…30** — feat(achievements): активация gift-серии + фикс события move-to-collection; feat(store-native): collectible + searchable; feat(artist): бакетирование видео/oddities в `release_type='other'`, хронология, hi-res обложки; feat(gbrain): авто-захват чатов в brain (queue-based, без PGLite-локов); feat(ui): общий iOS-style Toggle с бренд-градиентом; fix(public-profile): единый RecordGrid, краш при открытии, booking-sheet; fix(messages): Instagram-style request-flow; fix(auth): Apple sign-in линкуется к существующему email — _M3/M5/M6_
 - **2026-06-19** — chore(data-safety): restore-drill скрипт + off-site backup (S3/Yandex); test: первые 27 smoke-тестов бэкенда (pricing/translit/normalize/matcher-гейты) — _M2_
 - **2026-06-19** — fix(search): constant rail scroll speed; fix(valuation): value через estimate_rub fallback; feat(discogs): hybrid new-releases rail (recency × want); feat(achievements): rework серии «Сообщество» v2.1 — _M5/M6_
 - **2026-06-18** — feat(discogs): Discogs-first manual add + self-enriching index; fix(spotify): `SPOTIFY_PROXY_URL` обход RU geo-block; fix(ios-build): modular headers для Google pods — _M3_

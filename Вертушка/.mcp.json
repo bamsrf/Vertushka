@@ -3,6 +3,10 @@
     "vertushka-docs": {
       "command": ".claude/mcp/.venv/bin/python",
       "args": [".claude/mcp/server.py"]
+    },
+    "gbrain": {
+      "command": "/Users/vladislavrumancev/.bun/bin/gbrain",
+      "args": ["serve"]
     }
   }
 }
