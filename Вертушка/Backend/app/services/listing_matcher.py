@@ -771,6 +771,25 @@ async def _save_discogs_result(
     )
     db.add(rec)
     await db.flush()
+
+    # Self-enriching search-индекс: релиз добыт живым вызовом Discogs, значит
+    # его нет в дампе (или дамп устарел) — кладём в discogs_releases_index,
+    # иначе пластинка попадает в каталог, но /records/search её не находит.
+    # Идемпотентно (ON CONFLICT DO NOTHING), ошибки глотает сам helper.
+    from app.services.discogs_index import upsert_release_into_index
+    await upsert_release_into_index(db, {
+        "id": discogs_id,
+        "master_id": first.get("master_id"),
+        "artist": rec.artist,
+        "title": rec.title,
+        "year": rec.year,
+        "country": rec.country,
+        "format": format_type,
+        "label": rec.label,
+        "barcode": barcode,
+        "catalog_number": rec.catalog_number,
+        "cover_image": rec.cover_image_url,
+    })
     return rec
 
 
