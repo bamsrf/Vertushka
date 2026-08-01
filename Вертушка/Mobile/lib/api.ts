@@ -66,6 +66,7 @@ import {
   MarketFacetsResponse,
   RecordOffersSummary,
   RecordOffersFullResponse,
+  AppConfig,
 } from './types';
 
 // API сервер
@@ -187,6 +188,13 @@ class ApiClient {
       async (error: AxiosError) => {
         const originalRequest = error.config as any;
         const status = error.response?.status;
+
+        // Фича выключена рубильником — это не «сервису плохо», а осознанное
+        // решение. Ретраи тут только мучают пользователя и долбят эндпоинт,
+        // который мы только что погасили. См. Backend/app/api/app_config.py
+        if (error.response?.headers?.['x-feature-disabled']) {
+          return Promise.reject(error);
+        }
 
         if ((status === 503 || status === 429) && !originalRequest._retryCount) {
           originalRequest._retryCount = 0;
@@ -1369,6 +1377,17 @@ class ApiClient {
   // One-time импорт коллекции из Discogs в основную коллекцию.
   async importDiscogsCollection(): Promise<{ imported: number; skipped: number; total: number }> {
     const { data } = await this.client.post('/collections/import/discogs');
+    return data;
+  }
+
+  /**
+   * Remote config: force-update gate + kill-switch фич.
+   * Таймаут укорочен до 8с — этот запрос стоит на пути холодного старта,
+   * держать пользователя перед сплэшем минуту нельзя. Ошибку не глушим:
+   * fail-open решает вызывающая сторона (см. lib/remoteConfig.ts).
+   */
+  async getAppConfig(): Promise<AppConfig> {
+    const { data } = await this.client.get<AppConfig>('/config/', { timeout: 8000 });
     return data;
   }
 

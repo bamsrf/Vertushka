@@ -9,7 +9,7 @@ from contextvars import ContextVar
 from contextlib import asynccontextmanager
 
 import sentry_sdk
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -22,6 +22,7 @@ from sqlalchemy import text
 
 from app.config import get_settings
 from app.database import init_db, close_db, async_session_maker
+from app.services import alerts
 from app.services.cache import cache
 from app.services.rate_limiter import discogs_limiter
 
@@ -61,7 +62,7 @@ if _settings_early.sentry_dsn:
     logger.info("Sentry initialised")
 
 # API роутеры
-from app.api import auth, records, collections, wishlists, users, gifts, profile, export, covers, user_photos, waitlist, achievements, offers, market, messages, notifications, discogs_oauth, admin, reports
+from app.api import auth, records, collections, wishlists, users, gifts, profile, export, covers, user_photos, waitlist, achievements, offers, market, messages, notifications, discogs_oauth, admin, reports, app_config
 
 # Web роутеры (HTML страницы)
 from app.web import routes as web_routes
@@ -272,6 +273,12 @@ async def request_id_middleware(request: Request, call_next):
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     logger.exception("Unhandled exception on %s %s", request.method, request.url.path)
+    # Аларм в Telegram: троттлится по пути, не блокирует ответ клиенту.
+    alerts.fire_and_forget(
+        key=f"http_500:{request.url.path}",
+        title=f"500 на {request.method} {request.url.path}",
+        body=f"{type(exc).__name__}: {exc}",
+    )
     return JSONResponse(
         status_code=500,
         content={"detail": "Internal server error"},
@@ -296,13 +303,20 @@ app.include_router(covers.router, prefix="/covers", tags=["Обложки"])  # 
 app.include_router(user_photos.router, prefix="/api/collections", tags=["Фото пластинок"])
 app.include_router(waitlist.router, prefix="/api/waitlist", tags=["Waitlist"])
 app.include_router(achievements.router, prefix="/api/achievements", tags=["Ачивки"])
-app.include_router(offers.router, prefix="/api", tags=["Магазины"])
-app.include_router(market.router, prefix="/api", tags=["Маркет"])
+# Маркет и офферы магазинов — целиком под kill-switch `market`:
+# при претензии по ToS магазина раздел гасится за секунды, без деплоя.
+_market_gate = [Depends(app_config.require_flag("market"))]
+app.include_router(offers.router, prefix="/api", tags=["Магазины"], dependencies=_market_gate)
+app.include_router(market.router, prefix="/api", tags=["Маркет"], dependencies=_market_gate)
 app.include_router(messages.router, prefix="/api/messages", tags=["Сообщения"])
 app.include_router(notifications.router, prefix="/api/notifications", tags=["Уведомления"])
 
 app.include_router(admin.router, prefix="/api/admin", tags=["Модерация"])
 app.include_router(reports.router, prefix="/api/reports", tags=["Жалобы"])
+
+# Remote config: публичный конфиг для клиента + staff-флип без деплоя
+app.include_router(app_config.router, prefix="/api/config", tags=["Конфиг"])
+app.include_router(app_config.admin_router, prefix="/api/admin/config", tags=["Конфиг"])
 
 # Web страницы (публичный профиль, OG-изображения)
 app.include_router(web_routes.router, tags=["Web"])

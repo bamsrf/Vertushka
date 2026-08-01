@@ -117,7 +117,33 @@ class Settings(BaseSettings):
     # Email-верификация дарителя (под флагом — включать только когда SMTP стабилен)
     gift_booking_require_email_verification: bool = Field(default=False, alias="GIFT_BOOKING_REQUIRE_EMAIL_VERIFICATION")
     gift_booking_verification_window_hours: int = Field(default=24, alias="GIFT_BOOKING_VERIFICATION_WINDOW_HOURS")
-    
+
+    # ── Remote config: force-update gate ────────────────────────────────────
+    # Дефолт для GET /api/config. Поднимается на лету через
+    # PUT /api/admin/config/min-version/ — без деплоя. См. services/app_config.py
+    min_supported_app_version: str = Field(default="1.0.0", alias="MIN_SUPPORTED_APP_VERSION")
+    app_store_url: str = Field(
+        default="https://apps.apple.com/app/id6774999020", alias="APP_STORE_URL",
+    )
+    force_update_message: str = Field(
+        default="Вышла новая версия Вертушки. Обнови приложение, чтобы продолжить.",
+        alias="FORCE_UPDATE_MESSAGE",
+    )
+
+    # ── Remote config: kill-switch фич ──────────────────────────────────────
+    # Дефолты. Мгновенный флип — PUT /api/admin/config/flags/ (Redis-оверрайд).
+    # Выключил на инцидент через API и это надолго → продублируй здесь.
+    feature_vision_scan_enabled: bool = Field(default=True, alias="FEATURE_VISION_SCAN_ENABLED")
+    feature_market_enabled: bool = Field(default=True, alias="FEATURE_MARKET_ENABLED")
+    feature_shop_scrapers_enabled: bool = Field(default=True, alias="FEATURE_SHOP_SCRAPERS_ENABLED")
+    feature_user_submitted_enabled: bool = Field(default=True, alias="FEATURE_USER_SUBMITTED_ENABLED")
+
+    # ── Алармы в Telegram ───────────────────────────────────────────────────
+    # Пустой токен → алармы graceful no-op (как spotify_*). См. services/alerts.py
+    telegram_bot_token: str = Field(default="", alias="TELEGRAM_BOT_TOKEN")
+    telegram_alert_chat_id: str = Field(default="", alias="TELEGRAM_ALERT_CHAT_ID")
+    telegram_alert_throttle_seconds: int = Field(default=300, alias="TELEGRAM_ALERT_THROTTLE_SECONDS")
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"

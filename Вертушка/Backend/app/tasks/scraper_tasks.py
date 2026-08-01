@@ -28,6 +28,7 @@ from app.services.listing_matcher import (
 )
 from app.api.offers import invalidate_record_offers
 from app.api.records import _ensure_record_artist_data
+from app.services import app_config
 
 logger = logging.getLogger(__name__)
 
@@ -44,8 +45,17 @@ async def _crawl_active_stores(filter_browser: bool | None = None, mode: str = "
     """Прогнать все активные магазины параллельно (Semaphore=SCRAPER_CONCURRENCY).
 
     filter_browser: True/False/None — фильтр по requires_browser.
+
+    Единая воронка всех crawl-джоб: гейт `shop_scrapers` стоит здесь, чтобы
+    выключение рубильником остановило обход, не дожидаясь передеплоя.
     """
     counters = {"stores": 0, "ok": 0, "failed": 0, "total_upserted": 0}
+
+    if not await app_config.is_enabled("shop_scrapers"):
+        logger.info("Crawl пропущен: kill-switch shop_scrapers выключен")
+        counters["skipped"] = True
+        return counters
+
     async with async_session_maker() as db:
         stmt = select(Store).where(Store.is_active.is_(True))
         if filter_browser is not None:
@@ -151,8 +161,14 @@ async def stock_refresh_active(per_store_limit: int = 200, stale_hours: int = 6)
     перепарсивает их URL через parser.refresh_urls(). 404/410 → removed.
     Магазины обходятся параллельно (SCRAPER_CONCURRENCY).
     """
-    cutoff = datetime.utcnow() - timedelta(hours=stale_hours)
     counters = {"stores": 0, "checked": 0, "removed": 0, "errors": 0}
+
+    if not await app_config.is_enabled("shop_scrapers"):
+        logger.info("Stock-refresh пропущен: kill-switch shop_scrapers выключен")
+        counters["skipped"] = True
+        return counters
+
+    cutoff = datetime.utcnow() - timedelta(hours=stale_hours)
     async with async_session_maker() as db:
         res = await db.execute(
             select(Store.slug, StoreListing.id, StoreListing.url)

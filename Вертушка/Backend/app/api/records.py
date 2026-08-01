@@ -22,6 +22,7 @@ from app.database import get_db
 from app.models.user import User
 from app.models.record import Record
 from app.api.auth import get_current_user, get_current_user_optional
+from app.api.app_config import require_flag
 from app.services.exchange import get_usd_rub_rate
 from app.services.pricing import PricingParams, estimate_rub, effective_markup, is_local_country
 from app.services.marketplace_pricing import marketplace_price_range
@@ -1190,7 +1191,11 @@ async def _visual_rerank(image_base64: str, candidates: list) -> list:
     return result
 
 
-@router.post("/scan/cover/", response_model=CoverScanResponse)
+@router.post(
+    "/scan/cover/",
+    response_model=CoverScanResponse,
+    dependencies=[Depends(require_flag("vision_scan"))],
+)
 async def scan_cover(
     request: CoverScanRequest,
     current_user: User = Depends(get_current_user),
@@ -1200,6 +1205,9 @@ async def scan_cover(
     Распознавание обложки пластинки через AI Vision.
     Принимает base64-encoded JPEG, возвращает результаты поиска Discogs.
     Требует авторизации.
+
+    Под kill-switch `vision_scan` — самая дорогая операция в продукте,
+    выключается первой при всплеске расхода OpenAI.
     """
     if len(request.image_base64) > 10_000_000:
         raise HTTPException(
@@ -1561,7 +1569,12 @@ async def spotify_search(
     return SpotifySearchResponse(results=candidates)
 
 
-@router.post("/user/", response_model=RecordResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/user/",
+    response_model=RecordResponse,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_flag("user_submitted"))],
+)
 async def create_user_submitted_record(
     data: UserRecordCreate,
     current_user: User = Depends(get_current_user),

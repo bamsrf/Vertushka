@@ -1047,3 +1047,16 @@ export interface AchievementStats {
   unlocked_users: number;
   unlocked_pct: number;
 }
+
+// ==================== Remote config ====================
+
+/**
+ * Ответ GET /api/config — force-update gate и kill-switch фич.
+ * См. Backend/app/api/app_config.py, docs/plans/APPSTORE_LAUNCH_PLAN.md §4.2.
+ */
+export interface AppConfig {
+  min_supported_version: string;
+  store_url: string;
+  update_message: string;
+  flags: Record<string, boolean>;
+}

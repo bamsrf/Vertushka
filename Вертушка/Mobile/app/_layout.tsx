@@ -9,6 +9,7 @@ import { BottomSheetModalProvider } from '@gorhom/bottom-sheet';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import * as SplashScreen from 'expo-splash-screen';
 import * as Notifications from 'expo-notifications';
+import * as Updates from 'expo-updates';
 import Constants from 'expo-constants';
 import {
   useFonts,
@@ -31,8 +32,12 @@ import { registerPushToken } from '../lib/push';
 import { routeForPush } from '../lib/pushRouting';
 
 // Sentry загружается только если пакет установлен (не в Expo Go)
-type SentryStub = { init: (c: object) => void; wrap: <T>(c: T) => T };
-let Sentry: SentryStub = { init: () => {}, wrap: (c) => c };
+type SentryStub = {
+  init: (c: object) => void;
+  wrap: <T>(c: T) => T;
+  setTags: (tags: Record<string, string>) => void;
+};
+let Sentry: SentryStub = { init: () => {}, wrap: (c) => c, setTags: () => {} };
 try {
   Sentry = require('@sentry/react-native');
 } catch {
@@ -47,6 +52,8 @@ import { InAppNotificationToastHost, inAppToast } from '../components/notificati
 import Toast from 'react-native-toast-message';
 import { toastConfig } from '../components/CustomToast';
 import { initAmplitude } from '../lib/analytics';
+import { useRemoteConfigStore } from '../lib/remoteConfig';
+import { ForceUpdateScreen } from '../components/ForceUpdateScreen';
 import { clampSystemFontScale } from '../lib/responsive';
 
 // Ограничиваем системный font-scale до старта рендера — крупный «Размер текста»
@@ -67,6 +74,32 @@ Notifications.setNotificationHandler({
   },
 });
 
+/**
+ * Ошибки, которые не являются багами: обрыв связи, таймаут, отменённый
+ * запрос, протухший токен. Их сотни в сутки на живой аудитории, и они
+ * топят реальные краши — после чего Sentry перестают читать вообще.
+ */
+const EXPECTED_ERROR_PATTERNS = [
+  /Network Error/i,
+  /timeout of \d+ms exceeded/i,
+  /ECONNABORTED/i,
+  /AbortError/i,
+  /Request aborted/i,
+  /UnauthorizedError/i,
+];
+
+function isExpectedError(event: any, hint: any): boolean {
+  const error = hint?.originalException;
+  const message: string =
+    (typeof error === 'string' ? error : error?.message) ?? event?.message ?? '';
+
+  if (EXPECTED_ERROR_PATTERNS.some((re) => re.test(message))) return true;
+  // 401 — штатное протухание access-токена, его чинит refresh-интерцептор.
+  if (error?.response?.status === 401) return true;
+
+  return false;
+}
+
 const sentryDsn = Constants.expoConfig?.extra?.sentryDsn as string | undefined;
 if (sentryDsn) {
   Sentry.init({
@@ -74,7 +107,22 @@ if (sentryDsn) {
     environment: __DEV__ ? 'development' : 'production',
     tracesSampleRate: 0.2,
     attachScreenshot: false,
+    beforeSend: (event: any, hint: any) => (isExpectedError(event, hint) ? null : event),
   });
+
+  // OTA-теги. Sentry сам проставляет release/dist из нативного билда, но при
+  // EAS Update номер билда не меняется — без updateId нельзя понять, на какой
+  // именно версии JS упало и помог ли выкаченный фикс.
+  try {
+    Sentry.setTags({
+      app_version: (Constants.expoConfig?.version as string | undefined) ?? 'unknown',
+      ota_update_id: Updates.updateId ?? 'embedded',
+      ota_channel: Updates.channel ?? 'unknown',
+      ota_runtime_version: Updates.runtimeVersion ?? 'unknown',
+    });
+  } catch {
+    // expo-updates недоступен (Expo Go) — теги не критичны.
+  }
 }
 
 const amplitudeApiKey = Constants.expoConfig?.extra?.amplitudeApiKey as string | undefined;
@@ -89,6 +137,9 @@ SplashScreen.preventAutoHideAsync();
 function RootLayout() {
   const { checkAuth, isLoading, isAuthenticated } = useAuthStore();
   const { checkOnboarding, isReady: onboardingReady } = useOnboardingStore();
+  const needsUpdate = useRemoteConfigStore((s) => s.needsUpdate);
+  const remoteConfig = useRemoteConfigStore((s) => s.config);
+  const loadRemoteConfig = useRemoteConfigStore((s) => s.load);
   const router = useRouter();
   const notificationListener = useRef<Notifications.EventSubscription | null>(null);
   const responseListener = useRef<Notifications.EventSubscription | null>(null);
@@ -115,7 +166,18 @@ function RootLayout() {
   useEffect(() => {
     checkAuth();
     checkOnboarding();
+    loadRemoteConfig();
   }, []);
+
+  // Перечитываем конфиг при возврате из фона: пользователь может держать
+  // приложение открытым сутками, а рубильник должен доезжать до него без
+  // перезапуска.
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') loadRemoteConfig();
+    });
+    return () => sub.remove();
+  }, [loadRemoteConfig]);
 
   useEffect(() => {
     // Foreground: уведомление пришло пока приложение открыто — рефрешим unread
@@ -286,6 +348,21 @@ function RootLayout() {
 
   if (!fontsLoaded || isLoading || !onboardingReady) {
     return null;
+  }
+
+  // Версия ниже минимальной — дальше не пускаем. Проверка не блокирует
+  // холодный старт (см. remoteConfig.load), поэтому экран может появиться
+  // на мгновение позже сплэша — это осознанный размен в пользу скорости.
+  if (needsUpdate && remoteConfig) {
+    return (
+      <SafeAreaProvider>
+        <StatusBar style="dark" />
+        <ForceUpdateScreen
+          message={remoteConfig.update_message}
+          storeUrl={remoteConfig.store_url}
+        />
+      </SafeAreaProvider>
+    );
   }
 
   return (
