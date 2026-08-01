@@ -196,9 +196,9 @@ def check_demo_account(client: httpx.Client, base_url: str) -> None:
 
     headers = {"Authorization": f"Bearer {token}"}
 
-    for label, path, minimum in (
-        ("коллекция", "/api/collections/", MIN_DEMO_RECORDS),
-        ("вишлист", "/api/wishlists/", MIN_DEMO_WISHLIST),
+    for label, path, minimum, counter in (
+        ("коллекция", "/api/collections/", MIN_DEMO_RECORDS, _count_collection_records),
+        ("вишлист", "/api/wishlists/", MIN_DEMO_WISHLIST, _count_wishlist_items),
     ):
         try:
             data = client.get(f"{base_url}{path}", headers=headers).json()
@@ -206,7 +206,7 @@ def check_demo_account(client: httpx.Client, base_url: str) -> None:
             warn(f"не удалось прочитать {label}: {exc}")
             continue
 
-        count = _count_items(data)
+        count = counter(data)
         if count is None:
             warn(f"{label}: не удалось посчитать элементы, проверь глазами")
         elif count < minimum:
@@ -218,17 +218,27 @@ def check_demo_account(client: httpx.Client, base_url: str) -> None:
             ok(f"{label} демо-аккаунта наполнена: {count}")
 
 
-def _count_items(payload) -> int | None:
-    """Счётчик элементов, устойчивый к разной форме ответа."""
-    if isinstance(payload, list):
-        return len(payload)
-    if isinstance(payload, dict):
-        for key in ("total", "count"):
-            if isinstance(payload.get(key), int):
-                return payload[key]
-        for key in ("items", "results", "records"):
-            if isinstance(payload.get(key), list):
-                return len(payload[key])
+def _count_collection_records(payload) -> int | None:
+    """Пластинок во всех коллекциях.
+
+    `GET /api/collections/` отдаёт список КОЛЛЕКЦИЙ (папок), а не пластинок —
+    считать `len()` значило бы получить 1 вместо пятнадцати. Суммируем
+    items_count по всем папкам.
+    """
+    if not isinstance(payload, list):
+        return None
+    total = 0
+    for collection in payload:
+        if not isinstance(collection, dict):
+            return None
+        total += collection.get("items_count") or 0
+    return total
+
+
+def _count_wishlist_items(payload) -> int | None:
+    """`GET /api/wishlists/` отдаёт один вишлист с вложенным items."""
+    if isinstance(payload, dict) and isinstance(payload.get("items"), list):
+        return len(payload["items"])
     return None
 
 
