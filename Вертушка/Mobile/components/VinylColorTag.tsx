@@ -1,6 +1,7 @@
 import React, { useEffect } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import Animated, {
+  cancelAnimation,
   useSharedValue,
   useAnimatedStyle,
   withRepeat,
@@ -8,6 +9,7 @@ import Animated, {
   withTiming,
   interpolate,
 } from 'react-native-reanimated';
+import { useAnimationsEnabled } from '../lib/useAnimationGate';
 import { BorderRadius, Typography } from '../constants/theme';
 import { parseVinylColor } from '../lib/vinylColor';
 
@@ -77,9 +79,16 @@ interface VinylColorTagProps {
 export function VinylColorTag({ vinylColorRaw }: VinylColorTagProps) {
   const colorConfig = parseVinylColor(vinylColorRaw);
   const glow = useSharedValue(0);
+  // Тег рендерится на каждой карточке сетки — десятки пульсаций одновременно.
+  const animate = useAnimationsEnabled();
 
   useEffect(() => {
     if (!colorConfig.isColored) return;
+    if (!animate) {
+      cancelAnimation(glow);
+      glow.value = 0;
+      return;
+    }
     glow.value = withRepeat(
       withSequence(
         withTiming(1, { duration: 1200 }),
@@ -87,7 +96,8 @@ export function VinylColorTag({ vinylColorRaw }: VinylColorTagProps) {
       ),
       -1,
     );
-  }, [colorConfig.isColored]);
+    return () => cancelAnimation(glow);
+  }, [colorConfig.isColored, animate, glow]);
 
   const animatedStyle = useAnimatedStyle(() => ({
     shadowOpacity: interpolate(glow.value, [0, 1], [0.1, 0.55]),

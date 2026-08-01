@@ -112,6 +112,45 @@ class RedisCache:
         except Exception:
             return False
 
+    # Атомарный инкремент с установкой TTL только при создании ключа.
+    # Обычный INCR+EXPIRE двумя командами продлевал бы окно на каждом
+    # обращении — дневная квота никогда бы не сбрасывалась.
+    _INCR_WITH_TTL_LUA = """
+    local value = redis.call('INCR', KEYS[1])
+    if value == 1 then
+      redis.call('EXPIRE', KEYS[1], ARGV[1])
+    end
+    return value
+    """
+
+    async def incr(self, namespace: str, key: str, ttl: int) -> int | None:
+        """Атомарно увеличить счётчик. None если Redis недоступен.
+
+        TTL ставится только при создании ключа, поэтому окно фиксированное
+        от первого события, а не скользящее.
+        """
+        if not self._available:
+            return None
+        try:
+            value = await self._pool.eval(
+                self._INCR_WITH_TTL_LUA, 1, self._key(namespace, key), int(ttl),
+            )
+            return int(value)
+        except Exception:
+            logger.warning("Redis INCR error: %s:%s", namespace, key, exc_info=True)
+            return None
+
+    async def get_counter(self, namespace: str, key: str) -> int | None:
+        """Прочитать счётчик без изменения. None если недоступен или пуст."""
+        if not self._available:
+            return None
+        try:
+            raw = await self._pool.get(self._key(namespace, key))
+            return int(raw) if raw is not None else 0
+        except Exception:
+            logger.warning("Redis counter GET error: %s:%s", namespace, key, exc_info=True)
+            return None
+
     async def set_nx(self, namespace: str, key: str, value: Any, ttl: int) -> bool:
         """SET if Not eXists с TTL. Возвращает True если ключ создан, False
         если уже существовал. Используется как single-flight lock.

@@ -1,6 +1,7 @@
 import React, { useEffect } from 'react';
 import { View, StyleSheet } from 'react-native';
 import Animated, {
+  cancelAnimation,
   useSharedValue,
   useAnimatedStyle,
   withRepeat,
@@ -8,6 +9,7 @@ import Animated, {
   Easing,
   ReduceMotion,
 } from 'react-native-reanimated';
+import { useAppForeground } from '../lib/useAnimationGate';
 import Svg, {
   Circle,
   Ellipse,
@@ -151,6 +153,7 @@ function SplatterOverlay({ color, scale }: { color: string; scale: number }) {
 
 export function VinylSpinner({ colorConfig, size = 220, labelName }: VinylSpinnerProps) {
   const rotation = useSharedValue(0);
+  const foreground = useAppForeground();
   const { primaryColor, secondaryColor, type, opacity } = colorConfig;
 
   const isTranslucent = type === 'translucent';
@@ -189,6 +192,12 @@ export function VinylSpinner({ colorConfig, size = 220, labelName }: VinylSpinne
   const uid = primaryColor.replace('#', '');
 
   useEffect(() => {
+    // Reduce Motion сознательно игнорируем (см. ниже), но в фоне крутить
+    // диск незачем — это чистый расход батареи без единого зрителя.
+    if (!foreground) {
+      cancelAnimation(rotation);
+      return;
+    }
     rotation.value = withRepeat(
       withTiming(360, {
         duration: 1800,
@@ -199,7 +208,8 @@ export function VinylSpinner({ colorConfig, size = 220, labelName }: VinylSpinne
       }),
       -1,
     );
-  }, []);
+    return () => cancelAnimation(rotation);
+  }, [foreground, rotation]);
 
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [{ rotate: `${rotation.value}deg` }],

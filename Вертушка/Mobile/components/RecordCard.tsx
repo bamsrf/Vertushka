@@ -225,7 +225,7 @@ function RecordCardComponent({
         )}
 
         {showImage ? (
-          <Image source={imageUrl} style={styles.compactImage} contentFit="cover" cachePolicy="disk" onError={() => setImgFailed(true)} />
+          <Image source={imageUrl} style={styles.compactImage} contentFit="cover" cachePolicy="memory-disk" recyclingKey={imageUrl} onError={() => setImgFailed(true)} />
         ) : (
           <View style={styles.compactPlaceholder}>
             <Icon name="disc-outline" size={48} color={Colors.periwinkle} />
@@ -343,7 +343,7 @@ function RecordCardComponent({
 
         <View style={styles.listImageContainer}>
           {showImage ? (
-            <Image source={imageUrl} style={styles.listImage} contentFit="cover" cachePolicy="disk" onError={() => setImgFailed(true)} />
+            <Image source={imageUrl} style={styles.listImage} contentFit="cover" cachePolicy="memory-disk" recyclingKey={imageUrl} onError={() => setImgFailed(true)} />
           ) : (
             <View style={styles.listPlaceholder}>
               <Icon name="disc-outline" size={28} color={Colors.periwinkle} />
@@ -476,7 +476,7 @@ function RecordCardComponent({
             ]}
           >
             {showImage ? (
-              <Image source={imageUrl} style={styles.expandedImage} contentFit="cover" cachePolicy="disk" onError={() => setImgFailed(true)} />
+              <Image source={imageUrl} style={styles.expandedImage} contentFit="cover" cachePolicy="memory-disk" recyclingKey={imageUrl} onError={() => setImgFailed(true)} />
             ) : (
               <View style={styles.expandedPlaceholder}>
                 <Icon name="disc-outline" size={48} color={Colors.periwinkle} />

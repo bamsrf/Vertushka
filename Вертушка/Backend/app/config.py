@@ -138,6 +138,17 @@ class Settings(BaseSettings):
     feature_shop_scrapers_enabled: bool = Field(default=True, alias="FEATURE_SHOP_SCRAPERS_ENABLED")
     feature_user_submitted_enabled: bool = Field(default=True, alias="FEATURE_USER_SUBMITTED_ENABLED")
 
+    # ── Дневные квоты на дорогие операции ───────────────────────────────────
+    # Распознавание обложки стоит денег за вызов. Per-user режет абьюзера,
+    # глобальный — последняя линия перед разорительным счётом от OpenAI.
+    # См. services/quota.py
+    vision_scan_daily_limit_per_user: int = Field(
+        default=50, alias="VISION_SCAN_DAILY_LIMIT_PER_USER",
+    )
+    vision_scan_daily_limit_global: int = Field(
+        default=2000, alias="VISION_SCAN_DAILY_LIMIT_GLOBAL",
+    )
+
     # ── Алармы в Telegram ───────────────────────────────────────────────────
     # Пустой токен → алармы graceful no-op (как spotify_*). См. services/alerts.py
     telegram_bot_token: str = Field(default="", alias="TELEGRAM_BOT_TOKEN")

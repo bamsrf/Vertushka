@@ -14,6 +14,7 @@ import React, { useEffect } from 'react';
 import { View, Text, StyleSheet, StyleProp, ViewStyle } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import Animated, {
+  cancelAnimation,
   Easing,
   useAnimatedStyle,
   useSharedValue,
@@ -21,6 +22,7 @@ import Animated, {
   withSequence,
   withTiming,
 } from 'react-native-reanimated';
+import { useAnimationsEnabled } from '../lib/useAnimationGate';
 
 export type RarityTier = 'collectible' | 'limited' | 'hot';
 export type RarityContext =
@@ -141,14 +143,20 @@ interface AuraProps {
 function CollectibleAura({ radius = 16 }: { radius?: number }) {
   const tokens = RARITY_TIERS.collectible;
   const rotation = useSharedValue(0);
+  const animate = useAnimationsEnabled();
 
   useEffect(() => {
+    if (!animate) {
+      cancelAnimation(rotation);
+      return;
+    }
     rotation.value = withRepeat(
       withTiming(-360, { duration: 8000, easing: Easing.linear }),
       -1,
       false,
     );
-  }, [rotation]);
+    return () => cancelAnimation(rotation);
+  }, [animate, rotation]);
 
   const rotateStyle = useAnimatedStyle(() => ({
     transform: [{ rotate: `${rotation.value}deg` }],
@@ -231,8 +239,14 @@ function HeatHaze({ radius = 0 }: { radius?: number }) {
   // RN не поддерживает inset box-shadow и mixBlendMode: 'screen' — компенсируем
   // более насыщенными альфами, чтобы эффект не терялся на светлом фоне.
   const opacity = useSharedValue(0.4);
+  const animate = useAnimationsEnabled();
 
   useEffect(() => {
+    if (!animate) {
+      cancelAnimation(opacity);
+      opacity.value = 0.4; // статичное состояние вместо застывшего полукадра
+      return;
+    }
     opacity.value = withRepeat(
       withSequence(
         withTiming(0.7, { duration: 1000, easing: Easing.inOut(Easing.ease) }),
@@ -241,7 +255,8 @@ function HeatHaze({ radius = 0 }: { radius?: number }) {
       -1,
       false,
     );
-  }, [opacity]);
+    return () => cancelAnimation(opacity);
+  }, [animate, opacity]);
 
   const animStyle = useAnimatedStyle(() => ({ opacity: opacity.value }));
 
@@ -300,8 +315,14 @@ function HeatHaze({ radius = 0 }: { radius?: number }) {
  */
 function CoverBlink({ radius = 0 }: { radius?: number }) {
   const t = useSharedValue(0);
+  const animate = useAnimationsEnabled();
 
   useEffect(() => {
+    if (!animate) {
+      cancelAnimation(t);
+      t.value = 0; // блик невидим при v < 0.85 — гасим в прозрачную фазу
+      return;
+    }
     t.value = withRepeat(
       withSequence(
         withTiming(0, { duration: 0 }),
@@ -310,7 +331,8 @@ function CoverBlink({ radius = 0 }: { radius?: number }) {
       -1,
       false,
     );
-  }, [t]);
+    return () => cancelAnimation(t);
+  }, [animate, t]);
 
   const animStyle = useAnimatedStyle(() => {
     // 0 → 0.85 invisible; 0.85 → 1.0 sweeps from -120% to 220% across the cover

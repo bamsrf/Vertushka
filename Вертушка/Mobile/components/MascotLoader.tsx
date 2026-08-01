@@ -11,8 +11,10 @@
  *
  * ТЗ на .json: docs/plans/MASCOT_ANIMATION_SPEC.md (сейчас там PLACEHOLDER).
  */
+import { useEffect, useRef } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { VinylSpinner } from './VinylSpinner';
+import { useAppForeground } from '../lib/useAnimationGate';
 import { Colors } from '../constants/theme';
 
 // Ленивый require нативного модуля. В Expo Go бросит — ловим, ставим null.
@@ -38,6 +40,17 @@ interface MascotLoaderProps {
 }
 
 export function MascotLoader({ size = 120 }: MascotLoaderProps) {
+  const foreground = useAppForeground();
+  const lottieRef = useRef<{ play?: () => void; pause?: () => void } | null>(null);
+
+  // Lottie не останавливается сам при уходе приложения в фон — луп продолжает
+  // рендериться вхолостую. Reduce Motion здесь намеренно не учитываем:
+  // застывший лоадер читается как «зависло».
+  useEffect(() => {
+    if (foreground) lottieRef.current?.play?.();
+    else lottieRef.current?.pause?.();
+  }, [foreground]);
+
   if (!LottieView) {
     // Expo Go / модуль ещё не собран — крутим существующий винил.
     return (
@@ -50,6 +63,7 @@ export function MascotLoader({ size = 120 }: MascotLoaderProps) {
   return (
     <View style={[styles.wrap, { width: size, height: size }]}>
       <LottieView
+        ref={lottieRef}
         source={require('../assets/animations/loader-mascot.json')}
         autoPlay
         loop

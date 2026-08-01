@@ -13,8 +13,7 @@ import httpx
 import sentry_sdk
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from slowapi import Limiter
-from app.utils.request_ip import get_client_ip
+from app.utils.rate_limit import limiter
 from jose import jwt as jose_jwt, JWTError, jwk
 from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
@@ -45,7 +44,6 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 security = HTTPBearer()
-limiter = Limiter(key_func=get_client_ip)
 
 # ---------- Apple Sign In verification ----------
 

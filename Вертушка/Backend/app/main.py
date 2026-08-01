@@ -15,9 +15,9 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pythonjsonlogger import jsonlogger
-from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
-from app.utils.request_ip import get_client_ip
+from app.utils.rate_limit import limiter
 from sqlalchemy import text
 
 from app.config import get_settings
@@ -231,8 +231,8 @@ app = FastAPI(
     redoc_url="/api/redoc" if settings.debug else None,
 )
 
-# Rate limiter
-limiter = Limiter(key_func=get_client_ip)
+# Rate limiter — один общий инстанс на приложение (app/utils/rate_limit.py).
+# Раньше их было два с разными хранилищами, и лимиты не сходились.
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 

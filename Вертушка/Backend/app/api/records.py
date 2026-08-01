@@ -11,7 +11,7 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status, Query, Response
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status, Query, Response
 from sqlalchemy import select, text, func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -23,6 +23,8 @@ from app.models.user import User
 from app.models.record import Record
 from app.api.auth import get_current_user, get_current_user_optional
 from app.api.app_config import require_flag
+from app.services import quota
+from app.utils.rate_limit import limiter
 from app.services.exchange import get_usd_rub_rate
 from app.services.pricing import PricingParams, estimate_rub, effective_markup, is_local_country
 from app.services.marketplace_pricing import marketplace_price_range
@@ -945,7 +947,9 @@ async def _search_store_native_releases(
 
 
 @router.get("/search", response_model=RecordSearchResponse)
+@limiter.limit("40/minute")
 async def search_records(
+    request: Request,
     response: Response,
     q: str = Query(..., min_length=1, description="Поисковый запрос"),
     artist: str | None = Query(None, description="Фильтр по артисту"),
@@ -1215,6 +1219,18 @@ async def scan_cover(
             detail="Изображение слишком большое (макс. ~7.5 МБ)"
         )
 
+    # Дневная квота — до вызова OpenAI, иначе платим за отклонённый запрос.
+    quota_status = await quota.consume_vision_scan(current_user.id)
+    if not quota_status.allowed:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=(
+                "На сегодня лимит распознаваний исчерпан. "
+                "Попробуйте завтра или найдите пластинку поиском."
+            ),
+            headers={"Retry-After": str(quota_status.retry_after_seconds)},
+        )
+
     vision = OpenAIVisionService()
     try:
         recognition = await vision.recognize_cover(request.image_base64)
@@ -1418,7 +1434,9 @@ async def _suggest_local(db: AsyncSession, q: str) -> dict | None:
 
 
 @router.get("/suggest")
+@limiter.limit("90/minute")
 async def suggest(
+    request: Request,
     q: str = Query(..., min_length=2, max_length=100),
     limit: int = Query(8, ge=1, le=15),
     current_user: User | None = Depends(get_current_user_optional),
