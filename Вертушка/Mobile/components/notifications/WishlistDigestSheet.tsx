@@ -7,7 +7,7 @@
  *  - тянешь корешок вправо → открывается самый дешёвый магазин (с affiliate-
  *    трекингом через POST /offers/{id}/click), как в OffersBlock.
  */
-import React, { useCallback } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   Modal,
   View,
@@ -17,6 +17,7 @@ import {
   Pressable,
   Linking,
   TouchableOpacity,
+  type LayoutChangeEvent,
 } from 'react-native';
 import { Image } from 'expo-image';
 import * as Haptics from 'expo-haptics';
@@ -196,6 +197,10 @@ const SpineRow: React.FC<{
   );
 };
 
+const IN_DURATION = 240;
+const OUT_DURATION = 180;
+const SHEET_TRAVEL_FALLBACK = 420; // до первого onLayout
+
 export const WishlistDigestSheet: React.FC<Props> = ({
   visible,
   onClose,
@@ -203,6 +208,40 @@ export const WishlistDigestSheet: React.FC<Props> = ({
   onOpenRecord,
 }) => {
   const insets = useSafeAreaInsets();
+
+  // Своя анимация вместо animationType="slide": затемнение должно проявляться
+  // фейдом на всём экране, а не выезжать снизу вместе со шторкой.
+  const [mounted, setMounted] = useState(visible);
+  const progress = useSharedValue(0);
+  const sheetHeight = useSharedValue(SHEET_TRAVEL_FALLBACK);
+
+  useEffect(() => {
+    if (visible) {
+      setMounted(true);
+      progress.value = withTiming(1, { duration: IN_DURATION, easing: Easing.out(Easing.cubic) });
+    } else {
+      progress.value = withTiming(
+        0,
+        { duration: OUT_DURATION, easing: Easing.in(Easing.cubic) },
+        (finished) => {
+          if (finished) runOnJS(setMounted)(false);
+        },
+      );
+    }
+  }, [visible, progress]);
+
+  const backdropStyle = useAnimatedStyle(() => ({ opacity: progress.value }));
+  const sheetStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: (1 - progress.value) * sheetHeight.value }],
+  }));
+
+  const onSheetLayout = useCallback(
+    (e: LayoutChangeEvent) => {
+      const h = e.nativeEvent.layout.height;
+      if (h > 0) sheetHeight.value = h;
+    },
+    [sheetHeight],
+  );
 
   const handleOpenRecord = useCallback(
     (id: string) => {
@@ -214,15 +253,20 @@ export const WishlistDigestSheet: React.FC<Props> = ({
 
   return (
     <Modal
-      visible={visible}
+      visible={mounted}
       transparent
-      animationType="slide"
+      animationType="none"
       onRequestClose={onClose}
       statusBarTranslucent
     >
       <GestureHandlerRootView style={styles.flex}>
-        <Pressable style={styles.backdrop} onPress={onClose} />
-        <View style={[styles.sheet, { paddingBottom: insets.bottom + Spacing.md }]}>
+        <Animated.View style={[styles.backdrop, backdropStyle]}>
+          <Pressable style={styles.flex} onPress={onClose} accessibilityLabel="Закрыть" />
+        </Animated.View>
+        <Animated.View
+          onLayout={onSheetLayout}
+          style={[styles.sheet, sheetStyle, { paddingBottom: insets.bottom + Spacing.md }]}
+        >
           <View style={styles.handle} />
           <View style={styles.header}>
             <Text style={styles.sheetTitle}>
@@ -244,7 +288,7 @@ export const WishlistDigestSheet: React.FC<Props> = ({
             contentContainerStyle={styles.listInner}
             showsVerticalScrollIndicator={false}
           />
-        </View>
+        </Animated.View>
       </GestureHandlerRootView>
     </Modal>
   );

@@ -295,8 +295,16 @@ export default function NotificationsScreen() {
   }, [tab, personalNextCursor, socialNextCursor, loadMorePersonal, loadMoreSocial]);
 
   const [digestVisible, setDigestVisible] = useState(false);
+  // Свёртка «липкая»: раз пластинка попала в дайджест, она остаётся в нём до
+  // ухода с экрана — даже после markManyRead. Иначе открытие поп-апа гасит
+  // unread → дайджест пересобирается пустым («0 пластинок») и лента взрывается
+  // обратно на 14 отдельных строк.
+  const digestSticky = useRef<Set<string>>(new Set());
   const { personalSections, digestRecords, digestCollapsedIds } = useMemo(() => {
-    const { list, records, collapsedIds } = buildWishlistDigest(collapseByDedup(personalItems));
+    const { list, records, collapsedIds } = buildWishlistDigest(
+      collapseByDedup(personalItems),
+      digestSticky.current,
+    );
     return {
       personalSections: groupByDateBucket(list),
       digestRecords: records,
@@ -486,6 +494,11 @@ export default function NotificationsScreen() {
 // Синтетический id дайджест-строки + минимум пластинок для свёртки.
 const WL_DIGEST_ID = '__wishlist_digest__';
 const WL_DIGEST_MIN = 3;
+// Окно свёртки: столько же дней, сколько бэкенд берёт в недельный дайджест
+// (WEEKLY_DIGEST_LOOKBACK_DAYS в notification_tasks.py). Прочитанные алерты
+// внутри окна остаются свёрнутыми — иначе после первого тапа лента при
+// следующем заходе разворачивается обратно в 14 строк складского шума.
+const WL_DIGEST_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 
 /** Собрать DigestRecord из wishlist_in_stock: самый дешёвый магазин как цель. */
 function toDigestRecord(it: NotificationItemType): DigestRecord {
@@ -516,16 +529,31 @@ function toDigestRecord(it: NotificationItemType): DigestRecord {
  * «N пластинок снова в продаже» (если их ≥WL_DIGEST_MIN). Убирает 12 отдельных
  * строк складского шума. Возвращает новый список + записи для поп-апа + id
  * свёрнутых уведомлений (чтобы пометить прочитанными при открытии).
+ *
+ * `sticky` — id уже свёрнутых на этом экране пластинок: они остаются в дайджесте
+ * после того, как их погасил markManyRead. Мутируется здесь же (union).
  */
-function buildWishlistDigest(items: NotificationItemType[]): {
+function buildWishlistDigest(
+  items: NotificationItemType[],
+  sticky: Set<string>,
+): {
   list: NotificationItemType[];
   records: DigestRecord[];
   collapsedIds: string[];
 } {
-  const wl = items.filter((i) => i.type === 'wishlist_in_stock' && !i.read_at);
+  const windowStart = Date.now() - WL_DIGEST_WINDOW_MS;
+  const isCollapsible = (i: NotificationItemType) => {
+    if (i.type !== 'wishlist_in_stock') return false;
+    if (!i.read_at || sticky.has(i.id)) return true;
+    // прочитанное сворачиваем, пока оно внутри недельного окна
+    return new Date(i.bumped_at || i.created_at).getTime() >= windowStart;
+  };
+
+  const wl = items.filter(isCollapsible);
   if (wl.length < WL_DIGEST_MIN) return { list: items, records: [], collapsedIds: [] };
 
-  const rest = items.filter((i) => !(i.type === 'wishlist_in_stock' && !i.read_at));
+  for (const i of wl) sticky.add(i.id);
+  const rest = items.filter((i) => !isCollapsible(i));
   const records = wl.map(toDigestRecord);
   const collapsedIds = wl.map((i) => i.id);
   const newest = wl.reduce((a, b) =>
@@ -543,7 +571,8 @@ function buildWishlistDigest(items: NotificationItemType[]): {
     created_at: newest.created_at,
     bumped_at: newest.bumped_at || newest.created_at,
     occurrences: wl.length,
-    read_at: null,
+    // непрочитанным дайджест остаётся, только пока в нём есть непрочитанные
+    read_at: wl.some((i) => !i.read_at) ? null : (newest.read_at ?? new Date().toISOString()),
     actor: null,
   };
   return { list: [digest, ...rest], records, collapsedIds };
