@@ -68,10 +68,22 @@ communicated 30-day restore window, then permanent deletion.
 
 NOTES
 - The app UI is in Russian (primary market: Russia/CIS).
-- Sign in with Apple and Google Sign-In are both offered (Guideline 4.8).
-- No tracking, no third-party analytics active; crash reports go to our
-  self-hosted error tracker. App Tracking Transparency is not required.
+- Sign-in options: email + password, Sign in with Apple, and Discogs OAuth.
+  Sign in with Apple is offered alongside the third-party option, as required
+  by Guideline 4.8.
+- Analytics: product analytics (Amplitude) records anonymous in-app events.
+  No advertising, no cross-app tracking, no data brokers — App Tracking
+  Transparency is not required. Crash reports go to our self-hosted tracker.
 ```
+
+> **Проверено в коде 2026-08-01 — две формулировки были неверны:**
+> - «Google Sign-In is offered» — кнопка выключена наглухо
+>   (`SocialAuthButtons.tsx`: `showGoogle = false`). Реально предлагаются
+>   Apple и Discogs. Заявлять несуществующий способ входа — путать ревьюера
+>   на ровном месте.
+> - «No third-party analytics active» — станет ложью в тот момент, когда
+>   будет прописан ключ Amplitude (§4.1 плана). Формулировка исправлена
+>   заранее; если решишь релизиться без аналитики — верни прежний текст.
 
 ## 3. Метаданные листинга (primary locale: ru)
 
@@ -79,7 +91,13 @@ NOTES
 **Подзаголовок (30):** `Каталог пластинок и вишлист`
 
 **Ключевые слова (100, без пробелов после запятых):**
-`винил,пластинки,коллекция,discogs,vinyl,records,вишлист,штрихкод,каталог,барахолка,музыка`
+`винил,пластинки,коллекция,vinyl,records,вишлист,штрихкод,каталог,барахолка,музыка,меломан`
+
+> ⚠️ **`discogs` из ключевых слов убран (2026-08-01).** Чужой товарный знак в
+> метаданных — основание для реджекта и для претензии правообладателя. В
+> описании упоминание источника данных остаётся: это добросовестная
+> атрибуция, а не попытка ранжироваться по чужому бренду. То же правило для
+> названия и подзаголовка.
 
 **Описание (RU):**
 ```
@@ -135,6 +153,42 @@ Data collection: **Yes**. Tracking: **No** (ATT не нужен).
 health, browsing history, advertising data.
 
 Соответствует `NSPrivacyCollectedDataTypes` в `Mobile/app.json` (добавлено 2026-07-02).
+
+**Сверка с кодом 2026-08-01 (закрывает пункт B5 аудита):**
+- Мобильный Sentry **не вызывает** `setUser` — проверено грепом по `Mobile/`.
+  Значит Crash Data действительно не связаны с личностью на стороне
+  приложения, ответ в таблице верен.
+- Бэкенд вызывает `sentry_sdk.set_user({id, username, email})`
+  ([auth.py](Backend/app/api/auth.py)) — но это серверные ошибки нашего
+  же API в собственном трекере, и email там уже задекларирован как
+  собираемый (Contact Info → Email). Новой категории сбора не возникает,
+  ответы менять не нужно.
+- ⚠️ Если когда-нибудь добавишь `Sentry.setUser` в мобильном коде —
+  Crash Data придётся переключить в **Linked: Yes**. Пометь это на будущее.
+
+## 4a. Content Rights (ASC → App Review Information)
+
+Вопрос ASC: «Does your app contain, show, or access third-party content?» →
+**Yes**. Заготовка ответа:
+
+```
+The app displays vinyl release metadata (artist, title, year, label, format,
+catalog number) and cover images.
+
+- Release metadata: Discogs monthly data dumps, published by Discogs under
+  CC0 (public domain dedication), plus the Discogs API used under its terms.
+- Cover images: Discogs and the Cover Art Archive.
+- Attribution to Discogs as the data source is displayed in the app.
+- Shop listings ("where to buy") link out to the shops' own pages; we display
+  price and availability and send the user to the shop's site to purchase.
+  No in-app purchase of physical goods (Guideline 3.1.5(a)).
+```
+
+> ⚠️ Раздел добавлен 2026-08-01 — раньше в ките его не было вовсе, а вопрос в
+> ASC обязательный. Формулировка опирается на то, что дампы Discogs
+> распространяются под CC0. **Это утверждение нужно подтвердить** до
+> сабмита — см. §5 плана (юр. проверка ToS). Если окажется иначе, правится
+> и этот ответ, и раздел «Маркет».
 
 ## 5. Age Rating (questionnaire)
 

@@ -179,8 +179,10 @@ export default function RegisterScreen() {
 
           <SocialAuthButtons mode="register" />
 
+          {/* Google-кнопка выключена (SocialAuthButtons: showGoogle = false),
+              поэтому не обещаем вход, которого нет. */}
           <Text style={styles.socialTermsNote}>
-            Продолжая через Apple или Google, вы принимаете Условия использования и Политику
+            Продолжая через Apple или Discogs, вы принимаете Условия использования и Политику
             конфиденциальности
           </Text>
         </View>
