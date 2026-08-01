@@ -6,7 +6,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 ReportTargetType = Literal["record", "user", "message"]
-ReportAction = Literal["hide_record", "ban_user", "dismiss"]
+ReportAction = Literal["hide_record", "hide_message", "ban_user", "dismiss"]
 
 
 class ReportCreate(BaseModel):
@@ -29,3 +29,8 @@ class ReportResponse(BaseModel):
     reason: str | None
     status: str
     created_at: datetime
+
+    # Что именно обжалуют — заголовок записи, текст сообщения, ник юзера.
+    # Без этого разобрать жалобу за 24ч можно только через прямой доступ к БД,
+    # а SLA мы обещаем и пользователям в Условиях, и Apple при ревью.
+    target_preview: str | None = None

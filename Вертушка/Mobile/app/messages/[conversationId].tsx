@@ -1163,6 +1163,38 @@ export default function ConversationScreen() {
           .catch(() => {});
       },
     });
+    if (!isMine) {
+      // UGC (App Store 1.2): жалоба именно на сообщение, а не только на
+      // собеседника. Без неё модератор может лишь забанить автора, а сам
+      // текст остаётся в чате — тейкдауна контента нет.
+      list.push({
+        key: 'report',
+        label: 'Пожаловаться',
+        icon: 'warning-circle',
+        destructive: true,
+        onPress: () => {
+          Alert.alert(
+            'Пожаловаться на сообщение?',
+            'Сообщение будет отправлено на проверку модератору. Мы реагируем на жалобы в течение 24 часов.',
+            [
+              { text: 'Отмена', style: 'cancel' },
+              {
+                text: 'Пожаловаться',
+                style: 'destructive',
+                onPress: async () => {
+                  try {
+                    await api.reportContent({ target_type: 'message', target_id: m.id });
+                    toast.success('Спасибо, жалоба отправлена');
+                  } catch {
+                    toast.error('Не удалось отправить жалобу');
+                  }
+                },
+              },
+            ],
+          );
+        },
+      });
+    }
     if (isMine) {
       list.push({
         key: 'delete',
