@@ -4,6 +4,7 @@
 import asyncio
 import logging
 import sys
+import time
 import uuid
 from contextvars import ContextVar
 from contextlib import asynccontextmanager
@@ -22,7 +23,7 @@ from sqlalchemy import text
 
 from app.config import get_settings
 from app.database import init_db, close_db, async_session_maker
-from app.services import alerts
+from app.services import alerts, health_metrics
 from app.services.cache import cache
 from app.services.rate_limiter import discogs_limiter
 
@@ -266,6 +267,26 @@ async def request_id_middleware(request: Request, call_next):
     _request_id_ctx.set(request_id)
     response = await call_next(request)
     response.headers["X-Request-ID"] = request_id
+    return response
+
+
+# Метрики здоровья: доля 5xx, p99, шторм 429.
+# Добавлен ПОСЛЕДНИМ намеренно — в Starlette это делает его самым внешним,
+# поэтому он видит и 504, который timeout_middleware отдаёт напрямую в обход
+# обработчика исключений. Именно эта дыра оставляла волну таймаутов без единого
+# аларма. См. services/health_metrics.py
+@app.middleware("http")
+async def health_metrics_middleware(request: Request, call_next):
+    started = time.monotonic()
+    try:
+        response = await call_next(request)
+    except Exception:
+        # Исключение долетит до обработчика ниже, который отдаст 500 и свой
+        # аларм. Нам важно не потерять его из статистики.
+        health_metrics.observe(500, (time.monotonic() - started) * 1000)
+        raise
+
+    health_metrics.observe(response.status_code, (time.monotonic() - started) * 1000)
     return response
 
 

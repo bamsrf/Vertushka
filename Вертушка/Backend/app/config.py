@@ -155,6 +155,18 @@ class Settings(BaseSettings):
     telegram_alert_chat_id: str = Field(default="", alias="TELEGRAM_ALERT_CHAT_ID")
     telegram_alert_throttle_seconds: int = Field(default=300, alias="TELEGRAM_ALERT_THROTTLE_SECONDS")
 
+    # ── Пороги здоровья (services/health_metrics.py) ────────────────────────
+    # Ловят то, что не ловит аларм на исключения: 504 от таймаутов, ползучую
+    # деградацию p99 без ошибок и шторм 429.
+    health_window_seconds: int = Field(default=300, alias="HEALTH_WINDOW_SECONDS")
+    # Ниже этого числа запросов доля ошибок — статистический шум.
+    health_min_requests: int = Field(default=20, alias="HEALTH_MIN_REQUESTS")
+    health_error_rate_threshold: float = Field(default=0.10, alias="HEALTH_ERROR_RATE_THRESHOLD")
+    # 5с: обычный ответ укладывается в сотни мс, поиск на холодном Discogs —
+    # в единицы секунд. Выше — уже не «медленно», а «сломано».
+    health_p99_threshold_ms: float = Field(default=5000.0, alias="HEALTH_P99_THRESHOLD_MS")
+    health_rate_limited_threshold: int = Field(default=50, alias="HEALTH_RATE_LIMITED_THRESHOLD")
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
