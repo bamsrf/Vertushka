@@ -51,7 +51,7 @@ import { MascotIntro } from '../components/MascotIntro';
 import { InAppNotificationToastHost, inAppToast } from '../components/notifications/InAppNotificationToast';
 import Toast from 'react-native-toast-message';
 import { toastConfig } from '../components/CustomToast';
-import { initAmplitude } from '../lib/analytics';
+import { analytics, initAmplitude } from '../lib/analytics';
 import { useRemoteConfigStore } from '../lib/remoteConfig';
 import { ForceUpdateScreen } from '../components/ForceUpdateScreen';
 import { clampSystemFontScale } from '../lib/responsive';
@@ -127,9 +127,14 @@ if (sentryDsn) {
 
 const amplitudeApiKey = Constants.expoConfig?.extra?.amplitudeApiKey as string | undefined;
 if (amplitudeApiKey) {
-  initAmplitude(amplitudeApiKey).catch(() => {
-    // тихо — аналитика не должна ломать загрузку приложения
-  });
+  initAmplitude(amplitudeApiKey)
+    // app_opened шлём ТОЛЬКО после инициализации: до неё провайдер ещё null,
+    // и track() молча выбрасывает событие. Потерянный app_opened — это
+    // заниженный знаменатель во всех воронках и сломанный retention.
+    .then(() => analytics.appOpened())
+    .catch(() => {
+      // тихо — аналитика не должна ломать загрузку приложения
+    });
 }
 
 SplashScreen.preventAutoHideAsync();

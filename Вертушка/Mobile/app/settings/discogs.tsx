@@ -26,6 +26,7 @@ import * as WebBrowser from 'expo-web-browser';
 import * as Linking from 'expo-linking';
 import { Icon } from '@/components/ui';
 import { api } from '../../lib/api';
+import { analytics } from '../../lib/analytics';
 import { Colors, Spacing, BorderRadius, Typography } from '../../constants/theme';
 
 const REDIRECT = 'vertushka://discogs-callback';
@@ -96,6 +97,11 @@ export default function DiscogsSettings() {
             setImporting(true);
             try {
               const r = await api.importDiscogsCollection();
+              analytics.importCompleted({
+                imported: r.imported,
+                skipped: r.skipped,
+                total: r.total,
+              });
               // Alert, не toast: этот экран — нативный stack-screen и рендерится
               // поверх корневого <Toast>, поэтому toast тут не виден. Alert
               // нативный и всегда поверх.

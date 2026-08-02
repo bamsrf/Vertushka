@@ -55,6 +55,10 @@ function track(event: string, properties?: Record<string, unknown>) {
 }
 
 export const analytics = {
+  // --- Жизненный цикл ---
+  /** Холодный старт. Знаменатель всех воронок и основа для retention. */
+  appOpened: () => track('app_opened'),
+
   // --- Auth ---
   register: () => track('register'),
   login: (method: 'email' | 'apple' | 'google' | 'discogs') => track('login', { method }),
@@ -69,13 +73,35 @@ export const analytics = {
   scanCover: (found: boolean) => track('scan_cover', { found }),
 
   // --- Collection & Wishlist ---
+  /**
+   * Импорт коллекции из Discogs — activation-метрика №1.
+   *
+   * Главный барьер первого использования: «надо руками добавить 500 пластинок».
+   * Кто прошёл импорт — получил ценность сразу, и его retention надо смотреть
+   * отдельно от тех, кто добавлял вручную.
+   */
+  importCompleted: (params: { imported: number; skipped: number; total: number }) =>
+    track('import_completed', params),
+
   addToCollection: (discogsId: string) => track('add_to_collection', { discogs_id: discogsId }),
   removeFromCollection: (discogsId: string) => track('remove_from_collection', { discogs_id: discogsId }),
   addToWishlist: (discogsId: string) => track('add_to_wishlist', { discogs_id: discogsId }),
 
   // --- Search ---
+  /**
+   * Сырой текст запроса НЕ отправляем.
+   *
+   * Поисковые запросы — это «Search History» в терминах App Privacy: отдельная
+   * категория, которую пришлось бы декларировать в анкете ASC и в
+   * privacyManifests. Для воронки «искал → нашёл → добавил» достаточно длины
+   * запроса и числа результатов, а лишняя категория сбора данных не нужна ни
+   * нам, ни пользователю.
+   */
   search: (query: string, resultsCount?: number) =>
-    track('search', { query, ...(resultsCount !== undefined && { results_count: resultsCount }) }),
+    track('search', {
+      query_length: query.trim().length,
+      ...(resultsCount !== undefined && { results_count: resultsCount }),
+    }),
 
   // --- Content ---
   viewRecord: (discogsId: string) => track('view_record', { discogs_id: discogsId }),
