@@ -184,7 +184,9 @@ curl -X POST https://api.vinyl-vertushka.ru/api/admin/config/reset/ -H "Authoriz
 - [ ] 🔴 **New Architecture на физическом устройстве в production-билде.** `newArchEnabled: true` на SDK 54 — прогнать lottie, reanimated 4, gesture-handler, expo-camera, expo-blur, view-shot, bottom-sheet, notifications. Единственный пункт, который может обвалить релиз целиком
 - [ ] 🔴 **Термальный смоук:** 10 минут — сканирование камерой → скролл коллекции → чат, на iPhone SE 2 / 11. Записать температуру и %батареи/час
 - [ ] 🟡 **Заодно проверить на устройстве:** `memory-disk` даёт больше RAM-давления, чем `disk`. Если на SE 2 полезут OOM — откат в одну строку в `RecordCard.tsx`
-- [ ] 🟢 WebSocket чата гарантированно закрывается в background (обработчики `AppState` есть в [_layout.tsx](Mobile/app/_layout.tsx) и [messages/[conversationId].tsx](Mobile/app/messages/[conversationId].tsx) — проверить, что сокет реально рвётся)
+- [x] ✅ **WebSocket в фоне — проверено 2026-08-02, сокет НЕ рвался.** Обработчики `AppState` были, но останавливали только polling-таймеры: в `_layout.tsx` — счётчик непрочитанного, в чате — подгрузку треда. Сам сокет закрывался лишь при разлогине. В фоне он держал соединение и продолжал крутить backoff-реконнекты, когда ОС его роняла. Теперь `teardownMessagesRealtime()` на уходе в фон и `initMessagesRealtime()` на возврате
+  - Рвём только на `background`, **не** на `inactive`: на iOS `inactive` прилетает от шторки уведомлений, переключателя приложений и баннера звонка — рвать сокет на каждое такое касание значит дёргать его впустую
+  - Реконнект с экспоненциальным backoff в [messagesWs.ts](Mobile/lib/messagesWs.ts) уже был, его не трогал
 
 **Не сделано осознанно**
 - 🚫 **Приоритет URL обложек не трогал.** Соблазн «грузить `thumb_image_url` в мелкую ячейку» — ловушка: `cover_url` это локальный кэш бэкенда, быстрый из РФ, а thumb ведёт на внешний CDN, который из РФ отвечает секундами. Экономия трафика обернулась бы деградацией скорости. Правильное решение — thumbnail-варианты на стороне `cover_storage`; это отдельная задача, в спринт не влезает

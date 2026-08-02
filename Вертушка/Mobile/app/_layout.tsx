@@ -302,9 +302,20 @@ function RootLayout() {
 
     const sub = AppState.addEventListener('change', (next) => {
       if (appState.match(/inactive|background/) && next === 'active') {
+        // Сокет мог быть закрыт при уходе в фон — поднимаем заново.
+        // initMessagesRealtime идемпотентен (гард _wsSubscribed).
+        initMessagesRealtime();
         refresh();
         if (!timer) timer = setInterval(refresh, 60_000);
-      } else if (next.match(/inactive|background/)) {
+      } else if (next === 'background') {
+        // Рвём WS: открытый сокет в фоне держит соединение и продолжает
+        // крутить backoff-реконнекты, когда ОС его роняет. Это батарея и
+        // нагрев без единого зрителя.
+        //
+        // Только 'background', НЕ 'inactive': на iOS 'inactive' прилетает от
+        // шторки уведомлений, переключателя приложений и баннера звонка —
+        // рвать сокет на каждое такое касание значит дёргать его впустую.
+        teardownMessagesRealtime();
         if (timer) {
           clearInterval(timer);
           timer = null;
