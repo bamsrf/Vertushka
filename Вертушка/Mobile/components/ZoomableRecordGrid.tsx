@@ -300,7 +300,11 @@ export function ZoomableRecordGrid({
   const totalRows = Math.ceil(data.length / cols);
 
   const windowRange = useMemo(() => {
-    const rowsOnScreen = Math.ceil(viewportH / Math.max(1, rowH));
+    // Пол по высоте экрана. onLayout во время анимации перехода на карточку
+    // отдаёт заниженную высоту, она оседает в стейте — и после возврата окно
+    // получается короче экрана: контент обрывается на середине, а ниже пустота
+    // до первого скролла. Сетка всегда полноэкранная, так что пол безопасен.
+    const rowsOnScreen = Math.ceil(Math.max(viewportH, SCREEN_H) / Math.max(1, rowH));
     const start = Math.max(0, firstRow - OVERSCAN_ROWS);
     const end = Math.min(totalRows, firstRow + rowsOnScreen + OVERSCAN_ROWS + 1);
 
