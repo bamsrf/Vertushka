@@ -15,7 +15,11 @@
  * Как только дизайнер подложит финальный .json (без маркера), интро включится
  * само, править код не нужно. См. docs/plans/MASCOT_ANIMATION_SPEC.md §7.5.
  *
- * Фон интро = Colors.background (#FAFBFF) — совпадает с фоном splash-стыка (§8 ТЗ).
+ * Фон интро = Colors.background (#FAFBFF) — как требует §8 ТЗ. Тот же цвет должен
+ * стоять в трёх местах, иначе на стыке видна ступенька: `splash.backgroundColor`
+ * в app.json, этот контейнер и фон самих кадров внутри intro-mascot.json. Кадры
+ * пришли из конвертера сплющенными на чистый белый (JPEG, альфы нет) и рисовали
+ * заметный светлый квадрат поверх #FAFBFF — перезалиты в #FAFBFF.
  */
 import { useEffect, useRef } from 'react';
 import { View, StyleSheet } from 'react-native';
@@ -48,6 +52,16 @@ export function MascotIntro({ onFinish }: MascotIntroProps) {
     onFinish();
   };
 
+  // onAnimationFailure ловит только асинхронные сбои (например, загрузку по URL).
+  // Ошибку разбора JSON он на iOS пропускает: она случается синхронно внутри
+  // updateProps, когда Fabric ещё не выставил _eventEmitter, и событие молча
+  // отбрасывается (LottieAnimationViewComponentView.mm, `if(!_eventEmitter) return`).
+  // Оставляем как есть — лишним не будет, но полагаться на него нельзя.
+  const handleFailure = (error: string) => {
+    console.warn(`[MascotIntro] Lottie сообщил об ошибке: ${error}`);
+    finish();
+  };
+
   useEffect(() => {
     if (!LottieView || IS_PLACEHOLDER) {
       // Модуля нет ИЛИ в файле заглушка — интро пропускаем сразу.
@@ -56,7 +70,22 @@ export function MascotIntro({ onFinish }: MascotIntroProps) {
     }
     // Safety-net: если onAnimationFinish не прилетит (редко на Android при
     // прерывании), всё равно закрываемся через ~4с — дольше самой анимации (3с).
-    const t = setTimeout(finish, 4000);
+    //
+    // Он же — единственный надёжный детектор немых поломок Lottie. Битый ассет
+    // не роняет приложение и ничего не пишет в лог: контейнер просто стоит
+    // пустым весь таймаут, что выглядит как «белый экран на старте» и ищется
+    // часами. За историю intro-mascot.json так проявились уже две разные
+    // причины — webp-кадры и пропавшее поле "u" у ассетов. Если сюда дошли,
+    // значит анимация не доиграла до конца, и это стоит увидеть в логе.
+    const t = setTimeout(() => {
+      if (!finished.current) {
+        console.warn(
+          '[MascotIntro] интро не доиграло за 4с — вероятно, Lottie не смог ' +
+            'разобрать assets/animations/intro-mascot.json и показывал пустой экран',
+        );
+      }
+      finish();
+    }, 4000);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -70,6 +99,7 @@ export function MascotIntro({ onFinish }: MascotIntroProps) {
         autoPlay
         loop={false}
         onAnimationFinish={finish}
+        onAnimationFailure={handleFailure}
         resizeMode="contain"
         style={styles.anim}
       />
