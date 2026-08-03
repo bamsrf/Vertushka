@@ -131,7 +131,7 @@
 │   │   │                  # affiliate, spotify, user_record, vinyl_color, …
 │   │   ├── services/scrapers/  # base, registry, sitemap, robots, http_client,
 │   │   │                  # browser + shops/ (korobkavinyla, plastinka_com,
-│   │   │                  # vinyl_ru, stoprobotvinyl, found)
+│   │   │                  # vinyl_ru, stoprobotvinyl, found, doctorhead)
 │   │   ├── tasks/         # booking_tasks, discogs_tasks, valuation_tasks
 │   │   ├── web/           # routes.py + Jinja-шаблоны (публичный профиль, /cancel)
 │   │   └── scripts/       # recalc_collection_rub, backfill_rarity_flags,

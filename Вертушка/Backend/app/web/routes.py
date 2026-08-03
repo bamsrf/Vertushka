@@ -91,7 +91,9 @@ def _genre_label(genre: str, count: int) -> str:
 
 # Локальные логотипы (есть в /static/store-logos/{slug}.png). Если slug не в списке —
 # фронт нарисует monogram-fallback (первая буква в фирменном цвете).
-_LOCAL_STORE_LOGOS = {"korobkavinyla", "plastinka_com", "vinyl_ru", "stoprobotvinyl", "found"}
+_LOCAL_STORE_LOGOS = {
+    "korobkavinyla", "plastinka_com", "vinyl_ru", "stoprobotvinyl", "found", "doctorhead",
+}
 
 _MAX_OFFERS_PER_RECORD = 4
 

@@ -68,7 +68,7 @@ Roadmap — это не «что хочется», а «что соответс�
 - FastAPI + SQLAlchemy(asyncpg) + PostgreSQL + Redis + Alembic + WebSocket
 - 19 API роутеров: auth, records, collections, wishlists, users, gifts, profile, export, covers, user_photos, waitlist, market, offers, messages, notifications, achievements, discogs_oauth, admin
 - 30+ сервисов: discogs, discogs_index (local dump), pricing, valuation, marketplace_pricing, exchange, cache, cover_storage/_fallback/_matcher/_warm, openai_vision, listing_matcher, messaging, messages_ws_hub, notification_service, push, feed, affiliate, spotify, user_record, vinyl_color, scrapers/* и др.
-- Scraping-стек: `scrapers/shops/` — korobkavinyla, plastinka_com, vinyl_ru, stoprobotvinyl, found
+- Scraping-стек: `scrapers/shops/` — korobkavinyla, plastinka_com, vinyl_ru, stoprobotvinyl, found, doctorhead
 - Локальный slim Discogs-дамп (`discogs_index`) — local-first обложки/suggest/barcode/versions
 - Деплой: Docker Compose на `85.198.85.12`, prod API: `https://api.vinyl-vertushka.ru/api`, self-hosted GlitchTip (sentry.vinyl-vertushka.ru)
 

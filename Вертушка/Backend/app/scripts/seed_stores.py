@@ -92,6 +92,19 @@ STORES: list[dict] = [
         "avg_shipping_rub": Decimal("400.00"),
         "affiliate_program": None,
     },
+    {
+        "slug": "doctorhead",
+        "name": "Dr.Head",
+        "domain": "doctorhead.ru",
+        "base_url": "https://doctorhead.ru",
+        "parser_class": "doctorhead",
+        "logo_url": None,  # Mobile рендерит локальный assets/doctorhead.png по slug
+        "rating": Decimal("4.6"),  # федеральная сеть аудио-магазинов, раздел «Музыка»
+        "is_active": True,
+        "requires_browser": False,
+        "avg_shipping_rub": Decimal("400.00"),
+        "affiliate_program": None,
+    },
 ]
 
 

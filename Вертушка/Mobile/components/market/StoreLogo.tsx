@@ -65,6 +65,12 @@ const STORE_REGISTRY: Record<string, {
     bgColor: '#FFFFFF',
     logoSource: require('../../assets/store-logos/found.png'),
   },
+  doctorhead: {
+    name: 'Dr.Head',
+    monogram: 'D',
+    bgColor: '#01ADFF',
+    logoSource: require('../../assets/store-logos/doctorhead.png'),
+  },
 };
 
 interface StoreLogoProps {
