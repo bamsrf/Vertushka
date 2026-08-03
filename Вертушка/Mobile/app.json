@@ -122,6 +122,7 @@
         }
       ],
       "@sentry/react-native",
+      "./plugins/withSentryDisableLocalUpload",
       "expo-notifications",
       "expo-font",
       "expo-web-browser",

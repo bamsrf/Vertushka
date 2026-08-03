@@ -393,6 +393,14 @@ function RootLayout() {
             contentStyle: { backgroundColor: Colors.background },
             animation: 'slide_from_right',
             gestureEnabled: true,
+            // Экран, перекрытый вышележащим, перестаёт ре-рендериться.
+            // Без этого открытая карточка пластинки оставляла под собой живой
+            // весь таб: сетку коллекции, авто-рейлы Поиска, градиент
+            // collection/value. Тот же приём, что в (tabs)/_layout.tsx, но
+            // покрывает Stack — а именно в нём живут экраны с бесконечными
+            // анимациями мимо lib/useAnimationGate.ts.
+            // См. docs/plans/APPSTORE_LAUNCH_PLAN.md §4.4.
+            freezeOnBlur: true,
           }}
         >
           <Stack.Screen name="(auth)" />

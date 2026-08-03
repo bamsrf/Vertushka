@@ -67,7 +67,12 @@ const ZOOM_COLS = [2, 3, 4, 5, 7, 10] as const;
 type ZoomLevel = 0 | 1 | 2 | 3 | 4 | 5;
 const MAX_LEVEL: ZoomLevel = (ZOOM_COLS.length - 1) as ZoomLevel;
 
-const { width: SCREEN_W } = Dimensions.get('window');
+const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
+
+// Сколько строк дорисовываем за пределами вьюпорта сверху и снизу.
+// Окно пересчитывается только при смене строки под верхней кромкой, поэтому
+// запас закрывает и быстрый флик, и один кадр рассинхрона после смены уровня.
+const OVERSCAN_ROWS = 4;
 const H_PADDING = Spacing.md;
 const COL_GAPS = [Spacing.md, 8, 6, 5, 4, 3] as const;
 const ROW_GAPS = [Spacing.md, 12, 8, 6, 5, 4] as const;
@@ -259,6 +264,20 @@ export function ZoomableRecordGrid({
   const scrollY = useRef(0);
   const gridTopY = useRef(0);
 
+  // ─── Виртуализация ──────────────────────────────────────────────────────
+  // Без неё `data.map()` монтировал ВСЮ коллекцию: на 300 пластинках это 300
+  // живых expo-image и 300 аур RarityAura. Не лаги, а ровный нагрев и RAM —
+  // и та самая причина, по которой memory-disk кэш грозил OOM на SE 2
+  // (см. docs/plans/APPSTORE_LAUNCH_PLAN.md §4.4).
+  //
+  // FlatList сюда не подходит: смена numColumns при зуме требует remount по
+  // key, а это убивает pinch-анимацию и якорение scrollTo. Строки здесь
+  // фиксированной высоты (cellTotalHeightFor), поэтому окно считается
+  // арифметикой — без измерений и без потери точности.
+  const [firstRow, setFirstRow] = useState(0);
+  const [viewportH, setViewportH] = useState(SCREEN_H);
+  const lastRowRef = useRef(0);
+
   const scale = useSharedValue(1);
   const focalX = useSharedValue(SCREEN_W / 2);
   const focalY = useSharedValue(200);
@@ -273,6 +292,34 @@ export function ZoomableRecordGrid({
   const radius = RADIUS_LIST[level];
   const columnGap = COL_GAPS[level];
   const rowGap = ROW_GAPS[level];
+
+  // Шаг строки = ячейка + отступ. Та же формула, что в commitLevelAnchored и
+  // indexFromFocal — держим её одной величиной, чтобы окно и якорение зума не
+  // разъезжались.
+  const rowH = cellTotalHeightFor(level) + rowGap;
+  const totalRows = Math.ceil(data.length / cols);
+
+  const windowRange = useMemo(() => {
+    const rowsOnScreen = Math.ceil(viewportH / Math.max(1, rowH));
+    const start = Math.max(0, firstRow - OVERSCAN_ROWS);
+    const end = Math.min(totalRows, firstRow + rowsOnScreen + OVERSCAN_ROWS + 1);
+
+    // Распорки держат высоту контента ровно такой же, как при полном рендере.
+    // Иначе поедут и scrollTo-якорь после коммита уровня, и порог onEndReached.
+    // rowGap вычитается потому, что flexWrap ставит свой отступ между распоркой
+    // и первой отрисованной строкой — без вычитания набежал бы лишний зазор.
+    return {
+      start,
+      end,
+      topSpacer: start > 0 ? start * rowH - rowGap : 0,
+      bottomSpacer: end < totalRows ? (totalRows - end) * rowH - rowGap : 0,
+    };
+  }, [firstRow, viewportH, rowH, rowGap, totalRows]);
+
+  const visibleItems = useMemo(
+    () => data.slice(windowRange.start * cols, windowRange.end * cols),
+    [data, windowRange.start, windowRange.end, cols]
+  );
 
   const commitLevelAnchored = useCallback(
     (newLevelNum: number, anchorIndex: number) => {
@@ -312,6 +359,17 @@ export function ZoomableRecordGrid({
 
       Haptics.selectionAsync().catch(() => undefined);
       scale.value = compensated;
+
+      // Окно синхронно с новым уровнем: строки стали другой высоты, и без
+      // этого один кадр рисовался бы по старой сетке — на сильном зуме это
+      // видимая пустота до первого onScroll.
+      const newTopRow = Math.max(
+        0,
+        Math.floor((desiredScrollY - gridTopY.current) / Math.max(1, newCellHTotal))
+      );
+      lastRowRef.current = newTopRow;
+      setFirstRow(newTopRow);
+
       setLevel(newLevel);
 
       requestAnimationFrame(() => {
@@ -441,17 +499,34 @@ export function ZoomableRecordGrid({
     (e: NativeSyntheticEvent<NativeScrollEvent>) => {
       const ne = e.nativeEvent;
       scrollY.current = ne.contentOffset.y;
+
+      // setState только на смене строки под верхней кромкой, а не на каждом
+      // событии скролла: иначе ре-рендер сетки каждые 32 мс съест JS-тред
+      // ровно там, где мы экономим.
+      const row = Math.max(0, Math.floor((ne.contentOffset.y - gridTopY.current) / Math.max(1, rowH)));
+      if (row !== lastRowRef.current) {
+        lastRowRef.current = row;
+        setFirstRow(row);
+      }
+
       if (!onEndReached) return;
       const distance = ne.contentSize.height - ne.contentOffset.y - ne.layoutMeasurement.height;
       if (distance < ne.layoutMeasurement.height * 0.5) {
         onEndReached();
       }
     },
-    [onEndReached]
+    [onEndReached, rowH]
   );
 
   const handleGridLayout = useCallback((e: LayoutChangeEvent) => {
     gridTopY.current = e.nativeEvent.layout.y;
+  }, []);
+
+  // Высота вьюпорта задаёт размер окна. До первого layout берём высоту экрана:
+  // ноль дал бы пустую сетку на первом кадре.
+  const handleViewportLayout = useCallback((e: LayoutChangeEvent) => {
+    const h = e.nativeEvent.layout.height;
+    if (h > 0) setViewportH(h);
   }, []);
 
   return (
@@ -463,6 +538,7 @@ export function ZoomableRecordGrid({
         showsVerticalScrollIndicator={false}
         scrollEventThrottle={32}
         onScroll={handleScroll}
+        onLayout={handleViewportLayout}
         refreshControl={
           onRefresh ? (
             <RefreshControl refreshing={!!isRefreshing} onRefresh={onRefresh} tintColor={Colors.royalBlue} />
@@ -478,7 +554,10 @@ export function ZoomableRecordGrid({
             animatedStyle,
           ]}
         >
-          {data.map((item) => {
+          {windowRange.topSpacer > 0 && (
+            <View style={{ width: '100%', height: windowRange.topSpacer }} />
+          )}
+          {visibleItems.map((item) => {
             const isSelected = isSelectionMode && !!selectedItems?.has(item.id);
             if (level === 0) {
               return (
@@ -523,6 +602,9 @@ export function ZoomableRecordGrid({
               />
             );
           })}
+          {windowRange.bottomSpacer > 0 && (
+            <View style={{ width: '100%', height: windowRange.bottomSpacer }} />
+          )}
         </Animated.View>
         {isLoadingMore && (
           <View style={styles.footer}>
