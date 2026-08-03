@@ -24,6 +24,12 @@ export default function TabLayout() {
         tabBar={(props) => <GlassTabBar {...props} />}
         screenOptions={{
           headerShown: false,
+          // Останавливаем ре-рендеры невидимых табов на уровне навигатора
+          // (react-native-screens). Системный аналог lib/useAnimationGate.ts,
+          // который гейтит вручную и только четыре компонента: freezeOnBlur
+          // страхует всё разом, включая анимации, добавленные позже.
+          // См. docs/plans/APPSTORE_LAUNCH_PLAN.md §4.4.
+          freezeOnBlur: true,
         }}
       >
         <Tabs.Screen

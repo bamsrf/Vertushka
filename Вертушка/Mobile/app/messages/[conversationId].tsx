@@ -69,7 +69,10 @@ import type {
   PresenceInfo,
 } from '../../lib/messagesTypes';
 
-const POLL_INTERVAL_MS = 8000;
+// Safety-net на случай отвалившегося WS, а не основной транспорт: доставку
+// держит messagesWs.ts. Каждый тик перезапрашивает тред целиком — на 8с это
+// было радио и парсинг JSON каждые восемь секунд в течение всего разговора.
+const POLL_INTERVAL_MS = 30_000;
 const PRESENCE_INTERVAL_MS = 30_000;
 const GROUP_GAP_MS = 5 * 60 * 1000; // сообщения подряд того же sender → одна группа
 const EMPTY_MESSAGES: Message[] = [];

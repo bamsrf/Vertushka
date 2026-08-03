@@ -16,6 +16,7 @@ import { toast } from '../../lib/toast';
 import { cleanArtistName } from '../../lib/format';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { useRouter, useFocusEffect } from 'expo-router';
+import { useIsFocused } from '@react-navigation/native';
 import { Icon } from '@/components/ui';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImageManipulator from 'expo-image-manipulator';
@@ -43,6 +44,13 @@ export default function ScannerScreen() {
   const cameraRef = useRef<CameraView>(null);
   const segmentsTarget = useTourTarget('scan-segments');
   const [permission, requestPermission] = useCameraPermissions();
+  // Expo Router держит табы смонтированными: без этого гейта сенсор и превью
+  // продолжают работать на Поиске и в Коллекции. Камера — самый горячий
+  // процесс в приложении, дороже любой анимации.
+  //
+  // Гасим ТОЛЬКО по фокусу таба, не по showResults: модалка результатов —
+  // pageSheet, она не закрывает экран целиком, и превью видно за её краями.
+  const isFocused = useIsFocused();
   const [isScanning, setIsScanning] = useState(true);
   const [showResults, setShowResults] = useState(false);
 
@@ -233,6 +241,7 @@ export default function ScannerScreen() {
       {/* Камера */}
       <CameraView
         ref={cameraRef}
+        active={isFocused}
         style={StyleSheet.absoluteFillObject}
         facing="back"
         barcodeScannerSettings={
