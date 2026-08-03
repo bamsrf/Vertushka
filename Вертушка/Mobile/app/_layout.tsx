@@ -52,6 +52,7 @@ import { InAppNotificationToastHost, inAppToast } from '../components/notificati
 import Toast from 'react-native-toast-message';
 import { toastConfig } from '../components/CustomToast';
 import { analytics, initAmplitude } from '../lib/analytics';
+import { initDeviceMetrics } from '../lib/deviceMetrics';
 import { useRemoteConfigStore } from '../lib/remoteConfig';
 import { ForceUpdateScreen } from '../components/ForceUpdateScreen';
 import { clampSystemFontScale } from '../lib/responsive';
@@ -123,6 +124,13 @@ if (sentryDsn) {
   } catch {
     // expo-updates недоступен (Expo Go) — теги не критичны.
   }
+
+  // Термальное состояние и MetricKit. Строго после Sentry.init — обработчики
+  // внутри сразу пишут теги и breadcrumb'ы, до инициализации они пропадут.
+  // И как можно раньше в целом: iOS отдаёт накопленные пейлоады вскоре после
+  // запуска, опоздавшая подписка их не увидит. Без нативного модуля (Expo Go,
+  // Android, web) вызов тихо ничего не делает.
+  initDeviceMetrics();
 }
 
 const amplitudeApiKey = Constants.expoConfig?.extra?.amplitudeApiKey as string | undefined;
@@ -432,6 +440,7 @@ function RootLayout() {
           <Stack.Screen name="gift/[id]" />
           <Stack.Screen name="social/list" />
           <Stack.Screen name="dev/icons" />
+          <Stack.Screen name="dev/thermal" options={{ headerShown: true, title: 'Термальное состояние' }} />
           <Stack.Screen name="achievements" options={{ headerShown: true, title: 'Ачивки' }} />
           <Stack.Screen name="user/[username]/achievements" options={{ headerShown: true, title: 'Ачивки' }} />
           <Stack.Screen name="messages/index" />
