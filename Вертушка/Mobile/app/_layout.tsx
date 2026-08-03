@@ -36,8 +36,14 @@ type SentryStub = {
   init: (c: object) => void;
   wrap: <T>(c: T) => T;
   setTags: (tags: Record<string, string>) => void;
+  setUser: (user: { id: string } | null) => void;
 };
-let Sentry: SentryStub = { init: () => {}, wrap: (c) => c, setTags: () => {} };
+let Sentry: SentryStub = {
+  init: () => {},
+  wrap: (c) => c,
+  setTags: () => {},
+  setUser: () => {},
+};
 try {
   Sentry = require('@sentry/react-native');
 } catch {
@@ -108,6 +114,10 @@ if (sentryDsn) {
     environment: __DEV__ ? 'development' : 'production',
     tracesSampleRate: 0.2,
     attachScreenshot: false,
+    // Явно, а не полагаясь на дефолт: с setUser по id в Sentry не должно
+    // попадать ничего сверх идентификатора — ни IP, ни данных устройства,
+    // которые SDK добавляет в PII-режиме.
+    sendDefaultPii: false,
     beforeSend: (event: any, hint: any) => (isExpectedError(event, hint) ? null : event),
   });
 
@@ -148,7 +158,7 @@ if (amplitudeApiKey) {
 SplashScreen.preventAutoHideAsync();
 
 function RootLayout() {
-  const { checkAuth, isLoading, isAuthenticated } = useAuthStore();
+  const { checkAuth, isLoading, isAuthenticated, user } = useAuthStore();
   const { checkOnboarding, isReady: onboardingReady } = useOnboardingStore();
   const needsUpdate = useRemoteConfigStore((s) => s.needsUpdate);
   const remoteConfig = useRemoteConfigStore((s) => s.config);
@@ -181,6 +191,24 @@ function RootLayout() {
     checkOnboarding();
     loadRemoteConfig();
   }, []);
+
+  // Привязка событий Sentry к аккаунту.
+  //
+  // Зачем: MetricKit и термальные события (lib/deviceMetrics.ts) уезжают в
+  // Sentry обезличенными, и «посмотреть метрики конкретного тестера» без этого
+  // невозможно — в потоке событий нельзя отличить одного пользователя от
+  // другого.
+  //
+  // Шлём ТОЛЬКО id. Ни username, ни email, ни IP: для разбора перф-жалобы
+  // достаточно идентификатора, а Sentry — внешнее по отношению к базе
+  // хранилище, и лишних персональных данных там быть не должно.
+  //
+  // Один эффект на весь стор вместо правки шести веток логина (пароль,
+  // Google, Apple, Discogs, регистрация, восстановление сессии): здесь же
+  // ловится и холодный старт через checkAuth, и разлогин.
+  useEffect(() => {
+    Sentry.setUser(user ? { id: user.id } : null);
+  }, [user?.id]);
 
   // Перечитываем конфиг при возврате из фона: пользователь может держать
   // приложение открытым сутками, а рубильник должен доезжать до него без
