@@ -21,8 +21,6 @@ import Svg, {
   Path,
   Polygon,
   ClipPath,
-  Filter,
-  FeGaussianBlur,
 } from 'react-native-svg';
 import { VinylColorConfig } from '../lib/vinylColor';
 
@@ -228,8 +226,18 @@ export function VinylSpinner({ colorConfig, size = 220, labelName }: VinylSpinne
         elevation: 14,
       }}
     >
-      {/* Вращается: диск + бороздки + лейбл */}
-      <Animated.View style={[StyleSheet.absoluteFillObject, animatedStyle]}>
+      {/* Вращается: диск + бороздки + лейбл.
+          shouldRasterizeIOS/renderToHardwareTextureAndroid — критично: без них
+          Core Animation перерисовывает весь SVG-слой (26 бороздок, градиенты,
+          клипы) на каждом кадре силами CPU. Именно поэтому диск в разных
+          сборках крутился то ровно, то рывками — всё зависело от того, чем
+          ещё был занят главный поток. С растеризацией это одна отрисовка
+          в текстуру и дальше чистый GPU-поворот. */}
+      <Animated.View
+        style={[StyleSheet.absoluteFillObject, animatedStyle]}
+        shouldRasterizeIOS
+        renderToHardwareTextureAndroid
+      >
         {/* Основной SVG — диск + бороздки + лейбл */}
         <Svg
           width={size}
@@ -255,11 +263,6 @@ export function VinylSpinner({ colorConfig, size = 220, labelName }: VinylSpinne
               </RadialGradient>
             )}
 
-            {/* Blur для тени лейбла и CIC-кольца */}
-            <Filter id={`bl-${uid}`} x="-20%" y="-20%" width="140%" height="140%">
-              <FeGaussianBlur stdDeviation={2 * scale} />
-            </Filter>
-
             {/* Клип по диску */}
             <ClipPath id={`cl-${uid}`}>
               <Circle cx={cx} cy={cy} r={edgeR} />
@@ -276,10 +279,17 @@ export function VinylSpinner({ colorConfig, size = 220, labelName }: VinylSpinne
           {/* CIC — внутренний круг другого цвета */}
           {type === 'cic' && secondaryColor && (
             <G clipPath={`url(#cl-${uid})`}>
+              {/* Мягкое кольцо вокруг CIC-круга: два полупрозрачных контура
+                  вместо feGaussianBlur — фильтр рисуется offscreen на CPU. */}
               <Circle
                 cx={cx} cy={cy} r={innerColorR + 2 * scale}
-                fill={secondaryColor} opacity={0.4}
-                filter={`url(#bl-${uid})`}
+                fill="none" stroke={secondaryColor} strokeWidth={3 * scale}
+                opacity={0.28}
+              />
+              <Circle
+                cx={cx} cy={cy} r={innerColorR + 1 * scale}
+                fill="none" stroke={secondaryColor} strokeWidth={2 * scale}
+                opacity={0.4}
               />
               <Circle
                 cx={cx} cy={cy} r={innerColorR}
@@ -320,9 +330,11 @@ export function VinylSpinner({ colorConfig, size = 220, labelName }: VinylSpinne
           <Circle cx={cx} cy={cy} r={edgeR - 3.5 * scale} fill="none"
             stroke="rgba(0,0,0,0.12)" strokeWidth={2 * scale} />
 
-          {/* Тень лейбла (блюр) */}
-          <Circle cx={cx} cy={cy} r={labelR + 0.5 * scale}
-            fill="rgba(0,0,0,0.45)" filter={`url(#bl-${uid})`} />
+          {/* Тень лейбла — градиентное кольцо вместо блюра */}
+          <Circle cx={cx} cy={cy} r={labelR + 2 * scale}
+            fill="none" stroke="rgba(0,0,0,0.16)" strokeWidth={3 * scale} />
+          <Circle cx={cx} cy={cy} r={labelR + 0.75 * scale}
+            fill="rgba(0,0,0,0.42)" />
 
           {/* Центральный лейбл */}
           <Circle cx={cx} cy={cy} r={labelR} fill="#1C1D3A" />
