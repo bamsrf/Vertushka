@@ -113,6 +113,7 @@ async def lifespan(app: FastAPI):
                 cleanup_price_history,
             )
             from app.tasks.cover_drip_tasks import drip_covers_batch
+            from app.tasks.cover_coverage_tasks import report_cover_coverage
             from app.services.cover_storage import CoverStorageService
 
             async def cleanup_covers():
@@ -131,6 +132,8 @@ async def lifespan(app: FastAPI):
             scheduler.add_job(update_prices_batch, 'cron', hour=4, minute=0, id='update_prices_batch')
             scheduler.add_job(record_daily_snapshots, 'cron', hour=5, minute=0, id='value_snapshots')
             scheduler.add_job(cleanup_covers, 'cron', hour=3, minute=0, id='covers_lru_cleanup')
+            # Метрика покрытия обложек (§4.2): 6:15, после ночного прогрева/enrichment.
+            scheduler.add_job(report_cover_coverage, 'cron', hour=6, minute=15, id='cover_coverage_report', max_instances=1, coalesce=True)
             scheduler.add_job(enrich_market_covers, 'interval', hours=2, id='enrich_market_covers')
             scheduler.add_job(refresh_market_store_stats, 'interval', minutes=15, id='refresh_market_store_stats')
             scheduler.add_job(refresh_new_releases, 'cron', day=1, hour=4, minute=45, id='refresh_new_releases')
@@ -375,4 +378,16 @@ async def health_check():
         "db": db_status,
         "redis": redis_health,
     }
+
+
+@app.get("/health/covers", tags=["Health"])
+async def cover_coverage_snapshot():
+    """Последний снапшот покрытия обложек — чтобы смотреть из браузера без SSH.
+
+    Считается задачей cover_coverage_tasks (ежедневно 6:15). Read-only, не
+    сенситивно (только доли/счётчики). status=no_data до первого прогона."""
+    snapshot = await cache.get("metrics", "cover_coverage")
+    if snapshot is None:
+        return {"status": "no_data", "hint": "cover_coverage job ещё не отработала"}
+    return snapshot
 

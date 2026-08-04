@@ -43,6 +43,23 @@ _JPEG_QUALITY = 85
 _DOWNLOAD_TIMEOUT = 30  # секунд
 
 
+def _encode_and_place(raw: bytes, tmp_path: Path, dest: Path) -> None:
+    """CPU-bound: decode → resize (LANCZOS) → JPEG q85 → атомарный rename.
+
+    Pillow-ресайз 1000px + optimize=True — это 50-150мс чистого CPU на файл.
+    В single-worker проде (--workers 1) вызов прямо в корутине морозил event
+    loop на всю пачку прогрева (до 10 обложек = ~1.5с без обслуживания никого).
+    Вынесено в отдельную sync-функцию: async-пути гоняют через asyncio.to_thread,
+    sync-путь (store_user_cover) зовёт напрямую — он и так документирован как
+    «вызывать из threadpool».
+    """
+    img = Image.open(BytesIO(raw)).convert("RGB")
+    if img.width > _MAX_SIDE or img.height > _MAX_SIDE:
+        img.thumbnail((_MAX_SIDE, _MAX_SIDE), Image.LANCZOS)
+    img.save(tmp_path, format="JPEG", quality=_JPEG_QUALITY, optimize=True)
+    os.rename(tmp_path, dest)
+
+
 class CoverStorageService:
     """Сервис хранения обложек на диске."""
 
@@ -138,14 +155,9 @@ class CoverStorageService:
                 resp.raise_for_status()
                 raw = resp.content
 
-            # Конвертация и resize через Pillow
-            img = Image.open(BytesIO(raw)).convert("RGB")
-            if img.width > _MAX_SIDE or img.height > _MAX_SIDE:
-                img.thumbnail((_MAX_SIDE, _MAX_SIDE), Image.LANCZOS)
-            img.save(tmp_path, format="JPEG", quality=_JPEG_QUALITY, optimize=True)
-
-            # Атомарная запись: rename на том же volume
-            os.rename(tmp_path, dest)
+            # Конвертация + resize + атомарный rename — CPU-bound, в threadpool,
+            # иначе single-worker event loop морозится на всю пачку прогрева.
+            await asyncio.to_thread(_encode_and_place, raw, tmp_path, dest)
             tmp_path = None  # переименован — не удалять в finally
 
             rel_path = f"covers/{self._cover_filename(discogs_id)}"
@@ -183,11 +195,8 @@ class CoverStorageService:
             self._ensure_covers_dir()
             dest = self._cover_path(key)
             tmp_path = self._tmp_path(key)
-            img = Image.open(BytesIO(raw)).convert("RGB")
-            if img.width > _MAX_SIDE or img.height > _MAX_SIDE:
-                img.thumbnail((_MAX_SIDE, _MAX_SIDE), Image.LANCZOS)
-            img.save(tmp_path, format="JPEG", quality=_JPEG_QUALITY, optimize=True)
-            os.rename(tmp_path, dest)
+            # Синхронно: функция сама документирована как «вызывать из threadpool».
+            _encode_and_place(raw, tmp_path, dest)
             tmp_path = None
             return f"covers/{self._cover_filename(key)}"
         except Exception as exc:
@@ -374,12 +383,7 @@ async def _download_store_native_cover_background(
             resp.raise_for_status()
             raw = resp.content
 
-        img = Image.open(BytesIO(raw)).convert("RGB")
-        if img.width > _MAX_SIDE or img.height > _MAX_SIDE:
-            img.thumbnail((_MAX_SIDE, _MAX_SIDE), Image.LANCZOS)
-        img.save(tmp_path, format="JPEG", quality=_JPEG_QUALITY, optimize=True)
-
-        os.rename(tmp_path, dest)
+        await asyncio.to_thread(_encode_and_place, raw, tmp_path, dest)
         tmp_path = None
 
         rel_path = f"{rel_subdir}/{filename}"

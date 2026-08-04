@@ -96,6 +96,13 @@ class Settings(BaseSettings):
         default="https://api.vinyl-vertushka.ru/covers", alias="PUBLIC_COVERS_BASE",
     )
     covers_max_cache_mb: int = Field(default=5000, alias="COVERS_MAX_CACHE_MB")
+    # Метрика покрытия обложек (cover_coverage_tasks). Пол — абсолютный порог
+    # доли in_stock matched-листингов с рабочей обложкой; ниже → алерт.
+    # Дефолт консервативный: подстроить под реальный базовый уровень после
+    # первого снапшота в /health/covers, чтобы не крикнуть волками.
+    cover_coverage_min_ratio: float = Field(default=0.60, alias="COVER_COVERAGE_MIN_RATIO")
+    # Просадка market-покрытия к прошлому снапшоту (в п.п.), выше которой алерт.
+    cover_coverage_alert_drop_pp: float = Field(default=5.0, alias="COVER_COVERAGE_ALERT_DROP_PP")
     internal_api_token: str = Field(default="", alias="INTERNAL_API_TOKEN")
 
     @property
