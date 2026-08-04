@@ -154,6 +154,18 @@ services:
     # depends_on на api НЕТ намеренно: цвет резолвится в рантайме через Docker
     # DNS (resolver в nginx.conf), а хард-зависимость на конкретный цвет ломала
     # бы старт nginx, когда активен другой цвет.
+    #
+    # Вторая сеть — GlitchTip (sentry.vinyl-vertushka.ru). Он живёт в отдельном
+    # compose-проекте, и без общей сети Docker DNS не резолвит glitchtip-web-1:
+    # nginx отдаёт 502 на всё, включая /api/1/envelope/ — то есть приём событий.
+    # Пользователи этого не видят, приложение работает, телеметрия молча тонет.
+    #
+    # Раньше связь держалась ручным `docker network connect`, который не
+    # хранится в конфиге: 2026-08-04 контейнер пересоздали, и приём отвалился.
+    # Здесь она объявлена декларативно и переживает пересоздание.
+    networks:
+      - default
+      - glitchtip
 
   # Certbot для SSL сертификатов
   certbot:
@@ -187,3 +199,14 @@ volumes:
   redis_data:
   uploads_data:
   nginx_cache:
+
+networks:
+  # Дефолтная сеть проекта — backend_default, её создаёт compose сам.
+  default:
+  # Сеть чужого compose-проекта (glitchtip). external: не даём compose ею
+  # управлять — он её не создаёт и не удаляет, только подключается.
+  # Если GlitchTip будет поднят заново под другим именем проекта, поправить
+  # здесь `name`, иначе nginx не стартует с ошибкой «network not found».
+  glitchtip:
+    external: true
+    name: glitchtip_default
