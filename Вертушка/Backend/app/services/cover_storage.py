@@ -47,18 +47,17 @@ def _compute_blurhash(img: "Image.Image") -> str | None:
     """blurhash из даунскейл-копии (~64px) для клиентского плейсхолдера.
 
     Lazy import + глотание любых ошибок: плейсхолдер необязателен, обложка
-    важнее — если пакета нет или API отличается, просто вернём None и обложка
-    работает как прежде. Никогда не бросает. Передаём file-like PNG — самый
-    совместимый вход для blurhash.encode (принимает путь/файл-объект).
+    важнее — если пакета нет или что-то падает, вернём None и обложка работает
+    как прежде. Никогда не бросает. blurhash.encode ждёт numpy-массив пикселей
+    (image[y][x]=[r,g,b]) — проверено на боевой библиотеке (1.1.4), file-like/
+    PIL/путь она НЕ принимает.
     """
     try:
         import blurhash
+        import numpy as np
         small = img.copy()
         small.thumbnail((64, 64), Image.LANCZOS)
-        buf = BytesIO()
-        small.save(buf, format="PNG")
-        buf.seek(0)
-        return blurhash.encode(buf, 4, 3)
+        return blurhash.encode(np.array(small), 4, 3)
     except Exception:
         logger.debug("blurhash encode failed", exc_info=True)
         return None

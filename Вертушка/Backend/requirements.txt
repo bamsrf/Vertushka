@@ -31,8 +31,9 @@ tenacity==8.2.3
 
 # Обработка изображений
 pillow==10.2.0
-# blurhash-плейсхолдеры обложек (pure-python, numpy уже есть)
+# blurhash-плейсхолдеры обложек (pure-python; encode ждёт numpy-массив)
 blurhash==1.1.4
+numpy==1.26.4  # прямая зависимость blurhash-энкодера (уже стоял транзитивно)
 
 # Визуальный матчинг обложек (CLIP ONNX, CPU-инференс)
 onnxruntime==1.17.0
