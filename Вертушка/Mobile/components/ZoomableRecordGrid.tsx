@@ -210,6 +210,7 @@ const BareCell = memo(function BareCell({
             cachePolicy="disk"
             recyclingKey={item.id}
             transition={0}
+            placeholder={record.blurhash ? { blurhash: record.blurhash } : undefined}
           />
         ) : null}
         {showShimmer && <TierCoverEffects tier="collectible" radius={radius} />}

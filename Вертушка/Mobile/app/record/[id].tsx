@@ -116,6 +116,7 @@ export default function RecordDetailScreen() {
     previewArtist,
     previewCover,
     previewYear,
+    previewBlurhash,
   } = useLocalSearchParams<{
     id: string;
     folderId?: string;
@@ -124,6 +125,7 @@ export default function RecordDetailScreen() {
     previewArtist?: string;
     previewCover?: string;
     previewYear?: string;
+    previewBlurhash?: string;
   }>();
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -587,7 +589,13 @@ export default function RecordDetailScreen() {
           >
             <View style={styles.coverContainer}>
               {previewCover ? (
-                <Image source={previewCover} style={styles.cover} contentFit="cover" cachePolicy="disk" />
+                <Image
+                  source={previewCover}
+                  style={styles.cover}
+                  contentFit="cover"
+                  cachePolicy="disk"
+                  placeholder={previewBlurhash ? { blurhash: previewBlurhash } : undefined}
+                />
               ) : (
                 <View style={[styles.cover, styles.coverPlaceholder]}>
                   <Icon name="disc-outline" size={80} color={Colors.textMuted} />
@@ -676,7 +684,19 @@ export default function RecordDetailScreen() {
         {/* Обложка */}
         <View style={styles.coverContainer}>
           {imageUrl ? (
-            <Image source={imageUrl} style={styles.cover} contentFit="cover" cachePolicy="disk" />
+            <Image
+              source={imageUrl}
+              style={styles.cover}
+              contentFit="cover"
+              cachePolicy="disk"
+              placeholder={
+                record.blurhash
+                  ? { blurhash: record.blurhash }
+                  : previewBlurhash
+                    ? { blurhash: previewBlurhash }
+                    : undefined
+              }
+            />
           ) : (
             <View style={[styles.cover, styles.coverPlaceholder]}>
               <Icon name="disc-outline" size={80} color={Colors.textMuted} />

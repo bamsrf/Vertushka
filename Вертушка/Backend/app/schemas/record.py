@@ -79,6 +79,8 @@ class RecordResponse(BaseModel):
     thumb_image_url: str | None
     cover_url: str | None = None  # локальный URL (/uploads/covers/...) или fallback на Discogs
     cover_local_path: str | None = Field(default=None, exclude=True)
+    # blurhash обложки — клиент рисует blur-плейсхолдер, пока грузится full-res.
+    blurhash: str | None = None
     artist_id: str | None = None
     artist_thumb_image_url: str | None = None
     tracklist: list | None
@@ -122,6 +124,7 @@ class RecordBrief(BaseModel):
     thumb_image_url: str | None
     cover_url: str | None = None  # локальный URL (/uploads/covers/...) или fallback на Discogs
     cover_local_path: str | None = Field(default=None, exclude=True)
+    blurhash: str | None = None  # blur-плейсхолдер для сетки
     format_type: str | None = None
     estimated_price_median: float | None
     price_currency: str

@@ -22,7 +22,7 @@ import { SegmentedControl } from '../../components/ui';
 import { useCollectionStore, useAuthStore } from '../../lib/store';
 import { ms } from '../../lib/responsive';
 import { useTourTarget } from '../../lib/useTourTarget';
-import { api, resolveMediaUrl } from '../../lib/api';
+import { api, resolveMediaUrl, recordPreviewParams } from '../../lib/api';
 import { CollectionItem, WishlistItem, CollectionTab, RecordOffersSummary, Offer } from '../../lib/types';
 import { Colors, Spacing, Typography, BorderRadius, Gradients, Shadows } from '../../constants/theme';
 import { summaryToHotStock, type ResolvedHotStock } from '../../components/HotStockTag';
@@ -416,7 +416,12 @@ export default function CollectionScreen() {
 
   const handleRecordPress = (item: CollectionItem | WishlistItem) => {
     const recordId = item.record.discogs_id || item.record.id;
-    router.push(`/record/${recordId}`);
+    // preview-параметры → мгновенная отрисовка карточки (обложка уже в
+    // disk-кэше сетки, тот же full-res файл, качество не меняется).
+    router.push({
+      pathname: `/record/${recordId}` as any,
+      params: recordPreviewParams(item.record),
+    });
   };
 
   const handleArtistPress = useCallback(async (artistName: string) => {

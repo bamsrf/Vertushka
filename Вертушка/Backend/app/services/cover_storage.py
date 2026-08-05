@@ -43,21 +43,46 @@ _JPEG_QUALITY = 85
 _DOWNLOAD_TIMEOUT = 30  # секунд
 
 
-def _encode_and_place(raw: bytes, tmp_path: Path, dest: Path) -> None:
-    """CPU-bound: decode → resize (LANCZOS) → JPEG q85 → атомарный rename.
+def _compute_blurhash(img: "Image.Image") -> str | None:
+    """blurhash из даунскейл-копии (~64px) для клиентского плейсхолдера.
+
+    Lazy import + глотание любых ошибок: плейсхолдер необязателен, обложка
+    важнее — если пакета нет или API отличается, просто вернём None и обложка
+    работает как прежде. Никогда не бросает. Передаём file-like PNG — самый
+    совместимый вход для blurhash.encode (принимает путь/файл-объект).
+    """
+    try:
+        import blurhash
+        small = img.copy()
+        small.thumbnail((64, 64), Image.LANCZOS)
+        buf = BytesIO()
+        small.save(buf, format="PNG")
+        buf.seek(0)
+        return blurhash.encode(buf, 4, 3)
+    except Exception:
+        logger.debug("blurhash encode failed", exc_info=True)
+        return None
+
+
+def _encode_and_place(raw: bytes, tmp_path: Path, dest: Path) -> str | None:
+    """CPU-bound: decode → blurhash → resize (LANCZOS) → JPEG q85 → атомарный
+    rename. Возвращает blurhash обложки (или None) для записи в records.blurhash.
 
     Pillow-ресайз 1000px + optimize=True — это 50-150мс чистого CPU на файл.
     В single-worker проде (--workers 1) вызов прямо в корутине морозил event
     loop на всю пачку прогрева (до 10 обложек = ~1.5с без обслуживания никого).
     Вынесено в отдельную sync-функцию: async-пути гоняют через asyncio.to_thread,
     sync-путь (store_user_cover) зовёт напрямую — он и так документирован как
-    «вызывать из threadpool».
+    «вызывать из threadpool». blurhash считаем ДО ресайза дест-файла (из копии),
+    качество самого файла не трогаем.
     """
     img = Image.open(BytesIO(raw)).convert("RGB")
+    bhash = _compute_blurhash(img)
     if img.width > _MAX_SIDE or img.height > _MAX_SIDE:
         img.thumbnail((_MAX_SIDE, _MAX_SIDE), Image.LANCZOS)
     img.save(tmp_path, format="JPEG", quality=_JPEG_QUALITY, optimize=True)
     os.rename(tmp_path, dest)
+    return bhash
 
 
 class CoverStorageService:
@@ -157,14 +182,14 @@ class CoverStorageService:
 
             # Конвертация + resize + атомарный rename — CPU-bound, в threadpool,
             # иначе single-worker event loop морозится на всю пачку прогрева.
-            await asyncio.to_thread(_encode_and_place, raw, tmp_path, dest)
+            bhash = await asyncio.to_thread(_encode_and_place, raw, tmp_path, dest)
             tmp_path = None  # переименован — не удалять в finally
 
             rel_path = f"covers/{self._cover_filename(discogs_id)}"
             await db.execute(
                 update(Record)
                 .where(Record.discogs_id == discogs_id)
-                .values(cover_local_path=rel_path, cover_cached_at=datetime.utcnow())
+                .values(cover_local_path=rel_path, cover_cached_at=datetime.utcnow(), blurhash=bhash)
             )
             await db.commit()
             logger.info("cover_storage: saved cover for %s → %s", discogs_id, rel_path)
@@ -383,7 +408,7 @@ async def _download_store_native_cover_background(
             resp.raise_for_status()
             raw = resp.content
 
-        await asyncio.to_thread(_encode_and_place, raw, tmp_path, dest)
+        bhash = await asyncio.to_thread(_encode_and_place, raw, tmp_path, dest)
         tmp_path = None
 
         rel_path = f"{rel_subdir}/{filename}"
@@ -391,7 +416,7 @@ async def _download_store_native_cover_background(
             await db.execute(
                 update(Record)
                 .where(Record.id == record_id)
-                .values(cover_local_path=rel_path, cover_cached_at=datetime.utcnow())
+                .values(cover_local_path=rel_path, cover_cached_at=datetime.utcnow(), blurhash=bhash)
             )
             await db.commit()
         logger.info("cover_storage: saved store-native cover for %s", record_id)

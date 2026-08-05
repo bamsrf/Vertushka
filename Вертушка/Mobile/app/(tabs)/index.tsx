@@ -27,6 +27,7 @@ import { useScannerStore, useCollectionStore } from '../../lib/store';
 import { useTourTarget } from '../../lib/useTourTarget';
 import { analytics } from '../../lib/analytics';
 import { RecordSearchResult, ScanMode } from '../../lib/types';
+import { recordPreviewParams } from '../../lib/api';
 import { Colors, Typography, Spacing, BorderRadius, Shadows } from '../../constants/theme';
 
 function getFormatDisplayInfo(format?: string): { label: string; verb: string } {
@@ -160,7 +161,12 @@ export default function ScannerScreen() {
   const handleRecordPress = (record: RecordSearchResult) => {
     viewedDetailId.current = record.discogs_id;
     setShowResults(false);
-    router.push(`/record/${record.discogs_id}`);
+    // preview → мгновенная карточка из данных скан-результата (тот же
+    // full-res URL обложки, качество не меняется).
+    router.push({
+      pathname: `/record/${record.discogs_id}` as any,
+      params: recordPreviewParams(record),
+    });
   };
 
   const handleAddToCollection = async (record: RecordSearchResult) => {

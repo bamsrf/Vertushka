@@ -96,6 +96,7 @@ export interface VinylRecord {
   cover_image_url?: string;
   thumb_image_url?: string;
   cover_url?: string;
+  blurhash?: string | null; // blur-плейсхолдер, пока грузится full-res
   artist_id?: string;
   artist_thumb_image_url?: string;
   tracklist?: Track[];

@@ -239,6 +239,13 @@ class Record(Base):
         String(500),
         nullable=True
     )
+    # blurhash обложки — компактная (~30 символов) строка для мгновенного
+    # blur-плейсхолдера на клиенте, пока грузится full-res. Считается при
+    # зеркалировании (cover_storage._encode_and_place).
+    blurhash: Mapped[str | None] = mapped_column(
+        String(64),
+        nullable=True
+    )
     cover_cached_at: Mapped[datetime | None] = mapped_column(
         DateTime,
         nullable=True

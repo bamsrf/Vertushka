@@ -97,6 +97,40 @@ export function getCoverUrl(
   return record.cover_image_url || record.thumb_image_url || undefined;
 }
 
+/**
+ * Preview-параметры для мгновенной отрисовки /record/[id] из уже известных
+ * полей списка (заголовок/артист/обложка/год). Экран карточки рисует их сразу
+ * (ветка hasPreview), пока грузится полный payload — тап больше не упирается в
+ * спиннер. Обложка — тот же full-res URL через getCoverUrl (качество не меняется,
+ * файл уже в disk-кэше сетки). Защитный: кладёт только непустые ключи.
+ */
+export function recordPreviewParams(
+  record:
+    | {
+        title?: string | null;
+        artist?: string | null;
+        year?: number | string | null;
+        cover_url?: string;
+        cover_image_url?: string;
+        thumb_image_url?: string;
+        blurhash?: string | null;
+      }
+    | null
+    | undefined
+): Record<string, string> {
+  if (!record) return {};
+  const params: Record<string, string> = {};
+  if (record.title) params.previewTitle = String(record.title);
+  if (record.artist) params.previewArtist = String(record.artist);
+  const cover = getCoverUrl(record);
+  if (cover) params.previewCover = cover;
+  if (record.year !== null && record.year !== undefined && record.year !== '') {
+    params.previewYear = String(record.year);
+  }
+  if (record.blurhash) params.previewBlurhash = record.blurhash;
+  return params;
+}
+
 const TOKEN_KEY = 'auth_token';
 const REFRESH_TOKEN_KEY = 'refresh_token';
 

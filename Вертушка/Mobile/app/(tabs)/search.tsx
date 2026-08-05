@@ -43,7 +43,7 @@ import { useSearchStore, useCollectionStore, useUserSearchStore, useAuthStore, u
 import { useTourTarget } from '../../lib/useTourTarget';
 import { ms } from '../../lib/responsive';
 import { analytics } from '../../lib/analytics';
-import { api, resolveMediaUrl } from '../../lib/api';
+import { api, resolveMediaUrl, recordPreviewParams } from '../../lib/api';
 import { MasterSearchResult, ReleaseSearchResult, ArtistSearchResult, UserWithStats, PublicProfileRecord, MarketCarouselItem } from '../../lib/types';
 import { MiniPriceBadge } from '../../components/MiniPriceBadge';
 import MarketBackground from '../../components/market/MarketBackground';
@@ -698,8 +698,12 @@ export default function SearchScreen() {
         },
       });
     } else if ('release_id' in record) {
-      // Если это ReleaseSearchResult - переходим на страницу релиза
-      router.push(`/record/${record.release_id}`);
+      // Если это ReleaseSearchResult - переходим на страницу релиза с preview
+      // для мгновенной отрисовки (тот же full-res URL, без потери качества).
+      router.push({
+        pathname: `/record/${record.release_id}` as any,
+        params: recordPreviewParams(record),
+      });
     }
   };
 
