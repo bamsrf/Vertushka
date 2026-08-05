@@ -98,6 +98,29 @@ export function getCoverUrl(
 }
 
 /**
+ * Ресайз-URL обложки под нужную ширину в пикселях (imgproxy на бэке).
+ * Берёт имя файла из нашей mirror-ссылки (…/covers/{name}.jpg или
+ * …/uploads/covers/{name}.jpg) и строит {origin}/covers/w/{px}/{name}.jpg —
+ * сервер режет мастер под {px} на лету. Никогда не апскейлит выше мастера
+ * (enlarge=0 в nginx) ⇒ пикселей нет.
+ *
+ * Возвращает исходный URL без изменений, если это НЕ наша плоская обложка:
+ * внешние Discogs/CDN, store-сабдиры (…/covers/store/…), относительные пути.
+ */
+export function sizedCoverUrl(
+  url: string | undefined,
+  widthPx: number
+): string | undefined {
+  if (!url) return url;
+  // Имя файла обложки: только плоский …/covers/{name}.jpg (без '/' в имени).
+  const name = url.match(/\/covers\/([A-Za-z0-9._-]+\.jpg)(?:\?|$)/i)?.[1];
+  if (!name) return url;
+  const origin = url.match(/^(https?:\/\/[^/]+)/i)?.[1];
+  if (!origin) return url;
+  return `${origin}/covers/w/${Math.round(widthPx)}/${name}`;
+}
+
+/**
  * Preview-параметры для мгновенной отрисовки /record/[id] из уже известных
  * полей списка (заголовок/артист/обложка/год). Экран карточки рисует их сразу
  * (ветка hasPreview), пока грузится полный payload — тап больше не упирается в

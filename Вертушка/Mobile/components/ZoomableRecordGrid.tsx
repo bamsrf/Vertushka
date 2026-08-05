@@ -27,6 +27,7 @@ import {
   View,
   StyleSheet,
   Dimensions,
+  PixelRatio,
   Text,
   ScrollView,
   RefreshControl,
@@ -47,7 +48,7 @@ import Animated, {
 import * as Haptics from 'expo-haptics';
 import { Colors, Spacing, BorderRadius, Typography } from '../constants/theme';
 import { CollectionItem, WishlistItem } from '../lib/types';
-import { getCoverUrl } from '../lib/api';
+import { getCoverUrl, sizedCoverUrl } from '../lib/api';
 import { RecordCard } from './RecordCard';
 import {
   RarityContext,
@@ -68,6 +69,13 @@ type ZoomLevel = 0 | 1 | 2 | 3 | 4 | 5;
 const MAX_LEVEL: ZoomLevel = (ZOOM_COLS.length - 1) as ZoomLevel;
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
+
+// Один размер обложки на ВСЕ уровни зума (единый URL = без моргания при зуме,
+// как задумано ниже). Считаем под самую крупную ячейку — L0, 2 колонки ≈
+// полэкрана — × DPR, капим мастером 1000px. Крупная ячейка чёткая, ноготь —
+// тем более; трафик режется с 1000px до ~640 (≈⅓ пикселей). imgproxy не
+// апскейлит выше мастера ⇒ пикселей нет ни на одном уровне.
+const GRID_COVER_PX = Math.min(1000, Math.ceil((SCREEN_W / 2) * PixelRatio.get()));
 
 // Сколько строк дорисовываем за пределами вьюпорта сверху и снизу.
 // Окно пересчитывается только при смене строки под верхней кромкой, поэтому
@@ -166,7 +174,7 @@ const BareCell = memo(function BareCell({
   // Один и тот же URL для всех уровней — иначе при пересечении границы (L3↔L4)
   // expo-image видит смену source и кратко перерисовывает картинку, что выглядит
   // как «вставка кадра» между уровнями. С disk-кэшем bandwidth не страдает.
-  const coverUrl = useMemo(() => getCoverUrl(record), [record]);
+  const coverUrl = useMemo(() => sizedCoverUrl(getCoverUrl(record), GRID_COVER_PX), [record]);
 
   // Только collectible получает визуальный сигнал на голых обложках —
   // блестит и переливается на всех уровнях.

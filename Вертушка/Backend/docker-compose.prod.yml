@@ -150,6 +150,7 @@ services:
       - ./certbot/conf:/etc/letsencrypt:ro
       - ./certbot/www:/var/www/certbot:ro
       - nginx_cache:/var/cache/nginx
+      - nginx_covers_cache:/var/cache/nginx_covers  # деривативы imgproxy (отдельно от api_cache)
       - uploads_data:/app/uploads:ro      # nginx раздаёт обложки как статику
     # depends_on на api НЕТ намеренно: цвет резолвится в рантайме через Docker
     # DNS (resolver в nginx.conf), а хард-зависимость на конкретный цвет ломала
@@ -166,6 +167,29 @@ services:
     networks:
       - default
       - glitchtip
+
+  # imgproxy — ресайз обложек под размер ячейки/экрана на лету из локального
+  # мастера (uploads/covers/{id}.jpg). Внутренний: порт наружу НЕ публикуется,
+  # доступен только nginx по Docker DNS (imgproxy:8080). UNSAFE_URL безопасен —
+  # снаружи не достучаться, только через внутренний nginx-роут /covers/w/.
+  # enlarge=0 в rewrite → никогда не апскейлит выше мастера (≤1000px) = без
+  # пикселей. mem_limit скромный: pure-resize, при 10 юзерах нагрузка мизерная.
+  imgproxy:
+    image: darthsim/imgproxy:v3.27
+    container_name: vertushka_imgproxy
+    restart: always
+    environment:
+      - IMGPROXY_ALLOW_UNSAFE_URL=1
+      - IMGPROXY_LOCAL_FILESYSTEM_ROOT=/app/uploads
+      - IMGPROXY_QUALITY=82
+      - IMGPROXY_WORKERS=2
+      - IMGPROXY_MAX_SRC_RESOLUTION=20
+      - IMGPROXY_TTL=2592000
+    volumes:
+      - uploads_data:/app/uploads:ro
+    mem_limit: 128m
+    networks:
+      - default
 
   # Certbot для SSL сертификатов
   certbot:
@@ -199,6 +223,7 @@ volumes:
   redis_data:
   uploads_data:
   nginx_cache:
+  nginx_covers_cache:
 
 networks:
   # Дефолтная сеть проекта — backend_default, её создаёт compose сам.
