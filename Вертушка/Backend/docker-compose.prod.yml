@@ -55,6 +55,12 @@ services:
     image: postgres:16-alpine
     container_name: vertushka_db
     restart: always
+    # Docker по умолчанию даёт /dev/shm ровно 64 МБ, а параллельные воркеры
+    # Postgres держат там свои сегменты. На 13M-строчном discogs_releases_index
+    # `VACUUM ANALYZE` падал с «could not resize shared memory segment ... No
+    # space left on device» — при живых 4.6 ГБ на диске. Тем же местом рискуют
+    # параллельные планы обычных запросов (экран артиста собирается в 3 воркера).
+    shm_size: 512mb
     environment:
       POSTGRES_USER: ${DB_USER}
       POSTGRES_PASSWORD: ${DB_PASSWORD}
