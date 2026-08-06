@@ -72,6 +72,57 @@ export function AchievementsHero({ data, extraRandom = [], username }: Props) {
     return () => animatedCount.removeListener(listener);
   }, [data.unlocked, animatedCount]);
 
+  // Пульсация звёздочек: два loop'а с разным периодом и фазой, чтобы блики
+  // не мигали синхронно.
+  const sparkleTopT = useRef(new Animated.Value(0)).current;
+  const sparkleBottomT = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const pulse = (v: Animated.Value, duration: number, delay: number) =>
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(v, {
+            toValue: 1,
+            duration,
+            delay,
+            easing: Easing.inOut(Easing.quad),
+            useNativeDriver: true,
+          }),
+          Animated.timing(v, {
+            toValue: 0,
+            duration,
+            easing: Easing.inOut(Easing.quad),
+            useNativeDriver: true,
+          }),
+        ]),
+      );
+    const a = pulse(sparkleTopT, 1400, 0);
+    const b = pulse(sparkleBottomT, 1900, 500);
+    a.start();
+    b.start();
+    return () => {
+      a.stop();
+      b.stop();
+    };
+  }, [sparkleTopT, sparkleBottomT]);
+
+  const sparkleTopScale = sparkleTopT.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0.75, 1.25],
+  });
+  const sparkleTopOpacity = sparkleTopT.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0.5, 1],
+  });
+  const sparkleBottomScale = sparkleBottomT.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0.7, 1.15],
+  });
+  const sparkleBottomOpacity = sparkleBottomT.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0.4, 0.95],
+  });
+
   return (
     <View style={styles.wrap}>
       {/* Двойной gradient: основной navy fade + warm radial bottom-right */}
@@ -114,21 +165,38 @@ export function AchievementsHero({ data, extraRandom = [], username }: Props) {
               </View>
             )}
           </View>
-          {/* Sparkle над пином — золотой блик */}
-          <View style={styles.sparkleTop}>
+          {/* Sparkle над пином — золотой блик, живёт своей жизнью */}
+          <Animated.View
+            style={[
+              styles.sparkleTop,
+              { opacity: sparkleTopOpacity, transform: [{ scale: sparkleTopScale }] },
+            ]}
+          >
             <Sparkle size={14} />
-          </View>
-          <View style={styles.sparkleBottom}>
+          </Animated.View>
+          <Animated.View
+            style={[
+              styles.sparkleBottom,
+              { opacity: sparkleBottomOpacity, transform: [{ scale: sparkleBottomScale }] },
+            ]}
+          >
             <Sparkle size={9} color="rgba(242,199,112,0.7)" />
-          </View>
+          </Animated.View>
         </View>
 
         <View style={styles.counterWrap}>
-          <View style={styles.counterRow}>
-            <Text style={styles.countBig}>{displayCount}</Text>
-            <Text style={styles.countSep}>/</Text>
+          {/* Один Text с вложенными span'ами: adjustsFontSizeToFit ужимает всю
+              строку целиком, поэтому «19 / 72» не режется при трёхзначных числах. */}
+          <Text
+            style={styles.countBig}
+            numberOfLines={1}
+            adjustsFontSizeToFit
+            minimumFontScale={0.5}
+          >
+            {displayCount}
+            <Text style={styles.countSep}>{' / '}</Text>
             <Text style={styles.countSmall}>{data.total}</Text>
-          </View>
+          </Text>
           <Text style={styles.counterCaption}>
             {username ? `@${username}` : 'АЧИВОК ОТКРЫТО'}
           </Text>
@@ -268,31 +336,29 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 0,
   },
-  counterRow: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-  },
   countBig: {
-    fontSize: 56,
-    lineHeight: 60,
+    fontSize: 52,
     color: M_IVORY,
     fontFamily: 'RubikMonoOne-Regular',
     letterSpacing: -1,
+    textAlign: 'left',
+    alignSelf: 'stretch',
   },
   countSep: {
-    fontSize: 38,
+    fontSize: 36,
     color: M_GOLD,
     opacity: 0.85,
-    marginHorizontal: 4,
     fontFamily: 'RubikMonoOne-Regular',
   },
   countSmall: {
-    fontSize: 38,
+    fontSize: 36,
     color: M_IVORY_MUTED,
     fontFamily: 'RubikMonoOne-Regular',
   },
   counterCaption: {
     marginTop: 4,
+    textAlign: 'left',
+    alignSelf: 'stretch',
     fontSize: 11,
     letterSpacing: 1.6,
     textTransform: 'uppercase',
