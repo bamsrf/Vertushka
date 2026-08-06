@@ -1,5 +1,5 @@
 // Финальные PNG-дизайны пинов (512×512). Ключ — icon_slug ачивки.
-// Источник — _raw/*.png (2048²), ресайз через sips -Z 512.
+// Источник — генерации после removebg, вписаны в квадрат 512² с прозрачным паддингом.
 // Показываются ТОЛЬКО для открытых ачивок (см. AchievementPin.pickAsset).
 import type { ImageSourcePropType } from 'react-native';
 
@@ -18,6 +18,21 @@ export const DESIGN_PNGS: Record<string, ImageSourcePropType> = {
   c5_collectible_x15: require('./c5_collectible_x15.png'),
   c6_hot_in_wishlist: require('./c6_hot_in_wishlist.png'),
   d3_country_x30: require('./d3_country_x30.png'),
+  d4_japanese_x10: require('./d4_japanese_x10.png'),
+  d5_melodiya_x10: require('./d5_melodiya_x10.png'),
+  d6_uk_collectible_x3: require('./d6_uk_collectible_x3.png'),
+  e1_60s: require('./e1_60s.png'),
+  e2_70s: require('./e2_70s.png'),
+  e3_80s: require('./e3_80s.png'),
+  e4_modern: require('./e4_modern.png'),
+  e5_pre_1960: require('./e5_pre_1960.png'),
+  f2_diversity_10: require('./f2_diversity_10.png'),
+  f3_jazz_x25: require('./f3_jazz_x25.png'),
+  f4_electronic_x25: require('./f4_electronic_x25.png'),
+  j1_first_gift: require('./j1_first_gift.png'),
+  j2_gift_done: require('./j2_gift_done.png'),
+  j3_three_recipients: require('./j3_three_recipients.png'),
+  k3_followers_x5: require('./k3_followers_x5.png'),
   meta_foundation: require('./meta_foundation.png'),
   meta_scale: require('./meta_scale.png'),
   r_self_titled: require('./r_self_titled.png'),

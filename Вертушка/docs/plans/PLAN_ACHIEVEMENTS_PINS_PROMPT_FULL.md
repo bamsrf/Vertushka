@@ -286,7 +286,7 @@ Same enamel pin style as the previous Vertushka pins (gold contour, navy outline
 Output: 1024×1024 PNG, transparent background.
 ```
 
-#### `D4_japanese_x10` — Из Токио 🌸
+#### `D4_japanese_x10` — Из Японии 🌸
 > Метафора: 10 японских прессов — тория-ворота перед пластинкой, Фудзи на фоне.
 
 ```text

@@ -8,7 +8,7 @@ Phase 3 (реализовано): считает по `Record.country` / `Record
 - D1 «Космополит»       — 5 разных стран
 - D2 «Глобус»           — 15 стран
 - D3 «Кругосветка»      — 30 стран
-- D4 «Из Токио»         — 10 японских прессов (country=Japan)
+- D4 «Из Японии»         — 10 японских прессов (country=Japan)
 - D5 «Мелодия»          — 10 пластинок Melodiya (label ILIKE)
 - D6 «Британский почерк» — 3 коллекционки country=UK
 - D7 «Made in Germany»  — 10 пластинок Germany / West Germany / East Germany
@@ -244,7 +244,7 @@ DEFINITIONS: list[AchievementDefinition] = [
     ),
     AchievementDefinition(
         code=D4_CODE,
-        title_ru="Из Токио",
+        title_ru="Из Японии",
         description_ru="10 японских прессов.",
         description_done_ru="10 японских прессов собрано.",
         series="geography",
