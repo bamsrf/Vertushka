@@ -11,7 +11,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/Users/vladislavrumancev/Desktop/Cursor/.claude/hooks/lint-changed.sh",
+            "command": "/Users/vladislavrumancev/Cursor/.claude/hooks/lint-changed.sh",
             "timeout": 30,
             "statusMessage": "Linting changed files..."
           }
