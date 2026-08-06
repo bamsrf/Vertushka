@@ -5,7 +5,7 @@ description: Инкрементальный gbrain-sync — подтянуть �
 Запусти инкрементальную синхронизацию gbrain. Шаги:
 
 1. Вызови MCP `mcp__gbrain__sync_brain` с аргументами:
-   - `repo`: `/Users/vladislavrumancev/Desktop/Cursor` (фактический git-root репозитория Vertushka, несмотря на то что `Вертушка/` — подкаталог)
+   - `repo`: `/Users/vladislavrumancev/Cursor` (фактический git-root репозитория Vertushka, несмотря на то что `Вертушка/` — подкаталог)
    - `no_embed`: `true` (embeddings выключены в `~/.gbrain/config.json`)
    - `no_pull`: `false` (gbrain сам сделает `git pull` перед синком)
 
