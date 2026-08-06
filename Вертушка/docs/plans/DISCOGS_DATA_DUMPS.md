@@ -21,15 +21,41 @@
 Discogs выкладывает 4 типа дампов **каждый месяц 1-го числа** на публичный S3:
 
 ```
-https://discogs-data-dumps.s3.us-west-2.amazonaws.com/index.html
+https://data.discogs.com/?prefix=data/{YEAR}/
 ```
+
+> ⚠️ **Прямой S3-бакет мёртв (проверено 2026-08-06).**
+> `discogs-data-dumps.s3.us-west-2.amazonaws.com` отдаёт `403 AccessDenied` на
+> всё, включая `index.html` и старые файлы. Единственная рабочая точка входа —
+> `data.discogs.com`, ссылка на файл выглядит так:
+> `https://data.discogs.com/?download=data%2F2026%2Fdiscogs_20260801_releases.xml.gz`
+>
+> **Качать с прода нельзя.** Cloudflare встречает IP дата-центра
+> JS-челленджем: `curl` получает 403 и HTML. Дамп качается на машине с
+> «обычным» IP, на прод уезжает только CSV.gz — см.
+> `scripts/refresh_discogs_dump.sh`.
+>
+> **Докачки нет.** На `Range: bytes=1000000-1000999` сервер отвечает `200` с
+> `content-length: 11200898615` и начинает лить файл сначала — `curl -C -`
+> бесполезен, обрыв означает старт заново.
+>
+> **Обрывы — норма.** 11.2 ГБ одним потоком: наблюдались `rc=92` (HTTP/2 stream
+> INTERNAL_ERROR у Cloudflare на ~5 ГБ), `rc=28` (просадка скорости), `rc=56`
+> сразу после оборванной попытки (похоже на троттлинг). Лечится `--http1.1`,
+> мягким `--speed-time 300` и паузой между заходами — всё это уже в
+> `refresh_discogs_dump.sh`.
+>
+> **Проверять sha256 обязательно.** `HEAD` не отдаёт `Content-Length` (только
+> `GET`), и при обрыве curl раньше завершался с кодом 0: первая загрузка дала
+> 7.29 ГБ вместо 11.2, «успешно». Эталон — `discogs_YYYYMMDD_CHECKSUM.txt`
+> рядом с дампом.
 
 | Файл | Содержит | Размер сжатый | Разжатый |
 |---|---|---|---|
-| `discogs_YYYYMMDD_releases.xml.gz` | Все releases (пресс/издание) — главное что нам нужно | ~5 ГБ | ~25-30 ГБ |
-| `discogs_YYYYMMDD_masters.xml.gz` | Master-releases (объединяют все версии одного альбома) | ~600 МБ | ~3 ГБ |
-| `discogs_YYYYMMDD_artists.xml.gz` | Артисты | ~300 МБ | ~1.5 ГБ |
-| `discogs_YYYYMMDD_labels.xml.gz` | Лейблы | ~50 МБ | ~250 МБ |
+| `discogs_YYYYMMDD_releases.xml.gz` | Все releases (пресс/издание) — главное что нам нужно | ~10.4 ГБ | ~50 ГБ |
+| `discogs_YYYYMMDD_masters.xml.gz` | Master-releases (объединяют все версии одного альбома) | ~593 МБ | ~3 ГБ |
+| `discogs_YYYYMMDD_artists.xml.gz` | Артисты | ~472 МБ | ~1.5 ГБ |
+| `discogs_YYYYMMDD_labels.xml.gz` | Лейблы | ~86 МБ | ~250 МБ |
 
 Формат: **XML** (один большой файл на 17-18 млн элементов). Поддерживает stream-парсинг через `lxml.etree.iterparse` — без загрузки всего в память.
 
@@ -309,10 +335,88 @@ Backend/
 
 ---
 
-## 10. Связанные документы
+## 10. Обновление индекса — раз в 2 месяца
+
+`scripts/refresh_discogs_dump.sh` — полный цикл одной командой. **Запускать на
+своей машине, не на проде** (Cloudflare, см. предупреждение в §2).
+
+```bash
+scripts/refresh_discogs_dump.sh          # найдёт свежий дамп, скачает, зальёт
+KEEP_DUMP=1 scripts/refresh_discogs_dump.sh   # не удалять 10 ГБ после прогона
+DUMP_DATE=20260701 scripts/refresh_discogs_dump.sh
+```
+
+Что происходит:
+
+| Шаг | Скрипт | Время |
+|---|---|---|
+| Скачать releases-дамп | `curl` | ~40 мин |
+| Извлечь полные описания формата + новинки | `app.scripts.extract_release_formats` | ~15 мин |
+| Залить описания в `discogs_release_formats` | `app.scripts.load_release_formats` | ~10 мин |
+| Вставить новые релизы в индекс | `app.scripts.load_new_releases` | ~2 мин |
+| Сбросить `artist_masters:*` в Redis | — | сек |
+
+**Почему раз в 2 месяца:** дамп выходит ~1-го числа, дельта за месяц мелкая, а
+каждый прогон — 10 ГБ трафика и час времени. Реже — новинки заметно отстают.
+
+Автозапуск — `scripts/ru.vertushka.discogs-refresh.plist` (launchd, нечётные
+месяцы, 5-е число, 03:20; если Mac спит — отработает при пробуждении):
+
+```bash
+cp scripts/ru.vertushka.discogs-refresh.plist ~/Library/LaunchAgents/
+sed -i '' "s|__REPO__|$PWD|g" ~/Library/LaunchAgents/ru.vertushka.discogs-refresh.plist
+launchctl load ~/Library/LaunchAgents/ru.vertushka.discogs-refresh.plist
+```
+
+Лог — `/tmp/vertushka-discogs-refresh.log`. Ручной прогон:
+`launchctl start ru.vertushka.discogs-refresh`.
+
+**Почему две таблицы, а не UPDATE.** `discogs_releases_index` — 13.1M строк,
+heap 2.95 ГБ; UPDATE переписал бы весь heap и до VACUUM удвоил его, а на проде
+свободно ~4 ГБ. Полные описания живут в отдельной `discogs_release_formats`
+(только релизы с ≥2 описаниями, ~60% дампа), запрос дискографии берёт
+`COALESCE(f.format_full, i.format_type)`.
+
+**Новинки определяются по `discogs_id > max(id в индексе)`** — id Discogs
+инкрементальны. Строки везут `artist_ids` и `is_unofficial` в той же CSV: без
+первого релиз не виден на экране артиста (фильтр по GIN `artist_ids`), без
+второго дискография тонет в бутлегах.
+
+---
+
+## 11. ⚠️ Индекс покрывает только 2/3 дампа
+
+Замерено 2026-08-06: в `discogs_releases_index` **13.12M** строк, в дампе
+2026-08-01 — **19.34M** релизов. Выборка каждого 1000-го id из дампа: в индексе
+нашлось **66.8%**. Не хватает ~6.4M релизов, и пропуски размазаны по всему
+диапазону id, а не отрезаны хвостом.
+
+**Вероятная причина** — баг в `ingest_discogs_dump._copy_batch` под флагом
+`--skip-existing`: staging-таблица создавалась с `ON COMMIT DELETE ROWS`, а
+asyncpg работает в автокоммите, поэтому COPY коммитился сам и чистил staging
+ДО того, как отработает `INSERT ... SELECT`. Ветка молча вставляла ноль строк и
+рапортовала об успехе. Если первичный ingest прерывали и возобновляли с этим
+флагом — всё после точки возобновления не записалось. Баг исправлен
+2026-08-06 (явный `TRUNCATE _stage` вместо `ON COMMIT`), но данные сами собой
+не появятся.
+
+**Что это ломает:** matcher не найдёт локально треть релизов и уйдёт в Discogs
+API; дискография артиста неполна; поиск не видит эти релизы.
+
+**Чего НЕ чинит дельта-обновление:** `--since-id` берёт только id выше
+максимума в индексе — это новинки, а не пропуски в середине. Закрыть разрыв
+можно только анти-джойном всего дампа против индекса.
+
+**Почему не сделано сразу:** +6.4M строк это ~2 ГБ вместе с семью индексами
+таблицы, а на проде свободно 2.7 ГБ (91% занято). Сначала нужно место.
+
+---
+
+## 12. Связанные документы
 
 - [PARSING.md](PARSING.md) — текущая операционка
 - [SHOPS_PARSING.md](SHOPS_PARSING.md) — план магазинов
 - [OFFERS_UX.md](OFFERS_UX.md) — UI карусели/Hot Stock
+- [artist_page_and_filters.md](artist_page_and_filters.md) — классификация типа релиза, ради которой нужны полные описания
 - Discogs Developers: https://www.discogs.com/developers/#page:database-download
-- Discogs Data Dumps Index: https://discogs-data-dumps.s3.us-west-2.amazonaws.com/index.html
+- Discogs Data Dumps: https://data.discogs.com/

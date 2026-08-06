@@ -23,13 +23,14 @@ import { useCacheStore } from '../../lib/store';
 import { Artist, MasterSearchResult } from '../../lib/types';
 import { Colors, Typography, Spacing, BorderRadius } from '../../constants/theme';
 
-type ReleaseFilter = 'album' | 'ep' | 'single';
+type ReleaseFilter = 'album' | 'ep' | 'single' | 'compilation';
 type SortMode = 'year_desc' | 'year_asc' | 'title';
 
 const FILTERS: { key: ReleaseFilter; label: string }[] = [
   { key: 'album', label: 'Альбомы' },
   { key: 'ep', label: 'EP' },
   { key: 'single', label: 'Синглы' },
+  { key: 'compilation', label: 'Сборники' },
 ];
 
 const SORT_OPTIONS: { key: SortMode; label: string }[] = [
@@ -42,10 +43,12 @@ const SORT_OPTIONS: { key: SortMode; label: string }[] = [
 const serverSortOrder = (mode: SortMode): 'asc' | 'desc' =>
   mode === 'year_desc' ? 'desc' : 'asc';
 
-const matchesFilter = (master: MasterSearchResult, filter: ReleaseFilter): boolean => {
-  if (!master.release_type) return filter === 'album';
-  return master.release_type === filter;
-};
+// Пустой release_type — старый клиентский кэш (до появления 'compilation'/'other').
+// Раньше он приравнивался к альбому, и вместе с ним в «Альбомы» падало всё
+// неопознанное: интервью-диски, сэмплеры, transcription-катки. Теперь такие
+// карточки видны только без фильтра — бэкенд типизирует каждую.
+const matchesFilter = (master: MasterSearchResult, filter: ReleaseFilter): boolean =>
+  master.release_type === filter;
 
 type FilterChipProps = {
   label: string;

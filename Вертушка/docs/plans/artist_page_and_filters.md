@@ -69,60 +69,94 @@ final_cover = (
 
 ## 3. Фильтры: классификация релизов
 
-### `_guess_release_type` — правила
+### Единственный источник правды — `app/services/release_type.py`
 
-```python
-@staticmethod
-def _guess_release_type(format_str: str | None) -> str | None:
-    if not format_str:
-        return "album"   # дефолт — никогда не возвращать None
-    fmt = format_str.lower()
-    if "single" in fmt:
-        return "single"
-    if "ep" in fmt or "mini" in fmt:
-        return "ep"
-    if "album" in fmt or "lp" in fmt or "compilation" in fmt:
-        return "album"
-    return "album"       # fallback — тоже album
-```
+Правила живут в одном модуле. Локальный дамп-индекс, live Discogs и мобильный
+фолбэк обязаны звать его, а не заводить свои регексы. **Раньше правила были
+продублированы** в SQL-агрегатах `get_artist_masters_local`, в
+`_guess_release_type` и в `_is_video` — копии разошлись (`umd` был в питоне, но
+не в SQL), и каждый течь чинился точечно: это и есть механика «мешанины».
 
-**Ключевое правило: дефолт всегда `"album"`, никогда `None`.**  
-Иначе релизы без чёткого формата не попадут ни в один фильтр.
+Модель: Discogs `<descriptions>` мешает три ортогональные вещи — **тип релиза**
+(Album, Single, EP, Mini-Album, Maxi-Single, Compilation), **носитель/тираж**
+(LP, 12", 45 RPM, Reissue, Limited Edition) и **служебное** (Promo, Sampler,
+Advance, Transcription, Interview, DVD-Video). Классификатор разбирает их
+именно в таком порядке: служебное → тип → носитель.
+
+**Дефолт — `other`, не `album`.** Прежнее правило «никогда не возвращать None,
+всё непонятное → album» и набивало «Альбомы» интервью-дисками, radio-сэмплерами
+и transcription-катками. Замер по четырём артистам после правки правил и
+ре-ингеста полных описаний:
+
+| Артист | «Альбомы» было | стало | Сборники | EP | Синглы | Другое |
+|---|---|---|---|---|---|---|
+| Eminem | 46 | 16 | 13 | 1 | 87 | 81 |
+| Radiohead | 52 | 19 | 8 | 12 | 61 | 110 |
+| Queen | 169 | 35 | 71 | 9 | 182 | 156 |
+| Daft Punk | 29 | 10 | 11 | 2 | 24 | 33 |
+
+### Ловушки, на которые есть регресс-тесты
+
+| Строка | Тип | Почему |
+|---|---|---|
+| `CD, Mini-Album` | `ep` | Подстрока «album» уводила его в альбомы (Radiohead «Airbag / How Am I Driving?») |
+| `CD, Mini` | нет данных | Это 3" CD — **носитель**. По нему вся сингловая дискография Queen числилась как EP |
+| `Cassette, Single Sided` | нет данных | Односторонняя кассета, не сингл. 42k строк в дампе |
+| `DVD, Album` | `album` | DVD-Audio — музыкальный носитель. Видео только по явным маркерам |
+| `VHS, Compilation` | `other` | Явное видео перебивает тип |
+| `CD, Sampler, Promo` | `other` | Служебное проверяется раньше типа |
+
+### Голосование по группе версий
+
+Тип мастера — **плюрализм** по различным форматам его изданий, ничья ломается по
+специфичности `ep > single > compilation > album`. Стоявший здесь `bool_or`
+давал альбому приоритет над всем: у «My Iron Lung» одно `Vinyl, LP` перебивало
+четыре EP-версии. Служебные версии в голосовании не участвуют, но если ВСЕ
+версии служебные — группа и есть промо-материал → `other`.
 
 ### Формат из Search API
 
 ```python
 formats = item.get("format", [])          # ["CD", "Album"] или ["Vinyl", "Single"]
 format_str = ", ".join(formats) if formats else None
-release_type = self._guess_release_type(format_str)
+release_type = classify_format(format_str)
 ```
 
-Search API возвращает `format` как **список строк** (не строку). Объединяем через `", "` перед передачей в `_guess_release_type`.
+Search API возвращает `format` как **список строк** (не строку). Объединяем через `", "`.
 
-### Три фильтра на экране артиста (Mobile)
+### Четыре фильтра на экране артиста (Mobile)
 
 ```typescript
-type ReleaseFilter = 'album' | 'ep' | 'single';
-
-const FILTERS: { key: ReleaseFilter; label: string }[] = [
-  { key: 'album', label: 'Альбомы' },
-  { key: 'ep',    label: 'EP'      },
-  { key: 'single', label: 'Синглы' },
-];
+type ReleaseFilter = 'album' | 'ep' | 'single' | 'compilation';
 ```
 
-**Нет фильтра "Другое"** — Search API всегда возвращает `format[]`, поэтому `release_type` никогда не бывает `null` у реальных данных.
+`Альбомы` — только студийные и концертные (дескриптор Album/LP). Сборники,
+бест-оф и микстейпы уехали в свой чип `Сборники`: раньше они сидели в
+«Альбомах» вперемешку с фанатскими «Special Sampler 2003» и «Before Kid A».
 
-### `matchesFilter` — логика на мобиле
+`other` в чипы не попадает — такие карточки видны только без фильтра.
+`matchesFilter` больше **не** приравнивает пустой `release_type` к альбому.
 
-```typescript
-const matchesFilter = (master: MasterSearchResult, filter: ReleaseFilter): boolean => {
-  if (!master.release_type) return filter === 'album';  // страховка на случай null
-  return master.release_type === filter;
-};
-```
+### Полные описания формата — `discogs_release_formats`
 
-Если `release_type` всё же `null` (старый кэш) — относим к Альбомам.
+`format_type` в индексе несёт только **первое** описание первого формата: у
+«Curtain Call (Album Sampler)» Discogs отдаёт `['Sampler','Promo','Compilation']`,
+а в базе лежало `CD, Sampler`. Из-за этого 1.06M строк оставались без типового
+маркера, а radio-show LP Queen («Innerview», «BBC Rock Hour-309») выглядели
+альбомами — их `Transcription` терялся при ингесте.
+
+Ре-ингест 2026-08-06 залил полные описания в отдельную таблицу
+`discogs_release_formats` (8.5M строк, 747 МБ — только релизы, реально
+существующие в индексе). Запрос дискографии берёт
+`COALESCE(f.format_full, i.format_type)`; строки с 0–1 описанием в таблицу не
+пишутся, там `format_type` и так полон. Обновляется вместе с индексом —
+`scripts/refresh_discogs_dump.sh`, см.
+[DISCOGS_DATA_DUMPS.md](DISCOGS_DATA_DUMPS.md) §10.
+
+Цена: запрос дискографии самого тяжёлого артиста (Queen, 6837 релизов) вырос с
+~45 мс до ~380 мс — 6837 PK-lookup'ов в таблицу, которая не влезает в 1.9 ГБ
+RAM прода. Типовой артист — 31 мс. Экран кэшируется на 300 с, так что цена
+приемлемая, но при следующем упоре в latency начинать надо отсюда.
 
 ---
 
@@ -148,8 +182,14 @@ clean_name = re.sub(r'\s*\(\d+\)\s*$', '', artist_name).strip()
 
 **После изменения логики обложек/фильтров — обязательно сбросить кэш:**
 ```bash
-ssh deploy@85.198.85.12 'redis-cli --scan --pattern "artist_masters:*" | xargs redis-cli del'
+ssh deploy@85.198.85.12 'docker exec vertushka_redis redis-cli --scan --pattern "artist_masters:*" | xargs -r docker exec -i vertushka_redis redis-cli del'
 ```
+
+Local-first путь (дамп-индекс) в Redis не кэшируется — там достаточно рестарта
+API. Но выдача едет ещё через два слоя: nginx `Cache-Control: max-age=300` и
+клиентский `useCacheStore.artistMasters` (TTL 5 минут, in-memory). Оба
+рассасываются сами; при проверке фикса на устройстве — перезапустить приложение,
+иначе увидишь старую классификацию.
 
 ---
 
@@ -159,6 +199,8 @@ ssh deploy@85.198.85.12 'redis-cli --scan --pattern "artist_masters:*" | xargs r
 |-----|--------------|
 | Вернуть `/artists/{id}/releases` | Нет `format[]` → фильтры сломаются; нет `cover_image` → пиксели |
 | Убрать проверку `api-img.discogs.com` в `_thumb_to_cover` | Подписанные URL истекают, изображения будут битыми |
-| Сделать дефолт `_guess_release_type` = `None` | Релизы без формата не попадут ни в один фильтр |
-| Передавать сырой `format` (список) напрямую | `_guess_release_type` ожидает строку, не список |
-| Добавить фильтр "Другое" | Он всегда будет пустым — Search API заполняет `format[]` |
+| Завести регекс типа релиза вне `release_type.py` | Копии расходятся и чинятся по одной — так и появилась мешанина в «Альбомах» |
+| Вернуть дефолт «непонятное → album» | Интервью, сэмплеры, transcription-диски и DVD-концерты снова заполнят «Альбомы» |
+| Считать `Mini` за EP, а `Single Sided` за сингл | Это носители (3" CD и односторонняя кассета), не типы |
+| Приравнять пустой `release_type` к альбому на мобиле | Тот же дефолт, только на клиенте |
+| Судить тип мастера по одному representative-формату | Он случайный: DVD-A издание уводило флагманский альбом в `other` |

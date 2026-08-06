@@ -28,6 +28,7 @@ from app.services.cache import (
 )
 from app.services.search_cache_db import get_from_search_cache, save_to_search_cache
 from app.services.artist_name import clean_artist_name
+from app.services.release_type import OTHER, classify_format
 from app.schemas.record import (
     RecordSearchResult,
     RecordSearchResponse,
@@ -1388,51 +1389,27 @@ class DiscogsService:
 
     @staticmethod
     def _guess_release_type(format_str: str | None) -> str | None:
-        """Определение типа релиза по строке формата из Discogs releases endpoint.
-        Discogs возвращает format как строку вида '12", Album' или 'CD, Single' и т.д.
+        """Тип релиза по строке формата (`'12", Album'`, `'CD, Single'`).
+
+        Тонкая обёртка над `release_type.classify_format` — правила живут там,
+        см. модуль про то, почему они не должны дублироваться. Отличие от
+        `classify_format`: пустых доказательств здесь не бывает, «не знаю»
+        сворачивается в `other`. Дефолт "album", стоявший тут раньше, и был
+        причиной мешанины — интервью, сэмплеры и transcription-диски по нему
+        оказывались в «Альбомах».
         """
-        if not format_str:
-            return "album"
-        fmt = format_str.lower()
-        if "single" in fmt or "maxi" in fmt:
-            return "single"
-        if "ep" in fmt or "mini" in fmt:
-            return "ep"
-        if "album" in fmt or "lp" in fmt or "compilation" in fmt:
-            return "album"
-        # Дюймовые форматы без Album/LP-маркера: 7" — сингл всегда; 12"/10"
-        # без альбомного маркера — макси/ремикс-катки; шеллак 78 rpm — синглы
-        # эпохи. Раньше всё это падало в default "album" и забивало фильтр
-        # «Альбомы» на экране артиста (dump format_type = 'Vinyl, 7"' и т.п.).
-        if '7"' in fmt or "shellac" in fmt or "78 rpm" in fmt:
-            return "single"
-        if '12"' in fmt or '10"' in fmt:
-            return "single"
-        return "album"
+        return classify_format(format_str) or OTHER
 
     @staticmethod
     def _is_video(format_str: str | None) -> bool:
-        """Видео-носители (DVD-Video/VHS/Blu-ray/LaserDisc) → release_type "other".
-        ВАЖНО: "dvd" сам по себе НЕ видео — DVD-Audio/DVD-A это музыкальный формат
-        (напр. альбом The Eminem Show). Считаем видео только при явных видео-
-        маркерах, либо "dvd" без "audio" в строке."""
+        """Видео-носитель (DVD-Video/VHS/Blu-ray/LaserDisc/UMD) → `other`.
+
+        ВАЖНО: голый "dvd" НЕ видео — DVD-Audio музыкальный носитель (напр.
+        издание The Eminem Show). См. `release_type._is_service`.
+        """
         if not format_str:
             return False
-        f = format_str.lower()
-        # Броадкаст/аналоговое видео: промо-видеокассеты Эминема (U-matic,
-        # Betacam SP) с маркером Compilation ложно попадали в «Альбомы».
-        if any(k in f for k in (
-            "vhs", "blu-ray", "bluray", "laserdisc", "umd",
-            "u-matic", "umatic", "betacam", "betamax",
-            "video 2000", "video2000", "video8", "hi8", "minidv", "mini dv",
-            "vcd", "svcd", "ced",
-        )):
-            return True
-        if "dvd-video" in f or "dvdvideo" in f:
-            return True
-        if ("dvd" in f or "video" in f) and "audio" not in f:
-            return True
-        return False
+        return classify_format(format_str) == OTHER
 
     @staticmethod
     def _type_by_count(track_count: int) -> str:
@@ -1679,7 +1656,7 @@ class DiscogsService:
                 thumb_image_url = s.get("thumb")
                 formats = s.get("format", [])
                 format_str = ", ".join(formats) if formats else None
-                release_type = self._guess_release_type(format_str)
+                release_type = classify_format(format_str)
 
             # NB: видео-детект для МАСТЕРОВ не делаем. format мастера в
             # /artists/{id}/releases — произвольный representative среди всех
@@ -1694,8 +1671,10 @@ class DiscogsService:
                     release_type = info.get("release_type")
 
             # Тип релиза fallback: строка format из /artists/{id}/releases.
+            # OTHER в конце, а не "album": мастер без типового дескриптора —
+            # чаще промо/интервью/transcription, чем альбом.
             if release_type is None:
-                release_type = self._guess_release_type(item.get("format"))
+                release_type = classify_format(item.get("format")) or OTHER
 
             try:
                 year = int(item["year"]) if item.get("year") else None
@@ -1792,12 +1771,14 @@ class DiscogsService:
             thumb = item.get("thumb") or None
             card = card_by_id.get(item_id) or {}
             cover = card.get("cover") or release_cover_by_id.get(item_id) or thumb
-            if self._is_video(item.get("format")):
-                release_type = "other"
-            else:
-                release_type = card.get("release_type") or self._guess_release_type(
-                    item.get("format")
-                )
+            # Дескриптор формата важнее числа треков: у 8-трекового `CD,
+            # Maxi-Single` подсчёт дал бы "album". Track count — только когда
+            # формат не несёт типа ('CD', 'Cassette, Reissue').
+            release_type = (
+                classify_format(item.get("format"))
+                or card.get("release_type")
+                or OTHER
+            )
             all_results.append(MasterSearchResult(
                 master_id=f"r{item_id}",
                 title=title,

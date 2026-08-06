@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Обновление дамп-индекса Discogs раз в 2 месяца.
+
+  Живёт на машине разработчика, а не на проде: data.discogs.com встречает IP
+  дата-центра JS-челленджем Cloudflare, прод дамп скачать не может (см.
+  docs/plans/DISCOGS_DATA_DUMPS.md §2).
+
+  Установка:
+    cp scripts/ru.vertushka.discogs-refresh.plist ~/Library/LaunchAgents/
+    # подставить свой путь к репозиторию вместо __REPO__
+    sed -i '' "s|__REPO__|$PWD|g" ~/Library/LaunchAgents/ru.vertushka.discogs-refresh.plist
+    launchctl load ~/Library/LaunchAgents/ru.vertushka.discogs-refresh.plist
+
+  Проверка / ручной запуск:
+    launchctl list | grep vertushka
+    launchctl start ru.vertushka.discogs-refresh
+    tail -f /tmp/vertushka-discogs-refresh.log
+
+  Снять:
+    launchctl unload ~/Library/LaunchAgents/ru.vertushka.discogs-refresh.plist
+
+  Нечётные месяцы, 5-е число, 03:20 — дампы выкладывают 1-2 числа, к 5-му они
+  точно на месте. Если Mac спит, launchd запустит задачу при пробуждении.
+  Прогон занимает ~час и тянет 10 ГБ, поэтому ночью и не чаще.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>ru.vertushka.discogs-refresh</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>-lc</string>
+        <string>__REPO__/scripts/refresh_discogs_dump.sh</string>
+    </array>
+
+    <key>StartCalendarInterval</key>
+    <array>
+        <dict><key>Month</key><integer>1</integer><key>Day</key><integer>5</integer><key>Hour</key><integer>3</integer><key>Minute</key><integer>20</integer></dict>
+        <dict><key>Month</key><integer>3</integer><key>Day</key><integer>5</integer><key>Hour</key><integer>3</integer><key>Minute</key><integer>20</integer></dict>
+        <dict><key>Month</key><integer>5</integer><key>Day</key><integer>5</integer><key>Hour</key><integer>3</integer><key>Minute</key><integer>20</integer></dict>
+        <dict><key>Month</key><integer>7</integer><key>Day</key><integer>5</integer><key>Hour</key><integer>3</integer><key>Minute</key><integer>20</integer></dict>
+        <dict><key>Month</key><integer>9</integer><key>Day</key><integer>5</integer><key>Hour</key><integer>3</integer><key>Minute</key><integer>20</integer></dict>
+        <dict><key>Month</key><integer>11</integer><key>Day</key><integer>5</integer><key>Hour</key><integer>3</integer><key>Minute</key><integer>20</integer></dict>
+    </array>
+
+    <key>StandardOutPath</key>
+    <string>/tmp/vertushka-discogs-refresh.log</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/vertushka-discogs-refresh.log</string>
+
+    <!-- Прогон длинный и сетевой; не даём macOS усыплять машину посреди него. -->
+    <key>ProcessType</key>
+    <string>Background</string>
+    <key>LowPriorityIO</key>
+    <true/>
+</dict>
+</plist>

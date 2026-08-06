@@ -67,7 +67,7 @@ async def get_artist_masters_local(
     дойдут фоном, клиент терпит null.
     """
     from app.schemas.record import MasterSearchResponse, MasterSearchResult
-    from app.services.discogs import DiscogsService
+    from app.services.release_type import classify_group
 
     if not str(artist_id).isdigit():
         return None
@@ -89,22 +89,30 @@ async def get_artist_masters_local(
                     MIN(year) AS year,
                     (array_agg(title ORDER BY year ASC NULLS LAST, discogs_id))[1] AS title,
                     (array_agg(cover_image_url ORDER BY (cover_image_url IS NULL), year ASC NULLS LAST))[1] AS cover,
-                    (array_agg(format_type ORDER BY year ASC NULLS LAST, discogs_id))[1] AS format_type,
-                    -- Тип релиза голосованием по ВСЕМ версиям группы: у синглов
-                    -- с цифровым первым изданием ('File, MP3', без маркеров)
-                    -- одиночный representative давал ложный 'album'.
-                    bool_or(format_type ~* 'album|lp|compilation') AS has_album,
-                    bool_or(format_type ~* '\\mep\\M|mini') AS has_ep,
-                    bool_or(format_type ~* 'single|maxi|7"|10"|12"|shellac|78 rpm') AS has_single,
-                    bool_and(format_type ILIKE 'file%') AS all_file,
-                    -- ВСЕ официальные издания — видео (DVD-концерты, VHS) или
-                    -- промо (snippet tapes, live-промо) → "other", не альбомы.
-                    bool_and(format_type ~* 'dvd|vhs|blu-ray|laserdisc|u-?matic|betacam|betamax|video ?2000|video8|hi8|minidv|mini dv|vcd|svcd') AS all_video,
-                    bool_and(format_type ~* 'promo') AS all_promo,
+                    (array_agg(fmt ORDER BY year ASC NULLS LAST, discogs_id))[1] AS format_type,
+                    -- Форматы ВСЕХ версий группы: тип считает release_type.py,
+                    -- а не SQL-регексы. Дублирующие правила здесь и в питоне
+                    -- расходились (umd был в _is_video, но не в регексе) и
+                    -- чинились точечно. DISTINCT ограничивает размер массива у
+                    -- мастеров с сотнями изданий, голосованию хватает.
+                    array_agg(DISTINCT fmt) AS fmts,
                     MIN(discogs_id) AS main_release_id
-                FROM discogs_releases_index
-                WHERE artist_ids @> ARRAY[CAST(:aid AS bigint)]
-                AND NOT is_unofficial
+                FROM (
+                    -- format_full несёт ВСЕ описания Discogs, format_type —
+                    -- только первое (усечение в ingest). Без полного списка
+                    -- 'Vinyl, 12", 33 ⅓ RPM, EP' лежит как 'Vinyl, 12"' и EP
+                    -- уходит в синглы, а 'Vinyl, LP, Transcription' (radio-show)
+                    -- выглядит альбомом. Строки с 0-1 описанием в side-таблицу
+                    -- не пишутся — там COALESCE и так берёт format_type.
+                    SELECT i.discogs_id, i.master_id, i.year, i.title,
+                           i.cover_image_url,
+                           COALESCE(f.format_full, i.format_type) AS fmt
+                    FROM discogs_releases_index i
+                    LEFT JOIN discogs_release_formats f
+                        ON f.discogs_id = i.discogs_id
+                    WHERE i.artist_ids @> ARRAY[CAST(:aid AS bigint)]
+                    AND NOT i.is_unofficial
+                ) src
                 GROUP BY COALESCE(master_id, discogs_id), (master_id IS NULL)
             ),
             dedup AS (
@@ -117,8 +125,7 @@ async def get_artist_masters_local(
                 )
             )
             SELECT d.gid, d.release_only, d.year, d.title, d.format_type,
-                   d.has_album, d.has_ep, d.has_single, d.all_file,
-                   d.all_video, d.all_promo,
+                   d.fmts,
                    d.main_release_id,
                    COALESCE(d.cover, mc.cover_image_url) AS cover,
                    COUNT(*) OVER () AS total
@@ -145,26 +152,12 @@ async def get_artist_masters_local(
     results = []
     for r in rows:
         release_only = r["release_only"]
-        # Видео-детект только для release-only (как в live-пути): format
-        # master-группы — случайный representative, DVD-A издание альбома
-        # ложно уводило бы флагман в "other".
-        if release_only and (
-            DiscogsService._is_video(r["format_type"])
-            or "promo" in (r["format_type"] or "").lower()
-        ):
-            release_type = "other"
-        elif not release_only and (r["all_video"] or r["all_promo"]):
-            release_type = "other"
-        elif r["has_album"]:
-            release_type = "album"
-        elif r["has_ep"]:
-            release_type = "ep"
-        elif r["has_single"] or r["all_file"]:
-            # all_file без маркеров = digital-only релиз без Album-пометки —
-            # у альбомов почти всегда есть Album хоть в одной версии.
-            release_type = "single"
-        else:
-            release_type = DiscogsService._guess_release_type(r["format_type"])
+        # У release-only группа = один релиз, его формат достоверен. У мастера
+        # голосуем по всем изданиям: одиночный representative — случайный
+        # (DVD-A издание альбома ложно уводило бы флагман в "other").
+        release_type = classify_group(
+            [r["format_type"]] if release_only else (r["fmts"] or [])
+        )
         if r["cover"]:
             mirror_name = f"{r['main_release_id']}" if release_only else f"m{r['gid']}"
             cover_url = f"{covers_base}/{mirror_name}.jpg"

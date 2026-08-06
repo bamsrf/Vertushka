@@ -144,20 +144,36 @@ def _parse_year(elem) -> int | None:
     return None
 
 
-def _derive_format(elem) -> str | None:
-    """`<formats><format name="Vinyl" qty="2"><descriptions><description>LP`.
+def derive_format(elem) -> tuple[str | None, int]:
+    """`(строка формата, число описаний)` для первого `<format>` релиза.
 
-    Возвращает короткую строку типа "Vinyl, LP" или "CD" — для отображения
-    и быстрого фильтра в matcher'е.
+    `<formats><format name="Vinyl"><descriptions><description>12"` →
+    `("Vinyl, 12\\", 33 ⅓ RPM, EP", 3)`.
+
+    ВСЕ описания, а не первое. До 2026-08 здесь бралось только первое, и это
+    ломало классификацию типа релиза (`services/release_type.py`): у
+    `['12"','33 ⅓ RPM','EP']` в базу попадало `Vinyl, 12"` — EP становился
+    синглом, а `['LP','Transcription']` (radio-show) выглядел альбомом. На
+    1.06M строк дампа типового маркера не оставалось вовсе.
+
+    Берём именно ПЕРВЫЙ `<format>`: у бокс-сета CD+DVD второй затащил бы
+    «DVD-Video» и увёл релиз в служебные.
     """
     fmt = elem.find(".//formats/format")
     if fmt is None:
-        return None
-    name = fmt.get("name") or ""
-    descriptions = [d.text for d in fmt.findall("descriptions/description") if d.text]
-    if descriptions:
-        return f"{name}, {descriptions[0]}".strip(", ")
-    return name or None
+        return None, 0
+    name = (fmt.get("name") or "").strip()
+    descriptions = [
+        d.text.strip() for d in fmt.findall("descriptions/description")
+        if d.text and d.text.strip()
+    ]
+    if not name and not descriptions:
+        return None, 0
+    return ", ".join([name, *descriptions]).strip(", "), len(descriptions)
+
+
+def _derive_format(elem) -> str | None:
+    return derive_format(elem)[0]
 
 
 def _norm_barcode_from_identifiers(elem) -> str | None:
@@ -264,10 +280,17 @@ async def _copy_batch(records: list[dict], skip_existing: bool) -> int:
         if skip_existing:
             # Staging table → INSERT ON CONFLICT — медленнее, но безопасно
             # для повторных запусков.
+            #
+            # Чистка staging — явным TRUNCATE, а НЕ `ON COMMIT DELETE ROWS`:
+            # asyncpg работает в автокоммите, COPY коммитится сам, и `ON COMMIT`
+            # сносил staging ДО того, как отработает INSERT ... SELECT. Ветка
+            # молча вставляла НОЛЬ строк и рапортовала об успехе — вероятная
+            # причина того, что в индексе 13.1M релизов вместо 19.3M дампа.
             await asyncpg_conn.execute(
                 "CREATE TEMP TABLE IF NOT EXISTS _stage "
-                "(LIKE discogs_releases_index INCLUDING DEFAULTS) ON COMMIT DELETE ROWS"
+                "(LIKE discogs_releases_index INCLUDING DEFAULTS)"
             )
+            await asyncpg_conn.execute("TRUNCATE _stage")
             await asyncpg_conn.copy_records_to_table(
                 "_stage", records=tuples, columns=_COLUMNS,
             )
