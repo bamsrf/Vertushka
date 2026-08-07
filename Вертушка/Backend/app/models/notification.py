@@ -21,6 +21,7 @@ NOTIFICATION_TYPES = {
     "wishlist_in_stock_alt",  # другая версия мастера появилась в продаже
     "wishlist_price_drop",  # цена listing упала
     "achievement_unlocked", # ты получил ачивку
+    "level_up",             # ты перешёл на новую ступень архетипа
     "milestone_unlocked",   # веха коллекции (100/500/1000)
     "digest_wishlist_in_stock",  # дайджест ≥5 «снова в продаже» за день
 }

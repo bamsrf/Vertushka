@@ -302,6 +302,16 @@ async def track_offer_click(
     )
     await db.commit()
 
+    # Серия «Рыночный нюх» живёт на этих кликах. emit_event глушит свои ошибки
+    # сам, но клик уже закоммичен — ачивки не должны ломать переход в магазин.
+    if current_user is not None:
+        from app.services.achievements.events import OFFER_CLICKED
+        from app.services.achievements.evaluator import emit_event
+
+        await emit_event(
+            db, current_user.id, OFFER_CLICKED, {"listing_id": str(listing.id)}
+        )
+
     return OfferClickResponse(click_id=click.id, url=final_url)
 
 

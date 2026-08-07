@@ -29,6 +29,8 @@ export function routeForPush(data: Record<string, unknown> | undefined): string 
   if (type === 'achievement_unlocked' || type === 'milestone_unlocked') {
     return code ? `/achievements?code=${code}` : '/achievements';
   }
+  // Уровень: ведём в hero-блок ачивок, где отыграется анимация повышения.
+  if (type === 'level_up') return '/achievements?levelup=1';
   if ((type === 'gift_booked' || type === 'gift_confirmed') && entityId) {
     return `/gift/${entityId}`;
   }

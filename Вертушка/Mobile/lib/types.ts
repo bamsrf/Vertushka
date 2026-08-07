@@ -873,6 +873,7 @@ export type NotificationType =
   | 'wishlist_in_stock_alt'
   | 'wishlist_price_drop'
   | 'achievement_unlocked'
+  | 'level_up'
   | 'milestone_unlocked'
   | 'digest_wishlist_in_stock';
 
@@ -989,7 +990,24 @@ export interface FeedItem {
 // ==================== Achievements ====================
 
 export type AchievementTierKey = 'simple' | 'notable' | 'rare' | 'epic' | 'legend';
-export type AchievementSeriesKey = 'foundation' | 'scale' | 'gifts' | 'community';
+export type AchievementSeriesKey =
+  | 'foundation'
+  | 'scale'
+  | 'gifts'
+  | 'community'
+  | 'contribution'
+  | 'rarity'
+  | 'geography'
+  | 'eras'
+  | 'genres'
+  | 'discography'
+  // Форматные серии. 'formats' видна всем, остальные три приходят с бэкенда
+  // только после того, как в коллекции появился соответствующий носитель —
+  // пустая полка «Кассеты 0/4» у виниловода была бы шумом.
+  | 'formats'
+  | 'cassettes'
+  | 'cds'
+  | 'boxsets';
 
 export interface AchievementTierInfo {
   key: AchievementTierKey;
@@ -1014,6 +1032,12 @@ export interface AchievementItem {
   unlocked_at: string | null;
   progress: number;
   progress_target: number;
+  /**
+   * Опыт за ачивку. У открытой — замороженный в момент анлока, у закрытой —
+   * сколько дадут сейчас. Может отсутствовать у старых версий API: тогда
+   * клиент падает на локальный вес тира (см. computeScore).
+   */
+  xp?: number;
 }
 
 export interface AchievementSeriesItem {
@@ -1031,6 +1055,12 @@ export interface MyAchievementsResponse {
   unlocked: number;
   random_unlocked: number;
   series: AchievementSeriesItem[];
+  /**
+   * Суммарный XP для уровня, посчитанный СЕРВЕРОМ. Включает пасхалки, которых
+   * нет в `series` (они приходят отдельным запросом) — поэтому складывать
+   * самому нельзя, разойдёмся с пушем. Отсутствует у старых версий API.
+   */
+  score?: number;
 }
 
 export interface CatalogResponse {

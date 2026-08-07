@@ -37,6 +37,11 @@ class UserAchievement(Base):
     unlocked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     progress: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     progress_target: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    # Опыт, начисленный В МОМЕНТ анлока. Заморожен намеренно: вес тира со
+    # временем меняется, но прошлое начисление переписывать нельзя — иначе
+    # суммарный XP юзера может уменьшиться и уровень «отберётся».
+    # NULL = ачивка ещё не открыта.
+    xp_awarded: Mapped[int | None] = mapped_column(Integer, nullable=True)
     ach_metadata: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime,

@@ -56,56 +56,56 @@ export const LEVELS: readonly LevelDef[] = [
   {
     key: 'rustle',
     label: 'Шорох',
-    threshold: 10,
+    threshold: 7,
     flavor: 'Игла коснулась. Всё остальное — дело времени.',
     tierKey: 'simple',
   },
   {
     key: 'echo',
     label: 'Эхо',
-    threshold: 30,
+    threshold: 15,
     flavor: 'Что-то услышанное однажды не уходит. Оно возвращается.',
     tierKey: 'notable',
   },
   {
     key: 'wave',
     label: 'Волна',
-    threshold: 75,
+    threshold: 25,
     flavor: 'Ты больше не слушаешь музыку. Ты в ней.',
     tierKey: 'notable',
   },
   {
     key: 'resonance',
     label: 'Резонанс',
-    threshold: 150,
+    threshold: 50,
     flavor: 'Правильная пластинка в правильный момент — это физика, не случайность.',
     tierKey: 'rare',
   },
   {
     key: 'overtone',
     label: 'Обертон',
-    threshold: 275,
+    threshold: 100,
     flavor: 'Слышишь то, чего нет в нотах. Значит, слух уже другой.',
     tierKey: 'rare',
   },
   {
     key: 'amplitude',
     label: 'Амплитуда',
-    threshold: 450,
+    threshold: 250,
     flavor: 'Твоя коллекция давит на воздух. Это чувствуют все, кто входит в комнату.',
     tierKey: 'epic',
   },
   {
     key: 'frequency',
     label: 'Частота',
-    threshold: 650,
+    threshold: 425,
     flavor: 'Ты настроен точнее большинства. Фальшь слышна за три такта.',
     tierKey: 'epic',
   },
   {
     key: 'tuning_fork',
     label: 'Камертон',
-    threshold: 850,
+    threshold: 675,
     flavor: 'К тебе приходят сверяться. Ты — точка отсчёта.',
     tierKey: 'legend',
   },
@@ -150,14 +150,23 @@ export interface ArchetypeInfo {
 }
 
 /**
- * Считает суммарный XP-score по открытым ачивкам.
+ * Суммарный XP-score для уровня.
+ *
+ * Источник истины — `score` из ответа сервера. Локальный пересчёт остаётся
+ * только фолбэком для старых версий API.
  */
 export function computeScore(data: MyAchievementsResponse): number {
+  // Основной путь: считает сервер. Он один видит весь набор — в `series` нет
+  // пасхалок, они приходят отдельным запросом, и локальная сумма занижала бы
+  // уровень относительно того, о котором приходит push.
+  if (typeof data.score === 'number') return data.score;
+
+  // Фолбэк для старых версий API: складываем то, что видно.
   let score = 0;
   for (const series of data.series) {
     for (const item of series.items) {
       if (item.is_unlocked) {
-        score += TIER_WEIGHT[item.tier.key] ?? 0;
+        score += item.xp ?? TIER_WEIGHT[item.tier.key] ?? 0;
       }
     }
   }

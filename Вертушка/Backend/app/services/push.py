@@ -41,6 +41,7 @@ PUSH_PREFERENCE_FIELD = {
     "wishlist_price_drop": "notify_wishlist_in_stock",
     "digest_wishlist_in_stock": "notify_wishlist_in_stock",
     "achievement_unlocked": "notify_achievement",
+    "level_up": "notify_achievement",
     "milestone_unlocked": "notify_milestone",
 }
 

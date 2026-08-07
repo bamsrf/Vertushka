@@ -1395,6 +1395,18 @@ class ApiClient {
     return data;
   }
 
+  /**
+   * Сообщает бэкенду о жесте, следов которого нет в БД (открытие карточки цен
+   * и т.п.). Ошибки глушим: ачивки не должны мешать основному сценарию.
+   */
+  async trackAchievementEvent(event: string): Promise<void> {
+    try {
+      await this.client.post('/achievements/events', { event });
+    } catch {
+      // не критично
+    }
+  }
+
   async getAchievementStats(code: string): Promise<AchievementStats> {
     const { data } = await this.client.get<AchievementStats>(
       `/achievements/${encodeURIComponent(code)}/stats`

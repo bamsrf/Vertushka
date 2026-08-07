@@ -69,6 +69,8 @@ function iconForType(type: NotificationType): { name: string; tint: string } {
     case 'achievement_unlocked':
     case 'milestone_unlocked':
       return { name: 'trophy', tint: Colors.warning };
+    case 'level_up':
+      return { name: 'trending-up', tint: Colors.warning };
     default:
       return { name: 'notifications', tint: Colors.royalBlue };
   }
@@ -81,6 +83,7 @@ function isSystemType(type: NotificationType): boolean {
     type === 'wishlist_in_stock_alt' ||
     type === 'wishlist_price_drop' ||
     type === 'milestone_unlocked' ||
+    type === 'level_up' ||
     type === 'digest_wishlist_in_stock'
   );
 }
@@ -169,6 +172,10 @@ function buildText(item: NotificationItemType): string {
     case 'milestone_unlocked': {
       const title = (data.title as string | undefined) ?? 'Новая веха';
       return title;
+    }
+    case 'level_up': {
+      const label = (data.level_label as string | undefined) || '';
+      return label ? `Новый уровень: ${label}` : 'Новый уровень';
     }
     default:
       return 'Новое уведомление';

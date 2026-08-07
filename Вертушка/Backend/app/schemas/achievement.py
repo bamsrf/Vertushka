@@ -33,6 +33,10 @@ class AchievementItem(BaseModel):
     unlocked_at: datetime | None = None
     progress: int = 0
     progress_target: int = 0
+    # Опыт за ачивку. Для открытой — ЗАМОРОЖЕННЫЙ (сколько дали в момент
+    # анлока), для закрытой — сколько дадут сейчас. Клиент складывает уровень
+    # из этих чисел, чтобы не расходиться с сервером при смене весов тиров.
+    xp: int = 0
 
 
 class AchievementSeriesItem(BaseModel):
@@ -52,6 +56,11 @@ class MyAchievementsResponse(BaseModel):
     unlocked: int
     random_unlocked: int   # количество открытых рандомных (без названий)
     series: list[AchievementSeriesItem]
+    # Суммарный XP по ачивкам, идущим в зачёт уровня (включая пасхалки).
+    # Считает сервер: клиент видит не все ачивки сразу (пасхалки приходят
+    # отдельным запросом), и складывая сам, он расходился бы с пушем.
+    score: int = 0
+
 
 
 class CatalogResponse(BaseModel):

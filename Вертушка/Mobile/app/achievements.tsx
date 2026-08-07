@@ -55,7 +55,11 @@ import type {
 export default function AchievementsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const params = useLocalSearchParams<{ username?: string; code?: string }>();
+  const params = useLocalSearchParams<{
+    username?: string;
+    code?: string;
+    levelup?: string;
+  }>();
   const username = params.username || null;
   const deepLinkCode = params.code || null;
 
@@ -142,7 +146,12 @@ export default function AchievementsScreen() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
       >
         {/* Hero — counter + архетип-уровень + флейвор + прогресс к следующему уровню */}
-        <AchievementsHero data={data} extraRandom={randomItems} username={username} />
+        <AchievementsHero
+          data={data}
+          extraRandom={randomItems}
+          username={username}
+          forceLevelUp={params.levelup === '1' && !username}
+        />
 
         {/* Витрина мета-трофеев — финал каждой серии в навигационной сетке */}
         <MetaTrophyShelf data={data} onPin={(item) => setSelected(item)} />

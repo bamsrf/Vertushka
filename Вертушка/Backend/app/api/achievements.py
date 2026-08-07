@@ -14,6 +14,10 @@ from app.api.auth import get_current_user
 from app.database import get_db
 from app.models.user import User
 from app.models.user_achievement import UserAchievement
+from app.services.achievements.definitions.series.formats import GATE_CODE_BY_SERIES
+from app.services.achievements.events import PRICE_DRAWER_OPENED
+from app.services.achievements.evaluator import emit_event
+from app.services.achievements.levels import counts_toward_level, weight_for_code
 from app.schemas.achievement import (
     AchievementItem,
     AchievementSeriesItem,
@@ -106,6 +110,36 @@ _SERIES_META: dict[str, dict[str, str]] = {
         "description_ru": "Реферальная цепочка.",
         "icon_emoji": "🗣",
     },
+    "market": {
+        "title_ru": "Рыночный нюх",
+        "description_ru": "Охота за предложениями.",
+        "icon_emoji": "🛒",
+    },
+    "value": {
+        "title_ru": "Стоимость коллекции",
+        "description_ru": "Сколько стоит полка.",
+        "icon_emoji": "💰",
+    },
+    "formats": {
+        "title_ru": "Форматы",
+        "description_ru": "Не только винил.",
+        "icon_emoji": "🎚",
+    },
+    "cassettes": {
+        "title_ru": "Кассеты",
+        "description_ru": "Плёнка и перемотка карандашом.",
+        "icon_emoji": "📼",
+    },
+    "cds": {
+        "title_ru": "Компакт-диски",
+        "description_ru": "Серебряная полка.",
+        "icon_emoji": "💿",
+    },
+    "boxsets": {
+        "title_ru": "Бокс-сеты",
+        "description_ru": "Издания, которые не влезают на полку.",
+        "icon_emoji": "📦",
+    },
     "discography": {
         "title_ru": "Полная дискография",
         "description_ru": "Глубокие коллекции.",
@@ -142,6 +176,7 @@ def _build_item(
             unlocked_at=None,
             progress=0,
             progress_target=0,
+            xp=weight_for_code(defn.code),
         )
     return AchievementItem(
         code=defn.code,
@@ -158,6 +193,11 @@ def _build_item(
         unlocked_at=ua.unlocked_at if ua else None,
         progress=progress,
         progress_target=progress_target,
+        xp=(
+            ua.xp_awarded
+            if is_unlocked and ua is not None and ua.xp_awarded is not None
+            else weight_for_code(defn.code)
+        ),
     )
 
 
@@ -188,6 +228,14 @@ def _group_series(
         meta = _SERIES_META.get(series_key)
         if meta is None:
             continue
+        # Полки форматов появляются только когда формат появился в коллекции:
+        # пустая витрина «Кассеты 0/4» у виниловода — шум, а не цель. Ключ —
+        # первая ачивка серии (T1/CD1/BX1), она и открывается первой кассетой.
+        gate_code = GATE_CODE_BY_SERIES.get(series_key)
+        if gate_code is not None and not include_hidden:
+            gate = by_code.get(gate_code)
+            if gate is None or not gate.is_unlocked:
+                continue
         items = [_build_item(d, ua, hide_secret=hide_secret) for d, ua in pairs]
         unlocked_count = sum(1 for it in items if it.is_unlocked)
         series_list.append(
@@ -214,6 +262,20 @@ async def _load_user_achievements(
 
 
 # --- Эндпоинты -------------------------------------------------------------
+
+
+def _score_from_rows(by_code: dict[str, UserAchievement]) -> int:
+    """XP пользователя по уже загруженным строкам — без лишнего запроса.
+
+    Считает по тому же правилу, что `levels.compute_score`, и по замороженному
+    `xp_awarded`, если он есть.
+    """
+    total = 0
+    for code, ua in by_code.items():
+        if not ua.is_unlocked or not counts_toward_level(code):
+            continue
+        total += ua.xp_awarded if ua.xp_awarded is not None else weight_for_code(code)
+    return total
 
 
 @router.get("/me", response_model=MyAchievementsResponse)
@@ -248,6 +310,7 @@ async def get_my_achievements(
         unlocked=unlocked,
         random_unlocked=random_unlocked,
         series=series,
+        score=_score_from_rows(by_code),
     )
 
 
@@ -419,4 +482,39 @@ async def get_achievements_by_username(
         unlocked=unlocked,
         random_unlocked=random_unlocked,
         series=series,
+        score=_score_from_rows(by_code),
     )
+
+
+# ============================================================================
+# Клиентские события
+# ============================================================================
+
+#: События, которые может прислать только приложение — в БД их следов нет.
+#: Строгий allow-list: эндпоинт открыт наружу, и без него сюда прилетело бы
+#: что угодно, включая события, которые бэкенд эмитит сам (и тогда ачивку
+#: можно было бы выпросить запросом, не делая ничего).
+CLIENT_EVENTS = {
+    "price_drawer_opened": PRICE_DRAWER_OPENED,
+}
+
+
+class ClientEventRequest(BaseModel):
+    event: str
+
+
+@router.post("/events", status_code=status.HTTP_204_NO_CONTENT)
+async def track_client_event(
+    body: ClientEventRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> Response:
+    """Приложение сообщает о жесте, которого не видно в БД.
+
+    Ответ всегда 204: неизвестное событие молча игнорируем, чтобы старые
+    сборки клиента не получали ошибок на событиях, которых уже нет.
+    """
+    event = CLIENT_EVENTS.get(body.event)
+    if event is not None:
+        await emit_event(db, current_user.id, event)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

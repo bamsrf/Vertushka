@@ -127,13 +127,18 @@ def _load_definitions() -> None:
     from app.services.achievements.definitions.series import genres as _genres
     from app.services.achievements.definitions.series import invitations as _invitations
     from app.services.achievements.definitions.series import discography as _discography
+    from app.services.achievements.definitions.series import formats as _formats
+    from app.services.achievements.definitions.series import market as _market
     from app.services.achievements.definitions import random as _random
+    from app.services.achievements.definitions import eggs as _eggs
 
     # Реальная логика (Phase 0 / Phase 1)
     register(*_foundation.DEFINITIONS)
     register(*_scale.DEFINITIONS)
     register(*_gifts.DEFINITIONS)
     register(*_community.DEFINITIONS)
+    register(*_formats.DEFINITIONS)
+    register(*_market.DEFINITIONS)
     # Каркасы (Phase 2–4) — evaluator всегда False
     register(*_rarity.DEFINITIONS)
     register(*_geography.DEFINITIONS)
@@ -143,6 +148,7 @@ def _load_definitions() -> None:
     register(*_discography.DEFINITIONS)
     # Рандом — после всех серий
     register(*_random.DEFINITIONS)
+    register(*_eggs.DEFINITIONS)
 
 
 _load_definitions()

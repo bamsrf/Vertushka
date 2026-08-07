@@ -15,6 +15,7 @@
  * Источник: screens-drawer-b.jsx (ScreenBottomSheet60/92) +
  *           docs/plans/MARKET_AND_PRICE_DRAWER.md §2.3.
  */
+import { api } from '@/lib/api';
 import React, { forwardRef, useImperativeHandle, useMemo, useRef } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import {
@@ -65,6 +66,9 @@ export const OffersBottomSheet = forwardRef<OffersBottomSheetRef, OffersBottomSh
       present: (d: OffersBottomSheetData) => {
         setData(d);
         sheetRef.current?.present();
+        // Ачивка M1 «Прицениться»: факт открытия карточки цен в БД не виден,
+        // сообщаем о нём явно. Промис не ждём — шторка открывается сразу.
+        void api.trackAchievementEvent('price_drawer_opened');
       },
       dismiss: () => {
         sheetRef.current?.dismiss();

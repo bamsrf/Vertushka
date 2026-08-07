@@ -31,5 +31,9 @@ RECORD_WANTED = "record_wanted"              # пластинку из колл�
 REFERRED_USER_REGISTERED = "referred_user_registered"   # кто-то зарегался по реф-ссылке текущего юзера
 REFERRED_USER_ACTIVATED = "referred_user_activated"     # приведённый дошёл до состояния «активен» (≥10 пластинок, ≥30 дней)
 
+# Маркет (M-серия)
+OFFER_CLICKED = "offer_clicked"            # affiliate-переход в магазин
+PRICE_DRAWER_OPENED = "price_drawer_opened"  # открыл карточку цен
+
 # Периодика
 DAILY_TICK = "daily_tick"

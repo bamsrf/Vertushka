@@ -144,7 +144,69 @@ async def _emit_impl(
             except Exception:
                 pass
 
+        # Уровень архетипа мог перешагнуть порог — это отдельное событие с
+        # собственным пушем. Не смешиваем с ачивкой: она про «что сделал»,
+        # уровень — про «кем стал».
+        try:
+            await _notify_level_up(db, user_id, sorted(unlocked_now))
+        except Exception:
+            logger.exception("Failed to create level_up notification")
+            try:
+                await db.rollback()
+            except Exception:
+                pass
+
     return sorted(unlocked_now)
+
+
+async def _notify_level_up(
+    db: AsyncSession,
+    user_id: UUID,
+    unlocked_codes: list[str],
+) -> None:
+    """Создаёт level_up-уведомление, если батч ачивок поднял юзера на ступень."""
+    from app.models.notification import PRIORITY_PUSH
+    from app.services import push_copy
+    from app.services.achievements.levels import detect_level_up
+    from app.services.notification_service import upsert_notification
+
+    level_up = await detect_level_up(db, user_id, unlocked_codes=unlocked_codes)
+    if level_up is None:
+        return
+
+    push_title, push_body = push_copy.level_up(
+        label=level_up.level.label,
+        flavor_ru=level_up.level.flavor,
+    )
+    await upsert_notification(
+        db,
+        user_id=user_id,
+        type="level_up",
+        dedup_key=f"level_up:{level_up.level.key}",
+        entity_type="level",
+        entity_id=level_up.level.key,
+        data={
+            "level_key": level_up.level.key,
+            "level_label": level_up.level.label,
+            "level_index": level_up.index,
+            "previous_key": level_up.previous.key,
+            "previous_label": level_up.previous.label,
+            "flavor": level_up.level.flavor,
+            "score": level_up.score,
+        },
+        push_title=push_title,
+        push_body=push_body,
+        priority=PRIORITY_PUSH,
+    )
+    await db.commit()
+    logger.info(
+        "level_up",
+        extra={
+            "user_id": str(user_id),
+            "level": level_up.level.key,
+            "score": level_up.score,
+        },
+    )
 
 
 async def _persist(
@@ -161,6 +223,8 @@ async def _persist(
     - progress пишем только если новое значение больше текущего (защита от
       устаревших событий).
     """
+    from app.services.achievements.levels import weight_for_code
+
     if existing is None:
         if not result.unlocked and result.progress is None:
             return
@@ -169,6 +233,8 @@ async def _persist(
             code=defn.code,
             is_unlocked=result.unlocked,
             unlocked_at=datetime.utcnow() if result.unlocked else None,
+            # Замораживаем опыт прямо здесь: дальше он не пересчитывается.
+            xp_awarded=weight_for_code(defn.code) if result.unlocked else None,
             progress=result.progress or 0,
             progress_target=result.progress_target or 0,
             ach_metadata=result.metadata,
@@ -180,6 +246,8 @@ async def _persist(
     if result.unlocked:
         existing.is_unlocked = True
         existing.unlocked_at = datetime.utcnow()
+        if existing.xp_awarded is None:
+            existing.xp_awarded = weight_for_code(defn.code)
         if result.progress is not None:
             existing.progress = max(existing.progress, result.progress)
         if result.progress_target is not None:

@@ -211,6 +211,14 @@ def achievement_unlocked(*, title_ru: str, flavor_ru: str = "") -> tuple[str, st
     return f"Ачивка: {title_ru}", (flavor_ru or "").strip() or "Открыта новая ачивка"
 
 
+def level_up(*, label: str, flavor_ru: str = "") -> tuple[str, str]:
+    """Новый уровень архетипа. В body — флейвор ступени: голос уже нужный."""
+    return (
+        f"Новый уровень: {label}",
+        (flavor_ru or "").strip() or "Ты поднялся на ступень выше",
+    )
+
+
 def milestone_collection(*, total: int) -> tuple[str, str]:
     """Веха коллекции: 100 / 500 / 1000 пластинок."""
     return f"В коллекции {total} {plural_records(total)}", "Полка заметно тяжелее"
