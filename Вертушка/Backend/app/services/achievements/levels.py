@@ -18,7 +18,11 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.user_achievement import UserAchievement
-from app.services.achievements.registry import AchievementTier, get_definition
+from app.services.achievements.registry import (
+    AchievementTier,
+    all_definitions,
+    get_definition,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -78,9 +82,29 @@ LEVELS: tuple[LevelDef, ...] = (
 _EXCLUDED_SERIES = frozenset({"invitations"})
 
 
+def resolve_definition(code: str):
+    """Определение по коду, включая ДИНАМИЧЕСКИЕ коды.
+
+    Динамические ачивки хранятся в БД как `H2:king-crimson`, а в реестре
+    зарегистрированы под полным именем `H2_artist_studio_full` — прямой
+    `get_definition` по такому коду возвращает None, и ачивка молча стоила бы
+    0 XP. Поэтому для кода с двоеточием ищем определение по префиксу.
+    """
+    defn = get_definition(code)
+    if defn is not None:
+        return defn
+    prefix, sep, _rest = code.partition(":")
+    if not sep:
+        return None
+    for candidate in all_definitions():
+        if candidate.code.split("_", 1)[0] == prefix:
+            return candidate
+    return None
+
+
 def counts_toward_level(code: str) -> bool:
     """Учитывается ли ачивка в XP-счётчике уровня."""
-    defn = get_definition(code)
+    defn = resolve_definition(code)
     if defn is None:
         return False
     if defn.series in _EXCLUDED_SERIES:
@@ -96,7 +120,7 @@ def weight_for_code(code: str) -> int:
 
     Неизвестный код или ачивка вне видимого каталога → 0.
     """
-    defn = get_definition(code)
+    defn = resolve_definition(code)
     if defn is None or not counts_toward_level(code):
         return 0
     return TIER_WEIGHT.get(defn.tier.value, 0)

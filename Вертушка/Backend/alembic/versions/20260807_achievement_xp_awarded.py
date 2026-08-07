@@ -31,39 +31,37 @@ def upgrade() -> None:
         sa.Column("xp_awarded", sa.Integer(), nullable=True),
     )
 
-    # Бэкфилл по текущим весам тиров. Реестр — единственное место, где живёт
-    # соответствие code → tier, поэтому импортируем его, а не хардкодим список.
+    # Бэкфилл по текущим весам тиров. Коды берём из САМОЙ таблицы, а не из
+    # реестра: там встречаются динамические вида `H2:king-crimson`, которых в
+    # реестре нет под таким именем — их разбирает weight_for_code().
+    from collections import defaultdict
+
     from app.services.achievements.levels import weight_for_code
-    from app.services.achievements.registry import all_definitions
 
     conn = op.get_bind()
-    by_weight: dict[int, list[str]] = {}
-    for defn in all_definitions():
-        by_weight.setdefault(weight_for_code(defn.code), []).append(defn.code)
+    codes = [
+        row[0]
+        for row in conn.execute(
+            sa.text(
+                "SELECT DISTINCT code FROM user_achievements "
+                "WHERE is_unlocked IS TRUE AND xp_awarded IS NULL"
+            )
+        )
+    ]
 
-    for weight, codes in by_weight.items():
-        if not weight:
-            continue
+    by_weight: dict[int, list[str]] = defaultdict(list)
+    for code in codes:
+        weight = weight_for_code(code)
+        if weight > 0:
+            by_weight[weight].append(code)
+
+    for weight, group in by_weight.items():
         conn.execute(
             sa.text(
                 "UPDATE user_achievements SET xp_awarded = :w "
                 "WHERE is_unlocked IS TRUE AND xp_awarded IS NULL AND code = ANY(:codes)"
             ),
-            {"w": weight, "codes": codes},
-        )
-
-    # Динамические коды вида 'H2:king-crimson' в реестре отсутствуют — их
-    # префикс до двоеточия совпадает с кодом определения.
-    for weight, codes in by_weight.items():
-        if not weight:
-            continue
-        conn.execute(
-            sa.text(
-                "UPDATE user_achievements SET xp_awarded = :w "
-                "WHERE is_unlocked IS TRUE AND xp_awarded IS NULL "
-                "AND split_part(code, ':', 1) = ANY(:codes)"
-            ),
-            {"w": weight, "codes": codes},
+            {"w": weight, "codes": group},
         )
 
 
