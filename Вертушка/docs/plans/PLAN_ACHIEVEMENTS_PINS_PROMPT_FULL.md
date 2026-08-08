@@ -561,25 +561,25 @@ Output: 1024×1024 PNG, transparent background.
 
 > **Единый вектор серии K, трек 1 — «сцена»:** путь от зрителя в зале до хедлайнера со своим залом. Держи концертную метафору на K1→K4, K7 — отдельный жест «за кулисы».
 
-#### `K1_following_x5` — Зритель 💧
-> Метафора: подписан на 5 — зритель в зале с билетом, смотрит на 5 огней сцены.
+#### `K1_following_x5` — Зритель 💧 ⏳ нужен пин
+> Метафора: подписан на 5 — оторванный корешок билета, 5 отверстий компостера.
 
 ```text
-Generate a soft enamel pin: a concert ticket stub held up in a crowd, with 5 small stage spotlights glowing above — the listener in the audience of 5 voices.
-Composition: a vertical ivory concert ticket stub at center, gold perforated edge on the left, a small vinyl-record icon and "ADMIT" in tiny serif on the ticket; below the ticket, 3-4 small navy silhouetted heads suggesting a crowd; above, 5 small gold spotlight beams angling down from the top frame; small "5" in gold serif on the ticket.
-Palette: navy #0B1438, ivory #FBF5EA, vinyl black #1A1A2E, gold #D9A84E.
-Same enamel pin style as the previous Vertushka pins (gold contour, navy outline, recessed enamel, single specular per zone).
+Generate a soft enamel pin: a single torn concert ticket stub standing upright, tilted slightly, with five punched holes along its gold perforated edge.
+Composition: one bold vertical ivory ticket stub fills ~60% of the pin, tilted about 8 degrees; a gold perforated tear-line runs down its left side with 5 clean punched holes; on the stub face, a tiny vinyl record icon with ember center, the word "ADMIT" in small vintage serif, and a chunky gold serif "5" at the bottom; three small gold ticket-confetti flecks float freely around the stub in empty space, like the floating music notes in the microphone pin.
+Palette: navy #0B1438, ivory #FBF5EA, vinyl black #1A1A2E, ember #E85A2A, gold #D9A84E.
+Same enamel pin style as the previous Vertushka pins (gold contour, navy outline, recessed enamel, single specular per zone). No background scene, no crowd, no frame.
 Output: 1024×1024 PNG, transparent background.
 ```
 
-#### `K2_first_follower` — Первый ряд 💧
-> Метафора: первый подписчик — один силуэт в первом ряду перед маленькой сценой.
+#### `K2_first_follower` — Первый ряд 💧 ✅ отрисован
+> Метафора: первый подписчик — одно откидное кресло первого ряда, и оно занято.
 
 ```text
-Generate a soft enamel pin: a single silhouetted fan seated in the front row facing a small lit stage — your very first listener showed up.
-Composition: lower third of pin shows one navy head-and-shoulders silhouette from behind, facing a small raised stage; the stage is a horizontal navy platform with a tiny gold microphone on a stand at center; a single warm gold spotlight beam shines down on the mic from the top; a small gold "1" on the front of the stage.
-Palette: navy #0B1438, ivory #FBF5EA, vinyl black #1A1A2E, gold #D9A84E.
-Same enamel pin style as the previous Vertushka pins (gold contour, navy outline, recessed enamel, single specular per zone).
+Generate a soft enamel pin: a single vintage theatre seat, folded down, seen three-quarter from the front — the very first seat in the house is taken.
+Composition: one bold navy velvet theatre chair fills ~65% of the pin, with gold armrest curls and gold rivets; a small gold plaque on the backrest reads "ROW 1" in tiny vintage serif; resting on the seat cushion sits one small vinyl record (vinyl black, ember center) like a bouquet left by a fan; a chunky gold serif "1" on the chair leg base; two small gold sparkle dots float above the backrest.
+Palette: navy #0B1438, ivory #FBF5EA, vinyl black #1A1A2E, ember #E85A2A, gold #D9A84E.
+Same enamel pin style as the previous Vertushka pins (gold contour, navy outline, recessed enamel, single specular per zone). No audience, no stage, no frame.
 Output: 1024×1024 PNG, transparent background.
 ```
 
@@ -594,25 +594,25 @@ Same enamel pin style as the previous Vertushka pins (gold contour, navy outline
 Output: 1024×1024 PNG, transparent background.
 ```
 
-#### `K4_followers_x50` — Хедлайнер 🌸
-> Метафора: 50 подписчиков — твоё имя в огнях на афише над сценой, полный зал.
+#### `K4_followers_x50` — Хедлайнер 🌸 ✅ отрисован
+> Метафора: 50 подписчиков — лампочная вывеска-marquee, силуэт выходит за верхний край.
 
 ```text
-Generate a soft enamel pin: a glowing marquee billboard above a stage reading "50" in bulb-lit letters, a packed crowd of silhouettes below — you are the headliner.
-Composition: upper 55% of pin is a rectangular marquee sign with a gold bulb-lined border and rose-pink panel, "50" in chunky serif gold lit like theatre bulbs; the marquee top edge extends past the top frame; below the marquee, a dense row of small navy silhouetted heads (a full crowd) with a few raised gold hands; add 3 tiny gold sparkle stars around the marquee.
+Generate a soft enamel pin: a theatre marquee sign lit with bulbs, its top edge extending past the top of the frame — your name is up in lights.
+Composition: one bold horizontal marquee board fills ~65% of the pin, rose pink #E89AC0 panel inside a double gold bulb-lined border with ~14 round gold bulbs; "50" in chunky vintage serif gold centered on the panel, with a small vinyl record silhouette beside it; the sign hangs from two thin gold chains that run off the top edge of the frame; a short ivory banner ribbon drapes under the sign reading "TONIGHT" in tiny serif; three 4-pointed gold sparkle stars float around the sign in empty space.
 Palette: navy #0B1438, ivory #FBF5EA, vinyl black #1A1A2E, rose pink #E89AC0, gold #D9A84E.
-Same enamel pin style as the previous Vertushka pins (gold contour, navy outline, recessed enamel, single specular per zone).
+Same enamel pin style as the previous Vertushka pins (gold contour, navy outline, recessed enamel, single specular per zone). No crowd, no building, no frame.
 Output: 1024×1024 PNG, transparent background.
 ```
 
-#### `K7_mutual_x10` — Бэкстейдж 🔵
-> Метафора: 10 взаимных подписок — backstage-пропуск на шнурке, вы пускаете друг друга за кулисы.
+#### `K7_mutual_x10` — Бэкстейдж 🔵 ✅ отрисован
+> Метафора: 10 взаимных подписок — ламинированный пропуск на шнурке, петля-восьмёрка намекает на взаимность.
 
 ```text
-Generate a soft enamel pin: a laminated "BACKSTAGE" lanyard pass with "10" on it, a curtain edge behind — mutual followers let each other behind the scenes.
-Composition: a rectangular ivory laminated pass hangs from a thin gold lanyard clip at the top extending past the top frame; on the pass, a small gold star, the word "PASS" in tiny serif, and "10" in chunky serif gold; behind the pass on the right, a draped navy stage curtain edge with a gold tieback; small gold spark dots near the clip.
-Palette: navy #0B1438, ivory #FBF5EA, vinyl black #1A1A2E, gold #D9A84E.
-Same enamel pin style as the previous Vertushka pins (gold contour, navy outline, recessed enamel, single specular per zone).
+Generate a soft enamel pin: a laminated backstage pass hanging on a lanyard, the lanyard cord looping out past the top of the frame.
+Composition: one bold vertical ivory pass card fills ~55% of the pin, slightly tilted, held by a gold clip at the top; the cord is a cobalt #2A4BD7 lanyard strap that crosses over itself in a figure-eight loop before exiting the top edge (hinting at mutual, two-way access); on the card face: "BACKSTAGE" in small chunky serif navy, a gold star, a thin cobalt stripe, and a chunky gold serif "10"; a small vinyl record icon with ember center in the card's lower corner; two small gold sparkle dots float beside the clip.
+Palette: navy #0B1438, ivory #FBF5EA, vinyl black #1A1A2E, cobalt #2A4BD7, ember #E85A2A, gold #D9A84E.
+Same enamel pin style as the previous Vertushka pins (gold contour, navy outline, recessed enamel, single specular per zone). No curtain, no scene, no frame.
 Output: 1024×1024 PNG, transparent background.
 ```
 
@@ -651,36 +651,39 @@ Same enamel pin style as the previous Vertushka pins (gold contour, navy outline
 Output: 1024×1024 PNG, transparent background.
 ```
 
-#### `K11_msgs_x10` — Есть контакт 💧
-> Метафора: 10 сообщений — связь установлена: один пузырь-чат с виниловой каплей, искра контакта.
+#### `K11_msgs_x10` — Есть контакт 💧 ✅ отрисован
+> Метафора: 10 сообщений — игла звукоснимателя опустилась в канавку и точка контакта расцвела речевым пузырём.
 
 ```text
-Generate a soft enamel pin: a speech bubble shaped chat message with a tiny vinyl record inside it, a small gold connection spark at the tail — first real contact made.
-Composition: a rounded ivory speech bubble fills 70% of pin, its tail pointing to the lower-left; inside the bubble, a small vinyl black record with ember center and three small gold dots (typing); at the tail tip, a small 4-point gold spark; small "10" in serif gold in the bubble's corner.
+Generate a soft enamel pin: a tonearm needle touching down into a record groove, and the point of contact blooms into a small speech bubble — the moment the connection is made.
+Composition: one bold gold tonearm enters from the upper right at a 45-degree angle, its navy headshell and gold stylus pointing down-left; below it, a partial vinyl record arc (vinyl black with gold groove lines and an ember center label) occupies the lower left; exactly at the stylus tip sits a small rounded ivory speech bubble with three gold typing dots inside and a tiny gold contact spark behind it; a chunky gold serif "10" sits on the record label; two small gold sparkle dots float near the tonearm.
 Palette: navy #0B1438, ivory #FBF5EA, vinyl black #1A1A2E, ember #E85A2A, gold #D9A84E.
-Same enamel pin style as the previous Vertushka pins (gold contour, navy outline, recessed enamel, single specular per zone).
+Same enamel pin style as the previous Vertushka pins (gold contour, navy outline, recessed enamel, single specular per zone). No frame, no background.
 Output: 1024×1024 PNG, transparent background.
 ```
 
-#### `K12_msgs_x50` — Продажник 🔵
-> Метафора: 50 сообщений — Уолл-стрит-трейдер с телефоном у уха, активная болтовня.
+#### `K12_msgs_x50` — Продажник 🔵 ✅ отрисован
+> Метафора: 50 сообщений — винтажная трубка, витой провод завивается в виниловую спираль.
 
 ```text
-Generate a soft enamel pin: a sharp-suited dealmaker silhouette pressing a vintage handset phone to the ear, multiple small chat bubbles flying out, "50" on a tag — the fast-talking salesman.
-Composition: a navy head-and-shoulders silhouette in a suit with a gold collar line, holding a gold telephone handset to the ear; 3-4 small ivory chat bubbles rise from the mouth toward the upper-right, exiting past the frame; a thin gold tie visible; small "50" in serif gold on a tag near the phone cord.
-Palette: navy #0B1438, ivory #FBF5EA, vinyl black #1A1A2E, gold #D9A84E.
-Same enamel pin style as the previous Vertushka pins (gold contour, navy outline, recessed enamel, single specular per zone).
+Generate a soft enamel pin: a vintage telephone handset held mid-call, its coiled cord spiralling downward and turning into a vinyl record groove spiral.
+Composition: one bold gold-and-navy handset lies diagonally across the upper 55% of the pin, receiver end lower-left, mouthpiece upper-right, with a single specular highlight along its top curve; from the mouthpiece end a cobalt #2A4BD7 coiled cord drops and coils tighter and tighter until it becomes a small vinyl record spiral (vinyl black, ember center) in the lower right; three small ivory chat bubbles rise freely from the receiver toward the upper left, the largest carrying a chunky gold serif "50"; the cord's last coil extends slightly past the bottom edge.
+Palette: navy #0B1438, ivory #FBF5EA, vinyl black #1A1A2E, cobalt #2A4BD7, ember #E85A2A, gold #D9A84E.
+Same enamel pin style as the previous Vertushka pins (gold contour, navy outline, recessed enamel, single specular per zone). No human figure, no frame.
 Output: 1024×1024 PNG, transparent background.
 ```
 
-#### `K13_msgs_x200` — Уолл-стрит 🌸
-> Метафора: 200 сообщений — торговый зал биржи: множество пузырей, тикерная лента, гул сделок.
+#### `K13_msgs_x200` — Уолл-стрит 🌸 ✅ отрисован
+> Метафора: 200 сообщений — зигзаг-график пробивает потолок, стрелка тащит бирку «200». Ось X — время (одни часы), ось Y — сообщения (один пузырь).
 
 ```text
-Generate a soft enamel pin: a stock-exchange trading floor scene — a ticker-tape board scrolling chat bubbles, several raised hands of silhouetted traders, "200" on the board.
-Composition: upper half is a navy ticker board with a gold frame, showing a scrolling line of small ivory chat bubbles and "200" in chunky serif gold; lower half shows 4-5 small navy trader silhouettes with raised gold hands amid the buzz; a few small gold up-arrows floating; add 3 tiny gold sparkle stars near the board.
-Palette: navy #0B1438, ivory #FBF5EA, vinyl black #1A1A2E, cobalt #2A4BD7, gold #D9A84E.
-Same enamel pin style as the previous Vertushka pins (gold contour, navy outline, recessed enamel, single specular per zone).
+Generate a soft enamel pin: a single zigzag chart line that rises in jagged steps and then punches its arrowhead clean through a ceiling line, carrying a "200" tag.
+Composition: ONE thick gold polyline is the only chart content — it starts at the lower-left origin and moves right in a sharp zigzag (up, small dip, up, small dip, up), each segment a straight angular stroke, gaining height with every step, then makes one long steep final rise and ends in a large gold arrowhead pointing up-right. The arrowhead pierces through a single thin horizontal ivory ceiling bar near the top; the bar is cracked and split apart exactly at the puncture, with 3 small ivory shards flying outward, and the arrowhead tip extends slightly past the top edge of the frame. A small navy tag with a chunky vintage serif gold "200" hangs from the arrow's neck on a tiny gold ring.
+Axes: a thin gold L-shaped axis in the lower left, with small evenly spaced tick marks. Label each axis with exactly ONE glyph, not a repeated series: a single small ivory chat bubble sits at the TOP END of the vertical Y axis, and a single small navy clock face sits at the RIGHT END of the horizontal X axis. Do not repeat these glyphs anywhere else.
+Explicitly NOT included: no candlestick bars, no column bars, no red or blue rectangles, no grid lines, no plot-area rectangle, no background panel, no extra chat bubbles floating in the empty space.
+Negative space stays empty except for exactly two 4-pointed gold sparkle stars in the upper area.
+Palette: navy #0B1438, ivory #FBF5EA, gold #D9A84E. Use cobalt #2A4BD7 only as a thin accent inside the tag if needed. No ember.
+Same enamel pin style as the previous Vertushka pins (gold contour, navy outline, recessed enamel, single specular per zone). Minimal, clean, reads at 64×64.
 Output: 1024×1024 PNG, transparent background.
 ```
 
@@ -1082,15 +1085,16 @@ Same enamel pin style as the previous Vertushka pins (gold contour, navy outline
 Output: 1024×1024 PNG, transparent background.
 ```
 
-#### `META_community` — Резидент 🌌
-> Метафора: K4 + K7 + K13 — собрал комьюнити вокруг себя.
+#### `META_community` — Резидент 🌌 ✅ отрисован
+> Метафора: K4 + K7 + K13 — ключ от клуба, бородка собрана из трёх глифов трёх веток. Без свечения: любой halo мешает вырезать альфу.
 
 ```text
-Generate a soft enamel pin: a ring of 8 silhouetted figures encircling a central golden microphone — the community resident.
-Composition: 8 small navy silhouetted heads arranged evenly in a circle, all facing inward; in the center, a vertical gold studio microphone on a stand; small gold music-note dots floating between figures; outer ring of small dots; add 3 tiny gold sparkle stars at top of the ring.
-Palette: navy #0B1438, ivory #FBF5EA, gold #D9A84E.
-Same enamel pin style as the previous Vertushka pins (gold contour, navy outline, recessed enamel, single specular per zone).
-Output: 1024×1024 PNG, transparent background.
+Generate a soft enamel pin: an ornate club key held upright, its bit shaped from three interlocking symbols — a marquee bulb, a lanyard clip and a ticker tape curl — the master key to the community.
+Composition: one bold vertical antique key fills ~70% of the pin, shaft in gold with a navy inlay stripe; the bow (top ring) is a vinyl record — vinyl black with gold groove rings and an ember center label; the bit at the bottom is built from three distinct gold teeth, each a miniature glyph: a round marquee bulb, a small lanyard clip, and a curled ticker tape; a small ivory enamel banner crosses the shaft reading "RESIDENT" in chunky vintage serif navy; four 4-pointed gold sparkle stars of varying size float around the key, one overlapping the bow.
+Background: NOTHING behind the key. No glow, no halo, no aura, no radial gradient, no colored disc or oval, no soft light, no blur of any kind. The area around the key silhouette must be 100% empty transparent alpha, hard-edged, so the pin can be cut out cleanly. Every visible element must be a solid enamel shape with a crisp gold or navy outline.
+Palette: navy #0B1438, cobalt deep #0E1A52, ivory #FBF5EA, vinyl black #1A1A2E, ember #E85A2A, gold #D9A84E.
+Same enamel pin style as the previous Vertushka pins (gold contour, navy outline, recessed enamel, single specular per zone). No frame, no background rectangle, no drop shadow.
+Output: 1024×1024 PNG, fully transparent background.
 ```
 
 #### `META_evangelist` — Эпидемия ⚫
