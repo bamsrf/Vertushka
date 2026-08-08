@@ -32,6 +32,7 @@ export const DESIGN_PNGS: Record<string, ImageSourcePropType> = {
   j1_first_gift: require('./j1_first_gift.png'),
   j2_gift_done: require('./j2_gift_done.png'),
   j3_three_recipients: require('./j3_three_recipients.png'),
+  k1_following_x5: require('./k1_following_x5.png'),
   k2_first_follower: require('./k2_first_follower.png'),
   k3_followers_x5: require('./k3_followers_x5.png'),
   k4_followers_x50: require('./k4_followers_x50.png'),
