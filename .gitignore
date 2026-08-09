@@ -76,3 +76,6 @@ htmlcov/
 Вертушка/Backend/uploads/
 # yandex-jobs-bot — extracted to github.com/bamsrf/yandex-jobs-bot
 yandex-jobs-bot/
+
+# Превью-рендеры маскота — тяжёлые бинарники, в истории им не место
+Вертушка/intro-mascot-preview.mp4
