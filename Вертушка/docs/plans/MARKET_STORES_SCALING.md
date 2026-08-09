@@ -122,7 +122,7 @@
 
 | | Задача | Эффект | Файл |
 |---|---|---|---|
-| 1.1 | `plastinka_com`: перевести с per-product fetch на листинг-страницы категорий (цена + наличие в карточке); проверить наличие YML-фида | −50 000 → ~1 000 запросов | [plastinka_com.py](../../Backend/app/services/scrapers/shops/plastinka_com.py) |
+| 1.1 | ✅ **Сделано 2026-08-09.** Каталог оказался не 50k, а **7 653 LP** (sitemap: 12 898 URL всего). Листинг `/lp?page=N` — 200 товаров на страницу, в карточке `data-artist-name`, `itemprop` price/availability, состояние и год. A/B на 8 товарах: 7/8 совпало, 8-й — баг старого парсера («A-ha» резался в `artist='A'`), карточка права | −7 653 → **39** | [plastinka_com.py](../../Backend/app/services/scrapers/shops/plastinka_com.py) |
 | 1.2 | ✅ **Сделано 2026-08-09.** Фида нет (11 путей Bitrix → 404), перешли на карточки листинга. В карточке есть всё, включая «Исполнитель» (29/29) и `data-id` = `sku` из JSON-LD. A/B на 12 товарах: 11 полей совпали 12/12. `parse_listing()` оставлен для `refresh_urls` | −3 620 → **121** | [doctorhead.py](../../Backend/app/services/scrapers/shops/doctorhead.py) |
 | 1.3 | `vinyl_ru`: проверить YML-фид Bitrix, иначе листинги | −5 000 → ~200 | [vinyl_ru.py](../../Backend/app/services/scrapers/shops/vinyl_ru.py) |
 | 1.4 | ✅ **Сделано 2026-08-09.** `korobkavinyla` переведён на `TildaStoreParser`. Каталог оказался 5950 товаров (не 3500) → **5950 запросов стали 60**. A/B со старым парсером на 5 товарах: 13 полей идентичны. Потерь данных нет — `sku` в API заполнен у 100% (95% валидный EAN), `descr` богаче страницы | −5 950 → **60** | [korobkavinyla.py](../../Backend/app/services/scrapers/shops/korobkavinyla.py) |
@@ -166,6 +166,23 @@
 - [ ] В маркете ≥ 20 магазинов, из них ≥ 70% Tier A.
 
 ---
+
+## 7a. Кандидаты на подключение
+
+| магазин | tier | как берётся каталог | цена обхода | статус |
+|---|---|---|---|---|
+| **skifmusic.ru** | B | JSON-LD `ItemList` на страницах категории 617, 30 шт/стр | 688 | ✅ подключён 2026-08-09 |
+| **rotaryrecords.store** | **A** | `GET /catalog-api.php?action=page&featured=all&offset=N&limit=80` → JSON `{total, has_more, cards[]}`. Каталог 1 804 позиции, лимит страницы обрезан сервером до 80 | **23** | кандидат, разведан 2026-08-09 |
+| **long-play.ru** | C→B | Bitrix, `/catalog/?PAGEN_1=N`, 20 шт/стр, ~16k позиций. В карточке только автор/название/цена — ни наличия, ни кат. номера. Зато на странице товара **кат. номер, состояние (VG+), год, лейбл** — лучший матчинг из всех. Б/у, экземпляры уникальны | листинги ~800 + разовый фетч карточки | кандидат |
+
+**rotaryrecords — детали разведки.** Витрина рендерится на клиенте
+(`/catalog-app.js`), HTML пустой; данные идут из `/catalog-api.php`. Карточка:
+`{id (uuid), url, title «Various - Smash Hits The 80s», subtitle «Rhino Records
+• 2017», styles, price «5 900 ₽», images{thumb, base, jpeg_srcset, webp_srcset}}`.
+Обложки лежат в `/images/discogs_synced/` — магазин синхронизируется с Discogs,
+стоит проверить, отдаёт ли страница товара discogs release id: это дало бы
+матчинг по id вместо artist+title. Поля наличия в карточке нет — вероятно,
+в выдаче только то, что в наличии; надо подтвердить на странице товара.
 
 ## 8. Открытые вопросы
 

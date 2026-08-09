@@ -1,8 +1,32 @@
 """
 Парсер Plastinka.com — крупный российский магазин винила (СПб, доставка по РФ).
 
+WS1.1: обход переведён со страниц товара на карточки листинга `/lp?page=N`
+(200 товаров на страницу). Было 7 653 запроса (≈4.2 часа), стало **39**
+(≈80 секунд). Карточка `.products-grid-item` отдаёт всё:
+
+    data-id="377288"                     → external_id
+    data-artist-name="System Of A Down"  → артист (без разбора title!)
+    itemprop=name «Toxicity '01»         → альбом + год оригинала
+    descr «Европа / American | Инди | Переиздание'18 | SS/SS»
+                                         → страна, лейбл, жанр, год пресса, состояние
+    itemprop=price / availability        → цена и наличие
+
+Побочно чинится баг разбора артиста: title-регексп резал «A-ha - Analogue»
+по дефису внутри имени и давал artist='A', album='ha - Analogue'.
+`data-artist-name` этой проблемы лишён.
+
+Год: если в описании есть «Переиздание'NN» — берём его (это год пресса, как
+и раньше из title), иначе «'NN» из названия (оригинал).
+
+Обложка в карточке — `.webp` того же пути, что и `.jpg` из og:image.
+
+`parse_listing()` (разбор страницы товара) сохранён — его использует
+`refresh_urls()` для точечной перепроверки и детекта 404 → removed.
+
 Особенности:
-- Собственная CMS на PHP, sitemap.xml в корне (~50k+ URL включая страницы CD/LP).
+- Собственная CMS на PHP, sitemap.xml в корне: 12 898 URL, из них
+  7 653 — `/lp/item/` (CD в sitemap нет).
 - URL товара: /lp/item/{external_id}-{slug} (LP) или /cd/item/{external_id}-{slug} (CD).
 - Полное Schema.org microdata: itemprop="price"/"availability"/"name"/"brand".
 - ВАЖНО: на странице **много** Product-blocks (рекомендации, похожие, корзина).
@@ -18,7 +42,9 @@ from __future__ import annotations
 
 import logging
 import re
+from datetime import datetime
 from decimal import Decimal
+from typing import AsyncIterator
 
 from bs4 import BeautifulSoup
 
@@ -49,6 +75,12 @@ _TITLE_RE = re.compile(
 
 _PREORDER_KW_RE = re.compile(r"предзаказ|pre[\s\-]?order", re.I)
 
+# Хвост «'01» / «'25» в названии карточки и в «Переиздание'18».
+_APOSTROPHE_YEAR_RE = re.compile(r"\s*'(\d{2})\s*$")
+_REISSUE_RE = re.compile(r"переиздан", re.I)
+# Грейдинг в последней строке описания: «SS/SS», «M/M», «EX+/EX», «VG+/VG».
+_CONDITION_RE = re.compile(r"[A-Z]{1,2}\+?-?(?:/[A-Z]{1,2}\+?-?)?")
+
 
 @register_parser("plastinka_com")
 class PlastinkaComParser(BaseStoreParser):
@@ -60,9 +92,66 @@ class PlastinkaComParser(BaseStoreParser):
     # Фильтр для discover_urls: берём только LP-страницы, без /cd/, /acc/, категорий
     listing_url_pattern = r"/lp/item/\d+"
 
+    # Листинг LP: 200 товаров на страницу, `?page=N`. Пустая страница = конец
+    # (проверено: page 39 отдаёт 53 товара, page 40 — ноль, итого 7 653).
+    catalog_path = "/lp"
+    catalog_page_size = 200
+    max_pages = 200
+
     @property
     def slug(self) -> str:  # читаемое имя из registry
         return "plastinka_com"
+
+    # ---- Обход по карточкам листинга ------------------------------------- #
+
+    async def crawl_full(self, limit: int | None = None) -> AsyncIterator[ListingDTO]:
+        """Пагинируем `/lp?page=N` и разбираем карточки, без захода на товар.
+
+        Rate-limit держит per-domain token bucket в http_client, поэтому
+        дополнительный sleep как в `BaseStoreParser.crawl_full` не нужен.
+        """
+        seen: set[str] = set()
+        emitted = 0
+
+        for page in range(1, self.max_pages + 1):
+            url = f"{self.base_url}{self.catalog_path}"
+            if page > 1:
+                url = f"{url}?page={page}"
+            try:
+                html = await self.http.get_text(url)
+            except Exception:
+                logger.debug("[%s] listing page %d failed", self.slug, page, exc_info=True)
+                return
+
+            cards = _extract_cards(html)
+            if not cards:
+                logger.info("[%s] каталог кончился на page %d (%d товаров)",
+                            self.slug, page, emitted)
+                return
+
+            fresh = 0
+            for card in cards:
+                try:
+                    dto = _parse_card(card, self.base_url)
+                except Exception:
+                    logger.debug("[%s] card parse failed on page %d",
+                                 self.slug, page, exc_info=True)
+                    continue
+                if dto is None or dto.external_id in seen:
+                    continue
+                seen.add(dto.external_id)
+                fresh += 1
+                yield dto
+                emitted += 1
+                if limit is not None and emitted >= limit:
+                    return
+
+            if fresh == 0:
+                return
+            if len(cards) < self.catalog_page_size:
+                logger.info("[%s] последняя страница %d, всего %d товаров",
+                            self.slug, page, emitted)
+                return
 
     async def parse_listing(self, url: str) -> ListingDTO:
         html = await self.http.get_text(url)
@@ -154,6 +243,107 @@ class PlastinkaComParser(BaseStoreParser):
 
 
 # ---- helpers ----------------------------------------------------------- #
+
+
+def _extract_cards(html: str) -> list:
+    """Карточки товара со страницы листинга (`.products-grid-item`)."""
+    soup = BeautifulSoup(html, "lxml")
+    return soup.find_all("div", class_="products-grid-item")
+
+
+def _year_from_apostrophe(value: str | None) -> int | None:
+    """«'01» → 2001, «'67» → 1967. Двузначный год: > текущего → прошлый век."""
+    if not value:
+        return None
+    m = _APOSTROPHE_YEAR_RE.search(value)
+    if not m:
+        return None
+    nn = int(m.group(1))
+    century_cut = (datetime.utcnow().year % 100)
+    return 2000 + nn if nn <= century_cut else 1900 + nn
+
+
+def _parse_card(card, base_url: str) -> ListingDTO | None:
+    """Карточка листинга → ListingDTO. None — карточка без id/ссылки."""
+    external_id = (card.get("data-id") or "").strip()
+    link = card.find("a", href=True)
+    if not external_id or not link:
+        return None
+
+    name_el = card.find(attrs={"itemprop": "name"})
+    raw_name = name_el.get_text(" ", strip=True) if name_el else ""
+    if not raw_name:
+        return None
+
+    # «Toxicity '01» → альбом «Toxicity» + год оригинала 2001.
+    year_original = _year_from_apostrophe(raw_name)
+    album = _APOSTROPHE_YEAR_RE.sub("", raw_name).strip(" ,")
+
+    # data-artist-name надёжнее разбора title: он не ломается на «A-ha».
+    artist = (card.get("data-artist-name") or "").strip() or None
+
+    descr_el = card.find(attrs={"itemprop": "description"})
+    descr_lines = (
+        [ln.strip() for ln in descr_el.get_text("\n", strip=True).split("\n") if ln.strip()]
+        if descr_el else []
+    )
+    descr_text = " ".join(descr_lines)
+    # Последняя строка описания — грейдинг («SS/SS», «M/M», «EX+/EX»).
+    condition = None
+    if descr_lines and _CONDITION_RE.fullmatch(descr_lines[-1]):
+        condition = descr_lines[-1]
+
+    # Год пресса: «Переиздание'18» → 2018; иначе год оригинала из названия.
+    reissue = next((ln for ln in descr_lines if _REISSUE_RE.search(ln)), None)
+    year = _year_from_apostrophe(reissue) or year_original
+
+    price_el = card.find(attrs={"itemprop": "price"})
+    price = parse_price(
+        (price_el.get("content") if price_el else None)
+        or (price_el.get_text(strip=True) if price_el else None)
+    )
+
+    avail_el = card.find(attrs={"itemprop": "availability"})
+    avail = (avail_el.get("href") or avail_el.get("content") or "") if avail_el else ""
+
+    full_text = f"{raw_name}\n{descr_text}"
+    if _PREORDER_KW_RE.search(full_text):
+        status = "preorder"
+    elif "OutOfStock" in avail or "SoldOut" in avail:
+        status = "out_of_stock"
+    elif "InStock" in avail and price is not None:
+        status = "in_stock"
+    elif price is None:
+        status = "on_request"
+    else:
+        status = "in_stock"
+
+    img = card.find("img")
+    image = img.get("src") if img else None
+
+    label = descr_lines[1] if len(descr_lines) > 1 else None
+    return ListingDTO(
+        external_id=external_id,
+        url=base_url + link["href"].split("?")[0],
+        title_raw=album,
+        artist_raw=artist,
+        year_raw=year,
+        format_raw=infer_format(full_text) or "LP",
+        vinyl_color_raw=infer_vinyl_color(full_text, exclude=[artist, album]),
+        condition=condition,
+        price_rub=price,
+        price_currency="RUB",
+        status=status,
+        # Plastinka не публикует barcode/catalog/Discogs-ссылки
+        barcode=None,
+        catalog_number=None,
+        discogs_release_url=None,
+        image_url=image,
+        raw_payload={
+            "plastinka_external_id": external_id,
+            "label": label,
+        },
+    )
 
 
 def _extract_id_from_url(url: str) -> str | None:
