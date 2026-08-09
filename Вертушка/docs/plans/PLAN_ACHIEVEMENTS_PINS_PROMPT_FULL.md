@@ -26,6 +26,7 @@
    - [K — Сообщество + Вклад](#серия-k--сообщество) (14)
    - [INV — Глас наружу](#серия-inv--глас-наружу) (6)
    - [H — Дискография](#серия-h--дискография) (5)
+   - [M — Рыночный нюх](#серия-m--рыночный-нюх) (6)
    - [R — Рандомные пасхалки](#серия-r--рандомные-пасхалки) (14)
    - [META — Выпускные эпики](#серия-meta--выпускные-эпики) (9)
 5. [Фразы для итерации](#фразы-для-итерации)
@@ -850,6 +851,78 @@ Generate a soft enamel pin: a thick stack of record sleeves bound with a paper b
 Composition: one bold stack of about 10 flat square sleeves fills ~70% of the pin, seen three-quarter so the side edges read as many layers, sleeve bodies ivory with navy shadow sides and thin gold edge lines; on the front sleeve, a round gold label stamp — a simple concentric-ring emblem — repeats in miniature on every visible side edge, so the "all one label" idea reads; a wide ember #E85A2A paper band wraps the whole stack horizontally with a chunky vintage serif gold "×20" printed on it; the top sleeve is slightly askew and its corner extends past the top edge of the frame; three 4-pointed gold sparkle stars float beside the stack.
 Palette: navy #0B1438, ivory #FBF5EA, vinyl black #1A1A2E, ember #E85A2A, gold #D9A84E.
 Same enamel pin style as the previous Vertushka pins (gold contour, navy outline, recessed enamel, single specular per zone). No shelf, no background, no frame.
+Output: 1024×1024 PNG, transparent background.
+```
+
+---
+
+### Серия M — Рыночный нюх
+
+> **Единый вектор серии:** путь покупателя — заглянул в цены, вышел наружу, закрыл своё «хочу», поймал цену ниже рынка, стал завсегдатаем. Тиры: sparkles только у 🌸 (M4, M5), у 💧 и 🔵 их нет.
+
+#### `M1_first_drawer` — Прицениться 💧 ✅ отрисован
+> Метафора: открыл price drawer — бумажный ценник с отогнутым уголком. Только заглянул, ещё ничего не решил.
+
+```text
+Generate a soft enamel pin: a paper price tag hanging on a string, its lower corner peeled back to reveal the number underneath.
+Composition: one bold ivory price tag fills ~65% of the pin, tilted about 10 degrees, its classic tag shape with a clipped upper-left corner and a round gold eyelet; a thin gold string threads through the eyelet and loops up past the top edge of the frame; the tag's lower-right corner is curled back like peeled paper, showing a navy underside, and in the revealed area sits a chunky vintage serif gold "?" beside a small ember #E85A2A currency mark; on the flat part of the tag, three short navy dashes stand in for hidden digits and a tiny vinyl record glyph with an ember center sits in the upper corner; a small gold arrow curves toward the peeled corner, pointing at what was uncovered.
+Palette: navy #0B1438, ivory #FBF5EA, vinyl black #1A1A2E, ember #E85A2A, gold #D9A84E.
+Same enamel pin style as the previous Vertushka pins (gold contour, navy outline, recessed enamel, single specular per zone). No hand, no shelf, no background, no frame.
+Output: 1024×1024 PNG, transparent background.
+```
+
+#### `M2_first_click` — Первая вылазка 💧 ✅ отрисован
+> Метафора: первый affiliate-переход — приоткрытая дверь магазина с колокольчиком. Впервые вышел за пределы приложения.
+
+```text
+Generate a soft enamel pin: a record shop door standing ajar with a small bell ringing above it, warm light spilling out through the opening.
+Composition: one bold shop door fills ~70% of the pin, seen straight on, its frame in gold with a navy panel and an ivory glass upper half; the door is pushed open to the right at an angle so a wedge of the interior shows — that wedge is ember #E85A2A, reading as warm light from inside, with one small vinyl record silhouette visible in it; on the glass, a small ivory sign hangs reading "OPEN" in tiny chunky serif navy; above the door frame, a small gold bell tilts mid-swing with two short gold sound arcs beside it; the door's threshold extends slightly past the bottom edge of the frame; a small gold arrow on the floor points outward through the opening.
+Palette: navy #0B1438, ivory #FBF5EA, vinyl black #1A1A2E, ember #E85A2A, gold #D9A84E.
+Same enamel pin style as the previous Vertushka pins (gold contour, navy outline, recessed enamel, single specular per zone). No street, no building facade, no background panel, no frame.
+Output: 1024×1024 PNG, transparent background.
+```
+
+#### `M3_wishlist_hunter` — Закрыл гештальт 🔵 ✅ отрисован
+> Метафора: переход по своей вишлист-пластинке — строка списка, перечёркнутая золотом, и галочка. Заход «смыкающееся кольцо канавки» отброшен: разрыв кольца не читался как незакрытый гештальт.
+
+```text
+Generate a soft enamel pin: a wishlist note where the top line is struck through with a bold gold line and marked with a big checkmark — that want is finally closed.
+Composition: one bold ivory note sheet fills ~70% of the pin, tilted about 5 degrees, with a gold border, a torn bottom edge and a small ivory heart badge with gold outline pinned to its upper-left corner marking it as a wishlist; on the sheet, three horizontal entry rows: the top row shows a small vinyl record glyph (vinyl black, ember #E85A2A center) followed by a short navy text bar, and a thick gold line strikes clean through the whole row from left to right, extending slightly past the sheet's edge; the two rows below remain unstruck, drawn as plain navy bars with tiny record glyphs; to the right of the struck row, a large bold gold checkmark sits half over the sheet edge, its stroke thick and confident; a small gold pushpin holds the sheet at the top center.
+Palette: navy #0B1438, ivory #FBF5EA, vinyl black #1A1A2E, ember #E85A2A, gold #D9A84E.
+Same enamel pin style as the previous Vertushka pins (gold contour, navy outline, recessed enamel, single specular per zone). No hand, no wall, no background panel, no frame.
+Output: 1024×1024 PNG, transparent background.
+```
+
+#### `M4_deal_finder` — Цена-огонь 🌸 ✅ отрисован
+> Метафора: листинг дешевле медианы — запечатанный винил в плёнке с долларовым ценником, упаковка охвачена пламенем. Огонь — это цена, а не пожар: конверт остаётся целым.
+
+```text
+Generate a soft enamel pin: a shrink-wrapped sealed vinyl record with a dollar price sticker on the front, the whole package licked by flames.
+Composition: one bold square record sleeve fills ~65% of the pin, tilted about 8 degrees, its cover a deep cobalt #2A4BD7 field with a vinyl record edge (vinyl black, gold groove rings) sliding partly out of the top right; over the whole sleeve lies a glossy shrink-wrap film, drawn as a thin ivory outline hugging the edges with two long diagonal specular streaks and a few soft crease lines, plus a small gold seam strip down one side so the "still sealed" reads instantly; slapped on the lower-left of the wrap sits a round ivory price sticker with a gold rim, carrying a chunky vintage serif ember "$" and a bold gold numeral beside it, slightly askew like a real shop sticker; ember #E85A2A flames rise along the bottom edge and up the right side of the package, tongues of fire with inner ivory-gold cores, the tallest flame reaching past the top edge of the frame — the sleeve itself stays intact and unburnt, the fire is the deal, not damage; three 4-pointed gold sparkle stars float among the flames.
+Palette: navy #0B1438, cobalt #2A4BD7, ivory #FBF5EA, vinyl black #1A1A2E, ember #E85A2A, gold #D9A84E.
+Same enamel pin style as the previous Vertushka pins (gold contour, navy outline, recessed enamel, single specular per zone). No smoke, no charring, no background panel, no frame.
+Output: 1024×1024 PNG, transparent background.
+```
+
+#### `M5_regular` — Завсегдатай 🌸 ✅ отрисован
+> Метафора: 50 переходов — истёртый коврик «WELCOME», где вместо буквы O стоит пластинка. Порог знает твои ноги.
+
+```text
+Generate a soft enamel pin: a worn shop doormat reading "WELCOME", where the letter O is replaced by a vinyl record.
+Composition: one bold rectangular doormat fills ~70% of the pin, shown in slight perspective as a wide trapezoid receding upward, its body cobalt #2A4BD7 with a thick gold braided border and short navy bristle strokes across the surface; woven across the mat in chunky vintage serif gold capitals: "WELC", then a vinyl record standing in for the letter O — a small disc in vinyl black with concentric gold groove rings and an ember #E85A2A center label, sized and seated exactly like the other letters so it reads as part of the word — then "ME"; the record-letter is the only element in full color, the rest of the lettering stays flat gold; down the middle of the mat runs a paler ivory worn path where the bristles have been flattened by traffic, with two faint gold footprint shapes in it; a chunky gold serif "50" stitched into the mat's lower-right corner; the mat's front edge is slightly frayed with a few loose gold threads; three 4-pointed gold sparkle stars float above the mat.
+Palette: navy #0B1438, cobalt #2A4BD7, ivory #FBF5EA, vinyl black #1A1A2E, ember #E85A2A, gold #D9A84E.
+Same enamel pin style as the previous Vertushka pins (gold contour, navy outline, recessed enamel, single specular per zone). No door, no shop, no floor, no background panel, no frame.
+Output: 1024×1024 PNG, transparent background.
+```
+
+#### `META_market` — Рыночный нюх 🔵 ✅ отрисован
+> Метафора: все M1–M5 — гончая идёт по пунктирному следу к ценнику. Нюх, доведённый до охоты.
+
+```text
+Generate a soft enamel pin: a hound's head in profile, nose down, following a dashed scent trail that ends at a price tag.
+Composition: one bold hound head in profile fills the upper left ~55% of the pin, facing down-right — a long tapered muzzle, one floppy ivory ear, a navy body with gold contour lines, an ember #E85A2A nose at the tip and a single round gold eye; from the nose, a thin dashed gold scent trail curves down and to the right in a lazy S, passing two tiny gold sniff-marks along the way; at the end of the trail hangs one small ivory price tag with a gold eyelet and a tiny vinyl record glyph with ember center on its face; a slim gold collar with a small round tag crosses the hound's neck at the lower left.
+Palette: navy #0B1438, ivory #FBF5EA, vinyl black #1A1A2E, ember #E85A2A, gold #D9A84E.
+Same enamel pin style as the previous Vertushka pins (gold contour, navy outline, recessed enamel, single specular per zone). No full dog body, no ground, no background, no frame.
 Output: 1024×1024 PNG, transparent background.
 ```
 
