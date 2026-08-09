@@ -135,6 +135,11 @@ async def _emit_impl(
                     },
                     push_title=push_title,
                     push_body=push_body,
+                    # Cap по умолчанию — один push на тип в час, и весь батч
+                    # ачивок схлопывался в одну: юзер открывал пять штук, а
+                    # узнавал про первую. Слот на КОД: разные ачивки друг друга
+                    # не глушат, повтор той же — по-прежнему режется.
+                    push_cap_key=f"achievement_unlocked:{code}",
                 )
             await db.commit()
         except Exception:

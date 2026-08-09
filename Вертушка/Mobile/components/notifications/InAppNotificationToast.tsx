@@ -23,6 +23,7 @@ import { Colors, Spacing, Typography, BorderRadius } from '@/constants/theme';
 import { Icon } from '@/components/ui';
 import { resolveMediaUrl } from '@/lib/api';
 import { useNotificationsStore } from '@/lib/notificationsStore';
+import { DESIGN_PNGS } from '@/assets/achievements/designs';
 import { routeForPush } from '@/lib/pushRouting';
 
 export interface ToastPayload {
@@ -129,6 +130,15 @@ export const InAppNotificationToastHost: React.FC = () => {
     ? resolveMediaUrl(current.data.avatar_url as string)
     : undefined;
 
+  // Ачивка показывает свой пин, а не общий колокольчик: в тосте про ачивку
+  // важен сам трофей. icon_slug кладёт бэкенд в data при создании нотификации.
+  const type = current.data?.type as string | undefined;
+  const slug = current.data?.icon_slug as string | undefined;
+  const pin =
+    (type === 'achievement_unlocked' || type === 'milestone_unlocked') && slug
+      ? (DESIGN_PNGS as Record<string, number>)[slug]
+      : undefined;
+
   return (
     <Animated.View
       pointerEvents="box-none"
@@ -143,8 +153,10 @@ export const InAppNotificationToastHost: React.FC = () => {
     >
       <TouchableWithoutFeedback onPress={handleTap}>
         <View style={styles.card}>
-          <View style={styles.iconWrap}>
-            {avatarUrl ? (
+          <View style={[styles.iconWrap, pin ? styles.iconWrapPin : null]}>
+            {pin ? (
+              <Image source={pin} style={styles.pin} contentFit="contain" />
+            ) : avatarUrl ? (
               <Image source={avatarUrl} style={styles.avatar} cachePolicy="disk" />
             ) : (
               <Icon name="notifications" size={22} color={Colors.background} />
@@ -199,6 +211,14 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
+  },
+  // Пин рисуется на прозрачном фоне: синий кружок под ним съедал бы контур.
+  iconWrapPin: {
+    backgroundColor: 'transparent',
+  },
+  pin: {
+    width: 40,
+    height: 40,
   },
   body: {
     flex: 1,

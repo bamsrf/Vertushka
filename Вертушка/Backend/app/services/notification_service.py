@@ -262,6 +262,7 @@ async def create_notification(
     push_title: str | None = None,
     push_body: str | None = None,
     push_image: str | None = None,
+    push_cap_key: str | None = None,
     flush: bool = True,  # сохраняем kwarg для совместимости
 ) -> Notification:
     """LEGACY-фасад. Сохраняет контракт старых call-site'ов в gifts/users/collections.
@@ -283,6 +284,7 @@ async def create_notification(
         push_title=push_title,
         push_body=push_body,
         push_image=push_image,
+        push_cap_key=push_cap_key,
         priority=PRIORITY_FEED,
     )
     if notif is None:
