@@ -4,13 +4,33 @@
 Каталог `/catalog/muzyka/`: винил (~3.3k товаров, 115 страниц), CD, кассеты,
 магнитные ленты. Книги и сувенирку не берём — не носители звука.
 
+WS1.2: обход переведён со страниц товара на карточки листинга. Было
+~121 страница категорий + ~3500 запросов на страницы товара (≈2 часа),
+стало **121 запрос** (≈4 минуты) — карточка отдаёт всё нужное:
+
+    data-id="102300"                    → external_id (= sku из JSON-LD, сверено)
+    data-price="3290"                   → цена
+    .product-status → «В наличии»       → статус
+    img@alt «Виниловая пластинка Кино - Начальник Камчатки LP» → раздел + title
+    «Исполнитель: Кино»                 → артист (есть у 29/29 карточек)
+
+Единственное, чего в карточке нет — характеристика «Тип издания» («Цветной
+винил»). Она участвовала только в определении цвета, и лишь как второй источник
+после скобки в названии, откуда цвет и берётся в подавляющем большинстве
+случаев. A/B листинг против страницы товара на 12 товарах: 12/12 совпало по
+артисту, названию, цене, формату, цвету и обложке.
+
+`parse_listing()` (разбор страницы товара) сохранён — его использует
+`refresh_urls()` для точечной перепроверки и детекта 404 → removed.
+
 Особенности:
 - Bitrix. Общий `/sitemap/sitemap-iblock-2.xml` содержит ВЕСЬ каталог магазина
-  (наушники, усилители, гейминг) без признака раздела — поэтому discovery
-  делаем category-walk по `/catalog/muzyka/<раздел>/?PAGEN_1=N` (29 товаров
-  на страницу). robots.txt PAGEN_1 не запрещает.
-- На карточке чистый JSON-LD Product: name / sku / offers.price /
-  offers.availability / image. Цену и наличие берём оттуда.
+  (наушники, усилители, гейминг) без признака раздела — поэтому идём
+  category-walk по `/catalog/muzyka/<раздел>/?PAGEN_1=N` (29 товаров на
+  страницу, размер страницы не настраивается: SIZEN_1/count игнорируются).
+  robots.txt PAGEN_1 не запрещает.
+- На странице товара чистый JSON-LD Product: name / sku / offers.price /
+  offers.availability / image.
 - Артист лежит в характеристике «Исполнитель» — это надёжнее, чем резать
   title по дефису (в title попадаются «Kanye West - Ye», «Кишлак – СХИК2»,
   но и артисты с дефисом внутри имени).
@@ -27,6 +47,7 @@ from __future__ import annotations
 
 import logging
 import re
+from decimal import Decimal
 from typing import AsyncIterator
 
 from bs4 import BeautifulSoup
@@ -38,6 +59,7 @@ from app.services.scrapers.extractors import (
     infer_vinyl_color,
     jsonld_availability,
     jsonld_price,
+    parse_price,
 )
 from app.services.scrapers.registry import register_parser
 
@@ -81,6 +103,11 @@ _FORMAT_TAIL_RE = re.compile(
 _EDITION_PAREN_RE = re.compile(r"\(([^()]*)\)\s*$")
 _DASH_SPLIT_RE = re.compile(r"\s*[–—]\s*|\s+-\s+")
 _PREORDER_KW_RE = re.compile(r"предзаказ|pre[\s\-]?order", re.I)
+# Статус в карточке листинга: «В наличии» / «На заказ» / «Нет в наличии».
+# Порядок проверки важен: «нет в наличии» содержит в себе «в наличии».
+_CARD_OUT_OF_STOCK_RE = re.compile(r"нет\s+в\s+наличии|раскуплен|закончил", re.I)
+_CARD_IN_STOCK_RE = re.compile(r"в\s+наличии", re.I)
+_CARD_ON_ORDER_RE = re.compile(r"на\s+заказ|под\s+заказ", re.I)
 # `/upload/.../resize_cache/iblock/997/112_76_1/x.webp` → полноразмерный оригинал.
 _RESIZE_CACHE_RE = re.compile(r"resize_cache/(.*?)/\d+_\d+_\d+/")
 
@@ -98,7 +125,63 @@ class DoctorHeadParser(BaseStoreParser):
     def slug(self) -> str:
         return "doctorhead"
 
-    # ---- Discovery ------------------------------------------------------ #
+    # ---- Обход каталога по карточкам листинга ---------------------------- #
+
+    async def crawl_full(self, limit: int | None = None) -> AsyncIterator[ListingDTO]:
+        """Пагинируем медиа-разделы и разбираем карточки, без захода на товар.
+
+        Rate-limit держит per-domain token bucket в http_client (его настраивает
+        runner из `rate_limit_per_sec`), поэтому дополнительный sleep как в
+        `BaseStoreParser.crawl_full` здесь не нужен.
+        """
+        seen: set[str] = set()
+        emitted = 0
+
+        for category in _MEDIA_CATEGORIES:
+            base = f"{self.base_url}{_CATALOG_ROOT}/{category}/"
+            max_page: int | None = None
+            page = 1
+
+            while page <= _MAX_PAGES_PER_CATEGORY:
+                url = base if page == 1 else f"{base}?PAGEN_1={page}"
+                try:
+                    html = await self.http.get_text(url)
+                except Exception:
+                    logger.debug("[%s] category page failed: %s", self.slug, url, exc_info=True)
+                    break
+
+                if max_page is None:
+                    max_page = _detect_max_page(html)
+                    logger.info("[%s] %s: %s страниц", self.slug, category, max_page or "?")
+
+                fresh = 0
+                for card in _extract_cards(html):
+                    try:
+                        dto = _parse_card(card, self.base_url)
+                    except Exception:
+                        logger.debug("[%s] card parse failed on %s", self.slug, url, exc_info=True)
+                        continue
+                    if dto is None or dto.external_id in seen:
+                        continue
+                    seen.add(dto.external_id)
+                    fresh += 1
+                    yield dto
+                    emitted += 1
+                    if limit is not None and emitted >= limit:
+                        return
+
+                # Bitrix на PAGEN_1 за пределами диапазона отдаёт последнюю
+                # страницу, а не 404 — поэтому останавливаемся по «ни одного
+                # нового товара», а не по коду ответа.
+                if fresh == 0:
+                    break
+                if max_page is not None and page >= max_page:
+                    break
+                page += 1
+
+        logger.info("[%s] обход по карточкам: %d товаров", self.slug, emitted)
+
+    # ---- Discovery (для sitemap-совместимости и отладки) ----------------- #
 
     async def discover_urls(self) -> AsyncIterator[str]:
         """Пагинируем каждый медиа-раздел `/catalog/muzyka/<cat>/?PAGEN_1=N`.
@@ -209,6 +292,105 @@ class DoctorHeadParser(BaseStoreParser):
 
 
 # ---- helpers ------------------------------------------------------------ #
+
+
+def _extract_cards(html: str) -> list:
+    """Карточки товара со страницы категории (`.js-product-container`)."""
+    soup = BeautifulSoup(html, "lxml")
+    return soup.find_all("div", class_="js-product-container")
+
+
+def _card_field(text: str, name: str) -> str | None:
+    """«… | Исполнитель: Кино | Жанр: Rock | …» → значение поля по имени."""
+    m = re.search(rf"{name}:\s*\|?\s*([^|]+)", text)
+    return _clean(m.group(1)) if m else None
+
+
+def _parse_card(card, base_url: str) -> ListingDTO | None:
+    """Карточка листинга → ListingDTO. None — карточка без цены/ссылки."""
+    price_node = card.find("div", class_="js-product-price")
+    link = card.find("a", href=_PRODUCT_HREF_RE)
+    if not price_node or not link:
+        return None
+
+    external_id = (price_node.get("data-id") or "").strip()
+    if not external_id:
+        return None
+
+    text = card.get_text(" | ", strip=True)
+    img = card.find("img")
+
+    # img@alt — единственное место в карточке, где название идёт вместе с
+    # подписью раздела («Виниловая пластинка …»), а она нужна как фолбэк формата.
+    raw_title = _clean(img.get("alt") or "") if img else ""
+    category = ""
+    for label in _CATEGORY_FORMAT:
+        if raw_title.lower().startswith(label):
+            category = label
+            raw_title = raw_title[len(label):].strip()
+            break
+    if not raw_title:
+        return None
+
+    artist = _card_field(text, "Исполнитель")
+    album, edition = _strip_artist_and_format(raw_title, artist)
+    if artist is None:
+        artist, album = _split_artist_album(album)
+
+    # data-price приходит как «4990.0» — срезаем хвостовой ноль, чтобы значение
+    # совпадало с ценой со страницы товара и не плодило записей в price_history.
+    price = parse_price(price_node.get("data-price"))
+    if price is not None and price == price.to_integral_value():
+        price = price.quantize(Decimal(1))
+
+    status_node = card.find("div", class_="product-status")
+    status_text = status_node.get_text(" ", strip=True) if status_node else ""
+    if _PREORDER_KW_RE.search(f"{status_text} {raw_title} {edition}"):
+        status = "preorder"
+    elif _CARD_OUT_OF_STOCK_RE.search(status_text):
+        status = "out_of_stock"
+    elif _CARD_IN_STOCK_RE.search(status_text):
+        status = "in_stock"
+    elif _CARD_ON_ORDER_RE.search(status_text):
+        status = "on_request"
+    elif status_text:
+        status = "out_of_stock"
+    else:
+        status = "in_stock" if price is not None else "out_of_stock"
+    if price is None and status == "in_stock":
+        status = "on_request"
+
+    raw_payload: dict = {}
+    genre = _card_field(text, "Жанр")
+    if genre:
+        raw_payload["genre"] = genre
+
+    image = None
+    if img and img.get("src"):
+        image = base_url + _RESIZE_CACHE_RE.sub(r"\1/", img["src"])
+
+    return ListingDTO(
+        external_id=external_id,
+        url=base_url + link["href"].split("?")[0],
+        title_raw=album or raw_title,
+        artist_raw=artist,
+        year_raw=None,  # «Приход» — неделя поступления, не год релиза
+        format_raw=infer_format(f"{raw_title} {category}") or _CATEGORY_FORMAT.get(category),
+        # «Тип издания» есть только на странице товара; в карточке цвет живёт
+        # в хвостовой скобке названия — она и так основной источник.
+        vinyl_color_raw=infer_vinyl_color(
+            " ".join(filter(None, (edition, raw_title))), exclude=[artist, album]
+        ),
+        condition="Новый (Mint)",
+        price_rub=price,
+        price_currency="RUB",
+        status=status,
+        barcode=None,
+        catalog_number=None,
+        discogs_release_url=None,
+        image_url=image,
+        raw_payload=raw_payload,
+    )
 
 
 def _extract_product_urls(html: str) -> list[str]:

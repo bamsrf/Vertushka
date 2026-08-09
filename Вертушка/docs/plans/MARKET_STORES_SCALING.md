@@ -123,7 +123,7 @@
 | | Задача | Эффект | Файл |
 |---|---|---|---|
 | 1.1 | `plastinka_com`: перевести с per-product fetch на листинг-страницы категорий (цена + наличие в карточке); проверить наличие YML-фида | −50 000 → ~1 000 запросов | [plastinka_com.py](../../Backend/app/services/scrapers/shops/plastinka_com.py) |
-| 1.2 | `doctorhead`: то же — Bitrix, у листингов есть цена и наличие; сначала проверить `/yandex_market.xml` | −5 000 → ~200 | [doctorhead.py](../../Backend/app/services/scrapers/shops/doctorhead.py) |
+| 1.2 | ✅ **Сделано 2026-08-09.** Фида нет (11 путей Bitrix → 404), перешли на карточки листинга. В карточке есть всё, включая «Исполнитель» (29/29) и `data-id` = `sku` из JSON-LD. A/B на 12 товарах: 11 полей совпали 12/12. `parse_listing()` оставлен для `refresh_urls` | −3 620 → **121** | [doctorhead.py](../../Backend/app/services/scrapers/shops/doctorhead.py) |
 | 1.3 | `vinyl_ru`: проверить YML-фид Bitrix, иначе листинги | −5 000 → ~200 | [vinyl_ru.py](../../Backend/app/services/scrapers/shops/vinyl_ru.py) |
 | 1.4 | ✅ **Сделано 2026-08-09.** `korobkavinyla` переведён на `TildaStoreParser`. Каталог оказался 5950 товаров (не 3500) → **5950 запросов стали 60**. A/B со старым парсером на 5 товарах: 13 полей идентичны. Потерь данных нет — `sku` в API заполнен у 100% (95% валидный EAN), `descr` богаче страницы | −5 950 → **60** | [korobkavinyla.py](../../Backend/app/services/scrapers/shops/korobkavinyla.py) |
 
@@ -144,6 +144,7 @@
 |---|---|---|
 | 3.1 | `SCRAPER_CONCURRENCY` 5 → 10–15. Лимит per-domain, магазины независимы; упрёмся в CPU воркера и пул БД — замерить до и после | [scraper_tasks.py:40](../../Backend/app/tasks/scraper_tasks.py) |
 | 3.2 | `match_unmatched_batch(batch_size=2000)` — при 40 магазинах новинок будет больше; поднять batch либо гонять до исчерпания очереди | `_market_sync` |
+| 3.4 | **COALESCE-upsert.** `_upsert_listing` перезаписывает `artist_raw`/`vinyl_color_raw`/`year_raw` безусловно, поэтому дешёвый листинг-проход не может «дообогащать» строку — он затрёт накопленное нулями. Если эти поля не затирать пустым, магазины смогут ходить на страницу товара только за новинками. Задевает все парсеры → обкатать на одном | [runner.py:230](../../Backend/app/services/scrapers/runner.py) |
 | 3.3 | Отдельная очередь/расписание для Tier A: они дешёвые, их можно гонять каждые 2–4 ч, не занимая ночные слоты | [main.py:194](../../Backend/app/main.py) |
 
 ### WS4 — Онбординг новых магазинов
