@@ -3,7 +3,7 @@
  * экране ачивок. Кладётся между hero и обычными сериями. Порт MetaShelf
  * из MainScreen.jsx.
  */
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 import { AchievementPin } from './AchievementPin';
 import { Capsule } from './achievement-mockup/Capsule';
@@ -39,6 +39,10 @@ interface Props {
 
 const NEAR_THRESHOLD = 0.75;
 
+/** Ширина карточки в карусели и шаг снаппинга (карточка + зазор). */
+const CARD_W = ms(148);
+const CARD_GAP = 12;
+
 function collectMetas(data: MyAchievementsResponse): MetaWithSeries[] {
   const out: MetaWithSeries[] = [];
   for (const series of data.series) {
@@ -69,7 +73,18 @@ export function MetaTrophyShelf({ data, onPin }: Props) {
         <Capsule tone="gold" size="md">{`${unlocked} / ${total}`}</Capsule>
       </View>
 
-      <View style={styles.grid}>
+      {/* Карусель, а не сетка: девять трофеев столбиком занимали пол-экрана
+          до первой серии. Лента режется по краю карточки (snapToInterval),
+          следующая всегда выглядывает — видно, что список продолжается. */}
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={styles.rail}
+        contentContainerStyle={styles.railContent}
+        snapToInterval={CARD_W + CARD_GAP}
+        decelerationRate="fast"
+        snapToAlignment="start"
+      >
         {metas.map(({ meta, series, nearComplete }) => (
           <TouchableOpacity
             key={meta.code}
@@ -118,7 +133,7 @@ export function MetaTrophyShelf({ data, onPin }: Props) {
             </View>
           </TouchableOpacity>
         ))}
-      </View>
+      </ScrollView>
     </View>
   );
 }
@@ -147,15 +162,20 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
     marginTop: 2,
   },
-  grid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
+  // Лента выходит за поля секции, чтобы карточки уезжали под самый край
+  // экрана, а не упирались в отступ — иначе обрез выглядит как обрубок.
+  rail: {
+    marginHorizontal: -Spacing.md,
+  },
+  railContent: {
+    paddingHorizontal: Spacing.md,
+    // Воздух под ember-свечение карточки «вот-вот откроется»: без него
+    // ScrollView обрезает тень по своей высоте.
+    paddingVertical: 6,
+    gap: CARD_GAP,
   },
   card: {
-    flex: 1,
-    minWidth: '47%',
-    maxWidth: '49%',
+    width: CARD_W,
     aspectRatio: 0.82,
     borderRadius: BorderRadius.lg,
     overflow: 'hidden',
