@@ -154,6 +154,24 @@ export function recordPreviewParams(
   return params;
 }
 
+/**
+ * Кладёт жанры/особенности Маркета в query-params. Общий для `/market/search`
+ * и `/market/stores/{slug}/all` — сериализация обязана совпадать, иначе один
+ * и тот же набор чипов даёт разные результаты на общей витрине и в магазине.
+ */
+function applyMarketFilterParams(
+  params: Record<string, string | number>,
+  genres?: string[],
+  features?: string[],
+): void {
+  // Жанры — comma-joined строкой (бэк сплитит): надёжнее array-сериализации.
+  if (genres && genres.length > 0) params.genre = genres.join(',');
+  // Особенности — отдельные bool-флаги, чтобы бэк-клаузы читались явно.
+  if (features?.includes('colored')) params.colored = 'true';
+  if (features?.includes('limited')) params.limited = 'true';
+  if (features?.includes('new')) params.new = 'true';
+}
+
 const TOKEN_KEY = 'auth_token';
 const REFRESH_TOKEN_KEY = 'refresh_token';
 
@@ -734,22 +752,27 @@ class ApiClient {
 
   /**
    * Полная витрина магазина (пагинация) — для экрана `/market/store/[slug]`.
-   * q + format + sort + offset работают как ожидается. limit max 100.
+   * Набор фильтров тот же, что у searchMarket (формат + жанры + особенности):
+   * провалившись в магазин, юзер не теряет фильтрацию общей витрины.
+   * limit max 100.
    */
   async getStoreAll(
     slug: string,
     opts: {
       q?: string;
       format?: MarketFormatFilter | null;
+      genres?: string[];
+      features?: string[];
       sort?: MarketSortMode;
       limit?: number;
       offset?: number;
     } = {},
   ): Promise<MarketSearchItem[]> {
-    const { q, format, sort = 'price_asc', limit = 50, offset = 0 } = opts;
+    const { q, format, genres, features, sort = 'price_asc', limit = 50, offset = 0 } = opts;
     const params: Record<string, string | number> = { sort, limit, offset };
     if (q && q.trim().length >= 2) params.q = q.trim();
     if (format) params.format = format;
+    applyMarketFilterParams(params, genres, features);
     return this.deduplicatedGet<MarketSearchItem[]>(
       `/market/stores/${encodeURIComponent(slug)}/all`,
       { params },
@@ -771,27 +794,29 @@ class ApiClient {
       features?: string[];
       sort?: MarketSortMode;
       limit?: number;
+      offset?: number;
     } = {},
   ): Promise<MarketSearchItem[]> {
-    const { q, format, genres, features, sort = 'price_asc', limit = 50 } = opts;
-    const params: Record<string, string | number> = { sort, limit };
+    const { q, format, genres, features, sort = 'price_asc', limit = 50, offset = 0 } = opts;
+    const params: Record<string, string | number> = { sort, limit, offset };
     if (q && q.trim().length >= 2) params.q = q.trim();
     if (format) params.format = format;
-    // Жанры — comma-joined строкой (бэк сплитит): надёжнее array-сериализации.
-    if (genres && genres.length > 0) params.genre = genres.join(',');
-    // Особенности — отдельные bool-флаги, чтобы бэк-клаузы читались явно.
-    if (features?.includes('colored')) params.colored = 'true';
-    if (features?.includes('limited')) params.limited = 'true';
-    if (features?.includes('new')) params.new = 'true';
+    applyMarketFilterParams(params, genres, features);
     return this.deduplicatedGet<MarketSearchItem[]>('/market/search', { params });
   }
 
   /**
    * Доступные фильтры Маркета (жанры + особенности) со счётчиками. Только
    * опции с count > 0 — Mobile рисует чипы строго по наличию.
+   *
+   * `storeSlug` сужает подсчёт до одного магазина — для экрана
+   * /market/store/[slug], чтобы там не появлялись чипы жанров, которых у
+   * этого магазина нет.
    */
-  async getMarketFacets(): Promise<MarketFacetsResponse> {
-    return this.deduplicatedGet<MarketFacetsResponse>('/market/facets');
+  async getMarketFacets(storeSlug?: string): Promise<MarketFacetsResponse> {
+    return this.deduplicatedGet<MarketFacetsResponse>('/market/facets', {
+      params: storeSlug ? { store: storeSlug } : undefined,
+    });
   }
 
   /**

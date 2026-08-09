@@ -7,14 +7,15 @@
  *
  * Не рендерит ни фон, ни curtain — это забота parent'а. Внутри:
  *   • Загрузка списка магазинов и search-результатов.
- *   • AnimatedFlatList с ListHeaderComponent: MarketSection + MarketSearchResults.
+ *   • AnimatedFlatList: в шапке — MarketSection (поиск, фильтры, карусели), в
+ *     data — сетка результатов с бесконечной подгрузкой (useMarketPagination).
  *
  * parent передаёт `onScroll` для overdrag-detection (top → exit, bottom не
  * используется) и `paddingTop` для выравнивания заголовка МАРКЕТ с
  * соответствующим местом в Поиске.
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { FlatList, Keyboard, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, FlatList, Keyboard, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import Animated, {
   Extrapolation,
@@ -29,10 +30,15 @@ import { STORES_TTL_MS, useMarketStore } from '../../lib/marketStore';
 import type { MarketSearchItem, MarketFilters, MarketFacetsResponse } from '../../lib/types';
 import { EMPTY_MARKET_FILTERS, hasActiveFilters } from '../../lib/types';
 
+import { useMarketPagination } from '../../lib/useMarketPagination';
 import MarketSection, { type MarketStoreData } from './MarketSection';
-import MarketSearchResults from './MarketSearchResults';
+import MarketResultCard, { marketGridStyles } from './MarketResultCard';
 
 const AnimatedFlatList = Animated.createAnimatedComponent(FlatList);
+
+// Стабильная ссылка на пустой список: `[]` инлайном создавал бы новый массив
+// на каждый рендер и заставлял FlatList пересобирать ячейки впустую.
+const NO_ITEMS: MarketSearchItem[] = [];
 
 interface MarketMainProps {
   /** Reanimated scroll handler от parent'а (для overdrag-curtain'ы). */
@@ -225,43 +231,43 @@ export function MarketMain({ onScroll, scrollEnabled = true, paddingTop, pullFra
     return () => { cancelled = true; };
   }, []);
 
-  const [searchItems, setSearchItems] = useState<MarketSearchItem[]>([]);
-  const [searchLoading, setSearchLoading] = useState(false);
-
   const isSearchActive = useMemo(() => {
     return debouncedQuery.length >= 2 || hasActiveFilters(filters);
   }, [debouncedQuery, filters]);
 
-  // Сериализуем фильтры в стабильный ключ для deps эффекта поиска — иначе новый
-  // объект filters на каждый рендер перезапускал бы запрос.
+  // Сериализуем фильтры в стабильный ключ — иначе новый объект filters на
+  // каждый рендер сбрасывал бы пагинацию.
   const filtersKey = useMemo(
     () => `${filters.format}|${[...filters.genres].sort().join(',')}|${[...filters.features].sort().join(',')}`,
     [filters],
   );
+  const effectiveQuery = debouncedQuery.length >= 2 ? debouncedQuery : '';
 
-  useEffect(() => {
-    if (!isSearchActive) {
-      setSearchItems([]);
-      setSearchLoading(false);
-      return;
-    }
-    let cancelled = false;
-    setSearchLoading(true);
-    api.searchMarket({
-      q: debouncedQuery.length >= 2 ? debouncedQuery : undefined,
-      format: filters.format === 'all' ? null : filters.format,
-      genres: filters.genres,
-      features: filters.features,
-      sort: 'price_asc',
-      limit: 50,
-    })
-      .then((res) => { if (!cancelled) setSearchItems(res); })
-      .catch(() => { if (!cancelled) setSearchItems([]); })
-      .finally(() => { if (!cancelled) setSearchLoading(false); });
-    return () => { cancelled = true; };
-    // filtersKey покрывает format/genres/features; filters читаем внутри.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isSearchActive, debouncedQuery, filtersKey]);
+  const fetchSearchPage = useCallback(
+    (offset: number, limit: number) =>
+      api.searchMarket({
+        q: effectiveQuery || undefined,
+        format: filters.format === 'all' ? null : filters.format,
+        genres: filters.genres,
+        features: filters.features,
+        sort: 'price_asc',
+        limit,
+        offset,
+      }),
+    [effectiveQuery, filters],
+  );
+
+  const {
+    items: searchItems,
+    loading: searchLoading,
+    loadingMore,
+    reachedEnd,
+    loadMore,
+  } = useMarketPagination({
+    enabled: isSearchActive,
+    resetKey: `${effectiveQuery}|${filtersKey}`,
+    fetchPage: fetchSearchPage,
+  });
 
   const handleStorePress = useCallback((slug: string) => {
     router.push(`/market/store/${slug}` as any);
@@ -273,11 +279,23 @@ export function MarketMain({ onScroll, scrollEnabled = true, paddingTop, pullFra
     router.push(`/record/${item.discogs_id ?? item.record_id}` as any);
   }, [router]);
 
+  const renderSearchItem = useCallback(
+    ({ item }: { item: MarketSearchItem }) => (
+      <MarketResultCard item={item} onPress={handleSearchItemPress} showStore />
+    ),
+    [handleSearchItemPress],
+  );
+
   return (
     <AnimatedFlatList
-      data={[]}
-      keyExtractor={() => ''}
-      renderItem={null as any}
+      // Результаты живут в data (а не в шапке) — только так FlatList знает
+      // длину списка и дёргает onEndReached для подгрузки следующей страницы.
+      // Когда фильтров нет, сетка пуста и виден обычный состав Маркета.
+      data={(isSearchActive ? searchItems : NO_ITEMS) as any}
+      keyExtractor={(item: any) => (item as MarketSearchItem).record_id}
+      renderItem={renderSearchItem as any}
+      numColumns={2}
+      columnWrapperStyle={marketGridStyles.row}
       contentContainerStyle={{ paddingBottom: 120 }}
       showsVerticalScrollIndicator={false}
       keyboardShouldPersistTaps="handled"
@@ -288,6 +306,33 @@ export function MarketMain({ onScroll, scrollEnabled = true, paddingTop, pullFra
       bounces
       alwaysBounceVertical
       overScrollMode="always"
+      onEndReached={isSearchActive ? loadMore : undefined}
+      onEndReachedThreshold={0.6}
+      ListEmptyComponent={
+        isSearchActive ? (
+          <View style={styles.searchState}>
+            {searchLoading ? (
+              <ActivityIndicator size="small" color="rgba(255,255,255,0.65)" />
+            ) : (
+              <Text style={styles.searchStateText}>
+                {effectiveQuery
+                  ? `Ничего не найдено по «${effectiveQuery}»`
+                  : 'Под выбранными фильтрами ничего нет в наличии'}
+              </Text>
+            )}
+          </View>
+        ) : null
+      }
+      ListFooterComponent={
+        isSearchActive && searchItems.length > 0 ? (
+          <View style={styles.footer}>
+            {loadingMore && <ActivityIndicator size="small" color="rgba(255,255,255,0.55)" />}
+            {reachedEnd && !loadingMore && (
+              <Text style={styles.footerText}>Это всё, что сейчас в наличии</Text>
+            )}
+          </View>
+        ) : null
+      }
       ListHeaderComponent={
         <View style={{ paddingTop }}>
           {/* Exit-hint выше МАРКЕТ heading. Сидит на negative margin —
@@ -309,14 +354,6 @@ export function MarketMain({ onScroll, scrollEnabled = true, paddingTop, pullFra
               headerPaddingTop={0}
             />
           )}
-          {marketStores.length > 0 && isSearchActive && (
-            <MarketSearchResults
-              loading={searchLoading}
-              query={marketSearch}
-              items={searchItems}
-              onItemPress={handleSearchItemPress}
-            />
-          )}
           {marketStores.length === 0 && (
             <View style={styles.empty}>
               <Text style={styles.emptyText}>
@@ -331,6 +368,30 @@ export function MarketMain({ onScroll, scrollEnabled = true, paddingTop, pullFra
 }
 
 const styles = StyleSheet.create({
+  searchState: {
+    paddingHorizontal: 24,
+    paddingVertical: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 120,
+  },
+  searchStateText: {
+    fontFamily: 'Inter_400Regular',
+    fontSize: 13,
+    color: 'rgba(255,255,255,0.68)',
+    textAlign: 'center',
+  },
+  footer: {
+    paddingVertical: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 24,
+  },
+  footerText: {
+    fontFamily: 'Inter_400Regular',
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.45)',
+  },
   empty: {
     paddingHorizontal: 32,
     paddingVertical: 80,

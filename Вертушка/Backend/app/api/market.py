@@ -134,7 +134,7 @@ def _filters_clause(
 # в Redis самотухнут по TTL, а свежие запросы сразу получают новую логику.
 CACHE_NS_STORES = "market_stores:v3"
 CACHE_NS_STORE_LISTINGS = "market_store_listings:v4"
-CACHE_NS_SEARCH = "market_search:v8"  # v8: жанр матчится и по r.style (+суб-жанры)
+CACHE_NS_SEARCH = "market_search:v9"  # v9: offset-пагинация + стабильный tiebreaker
 CACHE_TTL_STORES = 1800       # 30 мин — список магазинов меняется редко
 CACHE_TTL_LISTINGS = 600      # 10 мин — карусели чаще обновляем
 CACHE_TTL_SEARCH = 300        # 5 мин — поиск свежее
@@ -434,18 +434,29 @@ async def get_store_all(
     slug: str,
     q: str | None = Query(None, description="Текстовый поиск по artist/title"),
     format: str | None = Query(None, description="vinyl | cd | cassette"),
+    genre: str | None = Query(None, description="Ключи жанров через запятую (мульти): rock,jazz"),
+    colored: bool = Query(False, description="Только цветной винил"),
+    limited: bool = Query(False, description="Только лимитки (r.is_limited)"),
+    new: bool = Query(False, description="Только новинки (свежий релиз + first_seen ≤ 30 дней)"),
     sort: Literal["newest", "price_asc"] = Query("price_asc"),
     limit: int = Query(50, ge=1, le=100),
     offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
 ) -> list[MarketSearchItem]:
+    """Витрина одного магазина. Набор фильтров тот же, что у `/market/search`
+    (формат + жанр + особенности) — чтобы «провалившись» в магазин юзер не терял
+    фильтрацию, доступную на общей витрине."""
+    genre_list = [g for g in (genre.split(",") if genre else []) if g]
     fmt_sql, fmt_params = _format_clause(format)
+    filt_sql, filt_params = _filters_clause(genre_list, colored, limited, new)
     cutoff = datetime.utcnow() - timedelta(days=STALE_AFTER_DAYS)
 
     # Outer ORDER BY ссылается на CTE-колонки — без `sl.` префикса.
+    # dedup_key — уникальный tiebreaker (см. комментарий в /market/search):
+    # без него страницы offset-пагинации перемешиваются на равных ценах.
     order_clause = (
-        "price_rub ASC NULLS LAST" if sort == "price_asc"
-        else "first_seen_at DESC"
+        "price_rub ASC NULLS LAST, dedup_key" if sort == "price_asc"
+        else "first_seen_at DESC, dedup_key"
     )
 
     q_clause = ""
@@ -460,6 +471,7 @@ async def get_store_all(
         f"""
         WITH ranked AS (
             SELECT DISTINCT ON (COALESCE(r.discogs_master_id, r.id::text))
+                COALESCE(r.discogs_master_id, r.id::text) AS dedup_key,
                 sl.matched_record_id AS record_id,
                 sl.price_rub,
                 sl.first_seen_at,
@@ -479,6 +491,7 @@ async def get_store_all(
               AND r.merged_into_id IS NULL
               AND COALESCE(r.cover_local_path, r.cover_image_url, sl.raw_payload->>'image_url') IS NOT NULL
               {fmt_sql}
+              {filt_sql}
               {q_clause}
             ORDER BY COALESCE(r.discogs_master_id, r.id::text), sl.price_rub ASC NULLS LAST
         )
@@ -491,7 +504,7 @@ async def get_store_all(
     params = {
         "slug": slug, "cutoff": cutoff,
         "limit": limit, "offset": offset,
-        **fmt_params, **q_params,
+        **fmt_params, **filt_params, **q_params,
     }
     rows = (await db.execute(sql, params)).mappings().all()
 
@@ -534,12 +547,16 @@ async def search_market(
     new: bool = Query(False, description="Только новинки (first_seen ≤ 30 дней)"),
     sort: Literal["price_asc", "newest"] = Query("price_asc"),
     limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0, description="Сдвиг страницы (infinite scroll)"),
     db: AsyncSession = Depends(get_db),
 ) -> list[MarketSearchItem]:
     """
     Дедупликация: на один record_id — одна карточка с min_price + N магазинов.
     Если у юзера пустой `q` — возвращаем последние new-arrivals (sort=newest
     или sort=price_asc по дефолту самые дешёвые сверху).
+
+    Пагинация — limit/offset. Клиент листает до пустой страницы; счётчики по
+    каждой опции фильтра отдаёт `/market/facets`.
     """
     # genre приходит строкой «rock,jazz» — надёжнее array-сериализации на клиенте.
     genre_list = [g for g in (genre.split(",") if genre else []) if g]
@@ -547,9 +564,13 @@ async def search_market(
     filt_sql, filt_params = _filters_clause(genre_list, colored, limited, new)
     cutoff = datetime.utcnow() - timedelta(days=STALE_AFTER_DAYS)
 
+    # Tiebreaker agg.dedup_key ОБЯЗАТЕЛЕН при offset-пагинации: у цены и даты
+    # массово совпадают значения, а без уникального добивочного ключа Postgres
+    # волен возвращать связанные строки в любом порядке → соседние страницы
+    # дублируют одни карточки и теряют другие. dedup_key = GROUP BY-ключ, уникален.
     order_clause = (
-        "min_price ASC NULLS LAST" if sort == "price_asc"
-        else "first_seen_at DESC"
+        "min_price ASC NULLS LAST, agg.dedup_key" if sort == "price_asc"
+        else "first_seen_at DESC, agg.dedup_key"
     )
 
     q_clause = ""
@@ -563,7 +584,7 @@ async def search_market(
     # для стабильности ключа независимо от порядка чипов.
     genre_key = ",".join(sorted(genre_list)) if genre_list else ""
     cache_key = (
-        f"search:{q or ''}:{format or 'all'}:{sort}:{limit}"
+        f"search:{q or ''}:{format or 'all'}:{sort}:{limit}:{offset}"
         f":g={genre_key}:c={int(colored)}:l={int(limited)}:n={int(new)}"
     )
     cached = await cache.get(CACHE_NS_SEARCH, cache_key)
@@ -607,11 +628,14 @@ async def search_market(
         FROM agg
         JOIN records r ON r.id = agg.chosen_record_id
         ORDER BY {order_clause}
-        LIMIT :limit
+        LIMIT :limit OFFSET :offset
         """
     )
 
-    params = {"cutoff": cutoff, "limit": limit, **fmt_params, **filt_params, **q_params}
+    params = {
+        "cutoff": cutoff, "limit": limit, "offset": offset,
+        **fmt_params, **filt_params, **q_params,
+    }
     rows = (await db.execute(sql, params)).mappings().all()
 
     items = [
@@ -646,7 +670,16 @@ async def search_market(
     response_model=MarketFacetsResponse,
     summary="Доступные фильтры Маркета (жанры + особенности) со счётчиками",
 )
-async def market_facets(db: AsyncSession = Depends(get_db)) -> MarketFacetsResponse:
+async def market_facets(
+    store: str | None = Query(
+        None,
+        description=(
+            "Slug магазина — считать фасеты только по его складу (для экрана "
+            "/market/store/[slug]). Без параметра — по всем активным магазинам."
+        ),
+    ),
+    db: AsyncSession = Depends(get_db),
+) -> MarketFacetsResponse:
     """Считает, сколько карточек в наличии под каждой опцией фильтра.
 
     База — та же, что у /market/search (active-магазин, in_stock, matched, есть
@@ -655,8 +688,12 @@ async def market_facets(db: AsyncSession = Depends(get_db)) -> MarketFacetsRespo
       • genre / limited — на уровне записи (репрезентативный / bool_or);
       • colored / new    — на уровне листинга (bool_or) — группа считается, если
         ХОТЯ БЫ один её листинг цветной / свежий (так же, как фильтрует search).
+
+    `store` сужает базу до одного магазина — иначе на его витрине рисовались бы
+    чипы жанров, которых у него нет, и фильтр вёл бы в пустоту.
     """
-    cache_key = "facets:v1"
+    store_clause = " AND s.slug = :store" if store else ""
+    cache_key = f"facets:v2:{store or 'all'}"
     cached = await cache.get(CACHE_NS_SEARCH, cache_key)
     if cached is not None:
         return MarketFacetsResponse.model_validate(cached)
@@ -691,6 +728,7 @@ async def market_facets(db: AsyncSession = Depends(get_db)) -> MarketFacetsRespo
               AND sl.last_seen_at >= :cutoff
               AND r.merged_into_id IS NULL
               AND COALESCE(r.cover_local_path, r.cover_image_url, sl.raw_payload->>'image_url') IS NOT NULL
+              {store_clause}
             GROUP BY COALESCE(r.discogs_master_id, r.id::text)
         )
         SELECT
@@ -701,9 +739,12 @@ async def market_facets(db: AsyncSession = Depends(get_db)) -> MarketFacetsRespo
         FROM agg
         """
     )
-    row = (
-        await db.execute(sql, {"cutoff": cutoff, "new_cutoff": new_cutoff, "new_year": new_year, **genre_params})
-    ).mappings().one()
+    sql_params: dict = {
+        "cutoff": cutoff, "new_cutoff": new_cutoff, "new_year": new_year, **genre_params,
+    }
+    if store:
+        sql_params["store"] = store
+    row = (await db.execute(sql, sql_params)).mappings().one()
 
     genres = [
         MarketFacetItem(key=key, label=label, count=row[f"g_{key}"])

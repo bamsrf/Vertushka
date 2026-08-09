@@ -4,7 +4,8 @@
  * Layout:
  *   Back-arrow (← Маркет) + header (StoreLogo 64 + название + метрики)
  *   MarketSearchInput (поиск ВНУТРИ магазина)
- *   FormatChips (Все / Винил / CD / Кассеты)
+ *   FilterBar (Формат / Жанр / Особенности) — тот же набор, что на общей
+ *     витрине, но фасеты считаются по складу ЭТОГО магазина
  *   Sticky пагинированная сетка 2 колонки с in_stock-листингами магазина
  *
  * Фон — market-палитра (без magic transition — мы уже «в маркете»).
@@ -12,10 +13,10 @@
  * Источник: docs/plans/MARKET_AND_PRICE_DRAWER.md §1.12 + screens-market.jsx
  * (ScreenStorePage из Design Claude handoff).
  */
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   FlatList,
-  Image,
   Keyboard,
   Pressable,
   StyleSheet,
@@ -29,22 +30,23 @@ import { LinearGradient } from 'expo-linear-gradient';
 import MaskedView from '@react-native-masked-view/masked-view';
 
 import { Icon } from '@/components/ui';
-import { api, resolveMediaUrl } from '../../../lib/api';
+import { api } from '../../../lib/api';
 import { MarketPalette } from '../../../constants/theme';
 import { ms } from '../../../lib/responsive';
+import { useMarketPagination } from '../../../lib/useMarketPagination';
 import type {
   MarketSearchItem,
   MarketStoreInfo,
-  MarketFormatFilter,
+  MarketFilters,
+  MarketFacetsResponse,
 } from '../../../lib/types';
+import { EMPTY_MARKET_FILTERS, hasActiveFilters } from '../../../lib/types';
 
 import MarketBackground from '../../../components/market/MarketBackground';
 import StoreLogo, { getStoreName } from '../../../components/market/StoreLogo';
 import MarketSearchInput from '../../../components/market/MarketSearchInput';
-import FormatChips from '../../../components/market/FormatChips';
-import MiniPriceBadge from '../../../components/MiniPriceBadge';
-
-const PAGE_SIZE = 30;
+import FilterBar from '../../../components/market/FilterBar';
+import MarketResultCard, { marketGridStyles } from '../../../components/market/MarketResultCard';
 
 export default function StorePage() {
   const router = useRouter();
@@ -53,18 +55,14 @@ export default function StorePage() {
   const slug = String(rawSlug ?? '');
 
   const [storeInfo, setStoreInfo] = useState<MarketStoreInfo | null>(null);
-  const [items, setItems] = useState<MarketSearchItem[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [hasMore, setHasMore] = useState(true);
-  const [offset, setOffset] = useState(0);
 
   const [searchValue, setSearchValue] = useState('');
   // debouncedQuery — отдельный от searchValue, обновляется через 400ms тишины.
   // Без этого useEffect re-fetch'ил после каждого keystroke → setLoading(true)
   // → FlatList re-renderил → keyboard dismiss. Юзер не мог дописать слово.
   const [debouncedQuery, setDebouncedQuery] = useState('');
-  const [format, setFormat] = useState<MarketFormatFilter | 'all'>('all');
+  const [filters, setFilters] = useState<MarketFilters>(EMPTY_MARKET_FILTERS);
+  const [facets, setFacets] = useState<MarketFacetsResponse | null>(null);
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -90,47 +88,50 @@ export default function StorePage() {
     return () => { cancelled = true; };
   }, [slug]);
 
-  // Загружаем листинги при mount + при изменении фильтров/debounced поиска.
+  // Фасеты считаем по складу ЭТОГО магазина — иначе на витрине появлялись бы
+  // чипы жанров, которых у него нет, и тап по ним вёл бы в пустоту.
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
-    setOffset(0);
-    api.getStoreAll(slug, {
-      q: debouncedQuery.length >= 2 ? debouncedQuery : undefined,
-      format: format === 'all' ? null : format,
-      sort: 'price_asc',
-      limit: PAGE_SIZE,
-      offset: 0,
-    })
-      .then((res) => {
-        if (cancelled) return;
-        setItems(res);
-        setHasMore(res.length === PAGE_SIZE);
-        setOffset(res.length);
-      })
-      .catch(() => { if (!cancelled) setItems([]); })
-      .finally(() => { if (!cancelled) setLoading(false); });
+    setFacets(null);
+    api.getMarketFacets(slug)
+      .then((res) => { if (!cancelled) setFacets(res); })
+      .catch(() => {});
     return () => { cancelled = true; };
-  }, [slug, format, debouncedQuery]);
+  }, [slug]);
 
-  const loadMore = async () => {
-    if (loadingMore || !hasMore || loading) return;
-    setLoadingMore(true);
-    try {
-      const more = await api.getStoreAll(slug, {
-        q: debouncedQuery.length >= 2 ? debouncedQuery : undefined,
-        format: format === 'all' ? null : format,
+  const effectiveQuery = debouncedQuery.length >= 2 ? debouncedQuery : '';
+  const filtersKey = useMemo(
+    () => `${filters.format}|${[...filters.genres].sort().join(',')}|${[...filters.features].sort().join(',')}`,
+    [filters],
+  );
+
+  const fetchPage = useCallback(
+    (offset: number, limit: number) =>
+      api.getStoreAll(slug, {
+        q: effectiveQuery || undefined,
+        format: filters.format === 'all' ? null : filters.format,
+        genres: filters.genres,
+        features: filters.features,
         sort: 'price_asc',
-        limit: PAGE_SIZE,
+        limit,
         offset,
-      });
-      setItems((cur) => [...cur, ...more]);
-      setHasMore(more.length === PAGE_SIZE);
-      setOffset((cur) => cur + more.length);
-    } finally {
-      setLoadingMore(false);
-    }
-  };
+      }),
+    [slug, effectiveQuery, filters],
+  );
+
+  const { items, loading, loadingMore, reachedEnd, loadMore } = useMarketPagination({
+    // Витрина магазина показывает товар всегда — даже без фильтров.
+    enabled: true,
+    resetKey: `${slug}|${effectiveQuery}|${filtersKey}`,
+    fetchPage,
+  });
+
+  const handleItemPress = useCallback(
+    (item: MarketSearchItem) => {
+      router.push(`/record/${item.discogs_id ?? item.record_id}` as any);
+    },
+    [router],
+  );
 
   const displayName = storeInfo?.name ?? getStoreName(slug) ?? slug;
   const subtitle = useMemo(() => {
@@ -192,43 +193,15 @@ export default function StorePage() {
           placeholder={`Найти в ${displayName}…`}
           onSubmit={Keyboard.dismiss}
         />
-        <FormatChips value={format} onChange={setFormat} />
+        <FilterBar filters={filters} onChange={setFilters} facets={facets} />
       </View>
     </SafeAreaView>
   );
 
+  // showStore выключен: магазин уже назван в шапке экрана, дублировать его
+  // лого и имя в каждой карточке — лишний шум.
   const renderItem = ({ item }: { item: MarketSearchItem }) => (
-    <Pressable
-      style={styles.card}
-      onPress={() => router.push(`/record/${item.discogs_id ?? item.record_id}` as any)}
-      accessibilityRole="button"
-    >
-      <View style={styles.coverWrap}>
-        {item.cover_image_url ? (
-          <Image source={{ uri: resolveMediaUrl(item.cover_image_url) ?? item.cover_image_url ?? '' }} style={styles.cover} resizeMode="cover" />
-        ) : (
-          <View style={[styles.cover, styles.coverPlaceholder]} />
-        )}
-      </View>
-      <View style={styles.cardText}>
-        <Text style={styles.artist} numberOfLines={1}>
-          {item.artist.toUpperCase()}
-        </Text>
-        <Text style={styles.title} numberOfLines={2}>
-          {item.title}
-        </Text>
-        <View style={styles.metaRow}>
-          {item.year != null && <Text style={styles.metaText}>{item.year}</Text>}
-          {item.year != null && item.format_type && <View style={styles.metaDot} />}
-          {item.format_type && (
-            <Text style={styles.metaText} numberOfLines={1}>{item.format_type}</Text>
-          )}
-        </View>
-        <View style={{ marginTop: 6 }}>
-          <MiniPriceBadge price={Number(item.min_price_rub)} size={11} color="#FFFFFF" />
-        </View>
-      </View>
-    </Pressable>
+    <MarketResultCard item={item} onPress={handleItemPress} />
   );
 
   return (
@@ -266,26 +239,39 @@ export default function StorePage() {
       <FlatList
         data={items}
         renderItem={renderItem}
-        keyExtractor={(it, index) => `${it.record_id}_${index}`}
+        keyExtractor={(it) => it.record_id}
         numColumns={2}
-        columnWrapperStyle={styles.row}
-        contentContainerStyle={styles.listContent}
+        columnWrapperStyle={marketGridStyles.row}
+        contentContainerStyle={marketGridStyles.content}
         ListEmptyComponent={
-          loading ? null : (
+          loading ? (
+            <View style={styles.empty}>
+              <ActivityIndicator size="small" color="rgba(255,255,255,0.65)" />
+            </View>
+          ) : (
             <Pressable style={styles.empty} onPress={Keyboard.dismiss}>
               <Text style={styles.emptyText}>
-                {searchValue.length >= 2
-                  ? `Ничего не найдено по «${searchValue}»`
-                  : 'В магазине пока нет товаров с выбранным фильтром'}
+                {effectiveQuery
+                  ? `Ничего не найдено по «${effectiveQuery}»`
+                  : hasActiveFilters(filters)
+                    ? 'В этом магазине нет товаров под выбранными фильтрами'
+                    : 'В магазине пока нет товаров в наличии'}
               </Text>
             </Pressable>
           )
         }
         ListFooterComponent={
-          loadingMore ? <Text style={styles.footerLoading}>Загружаем ещё…</Text> : null
+          items.length > 0 ? (
+            <View style={styles.footer}>
+              {loadingMore && <ActivityIndicator size="small" color="rgba(255,255,255,0.55)" />}
+              {reachedEnd && !loadingMore && (
+                <Text style={styles.footerText}>Это всё, что сейчас в наличии</Text>
+              )}
+            </View>
+          ) : null
         }
         onEndReached={loadMore}
-        onEndReachedThreshold={0.4}
+        onEndReachedThreshold={0.6}
         showsVerticalScrollIndicator={false}
         // keyboardShouldPersistTaps="always" — иначе тап по карточке при
         // открытой клавиатуре сначала её закрывает, а только потом срабатывает.
@@ -307,9 +293,6 @@ const styles = StyleSheet.create({
   root: {
     flex: 1,
     backgroundColor: MarketPalette.void,
-  },
-  listContent: {
-    paddingBottom: 60,
   },
   headerWrap: {
     paddingHorizontal: 0,
@@ -371,69 +354,12 @@ const styles = StyleSheet.create({
     fontSize: 10.5,
     color: '#FFD9C8',
   },
-  row: {
-    paddingHorizontal: 12,
-    justifyContent: 'flex-start',
-    gap: 8,
-  },
-  card: {
-    // НЕ flex:1 — иначе FlatList с numColumns=2 при odd count last item
-    // растягивает карточку на всю ширину. Фиксированный 48% (50% минус половина gap).
-    width: '48%',
-    marginBottom: 12,
-    backgroundColor: 'rgba(255,255,255,0.04)',
-    borderRadius: 14,
-    overflow: 'hidden',
-    padding: 8,
-  },
   // Top safe-area blur strip — закрывает scrollable контент под статус-баром
   // когда юзер скроллит вниз. Иначе текст карточек наезжает на 9:41/wifi.
   topSafeBlur: {
     position: 'absolute',
     top: 0, left: 0, right: 0,
     zIndex: 50,
-  },
-  coverWrap: {
-    width: '100%',
-    aspectRatio: 1,
-    borderRadius: 10,
-    overflow: 'hidden',
-    backgroundColor: 'rgba(255,255,255,0.06)',
-  },
-  cover: { width: '100%', height: '100%' },
-  coverPlaceholder: { backgroundColor: 'rgba(255,255,255,0.10)' },
-  cardText: {
-    marginTop: 8,
-  },
-  artist: {
-    fontFamily: 'Inter_600SemiBold',
-    fontSize: 9,
-    fontWeight: '600',
-    color: 'rgba(255,255,255,0.65)',
-    letterSpacing: 0.3,
-    marginBottom: 2,
-  },
-  title: {
-    fontFamily: 'Inter_700Bold',
-    fontSize: ms(12),
-    fontWeight: '700',
-    color: '#FFFFFF',
-    lineHeight: ms(15),
-  },
-  metaRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginTop: 4,
-  },
-  metaText: {
-    fontFamily: 'Inter_400Regular',
-    fontSize: 10,
-    color: 'rgba(255,255,255,0.55)',
-  },
-  metaDot: {
-    width: 2, height: 2, borderRadius: 1,
-    backgroundColor: 'rgba(255,255,255,0.40)',
   },
   empty: {
     paddingHorizontal: 32,
@@ -446,11 +372,15 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.70)',
     textAlign: 'center',
   },
-  footerLoading: {
+  footer: {
+    paddingVertical: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 24,
+  },
+  footerText: {
     fontFamily: 'Inter_400Regular',
     fontSize: ms(12),
-    color: 'rgba(255,255,255,0.55)',
-    textAlign: 'center',
-    paddingVertical: 16,
+    color: 'rgba(255,255,255,0.45)',
   },
 });

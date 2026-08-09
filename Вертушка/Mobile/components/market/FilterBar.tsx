@@ -38,12 +38,19 @@ import { EMPTY_MARKET_FILTERS, hasActiveFilters } from '../../lib/types';
 
 type CatKey = 'format' | 'genre' | 'feature';
 
+interface FilterOption {
+  key: string;
+  label: string;
+  /** Сколько карточек в наличии под опцией. У формата счётчика нет. */
+  count?: number;
+}
+
 interface Category {
   key: CatKey;
   label: string;
   icon: IconName;
   multi: boolean;
-  options: { key: string; label: string }[];
+  options: FilterOption[];
 }
 
 const FORMAT_OPTIONS: { key: MarketFormatFilter | 'all'; label: string }[] = [
@@ -81,7 +88,7 @@ export function FilterBar({ filters, onChange, facets, style }: FilterBarProps) 
         label: 'Жанр',
         icon: 'music-notes',
         multi: true,
-        options: facets.genres.map((g) => ({ key: g.key, label: g.label })),
+        options: facets.genres.map((g) => ({ key: g.key, label: g.label, count: g.count })),
       });
     }
     if (facets?.features.length) {
@@ -90,7 +97,7 @@ export function FilterBar({ filters, onChange, facets, style }: FilterBarProps) 
         label: 'Особенности',
         icon: 'sparkle',
         multi: true,
-        options: facets.features.map((f) => ({ key: f.key, label: f.label })),
+        options: facets.features.map((f) => ({ key: f.key, label: f.label, count: f.count })),
       });
     }
     return cats;
@@ -151,6 +158,7 @@ export function FilterBar({ filters, onChange, facets, style }: FilterBarProps) 
             <Chip
               key={`${activeCat.key}:${opt.key}`}
               label={opt.label}
+              count={opt.count}
               active={isOptionActive(activeCat, opt.key)}
               onPress={() => toggleOption(activeCat, opt.key)}
               index={i + 1}
@@ -197,6 +205,8 @@ interface ChipProps {
   icon?: IconName;
   active?: boolean;
   badge?: number;
+  /** Сколько карточек под опцией — приглушённой цифрой справа от метки. */
+  count?: number;
   chevron?: boolean;
   variant?: 'default' | 'back' | 'reset';
   onPress: () => void;
@@ -204,7 +214,7 @@ interface ChipProps {
   index: number;
 }
 
-function Chip({ label, icon, active, badge, chevron, variant = 'default', onPress, index }: ChipProps) {
+function Chip({ label, icon, active, badge, count, chevron, variant = 'default', onPress, index }: ChipProps) {
   const isBack = variant === 'back';
   const isReset = variant === 'reset';
   const showEmber = active && !isBack && !isReset;
@@ -240,6 +250,11 @@ function Chip({ label, icon, active, badge, chevron, variant = 'default', onPres
         <Text style={[styles.label, (showEmber || isBack) && styles.labelActive, isReset && styles.labelReset]}>
           {label}
         </Text>
+        {count !== undefined && (
+          <Text style={[styles.count, showEmber && styles.countActive]}>
+            {formatCount(count)}
+          </Text>
+        )}
         {badge !== undefined && (
           <View style={styles.badge}>
             <Text style={styles.badgeText}>{badge}</Text>
@@ -252,6 +267,11 @@ function Chip({ label, icon, active, badge, chevron, variant = 'default', onPres
       </Pressable>
     </Animated.View>
   );
+}
+
+/** 1234 → «1 234»: тонкий пробел вместо запятой, как в остальном Маркете. */
+function formatCount(n: number): string {
+  return n.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
 }
 
 const styles = StyleSheet.create({
@@ -310,6 +330,16 @@ const styles = StyleSheet.create({
   },
   labelReset: {
     color: 'rgba(255,255,255,0.6)',
+  },
+  count: {
+    fontFamily: 'Inter_500Medium',
+    fontSize: 11,
+    color: 'rgba(255,255,255,0.45)',
+    includeFontPadding: false,
+    marginLeft: -2,
+  },
+  countActive: {
+    color: 'rgba(255,255,255,0.75)',
   },
   badge: {
     minWidth: 16,

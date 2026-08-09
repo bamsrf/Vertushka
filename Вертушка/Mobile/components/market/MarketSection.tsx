@@ -2,7 +2,7 @@
  * MarketSection — главная композиция раздела «Маркет».
  *
  * Собирает в одно целое:
- *   MarketHeader (hero) + MarketSearchInput + FormatChips + N StoreCarousel'ов.
+ *   MarketHeader (hero) + MarketSearchInput + FilterBar + N StoreCarousel'ов.
  *
  * Используется:
  *   - В (tabs)/search.tsx как нижняя половина экрана (после Discogs-секций).
