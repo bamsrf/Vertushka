@@ -798,58 +798,58 @@ Output: 1024×1024 PNG, transparent background.
 
 ### Серия H — Дискография
 
-#### `H1_artist_x5` — Поклонник 💧
-> Метафора: 5 пластинок одного артиста — постер-стена, одинаковые лейблы.
+#### `H1_artist_x5` — Поклонник 💧 ✅ отрисован
+> Метафора: 5 пластинок одного артиста — веер конвертов, на каждом одно и то же лицо. Собираешь не музыку, а человека.
 
 ```text
-Generate a soft enamel pin: a fan-style wall of 5 vinyl records all sharing the same center-label color, arranged like a poster collage — the dedicated fan.
-Composition: 5 mini vinyl records arranged in a tile pattern within the pin frame (one centered, four at corners); all 5 have identical ember center labels; each tilted slightly differently; thin gold pushpins at the top of each record; small gold "x5" tag at bottom-right.
-Palette: navy #0B1438, vinyl black #1A1A2E, ember #E85A2A, gold #D9A84E.
-Same enamel pin style as the previous Vertushka pins (gold contour, navy outline, recessed enamel, single specular per zone).
+Generate a soft enamel pin: five identical record sleeves fanned out like playing cards, each showing the same silhouette portrait on its cover.
+Composition: five square sleeves overlap in a wide fan across the pin, tilting from lower-left to upper-right, the frontmost one largest and fully visible; every sleeve cover carries the SAME simple navy head-in-profile silhouette inside a thin gold oval, so the repetition reads instantly; sleeve bodies alternate ivory and cobalt #2A4BD7 with gold edge lines; the front sleeve has a small ember center sticker with a chunky gold serif "5"; the top-right sleeve corner extends slightly past the frame edge; two small gold sparkle dots float above the fan.
+Palette: navy #0B1438, cobalt #2A4BD7, ivory #FBF5EA, vinyl black #1A1A2E, ember #E85A2A, gold #D9A84E.
+Same enamel pin style as the previous Vertushka pins (gold contour, navy outline, recessed enamel, single specular per zone). No shelf, no background, no frame.
 Output: 1024×1024 PNG, transparent background.
 ```
 
-#### `H2_artist_studio_full` — Полная 🌌
-> Метафора: все студийные альбомы артиста — корона над стопкой, лавровый венок.
+#### `H2_artist_studio_full` — Полная 🌌 ✅ отрисован
+> Метафора: все студийные альбомы — пазл-обложка, где остался последний кусок и он уже летит в свою лунку. Заходы через фазы луны и ряд корешков отброшены: луна тянула за собой ночное небо, ряд корешков читался скучно.
 
 ```text
-Generate a soft enamel pin: a golden crown atop a tall stack of vinyl records wreathed in a laurel — the complete discography of one artist.
-Composition: vertical stack of 6 vinyl records (alternating spines in vinyl black and navy) fills lower 60% of pin; on top, a 5-point gold crown with a small rose-pink jewel in the center; behind the crown, a gold laurel wreath partially encircling; crown extends past the top frame; add 3 tiny gold sparkle stars near the crown.
-Palette: navy #0B1438, vinyl black #1A1A2E, rose pink #E89AC0, gold #D9A84E.
-Same enamel pin style as the previous Vertushka pins (gold contour, navy outline, recessed enamel, single specular per zone).
+Generate a soft enamel pin: a square jigsaw puzzle of an album cover, complete except for one missing piece, with that final piece floating right beside the gap about to drop in.
+Composition: one bold square puzzle board fills ~70% of the pin, tilted about 6 degrees, its face an album cover — an ivory field with a vinyl record (vinyl black, gold groove rings, ember #E85A2A center label) sitting large in the middle and a thin gold border framing the square; the whole square is divided into a clean 3×3 grid of jigsaw pieces by thick gold seam lines with rounded interlocking tabs, each seam clearly cut so it reads as assembled pieces, not a drawn grid; the upper-right piece is MISSING — that cell is empty transparent space with the classic notched jigsaw silhouette, its edges rimmed in gold; the missing piece itself floats just outside the board to the upper right, tilted at a livelier angle, carrying its fragment of the cover art and a small gold sparkle on its corner, positioned so the eye instantly sees where it belongs; two short gold motion arcs trail behind the floating piece; three 4-pointed gold sparkle stars of varying size scattered around the board.
+Palette: navy #0B1438, cobalt #2A4BD7, ivory #FBF5EA, vinyl black #1A1A2E, ember #E85A2A, gold #D9A84E.
+Same enamel pin style as the previous Vertushka pins (gold contour, navy outline, recessed enamel, single specular per zone). No hand, no table, no background panel, no frame.
 Output: 1024×1024 PNG, transparent background.
 ```
 
-#### `H3_master_pressings_3` — Сравнил 🌸
-> Метафора: 3+ разных пресса мастера — три «двойника», лупа над одним.
+#### `H3_master_pressings_3` — Сравнил 🌸 ✅ отрисован
+> Метафора: 3 пресса одного мастера — лупа над пластинкой, внутри линзы увеличенная «3». Эффект увеличения держится на разном шаге канавок внутри и снаружи линзы.
 
 ```text
-Generate a soft enamel pin: three nearly identical vinyl records side by side with subtle label color differences, a gold magnifying glass hovering over the middle one — comparing master pressings.
-Composition: three vinyl records (vinyl black with gold grooves) lined up horizontally; their center labels are subtly different shades — ember, rose pink, ivory; a tilted gold magnifying glass with a handle pointing down-right hovers over the middle (rose pink) record; the glass lens is partly transparent showing magnification effect; add 2 tiny gold sparkle stars near the lens.
-Palette: navy #0B1438, vinyl black #1A1A2E, ember #E85A2A, rose pink #E89AC0, ivory #FBF5EA, gold #D9A84E.
-Same enamel pin style as the previous Vertushka pins (gold contour, navy outline, recessed enamel, single specular per zone).
+Generate a soft enamel pin: a magnifying glass held over a vinyl record, and inside the lens a large golden numeral "3" appears magnified.
+Composition: one vinyl record (vinyl black, concentric gold groove rings, ember #E85A2A center label) sits in the lower left, filling about 45% of the pin, tilted slightly; over it, angled from the lower right to the upper left, lies one bold magnifying glass whose round lens covers a large part of the record — the lens is an ivory disc with a thick gold rim and one long diagonal specular streak across the upper left; centered inside the lens, a chunky vintage serif gold "3" is rendered large and crisp, clearly magnified, with the record's groove rings visible around it also enlarged and spaced wider than the rings outside the lens, so the magnification reads instantly; the magnifier's handle is navy with gold ferrule bands and extends past the lower-right edge of the frame; three 4-pointed gold sparkle stars float around the lens rim.
+Palette: navy #0B1438, ivory #FBF5EA, vinyl black #1A1A2E, ember #E85A2A, gold #D9A84E.
+Same enamel pin style as the previous Vertushka pins (gold contour, navy outline, recessed enamel, single specular per zone). No hand, no table, no background, no frame.
 Output: 1024×1024 PNG, transparent background.
 ```
 
-#### `H4_master_pressings_5` — Археолог 🌌
-> Метафора: 5 разных прессов — кисточка-щётка, откапывает пластинку из песка.
+#### `H4_master_pressings_5` — Археолог 🌌 ✅ отрисован
+> Метафора: 5 прессов — раскоп со слоями, в породе череп динозавра с пластинкой в пасти. Глубже слой — древнее пресс, первопресс окаменел вместе с животным.
 
 ```text
-Generate a soft enamel pin: an archaeologist's brush dusting off a partially buried vinyl record, with a small tag "5" — the deep archaeology of pressings.
-Composition: lower half shows ivory sandy ground from which a vinyl record emerges at an angle, half-buried; a gold archaeologist brush from upper-right brushes the record; a tiny gold tag on a string lies on the ground with "5" in serif; small dust particles in gold around the brush; add 3 tiny gold sparkle stars in the air.
-Palette: navy #0B1438, vinyl black #1A1A2E, ivory #FBF5EA, ember #E85A2A, gold #D9A84E.
-Same enamel pin style as the previous Vertushka pins (gold contour, navy outline, recessed enamel, single specular per zone).
+Generate a soft enamel pin: an excavation cross-section where a dinosaur skull lies buried in the strata with a vinyl record clamped in its jaws, an archaeologist's brush sweeping dust off it.
+Composition: the lower 70% of the pin is a rounded block of earth in cross-section, cut into 5 horizontal strata by thin gold lines, layers running ivory at the top down through cobalt soft #5C7AE8 and cobalt #2A4BD7 to navy at the bottom; embedded across the middle layers lies one bold ivory dinosaur skull in profile facing left — a long tapered snout, a large round eye socket in navy, and a row of chunky triangular teeth along the open jaw, all outlined in gold like fossil bone; clamped between the jaws sits one vinyl record (vinyl black, gold groove rings, ember #E85A2A center label), tilted, half of it still sunk into the rock as if it fossilized together with the animal; behind the skull, three curved gold rib bones arc up out of a lower stratum, each partly buried; entering from the upper right, a bold gold-ferruled brush with ivory bristles sweeps across the skull's snout, lifting three small gold dust flecks; a chunky vintage serif gold "5" carved into the left edge of the earth block; three 4-pointed gold sparkle stars float in the empty space above.
+Palette: navy #0B1438, cobalt #2A4BD7, cobalt soft #5C7AE8, ivory #FBF5EA, vinyl black #1A1A2E, ember #E85A2A, gold #D9A84E.
+Same enamel pin style as the previous Vertushka pins (gold contour, navy outline, recessed enamel, single specular per zone). No human figure, no full dinosaur body, no sky, no background panel, no frame.
 Output: 1024×1024 PNG, transparent background.
 ```
 
-#### `H5_label_x20` — Лейбл-фанат 🌸
-> Метафора: 20 пластинок одного лейбла — стопка с одинаковыми лейблами и ярлычком «x20».
+#### `H5_label_x20` — Лейбл-фанат 🌸 ✅ отрисован
+> Метафора: 20 пластинок одного лейбла — пачка под банковской бандеролью «×20». Не собрание, а партия одного издателя.
 
 ```text
-Generate a soft enamel pin: a neat stack of 6 vinyl records all with identical ember labels, "x20" engraved on a gold tag on the side — the label devotee.
-Composition: stack of 6 vinyls viewed from a 3/4 angle in the lower 65% of pin; all center labels identical ember orange; gold grooves visible; a small gold rectangular tag hangs from the stack with "x20" in serif; above the stack a small gold logo crown; add 2 tiny gold sparkle stars near the tag.
-Palette: navy #0B1438, vinyl black #1A1A2E, ember #E85A2A, gold #D9A84E.
-Same enamel pin style as the previous Vertushka pins (gold contour, navy outline, recessed enamel, single specular per zone).
+Generate a soft enamel pin: a thick stack of record sleeves bound with a paper band like a cash bundle, every sleeve carrying the same label stamp.
+Composition: one bold stack of about 10 flat square sleeves fills ~70% of the pin, seen three-quarter so the side edges read as many layers, sleeve bodies ivory with navy shadow sides and thin gold edge lines; on the front sleeve, a round gold label stamp — a simple concentric-ring emblem — repeats in miniature on every visible side edge, so the "all one label" idea reads; a wide ember #E85A2A paper band wraps the whole stack horizontally with a chunky vintage serif gold "×20" printed on it; the top sleeve is slightly askew and its corner extends past the top edge of the frame; three 4-pointed gold sparkle stars float beside the stack.
+Palette: navy #0B1438, ivory #FBF5EA, vinyl black #1A1A2E, ember #E85A2A, gold #D9A84E.
+Same enamel pin style as the previous Vertushka pins (gold contour, navy outline, recessed enamel, single specular per zone). No shelf, no background, no frame.
 Output: 1024×1024 PNG, transparent background.
 ```
 
@@ -1108,14 +1108,14 @@ Same enamel pin style as the previous Vertushka pins (gold contour, navy outline
 Output: 1024×1024 PNG, transparent background.
 ```
 
-#### `META_depth` — Учёный ⚫
-> Метафора: H2 + H4 + H5 — мудрая сова на стопке альбомов, перо в когте.
+#### `META_depth` — Учёный ⚫ ✅ отрисован
+> Метафора: H2 + H4 + H5 — микроскоп, под объективом канавка разворачивается в спираль-галактику. Глубина, где канавка перестаёт быть канавкой.
 
 ```text
-Generate a soft enamel pin: a stylized wise owl perched on a stack of vinyl albums, holding a quill — the scholar of music.
-Composition: stack of 3 vinyl albums in lower half of pin in navy, ivory, vinyl black with gold spines; perched on top, a stylized owl silhouette in navy with large gold round eyes and a small gold beak; one talon holds a gold quill pen extending past the right frame; the owl's head extends slightly past the top frame; add 3 tiny gold sparkle stars around the owl.
-Palette: navy #0B1438, vinyl black #1A1A2E, ivory #FBF5EA, ember #E85A2A, gold #D9A84E.
-Same enamel pin style as the previous Vertushka pins (gold contour, navy outline, recessed enamel, single specular per zone).
+Generate a soft enamel pin: a brass laboratory microscope, and on its stage a vinyl record whose groove opens into a spiral galaxy under the lens.
+Composition: one bold microscope fills ~75% of the pin, standing three-quarter to the left: a heavy gold curved base and arm, a navy body tube angled down to the left with gold focus knobs, and an ivory eyepiece at the top extending past the top edge of the frame; on the flat stage below the objective lies a vinyl record seen from above (vinyl black, gold groove rings, ember center); directly under the objective the groove rings widen and swirl into a small spiral galaxy — cobalt #2A4BD7 arms with tiny gold star dots and an ember core — as if depth opened up inside the record; four 4-pointed gold sparkle stars of varying size float around the eyepiece and the stage, one overlapping the tube.
+Palette: navy #0B1438, cobalt #2A4BD7, cobalt deep #0E1A52, ivory #FBF5EA, vinyl black #1A1A2E, ember #E85A2A, gold #D9A84E.
+Same enamel pin style as the previous Vertushka pins (gold contour, navy outline, recessed enamel, single specular per zone). No lab bench, no glow, no halo, no background panel, no frame.
 Output: 1024×1024 PNG, transparent background.
 ```
 
