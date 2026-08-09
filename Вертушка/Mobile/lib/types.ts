@@ -513,6 +513,7 @@ export interface RadarAlt {
   country?: string | null;
   format?: string | null;
   buy_url?: string | null;
+  buy_listing_id?: string | null;
 }
 
 export interface RadarItem {
@@ -526,6 +527,8 @@ export interface RadarItem {
   radius: number; // 0..1 доля внутри полосы статуса
   offers_count?: number;
   buy_url?: string | null;
+  /** id листинга под buy_url — нужен для POST /offers/{id}/click. */
+  buy_listing_id?: string | null;
   alt: RadarAlt | null;
 }
 

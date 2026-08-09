@@ -223,6 +223,7 @@ class RadarAlt(BaseModel):
     country: str | None = None
     format: str | None = None
     buy_url: str | None = None
+    buy_listing_id: UUID | None = None
 
 
 class RadarItem(BaseModel):
@@ -239,6 +240,10 @@ class RadarItem(BaseModel):
     radius: float  # 0..1: 0 = у центра (зона покупки), 1 = внешний край
     offers_count: int = 0       # сколько подходящих in_stock листингов
     buy_url: str | None = None  # ссылка на самый дешёвый листинг (прямой заказ)
+    # id того же листинга: клиент шлёт POST /offers/{id}/click, чтобы переход
+    # получил affiliate-subid и попал в серию «Рыночный нюх». Без него ссылка
+    # уходит мимо трекинга — комиссия теряется, ачивки не считаются.
+    buy_listing_id: UUID | None = None
     alt: RadarAlt | None = None
 
 

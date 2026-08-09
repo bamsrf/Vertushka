@@ -38,6 +38,8 @@ export interface PriceHistorySheetData {
   threshold?: number | null;
   status: RadarStatus;
   buyUrl?: string | null;
+  /** id листинга под buyUrl — родитель шлёт по нему POST /offers/{id}/click. */
+  buyListingId?: string | null;
   offersCount?: number;
 }
 

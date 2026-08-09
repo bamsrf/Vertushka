@@ -250,6 +250,7 @@ async def get_radar(
         exact.sort(key=lambda l: (float(l.price_rub), str(l.id)))
         lowest = float(exact[0].price_rub) if exact else None
         buy_url = exact[0].url if exact else None
+        buy_listing_id = exact[0].id if exact else None
 
         alt_payload = None
         # Кандидаты-аналоги (другой прессинг того же мастера) — считаем всегда,
@@ -275,6 +276,7 @@ async def get_radar(
                 country=getattr(alt_rec, "country", None),
                 format=getattr(alt_rec, "format_description", None) or getattr(alt_rec, "format_type", None),
                 buy_url=cheapest_alt.url,
+                buy_listing_id=cheapest_alt.id,
             )
 
         if exact:
@@ -288,6 +290,7 @@ async def get_radar(
             status_v = "available"
             lowest = float(alt_payload.price_rub) if alt_payload.price_rub is not None else None
             buy_url = alt_payload.buy_url
+            buy_listing_id = alt_payload.buy_listing_id
             if threshold is not None and lowest is not None and lowest <= threshold:
                 status_v = "match"
                 match_count += 1
@@ -308,6 +311,7 @@ async def get_radar(
                 radius=_radar_radius(status_v, lowest, threshold),
                 offers_count=(len(exact) if exact else (1 if status_v == "available" else 0)),
                 buy_url=buy_url,
+                buy_listing_id=buy_listing_id,
                 # Отдаём альтернативу и когда она уже принята (accept_alt) —
                 # иначе с фронта нельзя открыть шит и отменить решение.
                 alt=(alt_payload if (status_v == "alt" or wi.accept_alt) else None),

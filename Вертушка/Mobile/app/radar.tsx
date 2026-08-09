@@ -232,6 +232,7 @@ export default function RadarScreen() {
       threshold: item.threshold_rub,
       status: item.status,
       buyUrl: item.buy_url ?? null,
+      buyListingId: item.buy_listing_id ?? null,
       offersCount: item.offers_count ?? 0,
     });
   };
@@ -246,12 +247,23 @@ export default function RadarScreen() {
     });
   };
 
-  const onOpenStore = (d: PriceHistorySheetData) => {
-    if (d.buyUrl) {
-      Linking.openURL(d.buyUrl).catch(() => router.push(`/record/${d.recordId}` as any));
-    } else {
+  const onOpenStore = async (d: PriceHistorySheetData) => {
+    if (!d.buyUrl) {
       router.push(`/record/${d.recordId}` as any);
+      return;
     }
+    // Идём через POST /offers/{id}/click: он проставляет affiliate-subid и
+    // кормит серию «Рыночный нюх». Прямой openURL терял и комиссию, и ачивки.
+    let urlToOpen = d.buyUrl;
+    if (d.buyListingId) {
+      try {
+        const { url } = await api.trackOfferClick(d.buyListingId);
+        urlToOpen = url;
+      } catch {
+        // backend недоступен — уходим по прямой ссылке, лишь бы юзер дошёл
+      }
+    }
+    Linking.openURL(urlToOpen).catch(() => router.push(`/record/${d.recordId}` as any));
   };
 
   return (
