@@ -19,7 +19,7 @@ import {
 import * as Haptics from 'expo-haptics';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { Colors, Spacing, Typography } from '@/constants/theme';
 import { AnimatedGradientText } from '@/components/AnimatedGradientText';
 import { SegmentedControl } from '@/components/ui';
@@ -320,11 +320,24 @@ export default function NotificationsScreen() {
     if (digestCollapsedIds.length > 0) markManyRead(digestCollapsedIds);
   }, [digestCollapsedIds, markManyRead]);
 
+  // Уход в релиз из дайджеста не должен «терять шаг»: закрываем шторку на
+  // время навигации и поднимаем её обратно, когда юзер возвращается назад.
+  const digestReopen = useRef(false);
   const handleOpenDigestRecord = useCallback(
     (recordId: string) => {
+      digestReopen.current = true;
       router.push(`/record/${recordId}` as any);
     },
     [router],
+  );
+
+  useFocusEffect(
+    useCallback(() => {
+      if (digestReopen.current) {
+        digestReopen.current = false;
+        setDigestVisible(true);
+      }
+    }, []),
   );
   const socialSections = useMemo(() => groupByDateBucket(socialItems), [socialItems]);
 
