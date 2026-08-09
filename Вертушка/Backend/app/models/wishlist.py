@@ -203,7 +203,14 @@ class WishlistItem(Base):
         server_default="false",
         nullable=False,
     )
-    
+
+    # Прессинги-аналоги, которые юзер отклонил («Нет» в шите радара).
+    # Список record_id (str). Они больше не предлагаются как альтернатива.
+    rejected_alt_record_ids: Mapped[list | None] = mapped_column(
+        JSONB,
+        nullable=True,
+    )
+
     # Временные метки
     added_at: Mapped[datetime] = mapped_column(
         DateTime,

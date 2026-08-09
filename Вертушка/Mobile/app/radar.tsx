@@ -202,9 +202,12 @@ export default function RadarScreen() {
 
   const onCoverPress = (item: RadarItem) => {
     Haptics.selectionAsync().catch(() => {});
-    if (item.status === 'alt' && item.alt) {
+    // Шит открывается и для принятого аналога (accept_alt) — чтобы решение
+    // можно было отменить и вернуться к поиску своей версии.
+    if (item.alt && (item.status === 'alt' || item.accept_alt)) {
       altRef.current?.present({
         itemId: item.wishlist_item_id,
+        altRecordId: item.alt.record_id,
         recordTitle: item.record.title,
         recordArtist: item.record.artist,
         recordYear: (item.record as any).year ?? null,
@@ -215,6 +218,7 @@ export default function RadarScreen() {
         altCountry: item.alt.country ?? null,
         altFormat: item.alt.format ?? null,
         altPrice: item.alt.price_rub ?? null,
+        accepted: item.accept_alt === true,
       });
       return;
     }

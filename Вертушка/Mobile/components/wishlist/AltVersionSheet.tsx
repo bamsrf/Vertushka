@@ -18,6 +18,7 @@ import { toast } from '../../lib/toast';
 
 export interface AltVersionSheetData {
   itemId: string;
+  altRecordId?: string | null;
   recordTitle?: string | null;
   recordArtist?: string | null;
   recordYear?: number | null;
@@ -28,6 +29,8 @@ export interface AltVersionSheetData {
   altCountry?: string | null;
   altFormat?: string | null;
   altPrice?: number | null;
+  // Аналог уже принят ранее (accept_alt=true) — шит работает как отмена.
+  accepted?: boolean;
 }
 
 export interface AltVersionSheetRef {
@@ -44,6 +47,7 @@ export const AltVersionSheet = forwardRef<AltVersionSheetRef, Props>(({ onConfir
   const sheetRef = useRef<BottomSheetModal>(null);
   const [data, setData] = useState<AltVersionSheetData | null>(null);
   const setAcceptAlt = useCollectionStore((s) => s.setWishlistAcceptAlt);
+  const rejectAlt = useCollectionStore((s) => s.rejectWishlistAlt);
 
   const present = useCallback((d: AltVersionSheetData) => {
     setData(d);
@@ -59,11 +63,32 @@ export const AltVersionSheet = forwardRef<AltVersionSheetRef, Props>(({ onConfir
     [],
   );
 
+  const accepted = data?.accepted === true;
+
   const onYes = () => {
     sheetRef.current?.dismiss();
     if (!data) return;
+    if (accepted) { onConfirm?.(data); return; }
     setAcceptAlt(data.itemId, true)
       .then(() => { toast.success('Следим и за этой версией'); onConfirm?.(data); })
+      .catch(() => toast.error('Не удалось сохранить'));
+  };
+
+  // «Нет» — явный отказ: этот прессинг больше не предлагаем, радар снова
+  // ищет ровно ту версию, которая в вишлисте.
+  const onNo = () => {
+    sheetRef.current?.dismiss();
+    if (!data) return;
+    if (!data.altRecordId) {
+      if (accepted) {
+        setAcceptAlt(data.itemId, false)
+          .then(() => { toast.success('Следим только за своей версией'); onConfirm?.(data); })
+          .catch(() => toast.error('Не удалось сохранить'));
+      }
+      return;
+    }
+    rejectAlt(data.itemId, data.altRecordId)
+      .then(() => { toast.success('Больше не предлагаем эту версию'); onConfirm?.(data); })
       .catch(() => toast.error('Не удалось сохранить'));
   };
 
@@ -89,9 +114,13 @@ export const AltVersionSheet = forwardRef<AltVersionSheetRef, Props>(({ onConfir
         ) : (
           <View style={[styles.cover, styles.coverPlaceholder]} />
         )}
-        <Text style={styles.title}>Другая версия в наличии</Text>
+        <Text style={styles.title}>
+          {accepted ? 'Следим за другой версией' : 'Другая версия в наличии'}
+        </Text>
         <Text style={styles.body}>
-          В продаже другой прессинг{data?.recordTitle ? ` «${data.recordTitle}»` : ''}. Считать его подходящим?
+          {accepted
+            ? `Сейчас подходящим считается другой прессинг${data?.recordTitle ? ` «${data.recordTitle}»` : ''}. Вернуться к поиску только своей версии?`
+            : `В продаже другой прессинг${data?.recordTitle ? ` «${data.recordTitle}»` : ''}. Считать его подходящим?`}
         </Text>
 
         {data?.altPrice != null ? <Text style={styles.price}>{fmt(data.altPrice)} ₽</Text> : null}
@@ -109,10 +138,10 @@ export const AltVersionSheet = forwardRef<AltVersionSheetRef, Props>(({ onConfir
 
         <View style={styles.btns}>
           <TouchableOpacity style={styles.primaryBtn} onPress={onYes} activeOpacity={0.9}>
-            <Text style={styles.primaryTxt}>Да, следить</Text>
+            <Text style={styles.primaryTxt}>{accepted ? 'Продолжить следить' : 'Да, следить'}</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.secondaryBtn} onPress={() => sheetRef.current?.dismiss()} activeOpacity={0.7}>
-            <Text style={styles.secondaryTxt}>Нет</Text>
+          <TouchableOpacity style={styles.secondaryBtn} onPress={onNo} activeOpacity={0.7}>
+            <Text style={styles.secondaryTxt}>{accepted ? 'Нет, только моя версия' : 'Нет'}</Text>
           </TouchableOpacity>
         </View>
       </BottomSheetView>

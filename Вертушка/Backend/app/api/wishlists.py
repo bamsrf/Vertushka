@@ -255,9 +255,13 @@ async def get_radar(
         # Кандидаты-аналоги (другой прессинг того же мастера) — считаем всегда,
         # чтобы отдать их для экрана подтверждения и для accept_alt.
         mid = str(getattr(rec, "discogs_master_id", "") or "")
+        rejected_alts = set(wi.rejected_alt_record_ids or [])
         alt_candidates = [
             (l, rid) for (l, rid) in by_master.get(mid, [])
-            if rid != str(rec.id) and l.price_rub is not None and _condition_ok(l.condition, accepted)
+            if rid != str(rec.id)
+            and str(l.matched_record_id) not in rejected_alts
+            and l.price_rub is not None
+            and _condition_ok(l.condition, accepted)
         ]
         if alt_candidates:
             cheapest_alt, alt_rid = min(alt_candidates, key=lambda x: (float(x[0].price_rub), str(x[0].id)))
@@ -304,7 +308,9 @@ async def get_radar(
                 radius=_radar_radius(status_v, lowest, threshold),
                 offers_count=(len(exact) if exact else (1 if status_v == "available" else 0)),
                 buy_url=buy_url,
-                alt=(alt_payload if status_v == "alt" else None),
+                # Отдаём альтернативу и когда она уже принята (accept_alt) —
+                # иначе с фронта нельзя открыть шит и отменить решение.
+                alt=(alt_payload if (status_v == "alt" or wi.accept_alt) else None),
             )
         )
 
@@ -538,6 +544,14 @@ async def update_wishlist_item(
         item.conditions = data.conditions
     if "accept_alt" in data.model_fields_set and data.accept_alt is not None:
         item.accept_alt = data.accept_alt
+    if data.reject_alt_record_id is not None:
+        # «Нет» на аналоге: запоминаем прессинг, чтобы радар его не предлагал.
+        rejected = list(item.rejected_alt_record_ids or [])
+        rid = str(data.reject_alt_record_id)
+        if rid not in rejected:
+            rejected.append(rid)
+        item.rejected_alt_record_ids = rejected
+        item.accept_alt = False
 
     await db.commit()
     await db.refresh(item)

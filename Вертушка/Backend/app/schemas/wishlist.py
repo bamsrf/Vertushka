@@ -35,6 +35,8 @@ class WishlistItemUpdate(BaseModel):
     conditions: list[WishlistCondition] | None = None
     # Принять альт-прессинг как подходящий (радар: статус «в продаже», не «альтернатива»).
     accept_alt: bool | None = None
+    # «Нет» в шите радара: этот прессинг больше не предлагать как аналог.
+    reject_alt_record_id: UUID | None = None
 
 
 class GiftBookingInfo(BaseModel):

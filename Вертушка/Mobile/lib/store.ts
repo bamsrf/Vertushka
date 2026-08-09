@@ -603,6 +603,8 @@ interface CollectionState {
   setWishlistPriceThreshold: (itemId: string, value: number | null) => Promise<void>;
   setWishlistConditions: (itemId: string, conditions: WishlistCondition[] | null) => Promise<void>;
   setWishlistAcceptAlt: (itemId: string, value: boolean) => Promise<void>;
+  // «Нет» на аналоге: больше не предлагать этот прессинг.
+  rejectWishlistAlt: (itemId: string, recordId: string) => Promise<void>;
   // Единый PUT: подписать на радар + порог + состояние (для лимит-проверки бэка).
   saveWishlistRadar: (
     itemId: string,
@@ -808,6 +810,21 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
     });
     try {
       await api.updateWishlistItem(itemId, { accept_alt: value });
+    } catch (error) {
+      set({ wishlistItems: prev });
+      throw error;
+    }
+  },
+
+  rejectWishlistAlt: async (itemId, recordId) => {
+    const prev = get().wishlistItems;
+    set({
+      wishlistItems: prev.map((wi) =>
+        wi.id === itemId ? { ...wi, accept_alt: false } : wi,
+      ),
+    });
+    try {
+      await api.updateWishlistItem(itemId, { reject_alt_record_id: recordId });
     } catch (error) {
       set({ wishlistItems: prev });
       throw error;

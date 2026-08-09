@@ -292,7 +292,13 @@ async def _emit_alt_versions(
             continue
         mid = str(getattr(wanted, "discogs_master_id", "") or "")
         related = instock_by_master.get(mid, [])
-        related = [l for l in related if condition_ok(l.condition, wi.conditions)]
+        # Отклонённые аналоги («Нет» в шите радара) больше не поводы для пуша.
+        rejected_alts = set(wi.rejected_alt_record_ids or [])
+        related = [
+            l for l in related
+            if condition_ok(l.condition, wi.conditions)
+            and str(getattr(l, "matched_record_id", "")) not in rejected_alts
+        ]
         if not related:
             continue
 
