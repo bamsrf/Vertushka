@@ -618,36 +618,36 @@ Output: 1024×1024 PNG, transparent background.
 
 > **K5_views_x100 «Витрина» и K6_views_x1000 «На главной» — СКРЫТЫ с v2.1** (просмотры публичного профиля, ненадёжный подсчёт; см. [PLAN_ACHIEVEMENTS_V2.md §4.8](PLAN_ACHIEVEMENTS_V2.md)). Пины не нужны — старые промпты удалены.
 
-#### `K8_contrib_x1` — Стажёр 💧
-> Метафора: 1 одобренный ручной релиз — курьер на первом рейсе, одна коробка-пластинка в руках.
+#### `K8_contrib_x1` — Стажёр 💧 ✅ отрисован
+> Метафора: 1 одобренный релиз — курьерская сумка, в ней одна пластинка, бейдж «NEW».
 
 ```text
-Generate a soft enamel pin: a delivery courier silhouette carrying one vinyl-record box, a small gold checkmark badge on the cap — the rookie's first contribution delivered.
-Composition: a navy courier silhouette in profile, walking right, holding a single square package in front with a vinyl-record disc shown on its face (ember center); a small gold delivery-cap on the head with a tiny gold checkmark badge; motion lines in thin gold behind; small "1" in serif gold near the box.
-Palette: navy #0B1438, ivory #FBF5EA, vinyl black #1A1A2E, ember #E85A2A, gold #D9A84E.
-Same enamel pin style as the previous Vertushka pins (gold contour, navy outline, recessed enamel, single specular per zone).
+Generate a soft enamel pin: a courier delivery bag with one single vinyl record poking out of the top flap — the rookie's very first run.
+Composition: one bold cobalt #2A4BD7 square courier backpack fills ~65% of the pin, seen three-quarter from the front, with a gold buckle strap across the flap and thick gold seam lines; the flap is slightly open and one vinyl record (vinyl black, ember center) sticks up out of it; a small ivory badge sewn on the bag front reads "NEW" in tiny chunky serif navy, with a chunky gold serif "1" below it; the shoulder strap arcs up and runs off the top edge of the frame; two small gold motion dashes float behind the bag on the left.
+Palette: navy #0B1438, cobalt #2A4BD7, ivory #FBF5EA, vinyl black #1A1A2E, ember #E85A2A, gold #D9A84E.
+Same enamel pin style as the previous Vertushka pins (gold contour, navy outline, recessed enamel, single specular per zone). No human figure, no street, no frame.
 Output: 1024×1024 PNG, transparent background.
 ```
 
-#### `K9_contrib_x5` — Поставщик 🔵
-> Метафора: 5 одобренных релизов — подтверждённый канал поставки: ящик с печатью «APPROVED» и пятью пластинками.
+#### `K9_contrib_x5` — Поставщик 🔵 ✅ отрисован
+> Метафора: 5 одобренных релизов — ящик с пятью корешками и сургучная печать «OK».
 
 ```text
-Generate a soft enamel pin: an open supply crate stamped "OK", holding 5 vinyl records standing upright, a gold supply-route arrow looping around — the verified supplier.
-Composition: a navy wooden crate in the lower 60% of pin, front panel showing a round gold "OK" stamp; inside the crate, 5 vinyl-record edges stand upright in a row (alternating ember and cobalt centers visible); a thin gold dashed delivery-route arrow loops from the crate up and around; small "5" in serif gold on the crate panel.
-Palette: navy #0B1438, ivory #FBF5EA, vinyl black #1A1A2E, ember #E85A2A, cobalt #2A4BD7, gold #D9A84E.
-Same enamel pin style as the previous Vertushka pins (gold contour, navy outline, recessed enamel, single specular per zone).
+Generate a soft enamel pin: an open wooden shipping crate holding five vinyl records upright, with a round wax seal stamped on its front panel.
+Composition: one bold navy crate fills the lower 60% of the pin, front panel with gold plank lines and two gold corner brackets; standing upright inside and rising above the crate's rim are 5 vinyl record sleeves seen edge-on, alternating ivory and cobalt #2A4BD7 spines, the middle one pulled slightly forward showing a vinyl disc with ember center; a round gold wax seal on the front panel reads "OK" in tiny chunky serif with a small gold ribbon tail; a chunky gold serif "5" burned into the lower left plank; two small gold sparkle dots float above the records.
+Palette: navy #0B1438, cobalt #2A4BD7, ivory #FBF5EA, vinyl black #1A1A2E, ember #E85A2A, gold #D9A84E.
+Same enamel pin style as the previous Vertushka pins (gold contour, navy outline, recessed enamel, single specular per zone). No warehouse, no background, no frame.
 Output: 1024×1024 PNG, transparent background.
 ```
 
-#### `K10_contrib_x20` — Да, шеф! 🌸
-> Метафора: 20 одобренных релизов — «Yes Chef»: фигура несёт высокую башню из коробок-пластинок, едва балансируя.
+#### `K10_contrib_x20` — Да, шеф! 🌸 ✅ отрисован
+> Метафора: 20 одобренных релизов — шаткая башня коробок, на верхушке колпак шефа.
 
 ```text
-Generate a soft enamel pin: a figure carrying a tall teetering tower of pizza-box-style vinyl crates, a small chef's toque on top, "20" on the lowest box — the master deliverer, "Yes Chef!".
-Composition: a navy silhouette figure centered, arms wrapped around a tall stack of 5-6 square crates rising past the top frame, each crate face showing a vinyl-disc icon (ember/ivory centers); a small white chef's toque hat balanced on the very top box; slight lean to suggest balancing weight; "20" in chunky serif gold on the lowest crate; add 3 tiny gold sparkle stars near the top.
-Palette: navy #0B1438, ivory #FBF5EA, vinyl black #1A1A2E, ember #E85A2A, gold #D9A84E.
-Same enamel pin style as the previous Vertushka pins (gold contour, navy outline, recessed enamel, single specular per zone).
+Generate a soft enamel pin: a tall leaning tower of flat square delivery boxes with a chef's toque balanced on the very top — carrying the whole kitchen, "Yes Chef".
+Composition: one bold vertical stack of 5 flat square boxes fills ~70% of the pin, each box slightly rotated from the one below so the tower leans and wobbles; every box face shows a small vinyl disc glyph, alternating ember and cobalt #2A4BD7 centers, box bodies in ivory with gold edge lines and navy shadow sides; an ivory chef's toque sits tilted on the topmost box and extends past the top edge of the frame; the lowest box carries a chunky vintage serif gold "20"; two small gold motion arcs on either side suggest teetering, and three 4-pointed gold sparkle stars float around the upper half.
+Palette: navy #0B1438, cobalt #2A4BD7, ivory #FBF5EA, vinyl black #1A1A2E, ember #E85A2A, gold #D9A84E.
+Same enamel pin style as the previous Vertushka pins (gold contour, navy outline, recessed enamel, single specular per zone). No human figure, no kitchen, no frame.
 Output: 1024×1024 PNG, transparent background.
 ```
 
@@ -687,36 +687,36 @@ Same enamel pin style as the previous Vertushka pins (gold contour, navy outline
 Output: 1024×1024 PNG, transparent background.
 ```
 
-#### `K14_wanted_x1` — За витриной 🔵
-> Метафора: 1 твоя пластинка в вишлисте ≥3 людей — пластинка на пьедестале за стеклом, три взгляда снаружи.
+#### `K14_wanted_x1` — Разыскивается 🔵 ✅ отрисован
+> Метафора: 1 твоя пластинка в вишлисте ≥3 людей — плакат «WANTED» с пластинкой вместо портрета. Прежний заход «взгляды из-за стекла» отброшен: взгляд — это действие, а не предмет, модель рисовала фигуры.
 
 ```text
-Generate a soft enamel pin: a single vinyl record on a small pedestal behind a glass display pane, three small silhouetted faces peering in from outside — your record is being eyed.
-Composition: center holds a vinyl record (vinyl black, ember center) standing on a small gold pedestal behind an ivory glass pane with a gold frame and a corner shine line; outside the glass at the bottom edge, 3 small navy silhouetted heads looking up at it; small gold heart-eye dots above each head; small "1" in serif gold on the pedestal.
+Generate a soft enamel pin: a vintage "WANTED" reward poster with a vinyl record as the portrait, pinned up with gold tacks and slightly curled at the corners.
+Composition: one bold vertical ivory poster fills ~75% of the pin, tilted about 5 degrees, with a double gold border and torn, slightly curled lower corners; across the top, "WANTED" in chunky vintage serif navy; centered below it, one vinyl record (vinyl black, gold groove rings, ember center label) framed by a thin gold oval like a portrait; under the record, a small ivory ribbon strip reads "REWARD" in tiny serif with a chunky gold serif "3" beside it, meaning three people are after it; three round gold push tacks hold the poster — one at the top center, two at the lower corners; two small gold sparkle dots float beside the poster.
 Palette: navy #0B1438, ivory #FBF5EA, vinyl black #1A1A2E, ember #E85A2A, gold #D9A84E.
-Same enamel pin style as the previous Vertushka pins (gold contour, navy outline, recessed enamel, single specular per zone).
+Same enamel pin style as the previous Vertushka pins (gold contour, navy outline, recessed enamel, single specular per zone). No eyes, no faces, no human figures, no wall, no background panel, no frame.
 Output: 1024×1024 PNG, transparent background.
 ```
 
-#### `K15_wanted_x5` — Шоурум 🌸
-> Метафора: 5 твоих пластинок хотят — выставочный зал: ряд пластинок на подсвеченных стендах, ценники-сердечки.
+#### `K15_wanted_x5` — Шоурум 🌸 ✅ отрисован
+> Метафора: 5 твоих пластинок хотят — подсвеченный демо-стенд, у каждой ценник-сердечко.
 
 ```text
-Generate a soft enamel pin: a showroom display rail of 5 vinyl records on lit stands, each tagged with a small heart price-tag — your shelf is an exhibition.
-Composition: a horizontal gold display rail across the middle; on it, 5 small vinyl records standing upright in a row, each on a tiny gold stand with a spotlight dot above; each record has a small rose-pink heart-shaped tag dangling; "5" in serif gold on the rail's left end; add 2 tiny gold sparkle stars above the rail.
-Palette: navy #0B1438, ivory #FBF5EA, vinyl black #1A1A2E, rose pink #E89AC0, gold #D9A84E.
-Same enamel pin style as the previous Vertushka pins (gold contour, navy outline, recessed enamel, single specular per zone).
+Generate a soft enamel pin: a lit showroom display rail holding five vinyl records face-out, each with a small heart price tag hanging from it.
+Composition: one bold horizontal gold display rail crosses the middle of the pin, five vinyl records hang face-out from it in a slightly fanned row, each record vinyl black with a gold groove ring and a center label alternating ember and rose pink #E89AC0; from the lower edge of each record dangles a tiny ivory heart-shaped price tag on a gold thread; above the rail, a slim gold showroom lamp arm curves down from the top edge of the frame and casts a narrow ivory light cone onto the middle record; a chunky vintage serif gold "5" sits on the rail's left bracket; three 4-pointed gold sparkle stars float in the empty space.
+Palette: navy #0B1438, ivory #FBF5EA, vinyl black #1A1A2E, ember #E85A2A, rose pink #E89AC0, gold #D9A84E.
+Same enamel pin style as the previous Vertushka pins (gold contour, navy outline, recessed enamel, single specular per zone). No room, no floor, no background panel, no frame.
 Output: 1024×1024 PNG, transparent background.
 ```
 
-#### `K16_wanted_x10` — Личный Санта 🌸
-> Метафора: 10 твоих пластинок хотят — ты Санта: мешок, набитый пластинками, список желаний целого города.
+#### `K16_wanted_x10` — Личный Санта 🌸 ✅ отрисован
+> Метафора: 10 твоих пластинок хотят — пластинка-Санта ныряет в дымоход. Сама пластинка и есть Санта: шапка + ремень, без человеческой фигуры.
 
 ```text
-Generate a soft enamel pin: a Santa-style gift sack overflowing with vinyl records, a long unfurling wish-list scroll beside it marked "10" — you are everyone's personal Santa.
-Composition: a plump ivory sack tied with a gold cord in the lower-left, overflowing with 4-5 vinyl-record edges (ember and cobalt centers) spilling out the top; to the right, a navy wish-list scroll unfurls downward past the bottom frame with tiny gold checkmark lines and "10" in chunky serif gold at the top; a small gold star on the sack; add 3 tiny gold sparkle stars around the spill.
-Palette: navy #0B1438, ivory #FBF5EA, vinyl black #1A1A2E, ember #E85A2A, cobalt #2A4BD7, rose pink #E89AC0, gold #D9A84E.
-Same enamel pin style as the previous Vertushka pins (gold contour, navy outline, recessed enamel, single specular per zone).
+Generate a soft enamel pin: a vinyl record dressed as Santa, wearing a red hat and belt, diving head-first down a rooftop chimney with only its top half still showing.
+Composition: the lower 55% of the pin is one bold navy rooftop wedge with gold shingle lines and an ivory snow cap along its ridge; rising from it, a chunky ivory brick chimney with gold mortar lines and a gold rim; wedged into the chimney mouth sits one large vinyl record (vinyl black, gold groove rings, ember center label) tilted as if squeezing down into it — the record IS Santa: an ember #E85A2A pointed Santa hat with an ivory fur brim and pom sits on its upper edge, and a wide navy belt strap with a chunky gold square buckle wraps across its middle right where it meets the chimney rim; a small ivory sack tied with gold cord hangs off the chimney's edge on the right, one tiny vinyl disc peeking out; a chunky vintage serif gold "10" carved on the chimney's front brick face; three 4-pointed gold sparkle stars and two small ivory snowflakes float in the empty space above.
+Palette: navy #0B1438, ivory #FBF5EA, vinyl black #1A1A2E, ember #E85A2A, gold #D9A84E.
+Same enamel pin style as the previous Vertushka pins (gold contour, navy outline, recessed enamel, single specular per zone). No full house, no sky, no moon, no background panel, no frame.
 Output: 1024×1024 PNG, transparent background.
 ```
 

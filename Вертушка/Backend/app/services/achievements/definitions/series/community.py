@@ -538,9 +538,9 @@ DEFINITIONS: list[AchievementDefinition] = [
     # ── Твои записи хотят другие ──────────────────────────────────────── #
     AchievementDefinition(
         code=K14_CODE,
-        title_ru="За витриной",
+        title_ru="Разыскивается",
         description_ru="Одна твоя пластинка попала в вишлист к 3 людям.",
-        description_done_ru="Твою пластинку хотят сразу трое.",
+        description_done_ru="Твою пластинку разыскивают сразу трое.",
         series="contribution",
         tier=AchievementTier.NOTABLE,
         is_hidden=False,
