@@ -125,7 +125,7 @@
 | 1.1 | `plastinka_com`: перевести с per-product fetch на листинг-страницы категорий (цена + наличие в карточке); проверить наличие YML-фида | −50 000 → ~1 000 запросов | [plastinka_com.py](../../Backend/app/services/scrapers/shops/plastinka_com.py) |
 | 1.2 | `doctorhead`: то же — Bitrix, у листингов есть цена и наличие; сначала проверить `/yandex_market.xml` | −5 000 → ~200 | [doctorhead.py](../../Backend/app/services/scrapers/shops/doctorhead.py) |
 | 1.3 | `vinyl_ru`: проверить YML-фид Bitrix, иначе листинги | −5 000 → ~200 | [vinyl_ru.py](../../Backend/app/services/scrapers/shops/vinyl_ru.py) |
-| 1.4 | `korobkavinyla`: Tilda — перевести на `TildaStoreParser` (как `found`), sitemap не нужен | −5 000 → ~3 | [korobkavinyla.py](../../Backend/app/services/scrapers/shops/korobkavinyla.py) |
+| 1.4 | ✅ **Сделано 2026-08-09.** `korobkavinyla` переведён на `TildaStoreParser`. Каталог оказался 5950 товаров (не 3500) → **5950 запросов стали 60**. A/B со старым парсером на 5 товарах: 13 полей идентичны. Потерь данных нет — `sku` в API заполнен у 100% (95% валидный EAN), `descr` богаче страницы | −5 950 → **60** | [korobkavinyla.py](../../Backend/app/services/scrapers/shops/korobkavinyla.py) |
 
 Ожидаемо освобождает ~90% ночного бюджета — место под ~20 новых магазинов
 **без изменений в инфраструктуре**.
