@@ -869,8 +869,8 @@ class ApiClient {
 
   /**
    * Phase A affiliate — регистрация клика «Купить» и получение финального URL
-   * с subid для атрибуции. Если бэк недоступен — клиент использует preview-URL
-   * из offer.url (только UTM, без affiliate).
+   * с subid для атрибуции. Если бэк недоступен — клиент падает на
+   * offer.preview_url (только UTM, без affiliate и без клик-трекинга).
    */
   async trackOfferClick(listingId: string): Promise<{ click_id: string; url: string }> {
     const response = await this.client.post<{ click_id: string; url: string }>(

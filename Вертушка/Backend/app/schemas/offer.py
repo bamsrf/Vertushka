@@ -25,12 +25,14 @@ class OfferResponse(BaseModel):
     condition: str | None = None
     vinyl_color: str | None = None
     format: str | None = None
-    url: str = Field(
+    preview_url: str = Field(
         ...,
         description=(
-            "UTM-обогащённая ссылка магазина (без affiliate-subid). "
-            "Mobile перед открытием должен вызвать POST /api/offers/{id}/click "
-            "и использовать оттуда финальный URL с subid для аттрибуции."
+            "НЕ для перехода. UTM-обогащённая ссылка магазина без affiliate-subid "
+            "и без клик-трекинга — переход по ней в аттрибуцию не попадёт. "
+            "Единственный легальный сценарий: аварийный fallback, когда "
+            "POST /api/offers/{id}/click недоступен. Штатный путь — вызвать "
+            "click-эндпоинт и открывать URL из его ответа."
         ),
     )
     status: str

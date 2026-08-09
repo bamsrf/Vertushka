@@ -132,7 +132,10 @@ export interface Offer {
   condition?: string | null;
   vinyl_color?: string | null;
   format?: string | null;
-  url: string;            // уже завёрнут в affiliate если применимо
+  /** НЕ для перехода: UTM-only, без affiliate-subid и без клик-трекинга.
+   *  Штатный путь — api.trackOfferClick(listing_id) и открывать URL оттуда.
+   *  Здесь только аварийный fallback, если click-эндпоинт недоступен. */
+  preview_url: string;
   status: 'in_stock' | 'preorder';
   last_seen_at: string;   // ISO
   // Phase 5 fields — для OfferDetailCard в bottom-sheet (Backend Phase 6):

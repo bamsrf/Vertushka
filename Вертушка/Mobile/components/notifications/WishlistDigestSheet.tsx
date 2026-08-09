@@ -262,7 +262,7 @@ const OffersPopup: React.FC<{
               <TouchableOpacity
                 key={o.listing_id}
                 style={styles.offerRow}
-                onPress={() => handleBuy(o.listing_id, o.url)}
+                onPress={() => handleBuy(o.listing_id, o.preview_url)}
                 activeOpacity={0.8}
               >
                 <StoreLogo slug={o.store.slug} size={36} fallbackName={o.store.name} />

@@ -40,6 +40,7 @@ from app.services.notification_service import (
     upsert_notification,
 )
 from app.services import push_copy
+from app.services.affiliate import wrap_url
 from app.services.radar_status import condition_ok, record_radar_event
 
 logger = logging.getLogger(__name__)
@@ -380,13 +381,19 @@ async def _emit_alt_versions(
 
 
 def _build_store_payload(listing: StoreListing) -> dict:
-    """Маленький payload магазина для data.stores[]. Slug — дедуп-ключ внутри."""
+    """Маленький payload магазина для data.stores[]. Slug — дедуп-ключ внутри.
+
+    `url` — тот же fallback-контракт, что `OfferResponse.preview_url`: UTM-only,
+    без subid. Клиент открывает его лишь если POST /offers/{id}/click не ответил
+    (см. WishlistDigestSheet.openStoreUrl), поэтому UTM тут обязателен — иначе
+    аварийный переход невидим и в нашей, и в магазинной аналитике.
+    """
     store = listing.store
     return {
         "slug": getattr(store, "slug", None),
         "name": getattr(store, "name", None),
         "price_rub": float(listing.price_rub) if listing.price_rub is not None else None,
-        "url": listing.url,
+        "url": wrap_url(store, listing.url) if store is not None else listing.url,
         "listing_id": str(listing.id),
     }
 

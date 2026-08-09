@@ -216,9 +216,10 @@ def _to_response(
         condition=listing.condition,
         vinyl_color=_display_color(listing.vinyl_color_raw),
         format=listing.format_raw,
-        # Preview-URL: только UTM, без affiliate-subid. Полный wrapped URL с
-        # subid Mobile получит из POST /offers/{id}/click.
-        url=wrap_url(store, listing.url),
+        # Только UTM, без affiliate-subid и без записи клика. Полный wrapped URL
+        # с subid Mobile получает из POST /offers/{id}/click — см. описание поля
+        # в схеме: переход по preview_url в аттрибуцию не попадает.
+        preview_url=wrap_url(store, listing.url),
         status=listing.status,
         last_seen_at=listing.last_seen_at,
         # catalog_number / image_url не хранятся отдельными колонками в БД —

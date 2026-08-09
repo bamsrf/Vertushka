@@ -2,7 +2,8 @@
 Affiliate-overlay для ссылок в магазины.
 
 Что делает `wrap_url`:
-1. Всегда добавляет UTM-метки к оригинальному URL — даже если у магазина нет
+1. Всегда добавляет UTM-метки к оригинальному URL (перетирая чужие utm_*,
+   если каталожная ссылка их уже несла) — даже если у магазина нет
    партнёрской программы. Это безопасно (магазин видит в Google Analytics
    откуда пришёл трафик) и помогает в переговорах о прямой партнёрке:
    «смотрите, мы дали вам N посетителей за месяц».
@@ -52,9 +53,12 @@ B) Direct-партнёрка (личная договорённость с вл�
 """
 from __future__ import annotations
 
+import hashlib
+import hmac
 import logging
 from urllib.parse import quote, urlencode, urlparse, urlunparse, parse_qsl
 
+from app.config import get_settings
 from app.models.store import Store
 
 logger = logging.getLogger(__name__)
@@ -88,7 +92,8 @@ def wrap_url(
         subid: уникальный ID клика (мы передаём OfferClick.id). Если нет —
             будет 'anon'. В партнёрском deeplink это поле магазин обязан
             вернуть нам в отчёте.
-        user_id: ID пользователя (если авторизован). Идёт в utm_content.
+        user_id: ID пользователя (если авторизован). Идёт в utm_content
+            в виде HMAC-псевдонима, не сырым UUID (см. `_user_tag`).
 
     Returns:
         Готовая ссылка для Linking.openURL. Не падает на ошибках конфигурации
@@ -126,17 +131,34 @@ def wrap_url(
 
 
 def _add_utm(url: str, *, user_id: str | None = None) -> str:
-    """Добавляет наши UTM-метки к URL, не затирая существующие магазинские."""
+    """Добавляет наши UTM-метки к URL, перетирая чужие utm_*.
+
+    Перетираем намеренно: источник этого перехода — мы, и если в каталожном URL
+    уже лежал `utm_source` магазина (JSON-LD и фиды такое приносят), то мягкий
+    `setdefault` оставил бы чужую метку и переход стал бы невидим в аналитике
+    магазина. Не-utm параметры URL (id товара, вариант) не трогаем.
+    """
     try:
         parts = urlparse(url)
     except Exception:
         return url
 
     existing = dict(parse_qsl(parts.query, keep_blank_values=True))
-    # Магазинские UTM имеют приоритет — если их прислал сам магазин, не трогаем.
-    for k, v in _DEFAULT_UTM.items():
-        existing.setdefault(k, v)
+    existing.update(_DEFAULT_UTM)
     if user_id:
-        existing.setdefault("utm_content", f"u_{user_id}")
+        existing["utm_content"] = _user_tag(user_id)
 
     return urlunparse(parts._replace(query=urlencode(existing)))
+
+
+def _user_tag(user_id: str) -> str:
+    """Псевдоним пользователя для utm_content — HMAC, а не сырой UUID.
+
+    utm_content уезжает на сторонний домен и оседает в аналитике магазина,
+    поэтому реальный `users.id` туда отдавать нельзя. HMAC на SECRET_KEY
+    детерминирован (магазин видит «N уникальных посетителей», склейка сессий
+    работает), но обратно в наш ID не разворачивается.
+    """
+    secret = get_settings().secret_key
+    digest = hmac.new(secret.encode("utf-8"), user_id.encode("utf-8"), hashlib.sha256)
+    return f"u_{digest.hexdigest()[:16]}"

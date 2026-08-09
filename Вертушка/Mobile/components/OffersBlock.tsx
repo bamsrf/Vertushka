@@ -244,8 +244,8 @@ function OfferRow({ offer, discogsId, router, isAlt }: OfferRowProps) {
     });
 
     // 1. Регистрируем клик и получаем финальный URL с affiliate-subid.
-    //    Если бэк упал — открываем preview-URL из offer.url (UTM-only).
-    let urlToOpen = offer.url;
+    //    Если бэк упал — открываем offer.preview_url (UTM-only, без аттрибуции).
+    let urlToOpen = offer.preview_url;
     try {
       const { url } = await api.trackOfferClick(offer.listing_id);
       urlToOpen = url;
