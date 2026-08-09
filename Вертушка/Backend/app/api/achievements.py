@@ -1,6 +1,7 @@
 """API ачивок (Phase 1)."""
 from __future__ import annotations
 
+import logging
 from typing import Iterable
 from uuid import UUID
 
@@ -35,7 +36,13 @@ from app.services.achievements.registry import (
 from app.services.achievements.share_card import render_for_format
 
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter()
+
+# Серии, для которых отсутствие записи в _SERIES_META — намеренное решение,
+# а не забывчивость. Про них warning не пишем.
+_META_LESS_BY_DESIGN = frozenset({"random"})
 
 
 # --- Метаданные тиров и серий ---------------------------------------------
@@ -227,6 +234,18 @@ def _group_series(
     for series_key, pairs in grouped.items():
         meta = _SERIES_META.get(series_key)
         if meta is None:
+            # Серия зарегистрирована, но её забыли описать в _SERIES_META.
+            # Молча пропустить нельзя: ачивки будут открываться, слать пуши и
+            # копить XP, а секции в приложении не окажется — юзер получит
+            # уведомление про ачивку, которой нигде не видно.
+            if series_key not in _META_LESS_BY_DESIGN:
+                logger.warning(
+                    "achievements: серия '%s' не описана в _SERIES_META — "
+                    "%d ачивок не попадут в каталог. Добавь запись в "
+                    "_SERIES_META (app/api/achievements.py).",
+                    series_key,
+                    len(pairs),
+                )
             continue
         # Полки форматов появляются только когда формат появился в коллекции:
         # пустая витрина «Кассеты 0/4» у виниловода — шум, а не цель. Ключ —
