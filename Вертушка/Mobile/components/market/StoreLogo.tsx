@@ -71,6 +71,12 @@ const STORE_REGISTRY: Record<string, {
     bgColor: '#01ADFF',
     logoSource: require('../../assets/store-logos/doctorhead.png'),
   },
+  skifmusic: {
+    name: 'Скифмьюзик',
+    monogram: 'С',
+    bgColor: '#F5B335',
+    logoSource: require('../../assets/store-logos/skifmusic.png'),
+  },
 };
 
 interface StoreLogoProps {
