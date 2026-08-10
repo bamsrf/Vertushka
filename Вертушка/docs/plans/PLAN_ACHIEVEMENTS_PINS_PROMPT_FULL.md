@@ -999,7 +999,7 @@ Same enamel pin style as the previous Vertushka pins (gold contour, navy outline
 Output: 1024×1024 PNG, transparent background.
 ```
 
-#### `MV_crown_jewel` — Жемчужина 🌸 ⏳ нужен пин
+#### `MV_crown_jewel` — Жемчужина 🌸 ✅ отрисован
 > Метафора: одна пластинка дороже 20 000 ₽ — раковина, открытая, а внутри вместо жемчужины лежит пластинка.
 
 ```text

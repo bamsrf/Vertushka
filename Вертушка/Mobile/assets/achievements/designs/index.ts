@@ -65,6 +65,7 @@ export const DESIGN_PNGS: Record<string, ImageSourcePropType> = {
   mv4_250k: require('./mv4_250k.png'),
   mv5_500k: require('./mv5_500k.png'),
   mv6_million: require('./mv6_million.png'),
+  mv_crown_jewel: require('./mv_crown_jewel.png'),
   meta_foundation: require('./meta_foundation.png'),
   meta_scale: require('./meta_scale.png'),
   r_self_titled: require('./r_self_titled.png'),

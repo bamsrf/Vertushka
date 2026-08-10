@@ -136,8 +136,21 @@ export function AchievementsHero({
   const [fadingTheme, setFadingTheme] = useState<LevelTheme | null>(null);
   const themeFade = useRef(new Animated.Value(0)).current;
 
+  // Анимация въезда новой плашки стартует уже ПОСЛЕ commit(), то есть после
+  // того как isRevealing стал false и cleanup эффекта отработал. Без этой
+  // ссылки она остаётся без присмотра: остановить её некому, и прерывание
+  // бросает плашку за правым краем карточки.
+  const chipInRef = useRef<Animated.CompositeAnimation | null>(null);
+
   useEffect(() => {
     if (!isRevealing) return;
+
+    /** Довести плашку и бар до финального состояния без анимации. */
+    const settle = () => {
+      chipX.setValue(0);
+      chipOpacity.setValue(1);
+      progress.setValue(targetPct);
+    };
 
     const seq = Animated.sequence([
       // 1. Добиваем старую ступень до конца.
@@ -171,9 +184,7 @@ export function AchievementsHero({
         // Нельзя выйти молча: плашка осталась за краем карточки с opacity 0 и
         // так и не вернётся до перемонтирования, а без commit() новый ключ не
         // попадёт в сторадж — повышение отыграется заново при каждом заходе.
-        chipX.setValue(0);
-        chipOpacity.setValue(1);
-        progress.setValue(targetPct);
+        settle();
         commit();
         return;
       }
@@ -192,7 +203,7 @@ export function AchievementsHero({
       progress.setValue(0);
       chipX.setValue(CHIP_TRAVEL);
       // 4. Новая плашка приезжает справа, ползунок набирает новый прогресс.
-      Animated.parallel([
+      const chipIn = Animated.parallel([
         Animated.spring(chipX, {
           toValue: 0,
           damping: 14,
@@ -213,10 +224,20 @@ export function AchievementsHero({
           easing: Easing.out(Easing.cubic),
           useNativeDriver: false,
         }),
-      ]).start();
+      ]);
+      chipInRef.current = chipIn;
+      chipIn.start(({ finished: arrived }) => {
+        chipInRef.current = null;
+        // Прервали въезд — плашка застряла бы за ПРАВЫМ краем карточки
+        // (chipX = CHIP_TRAVEL выставлен строкой выше).
+        if (!arrived) settle();
+      });
     });
 
-    return () => seq.stop();
+    return () => {
+      seq.stop();
+      chipInRef.current?.stop();
+    };
     // commit/targetPct стабильны на время перехода; перезапуск по ним не нужен.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isRevealing]);
