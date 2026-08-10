@@ -23,7 +23,7 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import DateTime, ForeignKey, String
+from sqlalchemy import Boolean, DateTime, ForeignKey, String, false
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -58,6 +58,17 @@ class OfferClick(Base):
     surface: Mapped[str] = mapped_column(String(16), nullable=False, default="mobile")
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, nullable=False, index=True
+    )
+    # Когда редиректор `/go/...` реально отдал 302. NULL = переход не состоялся:
+    # клик записали, но до браузера дело не дошло. Разница created_at →
+    # redirected_at — единственный способ увидеть эти потери; выставляется один
+    # раз, повторное открытие ссылки (кнопка «назад») её не двигает.
+    redirected_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # Краулер / превью мессенджера дёрнул /go/l/{listing_id} со публичной
+    # страницы. Редирект таким отдаём (ломать превью незачем), но из отчётов и
+    # из хитов Метрики исключаем.
+    is_bot: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=false()
     )
 
     listing: Mapped["StoreListing"] = relationship("StoreListing")

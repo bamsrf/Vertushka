@@ -42,6 +42,18 @@ class Settings(BaseSettings):
     # OFF по умолчанию — включать осознанно, мгновенный откат без деплоя.
     yandex_match_enabled: bool = Field(default=False, alias="YANDEX_MATCH_ENABLED")
 
+    # Публичный домен (не API-хост): на нём живут HTML-страницы из app/web/ и
+    # редиректор переходов `/go/...`. Без слеша на конце.
+    public_base_url: str = Field(default="https://vinyl-vertushka.ru", alias="PUBLIC_BASE_URL")
+
+    # Счётчик Яндекс.Метрики для ПУБЛИЧНЫХ веб-страниц (профиль, вишлист).
+    # Пусто = счётчик не встраивается вообще. Включать только после того, как в
+    # privacy.html появится раздел про аналитику и куки: сейчас политика
+    # конфиденциальности третьих лиц-аналитиков не упоминает.
+    # Мобильные переходы Метрика не видит принципиально — они считаются в
+    # offer_clicks. См. docs/plans/CLICK_REDIRECTOR_AND_METRIKA.md §4.
+    yandex_metrika_counter_id: str = Field(default="", alias="YANDEX_METRIKA_COUNTER_ID")
+
     # OpenAI API (распознавание обложки)
     openai_api_key: str = Field(default="", alias="OPENAI_API_KEY")
 

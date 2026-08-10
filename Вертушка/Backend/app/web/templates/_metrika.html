@@ -1,0 +1,46 @@
+{# Счётчик Яндекс.Метрики для публичных страниц.
+
+   Рендерится только если задан YANDEX_METRIKA_COUNTER_ID. Пусто (дефолт) —
+   в разметку не попадает ничего.
+
+   Почему цель бьётся ОТСЮДА, а не с редиректора /go/...:
+   здесь tag.js уже загружен вместе со страницей, а ссылки открываются в новой
+   вкладке (target="_blank") — текущая страница не выгружается, поэтому хит
+   успевает уйти гарантированно. На редиректоре была бы гонка «загрузка tag.js
+   против navigation», которую мы принципиально не выигрываем — см.
+   docs/plans/CLICK_REDIRECTOR_AND_METRIKA.md §2.
+
+   Мобильные переходы сюда не попадают вообще: там нет веб-страницы. Их
+   единственный источник истины — таблица offer_clicks.
+#}
+{% if metrika_id %}
+<script type="text/javascript">
+   (function(m,e,t,r,i,k,a){m[i]=m[i]||function(){(m[i].a=m[i].a||[]).push(arguments)};
+   m[i].l=1*new Date();
+   for (var j = 0; j < document.scripts.length; j++) {if (document.scripts[j].src === r) { return; }}
+   k=e.createElement(t),a=e.getElementsByTagName(t)[0],k.async=1,k.src=r,a.parentNode.insertBefore(k,a)})
+   (window, document, "script", "https://mc.yandex.ru/metrika/tag.js", "ym");
+
+   ym({{ metrika_id }}, "init", {
+       clickmap: true,
+       trackLinks: true,
+       accurateTrackBounce: true
+   });
+
+   // Делегированный слушатель: renderOffers() строит ссылки динамически, так что
+   // навешивать обработчик на каждую нельзя — её может ещё не существовать.
+   document.addEventListener("click", function (ev) {
+       var link = ev.target && ev.target.closest ? ev.target.closest("a.offer-btn") : null;
+       if (!link) return;
+       try {
+           ym({{ metrika_id }}, "reachGoal", "store_click", {
+               store_slug: link.getAttribute("data-store-slug") || ""
+           });
+       } catch (_) {
+           // Метрика заблокирована адблоком — переход всё равно уйдёт в /go/...,
+           // и клик попадёт в offer_clicks. Ломать навигацию из-за аналитики нельзя.
+       }
+   }, true);
+</script>
+<noscript><div><img src="https://mc.yandex.ru/watch/{{ metrika_id }}" style="position:absolute; left:-9999px;" alt=""></div></noscript>
+{% endif %}

@@ -1,17 +1,18 @@
 """
 Web-маршруты для публичных страниц (HTML, не API)
 """
+import hashlib
 import logging
 from datetime import datetime, timedelta
 from decimal import Decimal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import select, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import joinedload, selectinload
 
 from app.database import get_db
 from app.config import get_settings
@@ -22,10 +23,15 @@ from app.models.wishlist import Wishlist, WishlistItem
 from app.models.follow import Follow
 from app.models.profile_share import ProfileShare
 from app.models.gift_booking import GiftBooking, GiftStatus
+from app.models.offer_click import OfferClick
 from app.models.store import Store
 from app.models.store_listing import StoreListing, ListingStatus
 from app.api.profile import get_public_profile_payload, _get_top_expensive, _get_market_storefront
+from app.services.affiliate import wrap_url
 from app.services.exchange import get_usd_rub_rate
+from app.utils.bot_ua import is_bot_ua
+from app.utils.rate_limit import limiter
+from app.utils.request_ip import get_client_ip
 from app.services.pricing import PricingParams, estimate_rub
 from app.services.valuation import get_monthly_delta
 
@@ -35,7 +41,7 @@ router = APIRouter()
 templates = Jinja2Templates(directory="app/web/templates")
 settings = get_settings()
 
-BASE_URL = "https://vinyl-vertushka.ru"
+BASE_URL = settings.public_base_url.rstrip("/")
 
 
 _GENRE_RU = {
@@ -99,7 +105,7 @@ _LOCAL_STORE_LOGOS = {
 _MAX_OFFERS_PER_RECORD = 4
 
 
-def _offer_dict(slug, store_name, logo_url, price_rub, url, status, *, is_alt: bool) -> dict:
+def _offer_dict(slug, store_name, logo_url, price_rub, listing_id, status, *, is_alt: bool) -> dict:
     # logo: приоритет — локальный PNG в статике (мы их положили из мобилки),
     # затем external logo_url из БД, иначе None → фронт нарисует monogram.
     if slug in _LOCAL_STORE_LOGOS:
@@ -111,7 +117,11 @@ def _offer_dict(slug, store_name, logo_url, price_rub, url, status, *, is_alt: b
         "store_name": store_name,
         "store_logo": logo,
         "price_rub": int(price_rub),
-        "url": url,
+        # Ссылка на свой редиректор, а не на магазин. Раньше тут стоял сырой
+        # `listing.url` — без UTM и без трекинга, поэтому весь трафик с
+        # публичных страниц был неатрибутирован. Относительный путь: страницы
+        # отдаются с того же хоста.
+        "url": f"/go/l/{listing_id}",
         "status": status,
         "is_alt_version": is_alt,
     }
@@ -142,7 +152,7 @@ async def _load_offers_by_record(
         await db.execute(
             select(
                 StoreListing.matched_record_id,
-                StoreListing.url,
+                StoreListing.id,
                 StoreListing.price_rub,
                 StoreListing.status,
                 Store.slug,
@@ -160,14 +170,16 @@ async def _load_offers_by_record(
         )
     ).all()
 
-    for rid, url, price_rub, status, slug, store_name, logo_url in rows:
+    for rid, listing_id, price_rub, status, slug, store_name, logo_url in rows:
         bucket = grouped.setdefault(rid, [])
         if len(bucket) >= _MAX_OFFERS_PER_RECORD:
             continue
         # Дедуп по магазину: показываем самое дешёвое предложение от каждого магазина.
         if any(o["store_slug"] == slug for o in bucket):
             continue
-        bucket.append(_offer_dict(slug, store_name, logo_url, price_rub, url, status, is_alt=False))
+        bucket.append(
+            _offer_dict(slug, store_name, logo_url, price_rub, listing_id, status, is_alt=False)
+        )
 
     # === Alt-version: листинги других прессингов того же мастера ===
     # master '0' / None — мусорный master, пропускаем (иначе склеит несвязанные записи).
@@ -180,7 +192,7 @@ async def _load_offers_by_record(
             select(
                 StoreListing.matched_record_id,   # прессинг, на который замэтчен листинг
                 Record.discogs_master_id,
-                StoreListing.url,
+                StoreListing.id,
                 StoreListing.price_rub,
                 StoreListing.status,
                 Store.slug,
@@ -201,9 +213,14 @@ async def _load_offers_by_record(
 
     # master → [(listing_record_id, offer_dict)], отсортированы по цене ASC.
     alt_by_master: dict[str, list[tuple[UUID, dict]]] = {}
-    for src_rid, master_id, url, price_rub, status, slug, store_name, logo_url in alt_rows:
+    for src_rid, master_id, listing_id, price_rub, status, slug, store_name, logo_url in alt_rows:
         alt_by_master.setdefault(master_id, []).append(
-            (src_rid, _offer_dict(slug, store_name, logo_url, price_rub, url, status, is_alt=True))
+            (
+                src_rid,
+                _offer_dict(
+                    slug, store_name, logo_url, price_rub, listing_id, status, is_alt=True
+                ),
+            )
         )
 
     for rid in record_ids:
@@ -759,6 +776,8 @@ async def public_profile_page(
         "usd_rub_rate": float(usd_rub_rate),
         "compute_rub": compute_rub,
         "offers_for": offers_for,
+        # Пусто по умолчанию → _metrika.html не рендерит ничего.
+        "metrika_id": settings.yandex_metrika_counter_id,
     })
 
 
@@ -948,3 +967,148 @@ async def confirm_booking_page(
         "request": request, "page_status": "confirm",
         "booking": booking, "token": token,
     })
+
+
+# ============================================================================
+# Редиректор переходов в магазин — docs/plans/CLICK_REDIRECTOR_AND_METRIKA.md
+# ============================================================================
+#
+# Почему 302, а не страница со счётчиком Метрики и `location.replace()`:
+# tag.js грузится асинхронно, адблок/Private Relay/DNS-фильтр режут домен
+# Метрики, а любой таймер — выбор между потерей кликов и торможением перехода.
+# Здесь гонки нет вообще: истина живёт в `offer_clicks`, а хит в Метрику уйдёт
+# fire-and-forget и на редирект не влияет.
+
+# no-store обязателен вместе с 302. С 301 браузер закешировал бы редирект
+# практически навсегда: второй клик по тому же офферу пошёл бы в магазин
+# напрямую, минуя нас, и исчез из статистики.
+_REDIRECT_HEADERS = {"Cache-Control": "no-store, no-cache, must-revalidate"}
+
+
+def _offer_redirect(url: str) -> RedirectResponse:
+    """302 в магазин. Только 302/307 — см. комментарий к _REDIRECT_HEADERS."""
+    return RedirectResponse(url=url, status_code=status.HTTP_302_FOUND, headers=_REDIRECT_HEADERS)
+
+
+def _dead_link_response() -> HTMLResponse:
+    """Ссылка не резолвится: чужой/устаревший id, снятый с продажи листинг."""
+    return HTMLResponse(
+        content=(
+            "<!doctype html><meta charset=utf-8>"
+            "<title>Ссылка недействительна</title>"
+            "<p>Это предложение больше недоступно. "
+            f'<a href="{BASE_URL}">Открыть Вертушку</a></p>'
+        ),
+        status_code=status.HTTP_404_NOT_FOUND,
+        headers=_REDIRECT_HEADERS,
+    )
+
+
+@router.get("/go/{click_id}", include_in_schema=False)
+async def redirect_registered_click(
+    click_id: UUID,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """Переход по клику, зарегистрированному заранее (мобилка).
+
+    Клик уже создан в `POST /api/offers/{id}/click` — там он нужен ДО открытия
+    браузера, чтобы его id уехал в affiliate-deeplink как `subid`. Здесь мы
+    только подтверждаем, что переход реально состоялся, и отдаём 302.
+
+    Резолвим строго UUID из своей БД. URL в query-параметре не принимаем ни
+    сейчас, ни в будущих версиях: это мгновенно превратило бы наш домен в
+    инструмент фишинга (открытый редиректор).
+    """
+    stmt = (
+        select(OfferClick)
+        .options(
+            joinedload(OfferClick.listing).joinedload(StoreListing.store),
+        )
+        .where(OfferClick.id == click_id)
+    )
+    click = (await db.execute(stmt)).unique().scalar_one_or_none()
+    if click is None or click.listing is None or click.listing.store is None:
+        return _dead_link_response()
+
+    listing = click.listing
+    final_url = wrap_url(
+        listing.store,
+        listing.url,
+        subid=str(click.id),
+        user_id=str(click.user_id) if click.user_id else None,
+    )
+
+    # Пишем подтверждение только на первом заходе. Повторное открытие той же
+    # ссылки (кнопка «назад» в браузере) — не новый переход, и портить им
+    # метрику потерь нельзя.
+    if click.redirected_at is None:
+        click.redirected_at = datetime.utcnow()
+        click.is_bot = is_bot_ua(request.headers.get("user-agent"))
+        await db.commit()
+
+    return _offer_redirect(final_url)
+
+
+@router.get("/go/l/{listing_id}", include_in_schema=False)
+# Этот маршрут СОЗДАЁТ строку в offer_clicks на каждый GET, поэтому он
+# накручиваемый ровно как и click-эндпоинт. Лимит выше мобильного (30/мин):
+# страница профиля показывает до 4 офферов на пластинку, и живой человек может
+# открыть несколько подряд в новых вкладках.
+@limiter.limit("30/minute")
+async def redirect_web_listing(
+    listing_id: UUID,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """Переход с публичной веб-страницы (профиль, вишлист).
+
+    Здесь клик создаётся В МОМЕНТ GET, в отличие от мобильного
+    `/go/{click_id}`. Создавать его при рендере страницы нельзя: тогда каждый
+    показ карточки считался бы кликом, и CTR стал бы бессмысленным.
+
+    Именно этот маршрут попадает в HTML, поэтому по нему ходят краулеры и
+    превью мессенджеров — их помечаем `is_bot`, но редирект отдаём (ломать
+    превью незачем).
+    """
+    stmt = (
+        select(StoreListing)
+        .options(joinedload(StoreListing.store))
+        .where(StoreListing.id == listing_id)
+    )
+    listing = (await db.execute(stmt)).unique().scalar_one_or_none()
+    if listing is None or listing.store is None or not listing.store.is_active:
+        return _dead_link_response()
+
+    user_agent = request.headers.get("user-agent")
+    now = datetime.utcnow()
+    click = OfferClick(
+        listing_id=listing.id,
+        # Веб публичный и анонимный: узнать юзера здесь нельзя, поэтому
+        # utm_content у таких переходов не будет — это ожидаемо.
+        user_id=None,
+        ip_hash=_hash_client_ip(request),
+        user_agent=(user_agent or "")[:500] or None,
+        surface="web",
+        redirected_at=now,
+        is_bot=is_bot_ua(user_agent),
+    )
+    db.add(click)
+    await db.flush()  # нужен click.id для subid
+    final_url = wrap_url(listing.store, listing.url, subid=str(click.id))
+    await db.commit()
+
+    return _offer_redirect(final_url)
+
+
+def _hash_client_ip(request: Request) -> str | None:
+    """sha256(ip + SECRET_KEY) — тот же контракт, что `api/offers._hash_ip`.
+
+    IP берём через `get_client_ip` (X-Real-IP / последний хоп XFF), а не из
+    первого элемента X-Forwarded-For: тот присылает клиент, и накрутчик
+    выглядел бы как тысяча разных людей.
+    """
+    ip = get_client_ip(request)
+    if not ip or ip == "unknown":
+        return None
+    return hashlib.sha256(f"{ip}|{settings.secret_key}".encode("utf-8")).hexdigest()

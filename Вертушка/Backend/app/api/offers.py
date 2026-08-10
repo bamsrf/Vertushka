@@ -4,8 +4,12 @@ API: предложения магазинов для конкретной пл�
 GET  /api/records/{discogs_id}/offers?sort=price|rating
 POST /api/offers/{listing_id}/click                  ← фаза A affiliate (см. SHOPS_PARSING.md §affiliate)
 """
-from __future__ import annotations
 
+# `from __future__ import annotations` здесь СОЗНАТЕЛЬНО нет: slowapi
+# оборачивает эндпоинт, и FastAPI перестаёт разрешать строковые аннотации в
+# namespace обёртки — `@limiter.limit` на track_offer_click падает с
+# PydanticUndefinedAnnotation: name 'UUID' is not defined. По той же причине
+# future-импорта нет в api/auth.py и api/messages.py, где лимитер уже стоял.
 import hashlib
 import logging
 from datetime import datetime, timedelta
@@ -36,6 +40,8 @@ from app.schemas.offer import (
 )
 from app.services.affiliate import wrap_url
 from app.services.cache import cache
+from app.utils.rate_limit import limiter
+from app.utils.request_ip import get_client_ip
 from app.services.vinyl_color import (
     PRESSING_EXACT_METHODS,
     color_family,
@@ -258,6 +264,15 @@ def _get_payload_str(listing: StoreListing, key: str) -> str | None:
     status_code=status.HTTP_200_OK,
     summary="Записать клик «Купить» и получить финальный URL для перехода",
 )
+# Эндпоинт анонимный, поэтому лимит обязателен: без него любой желающий надувает
+# offer_clicks, и главный аргумент в переговорах с магазином («мы дали вам N
+# посетителей») рассыпается при первой сверке с их аналитикой. 20/мин — с запасом
+# для живого человека, который щёлкает офферы по нескольким пластинкам.
+# Ключ — IP из get_client_ip (X-Real-IP, его наш nginx перезаписывает), поэтому
+# подделать заголовком нельзя. Хранилище slowapi в памяти процесса: во время
+# blue-green оба цвета живут разом и лимит на эти секунды удваивается — для
+# анти-абьюза приемлемо (см. app/utils/rate_limit.py).
+@limiter.limit("20/minute")
 async def track_offer_click(
     listing_id: UUID,
     request: Request,
@@ -265,11 +280,18 @@ async def track_offer_click(
     db: AsyncSession = Depends(get_db),
 ) -> OfferClickResponse:
     """
-    Mobile/Web вызывают этот эндпоинт ПЕРЕД открытием URL магазина.
+    Mobile вызывает этот эндпоинт ПЕРЕД открытием магазина.
     Эндпоинт:
         1. Создаёт запись OfferClick с ip_hash + user_agent + (опц.) user_id
-        2. Использует click.id как `subid` для аффилиат-обёртки
-        3. Возвращает финальный URL → клиент делает Linking.openURL(url)
+        2. Возвращает ссылку редиректора `{PUBLIC_BASE_URL}/go/{click_id}`
+           → клиент делает Linking.openURL(url)
+
+    Магазинную ссылку и affiliate-обёртку с `subid=click_id` собирает редиректор
+    в момент 302 (`web/routes.py::redirect_registered_click`). Клик создаётся
+    здесь, а не там, именно потому, что его id нужен как `subid` ещё до открытия
+    браузера. Для публичного веба точка входа другая — `/go/l/{listing_id}`,
+    где клик создаётся в момент GET (иначе показы страницы считались бы
+    кликами). См. docs/plans/CLICK_REDIRECTOR_AND_METRIKA.md.
 
     Идемпотентность: каждый клик = новая строка (это нужно для отчётов).
     Anti-fraud делается отдельно (rate-limit / DB-аналитика), не здесь.
@@ -294,14 +316,14 @@ async def track_offer_click(
         surface="mobile",
     )
     db.add(click)
-    await db.flush()  # получаем click.id для subid
-    final_url = wrap_url(
-        listing.store,
-        listing.url,
-        subid=str(click.id),
-        user_id=str(current_user.id) if current_user else None,
-    )
+    await db.flush()  # получаем click.id — он же subid и путь редиректора
     await db.commit()
+
+    # Отдаём ссылку на свой редиректор, а не на магазин. Affiliate-обёртку с
+    # subid соберёт сам редиректор в момент 302 — так переход подтверждается
+    # (`offer_clicks.redirected_at`) и попадает в Метрику. Клиент, открывший
+    # ссылку магазина напрямую, в аттрибуцию не попал бы вообще.
+    redirect_url = f"{get_settings().public_base_url.rstrip('/')}/go/{click.id}"
 
     # Серия «Рыночный нюх» живёт на этих кликах. emit_event глушит свои ошибки
     # сам, но клик уже закоммичен — ачивки не должны ломать переход в магазин.
@@ -313,7 +335,7 @@ async def track_offer_click(
             db, current_user.id, OFFER_CLICKED, {"listing_id": str(listing.id)}
         )
 
-    return OfferClickResponse(click_id=click.id, url=final_url)
+    return OfferClickResponse(click_id=click.id, url=redirect_url)
 
 
 # ============================================================================
@@ -432,11 +454,16 @@ async def invalidate_market_feed() -> None:
 
 
 def _hash_ip(request: Request) -> str | None:
-    """sha256(ip + SECRET_KEY) — для anti-fraud аналитики без хранения PII."""
-    # Уважаем X-Forwarded-For (за nginx). Берём первый адрес из цепочки.
-    fwd = request.headers.get("x-forwarded-for") or ""
-    ip = fwd.split(",")[0].strip() if fwd else (request.client.host if request.client else "")
-    if not ip:
+    """sha256(ip + SECRET_KEY) — для anti-fraud аналитики без хранения PII.
+
+    IP берём через `get_client_ip`, а не из X-Forwarded-For[0]: первый элемент
+    цепочки присылает сам клиент, поэтому накрутчик подставлял бы туда случайный
+    адрес и выглядел бы как тысяча разных людей — ровно то, что этот хэш должен
+    ловить. Наш nginx дописывает реальный IP последним хопом и перезаписывает
+    X-Real-IP, им и доверяем.
+    """
+    ip = get_client_ip(request)
+    if not ip or ip == "unknown":
         return None
     secret = get_settings().secret_key
     return hashlib.sha256(f"{ip}|{secret}".encode("utf-8")).hexdigest()
