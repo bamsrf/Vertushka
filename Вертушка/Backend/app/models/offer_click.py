@@ -54,8 +54,18 @@ class OfferClick(Base):
     )
     ip_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     user_agent: Mapped[str | None] = mapped_column(String(500), nullable=True)
-    # Источник клика внутри приложения: 'mobile' (тап в OffersBlock), 'web' (когда появится)
+    # Платформа: 'mobile' | 'web'. Отвечает на «откуда физически пришёл клик».
     surface: Mapped[str] = mapped_column(String(16), nullable=False, default="mobile")
+    # Место в UI: 'record' | 'market' | 'market_store' | 'wishlist_swipe' |
+    # 'wishlist_digest' | 'radar_price_history' | 'web_profile' | 'unknown'.
+    # Отдельно от surface, потому
+    # что «с мобилки» и «из Маркета» — разные вопросы, и склеенная колонка
+    # сделала бы отчёт «сколько переходов дал Маркет» неоднозначным.
+    # Валидация списка — в схеме OfferClickRequest, не CHECK-констрейнтом:
+    # список растёт с каждым новым экраном.
+    source: Mapped[str] = mapped_column(
+        String(24), nullable=False, default="unknown", server_default="unknown"
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, nullable=False, index=True
     )

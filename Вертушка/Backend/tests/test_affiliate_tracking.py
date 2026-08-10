@@ -8,6 +8,8 @@
 """
 from urllib.parse import parse_qs, urlparse
 
+from app.api.offers import _normalize_source
+from app.schemas.offer import KNOWN_CLICK_SOURCES
 from app.services.affiliate import _add_utm, _user_tag
 from app.utils.bot_ua import is_bot_ua
 
@@ -103,3 +105,43 @@ class TestBotUa:
             "(KHTML, like Gecko) Chrome/126.0 Mobile Safari/537.36",
         ):
             assert not is_bot_ua(ua), ua
+
+
+class TestNormalizeSource:
+    """`source` — разбивка «откуда пришёл переход» в отчёте магазину.
+
+    Ключевое требование: покупка НИКОГДА не должна падать из-за метки
+    аналитики. Порядок деплоя «бэкенд → сборка мобилки» означает, что клиент
+    рано или поздно пришлёт источник, которого бэкенд ещё не знает.
+    """
+
+    def test_known_sources_pass_through(self):
+        for src in KNOWN_CLICK_SOURCES:
+            assert _normalize_source(src) == src
+
+    def test_unknown_source_falls_back_instead_of_raising(self):
+        """Главный регресс-кейс: Literal здесь вернул бы 422 и убил покупку."""
+        assert _normalize_source("artist_page_v2") == "unknown"
+
+    def test_empty_and_none(self):
+        assert _normalize_source("") == "unknown"
+        assert _normalize_source(None) == "unknown"
+
+    def test_whitespace_trimmed(self):
+        assert _normalize_source("  market  ") == "market"
+
+    def test_every_mobile_source_is_known_backend_side(self):
+        """Словари Mobile и Backend должны совпадать.
+
+        Если в Mobile/lib/types.ts добавили значение, а сюда — нет, переходы
+        начнут молча падать в `unknown` и разбивка в отчёте перестанет сходиться.
+        """
+        mobile_sources = {
+            "record",
+            "market",
+            "market_store",
+            "wishlist_swipe",
+            "wishlist_digest",
+            "radar_price_history",
+        }
+        assert mobile_sources <= KNOWN_CLICK_SOURCES

@@ -23,6 +23,7 @@ import { useCollectionStore, useAuthStore } from '../../lib/store';
 import { ms } from '../../lib/responsive';
 import { useTourTarget } from '../../lib/useTourTarget';
 import { api, resolveMediaUrl, recordPreviewParams } from '../../lib/api';
+import { analytics } from '../../lib/analytics';
 import { CollectionItem, WishlistItem, CollectionTab, RecordOffersSummary, Offer } from '../../lib/types';
 import { Colors, Spacing, Typography, BorderRadius, Gradients, Shadows } from '../../constants/theme';
 import { summaryToHotStock, type ResolvedHotStock } from '../../components/HotStockTag';
@@ -222,9 +223,15 @@ export default function CollectionScreen() {
 
   const handleBuyPress = useCallback(async (offer: OfferDetailData) => {
     setBuyingListingId(offer.listingId);
+    analytics.offerClick({
+      listing_id: offer.listingId,
+      store_slug: offer.storeSlug,
+      price_rub: offer.priceRub,
+      source: 'wishlist_swipe',   // discogs_id свайп-ценнику неизвестен
+    });
     let urlToOpen: string | null = null;
     try {
-      const { url } = await api.trackOfferClick(offer.listingId);
+      const { url } = await api.trackOfferClick(offer.listingId, 'wishlist_swipe');
       urlToOpen = url;
     } catch {
       // backend упал — открываем без affiliate tracking

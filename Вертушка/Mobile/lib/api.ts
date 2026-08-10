@@ -6,6 +6,7 @@ import * as SecureStore from 'expo-secure-store';
 import Constants from 'expo-constants';
 import {
   AuthTokens,
+  ClickSource,
   LoginRequest,
   RegisterRequest,
   User,
@@ -872,9 +873,13 @@ class ApiClient {
    * с subid для атрибуции. Если бэк недоступен — клиент падает на
    * offer.preview_url (только UTM, без affiliate и без клик-трекинга).
    */
-  async trackOfferClick(listingId: string): Promise<{ click_id: string; url: string }> {
+  async trackOfferClick(
+    listingId: string,
+    source: ClickSource,
+  ): Promise<{ click_id: string; url: string }> {
     const response = await this.client.post<{ click_id: string; url: string }>(
       `/offers/${listingId}/click`,
+      { source },
     );
     return response.data;
   }

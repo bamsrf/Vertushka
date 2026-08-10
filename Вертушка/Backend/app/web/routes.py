@@ -1090,6 +1090,7 @@ async def redirect_web_listing(
         ip_hash=_hash_client_ip(request),
         user_agent=(user_agent or "")[:500] or None,
         surface="web",
+        source="web_profile",
         redirected_at=now,
         is_bot=is_bot_ua(user_agent),
     )

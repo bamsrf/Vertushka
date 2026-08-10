@@ -4,6 +4,8 @@
  * Импорт нативного SDK ленивый: в Expo Go модуль просто отсутствует и аналитика становится no-op.
  */
 
+import type { ClickSource } from './types';
+
 type AnalyticsProvider = {
   track: (event: string, properties?: Record<string, unknown>) => void;
   identify: (userId: string, properties?: Record<string, unknown>) => void;
@@ -114,6 +116,36 @@ export const analytics = {
   // --- Offers (магазины) ---
   viewOffers: (discogsId: string, count: number) =>
     track('view_offers', { discogs_id: discogsId, count }),
-  offerClick: (params: { listing_id: string; store_slug: string; price_rub: number; discogs_id: string }) =>
-    track('offer_click', params),
+  /**
+   * Уход в магазин — последний шаг воронки и главная монетизационная метрика.
+   *
+   * `source` обязателен: без него все переходы сливаются в одно число, и нельзя
+   * ответить, что именно работает — Маркет, карточки пластинок или ценники в
+   * вишлисте. Тот же source уезжает в `offer_clicks.source` на бэкенде, чтобы
+   * отчёт магазину и продуктовая воронка считались по одной разбивке.
+   *
+   * `discogs_id` опционален: свайп-ценник знает листинг, но не запись.
+   */
+  offerClick: (params: {
+    listing_id: string;
+    store_slug: string;
+    price_rub: number;
+    source: ClickSource;
+    discogs_id?: string;
+  }) => track('offer_click', params),
+
+  // --- Market (воронка до перехода в магазин) ---
+  /** Открыли витрину Маркета. Знаменатель для market_record_open. */
+  viewMarket: () => track('view_market'),
+  /** Открыли страницу конкретного магазина из Маркета. */
+  viewMarketStore: (storeSlug: string) => track('view_market_store', { store_slug: storeSlug }),
+  /**
+   * Тап на пластинку внутри Маркета → карточка записи.
+   *
+   * Промежуточный шаг, без которого воронка обрывается: раньше был виден только
+   * финальный offer_click, и понять, теряем мы людей на витрине или уже на
+   * карточке, было невозможно.
+   */
+  marketRecordOpen: (params: { record_ref: string; from: 'market' | 'market_store' }) =>
+    track('market_record_open', params),
 };

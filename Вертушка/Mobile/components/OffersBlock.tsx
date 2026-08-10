@@ -241,13 +241,14 @@ function OfferRow({ offer, discogsId, router, isAlt }: OfferRowProps) {
       store_slug: offer.store.slug,
       price_rub: Number(offer.price_rub),
       discogs_id: discogsId ?? '',
+      source: 'record',
     });
 
     // 1. Регистрируем клик и получаем финальный URL с affiliate-subid.
     //    Если бэк упал — открываем offer.preview_url (UTM-only, без аттрибуции).
     let urlToOpen = offer.preview_url;
     try {
-      const { url } = await api.trackOfferClick(offer.listing_id);
+      const { url } = await api.trackOfferClick(offer.listing_id, 'record');
       urlToOpen = url;
     } catch {
       // network/server error — fallback на preview-URL, не блокируем переход

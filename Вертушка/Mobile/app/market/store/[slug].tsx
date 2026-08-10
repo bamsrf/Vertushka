@@ -30,6 +30,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import MaskedView from '@react-native-masked-view/masked-view';
 
 import { Icon } from '@/components/ui';
+import { analytics } from '../../../lib/analytics';
 import { api } from '../../../lib/api';
 import { MarketPalette } from '../../../constants/theme';
 import { ms } from '../../../lib/responsive';
@@ -128,7 +129,11 @@ export default function StorePage() {
 
   const handleItemPress = useCallback(
     (item: MarketSearchItem) => {
-      router.push(`/record/${item.discogs_id ?? item.record_id}` as any);
+      const ref = item.discogs_id ?? item.record_id;
+      // from='market_store' отделяет «пришёл из витрины магазина» от «искал по
+      // всему Маркету»: у этих двух путей разная конверсия в переход.
+      analytics.marketRecordOpen({ record_ref: ref, from: 'market_store' });
+      router.push(`/record/${ref}` as any);
     },
     [router],
   );

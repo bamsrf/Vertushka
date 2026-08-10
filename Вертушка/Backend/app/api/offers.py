@@ -30,7 +30,9 @@ from app.models.store import Store
 from app.models.store_listing import StoreListing, ListingStatus
 from app.models.user import User
 from app.schemas.offer import (
+    KNOWN_CLICK_SOURCES,
     MarketCarouselItem,
+    OfferClickRequest,
     OfferClickResponse,
     OfferResponse,
     RecordOffersFullResponse,
@@ -276,6 +278,7 @@ def _get_payload_str(listing: StoreListing, key: str) -> str | None:
 async def track_offer_click(
     listing_id: UUID,
     request: Request,
+    payload: OfferClickRequest = OfferClickRequest(),
     current_user: Optional[User] = Depends(get_current_user_optional),
     db: AsyncSession = Depends(get_db),
 ) -> OfferClickResponse:
@@ -314,6 +317,7 @@ async def track_offer_click(
         ip_hash=_hash_ip(request),
         user_agent=(request.headers.get("user-agent") or "")[:500] or None,
         surface="mobile",
+        source=_normalize_source(payload.source),
     )
     db.add(click)
     await db.flush()  # получаем click.id — он же subid и путь редиректора
@@ -451,6 +455,21 @@ async def invalidate_market_feed() -> None:
             await cache._pool.delete(key)
     except Exception:
         logger.debug("invalidate market cache failed", exc_info=True)
+
+
+def _normalize_source(raw: str | None) -> str:
+    """Незнакомый источник сворачиваем в 'unknown', покупку не ломаем.
+
+    Warning в логах — единственный сигнал, что клиент прислал значение, которого
+    бэкенд не знает (обычно: сборку выпустили раньше деплоя). Отчёт при этом
+    недосчитает разбивку, но переход в магазин состоится.
+    """
+    value = (raw or "").strip()
+    if value in KNOWN_CLICK_SOURCES:
+        return value
+    if value:
+        logger.warning("Unknown offer click source %r — записан как unknown", value[:24])
+    return "unknown"
 
 
 def _hash_ip(request: Request) -> str | None:

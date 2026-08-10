@@ -257,7 +257,7 @@ export default function RadarScreen() {
     let urlToOpen = d.buyUrl;
     if (d.buyListingId) {
       try {
-        const { url } = await api.trackOfferClick(d.buyListingId);
+        const { url } = await api.trackOfferClick(d.buyListingId, 'radar_price_history');
         urlToOpen = url;
       } catch {
         // backend недоступен — уходим по прямой ссылке, лишь бы юзер дошёл

@@ -25,6 +25,7 @@ import Animated, {
 } from 'react-native-reanimated';
 
 import { Icon } from '../ui/Icon';
+import { analytics } from '../../lib/analytics';
 import { api, resolveMediaUrl } from '../../lib/api';
 import { STORES_TTL_MS, useMarketStore } from '../../lib/marketStore';
 import type { MarketSearchItem, MarketFilters, MarketFacetsResponse } from '../../lib/types';
@@ -169,6 +170,13 @@ export function MarketMain({ onScroll, scrollEnabled = true, paddingTop, pullFra
   const [facets, setFacets] = useState<MarketFacetsResponse | null>(null);
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Знаменатель воронки Маркета: без него market_record_open и offer_click не с
+  // чем сравнивать. Mount-only — компонент живёт и в /market, и слоем в Поиске,
+  // так что это «Маркет показан», а не «переход по роуту».
+  useEffect(() => {
+    analytics.viewMarket();
+  }, []);
+
   // Фасеты (доступные жанры/особенности со счётчиками) — грузим один раз при
   // маунте. Ошибку глотаем: FilterBar просто не покажет жанр/особенности.
   useEffect(() => {
@@ -270,13 +278,17 @@ export function MarketMain({ onScroll, scrollEnabled = true, paddingTop, pullFra
   });
 
   const handleStorePress = useCallback((slug: string) => {
+    analytics.viewMarketStore(slug);
     router.push(`/market/store/${slug}` as any);
   }, [router]);
   const handleItemPress = useCallback((item: { id: string }) => {
+    analytics.marketRecordOpen({ record_ref: item.id, from: 'market' });
     router.push(`/record/${item.id}` as any);
   }, [router]);
   const handleSearchItemPress = useCallback((item: MarketSearchItem) => {
-    router.push(`/record/${item.discogs_id ?? item.record_id}` as any);
+    const ref = item.discogs_id ?? item.record_id;
+    analytics.marketRecordOpen({ record_ref: ref, from: 'market' });
+    router.push(`/record/${ref}` as any);
   }, [router]);
 
   const renderSearchItem = useCallback(

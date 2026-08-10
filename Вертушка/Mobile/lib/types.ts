@@ -118,6 +118,23 @@ export interface Track {
 
 // ==================== Offers (предложения магазинов) ====================
 
+/**
+ * Место в UI, откуда юзер ушёл в магазин. Обязательный аргумент
+ * `api.trackOfferClick` — именно по нему строится разбивка в отчёте магазину
+ * («60% переходов из Маркета»), поэтому забыть его нельзя: тип не даст.
+ *
+ * Бэкенд незнакомое значение не отбивает ошибкой, а пишет как `unknown`
+ * (см. KNOWN_CLICK_SOURCES в Backend/app/schemas/offer.py) — покупка важнее
+ * метки. Но новое значение всё равно надо добавить и сюда, и туда.
+ */
+export type ClickSource =
+  | 'record'
+  | 'market'
+  | 'market_store'
+  | 'wishlist_swipe'
+  | 'wishlist_digest'
+  | 'radar_price_history';
+
 export interface OfferStoreInfo {
   slug: string;
   name: string;

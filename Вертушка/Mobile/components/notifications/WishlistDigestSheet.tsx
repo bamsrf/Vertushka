@@ -38,6 +38,7 @@ import { Colors, MarketPalette, Spacing, BorderRadius, Typography } from '@/cons
 import { Icon } from '@/components/ui';
 import { XV2 } from '@/components/icons/v2';
 import StoreLogo from '@/components/market/StoreLogo';
+import { analytics } from '@/lib/analytics';
 import { api, getCoverUrl } from '@/lib/api';
 import { toast } from '@/lib/toast';
 import type { Offer } from '@/lib/types';
@@ -101,7 +102,7 @@ async function openStoreUrl(listingId?: string | null, previewUrl?: string | nul
   let urlToOpen = previewUrl ?? '';
   if (listingId) {
     try {
-      const { url } = await api.trackOfferClick(listingId);
+      const { url } = await api.trackOfferClick(listingId, 'wishlist_digest');
       urlToOpen = url;
     } catch {
       // network/server — fallback на preview-URL, переход не блокируем
@@ -199,9 +200,20 @@ const OffersPopup: React.FC<{
     };
   }, [record.record_id]);
 
-  const handleBuy = useCallback(async (listingId: string, url?: string | null) => {
+  const handleBuy = useCallback(async (listingId: string, url?: string | null, offer?: Offer) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
     setBuyingId(listingId);
+    // Дайджест — единственный путь в магазин, который приходит из пуша, а не из
+    // просмотра каталога. Без этого события нельзя сравнить его конверсию с
+    // Маркетом и решить, стоит ли дайджест того шума в уведомлениях.
+    if (offer) {
+      analytics.offerClick({
+        listing_id: offer.listing_id,
+        store_slug: offer.store.slug,
+        price_rub: Number(offer.price_rub),
+        source: 'wishlist_digest',
+      });
+    }
     await openStoreUrl(listingId, url);
     setBuyingId(null);
   }, []);
@@ -262,7 +274,7 @@ const OffersPopup: React.FC<{
               <TouchableOpacity
                 key={o.listing_id}
                 style={styles.offerRow}
-                onPress={() => handleBuy(o.listing_id, o.preview_url)}
+                onPress={() => handleBuy(o.listing_id, o.preview_url, o)}
                 activeOpacity={0.8}
               >
                 <StoreLogo slug={o.store.slug} size={36} fallbackName={o.store.name} />
