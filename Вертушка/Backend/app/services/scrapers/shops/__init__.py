@@ -19,3 +19,4 @@ from app.services.scrapers.shops import stoprobotvinyl  # noqa: F401
 from app.services.scrapers.shops import found  # noqa: F401
 from app.services.scrapers.shops import doctorhead  # noqa: F401
 from app.services.scrapers.shops import skifmusic  # noqa: F401
+from app.services.scrapers.shops import rotaryrecords  # noqa: F401

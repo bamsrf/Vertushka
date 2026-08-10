@@ -77,6 +77,12 @@ const STORE_REGISTRY: Record<string, {
     bgColor: '#F5B335',
     logoSource: require('../../assets/store-logos/skifmusic.png'),
   },
+  rotaryrecords: {
+    name: 'Rotary Records',
+    monogram: 'R',
+    bgColor: '#FFFFFF',
+    logoSource: require('../../assets/store-logos/rotaryrecords.png'),
+  },
 };
 
 interface StoreLogoProps {
