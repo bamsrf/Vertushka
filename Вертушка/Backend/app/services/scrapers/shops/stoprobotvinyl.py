@@ -2,12 +2,34 @@
 Парсер Stoprobot Vinyl — МСК-магазин на Bitrix CMS, **только винил** (LP/2LP/EP/7"/Box Set).
 Каталог ~8 900 товаров (по состоянию на 2026-05-19).
 
+WS1.5: обход переведён со страниц товара на сам AJAX-ответ. Было
+94 запроса discovery + ~8 900 страниц товара (≈5 часов — в ночное окно не
+влезало, и магазин с 08-08 не досчитывался ни разу), стало **94 запроса**
+(≈3 минуты). В `products[]` уже лежит всё, кроме года:
+
+    url «/vinyl/product/111254_architects_..._lp/» → external_id 111254
+    name «Architects» / album «All Our Gods...»    → артист и альбом
+    format ["2LP"] · price «7&nbsp;790 &#8381;»    → формат и цена
+    in_stock «1»/«0»                               → наличие (это количество)
+    images[0].src · label.name · style · direction
+
+Чего в AJAX нет:
+- **Год пресса** («Год выпуска пластинки» на странице). Потеря осознанная:
+  альтернатива — пятичасовой обход, который сейчас не доходит до конца вообще.
+  Матчинг у магазина и так идёт по artist+title (barcode/catno нет).
+  Вернуть можно после WS3.4 (COALESCE-upsert) недельным глубоким проходом.
+- **Цвет винила** — но он восстанавливается из хвоста URL-слага
+  (`..._lp_blue_swirl_transparent`), а при отсутствии цветового токена
+  пластинка чёрная. Сверено на 8 товарах со страницами: 8/8.
+
+ВАЖНО: `external_id` берём из URL (111254), а НЕ из поля `id` AJAX-ответа
+(56099) — это разные нумерации, и подмена задвоила бы весь каталог.
+
 Особенности:
 - Sitemap-индекс существует, но НЕ обновлялся с 2024-10-09 — пропускает свежие
   поступления. Поэтому используем не sitemap, а **собственный AJAX-endpoint**
   магазина: `POST /ajax/catalog.php` с `action=get-products&iblock=vinyl&PAGEN_1=N`.
   GET тоже работает. Endpoint возвращает JSON со всеми товарами в порядке Bitrix.
-  Discovery: пагинируем PAGEN_1=1..page_count, yield-им `url` из каждого `products[]`.
 - Per-listing HTML рендерится сервером целиком (без JS-гидрации) — достаточно
   `bs4.lxml` + `dl.product-characteristics`-блок (dt/dd термины/значения).
 - Title: `[{ID}] {Artist} - {Album} ({Format})` — fallback если dl-блок неполный.
@@ -23,6 +45,7 @@
 """
 from __future__ import annotations
 
+import html as html_lib
 import json
 import logging
 import re
@@ -31,7 +54,12 @@ from typing import AsyncIterator
 
 from bs4 import BeautifulSoup
 
-from app.services.scrapers.base import BaseStoreParser, ListingDTO, ParserError
+from app.services.scrapers.base import (
+    BaseStoreParser,
+    ListingDTO,
+    ParserError,
+    TransientParserError,
+)
 from app.services.scrapers.extractors import (
     parse_price,
     parse_year,
@@ -68,13 +96,147 @@ class StoprobotVinylParser(BaseStoreParser):
     # Sitemap здесь fallback, но т.к. он не обновлялся с 2024-10 — используем
     # discover_urls() override через AJAX-endpoint магазина (см. ниже).
     sitemap_paths: list[str] = []
+    stock_from_listing = True  # in_stock приходит в AJAX-ответе
     listing_url_pattern = r"/vinyl/product/\d+_"
 
     @property
     def slug(self) -> str:
         return "stoprobotvinyl"
 
-    # ---- Discovery через AJAX-endpoint ---------------------------------- #
+    # ---- Обход каталога прямо по AJAX-ответу ----------------------------- #
+
+    async def crawl_full(self, limit: int | None = None) -> AsyncIterator[ListingDTO]:
+        """Пагинируем AJAX и строим DTO из самих products[], без захода на товар."""
+        seen: set[str] = set()
+        emitted = 0
+        async for product in self._iter_products():
+            try:
+                dto = self.parse_product(product)
+            except Exception:
+                logger.debug("[%s] parse_product failed for %s",
+                             self.slug, product.get("url"), exc_info=True)
+                continue
+            if dto is None or dto.external_id in seen:
+                continue
+            seen.add(dto.external_id)
+            yield dto
+            emitted += 1
+            if limit is not None and emitted >= limit:
+                return
+        logger.info("[%s] обход по AJAX: %d товаров", self.slug, emitted)
+
+    async def _iter_products(self) -> AsyncIterator[dict]:
+        """Постранично тянет AJAX-каталог. Yields product-dict'ы."""
+        page = 1
+        max_page: int | None = None
+        while True:
+            url = f"{_AJAX_URL}?{_AJAX_QUERY.format(page=page)}"
+            try:
+                # respect_robots=False: robots.txt запрещает PAGEN_1= для всех
+                # путей (анти-SEO-дублирование), но это backend-API, не страница.
+                text = await self.http.get_text(url, respect_robots=False)
+            except Exception as e:
+                # НЕ глушим: тихий выход = неполный каталог с зелёным статусом
+                # (инцидент 08-10 на doctorhead).
+                raise TransientParserError(
+                    f"обход прерван на AJAX-странице {page} из {max_page or '?'}: {e}"
+                ) from e
+
+            try:
+                data = json.loads(text)
+            except json.JSONDecodeError as e:
+                raise ParserError(f"non-JSON ответ AJAX на странице {page}") from e
+
+            products = data.get("products") or []
+            if not products:
+                return
+
+            if max_page is None:
+                max_page = int(data.get("page_count") or 1)
+                logger.info("[%s] AJAX: %d страниц × ~%d товаров",
+                            self.slug, max_page, len(products))
+
+            for p in products:
+                yield p
+
+            page += 1
+            if max_page and page > max_page:
+                return
+
+    def parse_product(self, product: dict) -> ListingDTO | None:
+        """Элемент `products[]` из AJAX → ListingDTO. None = пропустить."""
+        url_path = str(product.get("url") or "")
+        external_id = _extract_id_from_url(url_path)
+        if not external_id:
+            return None
+
+        album = str(product.get("album") or "").strip()
+        artist = str(product.get("name") or "").strip() or None
+        if not album:
+            return None
+
+        # price приходит html-escaped: «7&nbsp;790 &#8381;».
+        price = parse_price(html_lib.unescape(str(product.get("price") or "")))
+
+        # in_stock — это количество строкой («0» = нет).
+        try:
+            qty = int(str(product.get("in_stock") or "0").strip() or 0)
+        except (TypeError, ValueError):
+            qty = 0
+
+        fmt_list = product.get("format") or []
+        fmt_src = " ".join(str(f) for f in fmt_list) if isinstance(fmt_list, list) else str(fmt_list)
+
+        # Хвост слага несёт цвет: «..._lp_blue_swirl_transparent». Нет токена
+        # цвета — пластинка чёрная (сверено со страницами товара, 8/8).
+        slug = url_path.rstrip("/").rsplit("/", 1)[-1].replace("_", " ")
+        vinyl_color = infer_vinyl_color(slug, exclude=[artist, album]) or "black"
+
+        full_text = f"{album} {fmt_src} {slug}"
+        if _PREORDER_RE.search(full_text):
+            status = "preorder"
+        elif qty > 0:
+            status = "in_stock"
+        else:
+            status = "out_of_stock"
+        if price is None and status == "in_stock":
+            status = "on_request"
+
+        label = product.get("label") or {}
+        label_name = label.get("name") if isinstance(label, dict) else str(label or "") or None
+
+        images = product.get("images") or []
+        image = None
+        if isinstance(images, list) and images and isinstance(images[0], dict):
+            src = images[0].get("src")
+            image = f"{self.base_url}{src}" if src and src.startswith("/") else src
+
+        return ListingDTO(
+            external_id=external_id,
+            url=f"{self.base_url}{url_path}" if url_path.startswith("/") else url_path,
+            title_raw=album,
+            artist_raw=artist,
+            # Год есть только на странице товара, куда мы больше не ходим.
+            year_raw=None,
+            format_raw=infer_format(fmt_src) or fmt_src or "LP",
+            vinyl_color_raw=vinyl_color,
+            condition=None,  # магазин нового товара
+            price_rub=price,
+            price_currency="RUB",
+            status=status,
+            barcode=None,
+            catalog_number=None,
+            discogs_release_url=None,
+            image_url=image,
+            raw_payload={
+                "stoprobot_external_id": external_id,
+                "stoprobot_label": label_name,
+                "stoprobot_style": product.get("style"),
+                "stoprobot_direction": product.get("direction"),
+            },
+        )
+
+    # ---- Discovery через AJAX-endpoint (для sitemap-совместимости) -------- #
 
     async def discover_urls(self) -> AsyncIterator[str]:
         """Пагинируем /ajax/catalog.php → 93+ страницы × 96 товаров.
