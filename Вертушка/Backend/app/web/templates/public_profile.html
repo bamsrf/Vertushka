@@ -570,6 +570,16 @@
             border: 1px solid rgba(255,255,255,0.9);
             box-shadow: 0 -20px 60px -20px rgba(58,75,224,0.2), 0 1px 0 rgba(255,255,255,0.9) inset;
             animation: slideUp 380ms cubic-bezier(.22,.7,.18,1);
+            /* Без этих двух строк высокий контент (квадратная обложка + блок
+               «Купить сейчас» + «Другая версия» на 2-3 магазина) вылезал за
+               экран и не скроллился: оверлей у нас position:fixed, поэтому
+               страница под ним не прокручивается. Раньше скролл был только у
+               модалки брони — правило висело на .booking-sheet, поэтому в
+               вишлисте всё листалось, а в коллекции нет. */
+            max-height: 92vh; overflow-y: auto;
+            /* Инерция на iOS + чтобы прокрутка листа не уводила фон под ним. */
+            -webkit-overflow-scrolling: touch;
+            overscroll-behavior: contain;
         }
         @media (min-width: 640px) { .record-preview-sheet { border-radius: 28px; } }
         .rp-handle {
@@ -827,7 +837,10 @@
             display: none; align-items: flex-end; justify-content: center;
             animation: fadeIn 260ms ease-out;
         }
-        .booking-sheet { overflow-y: auto; max-height: 92vh; }
+        /* .booking-sheet больше не задаёт скролл сам: max-height + overflow-y
+           переехали в .record-preview-sheet, с которым он всегда стоит в паре.
+           Дублировать правило в двух местах — заявка на то, что однажды
+           поправят одно, а второе разъедется. */
         .modal-overlay.active { display: flex; }
         @media (min-width: 640px) { .modal-overlay { align-items: center; } }
         .modal {
