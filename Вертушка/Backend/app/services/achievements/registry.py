@@ -131,6 +131,7 @@ def _load_definitions() -> None:
     from app.services.achievements.definitions.series import market as _market
     from app.services.achievements.definitions import random as _random
     from app.services.achievements.definitions import eggs as _eggs
+    from app.services.achievements.definitions import eggs_interaction as _eggs_interaction
 
     # Реальная логика (Phase 0 / Phase 1)
     register(*_foundation.DEFINITIONS)
@@ -149,6 +150,7 @@ def _load_definitions() -> None:
     # Рандом — после всех серий
     register(*_random.DEFINITIONS)
     register(*_eggs.DEFINITIONS)
+    register(*_eggs_interaction.DEFINITIONS)
 
 
 _load_definitions()

@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { View, StyleSheet } from 'react-native';
+import { View, StyleSheet, Pressable } from 'react-native';
 import Animated, {
   cancelAnimation,
   useSharedValue,
@@ -28,6 +28,8 @@ interface VinylSpinnerProps {
   colorConfig: VinylColorConfig;
   size?: number;
   labelName?: string;
+  /** Тап по диску. Пустой обработчик = диск некликабельный, как раньше. */
+  onTap?: () => void;
 }
 
 // ── Цветовые утилиты (точно как в дизайне) ──────────────────────
@@ -149,7 +151,7 @@ function SplatterOverlay({ color, scale }: { color: string; scale: number }) {
 
 // ── VinylSpinner ─────────────────────────────────────────────────
 
-export function VinylSpinner({ colorConfig, size = 220, labelName }: VinylSpinnerProps) {
+export function VinylSpinner({ colorConfig, size = 220, labelName, onTap }: VinylSpinnerProps) {
   const rotation = useSharedValue(0);
   const foreground = useAppForeground();
   const { primaryColor, secondaryColor, type, opacity } = colorConfig;
@@ -213,8 +215,13 @@ export function VinylSpinner({ colorConfig, size = 220, labelName }: VinylSpinne
     transform: [{ rotate: `${rotation.value}deg` }],
   }));
 
+  // Тап по диску нужен пасхалке «Закрутил». Pressable без onTap не ставим:
+  // лишний слой перехватывал бы жесты скролла на карточке релиза.
+  const Wrapper: React.ComponentType<any> = onTap ? Pressable : View;
+
   return (
-    <View
+    <Wrapper
+      onPress={onTap}
       style={{
         width: size,
         height: size,
@@ -416,6 +423,6 @@ export function VinylSpinner({ colorConfig, size = 220, labelName }: VinylSpinne
           />
         </G>
       </Svg>
-    </View>
+    </Wrapper>
   );
 }

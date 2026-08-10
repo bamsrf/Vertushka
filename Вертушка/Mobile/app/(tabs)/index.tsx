@@ -28,6 +28,7 @@ import { useTourTarget } from '../../lib/useTourTarget';
 import { analytics } from '../../lib/analytics';
 import { RecordSearchResult, ScanMode } from '../../lib/types';
 import { recordPreviewParams } from '../../lib/api';
+import { reportScanAdd, reportScanMiss } from '../../lib/eggTracker';
 import { Colors, Typography, Spacing, BorderRadius, Shadows } from '../../constants/theme';
 
 function getFormatDisplayInfo(format?: string): { label: string; verb: string } {
@@ -107,6 +108,9 @@ export default function ScannerScreen() {
       setShowResults(true);
     } catch (error: any) {
       analytics.scanCover(false);
+      // Камера не справилась. Если юзер потом добавит релиз руками —
+      // сложится пасхалка «Глаз-алмаз».
+      reportScanMiss();
       const detail = error?.response?.data?.detail ?? '';
       const isNoText = detail.includes('определить исполнителя') || detail.includes('artist') || detail.includes('album');
       const message = isNoText
@@ -176,6 +180,9 @@ export default function ScannerScreen() {
       try {
         await addToCollection(record.discogs_id);
         analytics.addToCollection(record.discogs_id);
+        // Экран сканера — единственное место, где добавление точно пришло с
+        // камеры. Пасхалка «Оцифровщик» считает такие подряд.
+        reportScanAdd(record.discogs_id);
         const fmt = getFormatDisplayInfo(record.format_type);
         toast.success(`"${record.title}" ${fmt.verb} в коллекцию`);
         handleCloseResults();

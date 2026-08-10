@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Iterable
+from typing import Any, Iterable
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -16,7 +16,14 @@ from app.database import get_db
 from app.models.user import User
 from app.models.user_achievement import UserAchievement
 from app.services.achievements.definitions.series.formats import GATE_CODE_BY_SERIES
-from app.services.achievements.events import PRICE_DRAWER_OPENED
+from app.services.achievements.events import (
+    ACHIEVEMENTS_OPENED,
+    PRICE_DRAWER_OPENED,
+    PULLED_78,
+    SCAN_ADDED,
+    SCAN_MISS_MANUAL_ADD,
+    VINYL_SPUN_33,
+)
 from app.services.achievements.evaluator import emit_event
 from app.services.achievements.levels import counts_toward_level, weight_for_code
 from app.schemas.achievement import (
@@ -515,11 +522,25 @@ async def get_achievements_by_username(
 #: можно было бы выпросить запросом, не делая ничего).
 CLIENT_EVENTS = {
     "price_drawer_opened": PRICE_DRAWER_OPENED,
+    # Скрытая дорожка (E-серия): жесты, которых в БД не видно.
+    "scan_added": SCAN_ADDED,
+    "scan_miss_manual_add": SCAN_MISS_MANUAL_ADD,
+    "vinyl_spun_33": VINYL_SPUN_33,
+    "pulled_78": PULLED_78,
+    "achievements_opened": ACHIEVEMENTS_OPENED,
+}
+
+#: Какие поля payload'а клиент вправе присылать для конкретного события.
+#: Всё остальное отбрасываем: payload идёт прямиком в evaluator, и без белого
+#: списка через него можно было бы подкрутить чужое состояние.
+CLIENT_EVENT_PAYLOAD_KEYS: dict[str, frozenset[str]] = {
+    "scan_added": frozenset({"record_id"}),
 }
 
 
 class ClientEventRequest(BaseModel):
     event: str
+    payload: dict[str, Any] | None = None
 
 
 @router.post("/events", status_code=status.HTTP_204_NO_CONTENT)
@@ -534,6 +555,18 @@ async def track_client_event(
     сборки клиента не получали ошибок на событиях, которых уже нет.
     """
     event = CLIENT_EVENTS.get(body.event)
-    if event is not None:
-        await emit_event(db, current_user.id, event)
+    if event is None:
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+    allowed = CLIENT_EVENT_PAYLOAD_KEYS.get(body.event, frozenset())
+    payload = {
+        k: v for k, v in (body.payload or {}).items() if k in allowed
+    }
+    # scan_added — единственное событие серии E, где добавление пришло через
+    # скан. Пометка нужна evaluator-у «Оцифровщика», чтобы отличить его от
+    # обычного collection_item_added, который стрик обнуляет.
+    if body.event == "scan_added":
+        payload["via_scan"] = True
+
+    await emit_event(db, current_user.id, event, payload or None)
     return Response(status_code=status.HTTP_204_NO_CONTENT)

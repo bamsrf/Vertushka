@@ -52,6 +52,7 @@ import { useMarketStore } from '../../lib/marketStore';
 import { Colors, Typography, Spacing, BorderRadius, Gradients } from '../../constants/theme';
 import { toast } from '../../lib/toast';
 import { cleanArtistName } from '../../lib/format';
+import { reportManualAdd } from '../../lib/eggTracker';
 
 function getFormatDisplayInfo(format?: string): { label: string; verb: string } {
   if (!format) return { label: 'Винил', verb: 'добавлен' };
@@ -715,6 +716,9 @@ export default function SearchScreen() {
     const doAdd = async () => {
       try {
         await addToCollection(discogsId);
+        // Добавлено руками через поиск. Если недавно промахнулся скан —
+        // складывается пасхалка «Глаз-алмаз».
+        reportManualAdd();
         const format = 'format' in record ? record.format : undefined;
         const fmt = getFormatDisplayInfo(format);
         toast.success('Готово!', `"${record.title}" ${fmt.verb} в коллекцию`);

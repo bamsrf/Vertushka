@@ -30,6 +30,7 @@ import { ms } from '../lib/responsive';
 import { AchievementPin } from '../components/AchievementPin';
 import { prewarmAchievementPins, prefetchAchievementAsset } from '../lib/achievementAssets';
 import { AchievementsHero } from '../components/AchievementsHero';
+import { countPull, reportAchievementsOpened } from '../lib/eggTracker';
 import { AchievementsTourOverlay } from '../components/AchievementsTourOverlay';
 import { MetaTrophyShelf } from '../components/MetaTrophyShelf';
 import { Capsule } from '../components/achievement-mockup/Capsule';
@@ -94,7 +95,14 @@ export default function AchievementsScreen() {
     prewarmAchievementPins();
   }, []);
 
+  // Пасхалка «Год спустя»: дату регистрации знает только бэкенд, наше дело —
+  // сообщить, что юзер зашёл. На чужом профиле молчим: годовщина не наша.
+  useEffect(() => {
+    if (!username) reportAchievementsOpened();
+  }, [username]);
+
   const onRefresh = useCallback(async () => {
+    countPull();  // пасхалка «Заело»
     setRefreshing(true);
     await load();
     setRefreshing(false);

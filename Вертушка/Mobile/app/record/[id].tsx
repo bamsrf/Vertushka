@@ -33,6 +33,7 @@ import { GradientText } from '../../components/GradientText';
 import { FolderPickerModal } from '../../components/FolderPickerModal';
 import { Button, Card, ActionSheet, ActionSheetAction } from '../../components/ui';
 import { api, getCoverUrl } from '../../lib/api';
+import { countSpin } from '../../lib/eggTracker';
 import { cleanArtistName } from '../../lib/format';
 import { useCollectionStore, useAuthStore } from '../../lib/store';
 import { VinylRecord, CollectionItem, PriceHistoryResponse } from '../../lib/types';
@@ -790,6 +791,7 @@ export default function RecordDetailScreen() {
                 colorConfig={colorConfig}
                 labelName={record.label ?? undefined}
                 size={220}
+                onTap={() => countSpin(String(record.id))}
               />
               <Text style={styles.vinylDisclaimer}>
                 Это визуальный прототип — реальный цвет может отличаться

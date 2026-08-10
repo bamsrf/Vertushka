@@ -35,5 +35,15 @@ REFERRED_USER_ACTIVATED = "referred_user_activated"     # приведённый
 OFFER_CLICKED = "offer_clicked"            # affiliate-переход в магазин
 PRICE_DRAWER_OPENED = "price_drawer_opened"  # открыл карточку цен
 
+# Скрытая дорожка (E-серия, пасхалки взаимодействия).
+# Часть этих жестов не оставляет следов в БД — их присылает клиент через
+# POST /achievements/events (allow-list CLIENT_EVENTS в api/achievements.py).
+COLLECTION_ITEM_REMOVED = "collection_item_removed"  # удалил пластинку из коллекции
+SCAN_ADDED = "scan_added"                # добавил пластинку через скан камерой
+SCAN_MISS_MANUAL_ADD = "scan_miss_manual_add"  # скан не узнал, а юзер добавил тот же релиз руками
+VINYL_SPUN_33 = "vinyl_spun_33"          # раскрутил спиннер 33 раза на одной карточке
+PULLED_78 = "pulled_78"                  # 78 pull-to-refresh за сессию
+ACHIEVEMENTS_OPENED = "achievements_opened"  # открыл экран «Ачивки»
+
 # Периодика
 DAILY_TICK = "daily_tick"

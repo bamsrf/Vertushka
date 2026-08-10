@@ -24,6 +24,7 @@ import { ms } from '../../lib/responsive';
 import { useTourTarget } from '../../lib/useTourTarget';
 import { api, resolveMediaUrl, recordPreviewParams } from '../../lib/api';
 import { analytics } from '../../lib/analytics';
+import { countPull } from '../../lib/eggTracker';
 import { CollectionItem, WishlistItem, CollectionTab, RecordOffersSummary, Offer } from '../../lib/types';
 import { Colors, Spacing, Typography, BorderRadius, Gradients, Shadows } from '../../constants/theme';
 import { summaryToHotStock, type ResolvedHotStock } from '../../components/HotStockTag';
@@ -409,6 +410,7 @@ export default function CollectionScreen() {
   };
 
   const handleRefresh = useCallback(async () => {
+    countPull();  // пасхалка «Заело»: 78 обновлений за сессию
     setIsRefreshing(true);
     try {
       if (activeTab === 'collection') {

@@ -632,8 +632,19 @@ async def remove_record_from_collection(
             detail="Пластинка не найдена в коллекции"
         )
 
+    removed_record_id = item.record_id
     await db.delete(item)
     await db.commit()
+
+    # Пасхалка «Сомнения» считает циклы добавил-удалил по релизу. Строки уже
+    # не будет, поэтому record_id передаём явно. Ошибки эмита глушатся внутри —
+    # ачивки не должны валить удаление.
+    from app.services.achievements.events import COLLECTION_ITEM_REMOVED
+    from app.services.achievements.evaluator import emit_event
+
+    await emit_event(
+        db, current_user.id, COLLECTION_ITEM_REMOVED, {"record_id": str(removed_record_id)}
+    )
 
 
 @router.delete("/{collection_id}/items/{item_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -674,8 +685,19 @@ async def remove_item_from_collection(
             detail="Элемент не найден в коллекции"
         )
 
+    removed_record_id = item.record_id
     await db.delete(item)
     await db.commit()
+
+    # Пасхалка «Сомнения» считает циклы добавил-удалил по релизу. Строки уже
+    # не будет, поэтому record_id передаём явно. Ошибки эмита глушатся внутри —
+    # ачивки не должны валить удаление.
+    from app.services.achievements.events import COLLECTION_ITEM_REMOVED
+    from app.services.achievements.evaluator import emit_event
+
+    await emit_event(
+        db, current_user.id, COLLECTION_ITEM_REMOVED, {"record_id": str(removed_record_id)}
+    )
 
 
 @router.get("/{collection_id}/stats", response_model=CollectionStats)

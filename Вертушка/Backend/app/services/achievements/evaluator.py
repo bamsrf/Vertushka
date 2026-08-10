@@ -231,7 +231,10 @@ async def _persist(
     from app.services.achievements.levels import weight_for_code
 
     if existing is None:
-        if not result.unlocked and result.progress is None:
+        # metadata без progress — тоже повод завести строку: пасхалки серии E
+        # копят состояние (стрик сканов, времена смены аватара), а счётчика у
+        # них нет, они скрытые.
+        if not result.unlocked and result.progress is None and result.metadata is None:
             return
         ua = UserAchievement(
             user_id=user_id,
@@ -261,6 +264,14 @@ async def _persist(
             existing.ach_metadata = result.metadata
         await db.flush()
         return
+
+    # Метаданные — это рабочее состояние evaluator-а между событиями (стрик
+    # сканов, времена смены аватара, счётчик add/remove по релизу). В отличие
+    # от progress оно должно уметь и уменьшаться, поэтому пишем безусловно и
+    # ДО progress-гейта: иначе сброшенный стрик навсегда застрял бы на пике.
+    if result.metadata is not None and result.metadata != existing.ach_metadata:
+        existing.ach_metadata = result.metadata
+        await db.flush()
 
     if result.progress is not None and result.progress > existing.progress:
         existing.progress = result.progress

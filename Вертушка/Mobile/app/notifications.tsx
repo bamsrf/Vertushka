@@ -32,6 +32,7 @@ import { useNotificationsStore } from '@/lib/notificationsStore';
 import { prewarmAchievementPins } from '@/lib/achievementAssets';
 import { groupByDateBucket } from '@/lib/notificationsGrouping';
 import { api } from '@/lib/api';
+import { countPull } from '@/lib/eggTracker';
 import { toast } from '@/lib/toast';
 import type { NotificationItem as NotificationItemType, SocialFeedItem } from '@/lib/types';
 
@@ -286,6 +287,7 @@ export default function NotificationsScreen() {
   );
 
   const handleRefresh = useCallback(() => {
+    countPull();  // пасхалка «Заело»
     if (tab === 'personal') loadPersonal({ refresh: true });
     else loadSocial({ refresh: true });
   }, [tab, loadPersonal, loadSocial]);
