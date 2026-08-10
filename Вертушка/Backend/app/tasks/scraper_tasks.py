@@ -168,6 +168,16 @@ async def stock_refresh_active(per_store_limit: int = 200, stale_hours: int = 6)
         counters["skipped"] = True
         return counters
 
+    # Магазины, у которых цена и наличие приезжают вместе с обходом каталога,
+    # точечный refresh не нужен: он тратит 800 запросов в сутки на то, что
+    # ночной crawl уже обновил, и в ночь 08-10 именно он клал сессии БД
+    # (QueryCanceledError → PendingRollbackError каскадом на 200 итераций).
+    from app.services.scrapers.registry import all_parsers
+    listing_stock_slugs = {
+        slug for slug, cls in all_parsers().items()
+        if getattr(cls, "stock_from_listing", False)
+    }
+
     cutoff = datetime.utcnow() - timedelta(hours=stale_hours)
     async with async_session_maker() as db:
         res = await db.execute(
@@ -175,6 +185,7 @@ async def stock_refresh_active(per_store_limit: int = 200, stale_hours: int = 6)
             .join(Store, Store.id == StoreListing.store_id)
             .where(Store.is_active.is_(True))
             .where(Store.requires_browser.is_(False))
+            .where(Store.parser_class.notin_(listing_stock_slugs or {""}))
             .where(StoreListing.matched_record_id.is_not(None))
             .where(StoreListing.status == ListingStatus.IN_STOCK)
             .where(StoreListing.last_seen_at < cutoff)

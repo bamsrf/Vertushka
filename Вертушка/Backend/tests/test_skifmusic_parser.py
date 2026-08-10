@@ -109,3 +109,72 @@ def test_extract_item_list_picks_itemlist_over_breadcrumbs():
 
 def test_extract_item_list_absent():
     assert _extract_item_list("<html><body>нет каталога</body></html>") is None
+
+
+# ---- Обход каталога: дедуп, стабильная сортировка, обрыв ---------------- #
+
+def _page(items, total=90):
+    """Страница категории с JSON-LD ItemList из переданных (id, name)."""
+    els = ",".join(
+        f'{{"@type":"ListItem","position":{i+1},"item":{{"@type":"Product",'
+        f'"name":"Виниловая пластинка {n}","url":"https://skifmusic.ru/product/{pid}-x",'
+        f'"offers":{{"price":"100","availability":"https://schema.org/InStock"}}}}}}'
+        for i, (pid, n) in enumerate(items)
+    )
+    return (
+        '<script type="application/ld+json">/*<![CDATA[*/'
+        f'{{"@context":"https://schema.org/","@type":"ItemList","name":"x",'
+        f'"numberOfItems":{total},"itemListElement":[{els}]}}'
+        '/*]]>*/</script>'
+    )
+
+
+class _FakeHttp:
+    def __init__(self, pages, fail_on=None):
+        self.pages, self.fail_on, self.urls = pages, fail_on, []
+
+    async def get_text(self, url, **kw):
+        self.urls.append(url)
+        page = 1 if "/page" not in url else int(url.split("/page")[1].split("?")[0])
+        if self.fail_on == page:
+            raise RuntimeError("network error")
+        return self.pages.get(page, "<html>пусто</html>")
+
+
+async def _collect(parser):
+    return [d async for d in parser.crawl_full()]
+
+
+@pytest.mark.asyncio
+async def test_crawl_uses_stable_sort_order():
+    http = _FakeHttp({1: _page([("1", "A - B")], total=1)})
+    await _collect(SkifmusicParser(http=http))
+    assert all("sort=name" in u for u in http.urls)
+
+
+@pytest.mark.asyncio
+async def test_crawl_dedupes_overlapping_pages():
+    """Товар, попавший на две страницы, отдаётся один раз."""
+    full = [(str(i), f"Artist {i} - Album") for i in range(30)]
+    overlap = [("29", "Artist 29 - Album")] + [(str(i), f"Artist {i} - Album")
+                                               for i in range(30, 59)]
+    http = _FakeHttp({1: _page(full), 2: _page(overlap)})
+    dtos = await _collect(SkifmusicParser(http=http))
+    ids = [d.external_id for d in dtos]
+    assert len(ids) == len(set(ids)) == 59
+
+
+@pytest.mark.asyncio
+async def test_crawl_raises_on_interrupted_page():
+    """Обрыв не должен молча дать неполный каталог: runner обязан узнать."""
+    from app.services.scrapers.base import TransientParserError
+    http = _FakeHttp({1: _page([(str(i), f"A{i} - B") for i in range(30)])}, fail_on=2)
+    with pytest.raises(TransientParserError, match="обход прерван"):
+        await _collect(SkifmusicParser(http=http))
+
+
+@pytest.mark.asyncio
+async def test_crawl_stops_on_page_without_itemlist():
+    http = _FakeHttp({1: _page([(str(i), f"A{i} - B") for i in range(30)])})
+    dtos = await _collect(SkifmusicParser(http=http))
+    assert len(dtos) == 30

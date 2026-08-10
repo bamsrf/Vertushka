@@ -37,7 +37,7 @@ import re
 from decimal import Decimal
 from typing import AsyncIterator
 
-from app.services.scrapers.base import BaseStoreParser, ListingDTO
+from app.services.scrapers.base import BaseStoreParser, ListingDTO, TransientParserError
 from app.services.scrapers.extractors import (
     parse_price,
     infer_format,
@@ -79,6 +79,8 @@ class SkifmusicParser(BaseStoreParser):
     listing_url_pattern = r"/product/\d+-"
 
     # Размер страницы фиксирован магазином.
+    stock_from_listing = True  # availability приезжает с JSON-LD листинга
+
     catalog_page_size: int = 30
     # Потолок страниц — защита от бесконечного цикла, если пагинация начнёт
     # зацикливаться. 20617/30 ≈ 688, берём двойной запас.
@@ -92,7 +94,13 @@ class SkifmusicParser(BaseStoreParser):
 
     def _page_url(self, page: int) -> str:
         base = self.base_url.rstrip("/") + _CATALOG_PATH
-        return base if page == 1 else f"{base}/page{page}"
+        if page > 1:
+            base = f"{base}/page{page}"
+        # sort=name — стабильный порядок. По умолчанию выдача идёт «по новизне»,
+        # и за 25 минут обхода 688 страниц она разъезжается: товары попадают на
+        # две страницы подряд, а часть проскакивает мимо окна. В ночь 08-10 из
+        # 20 617 позиций так дошло только 13 927 при 20 621 «upserted».
+        return f"{base}?sort=name"
 
     async def _iter_products(self) -> AsyncIterator[dict]:
         """Постранично тянет категорию винила. Yields item-dict'ы из JSON-LD.
@@ -100,28 +108,30 @@ class SkifmusicParser(BaseStoreParser):
         Останавливаемся, когда на странице нет ItemList или он пуст: у магазина
         за последней страницей (688) JSON-LD категории просто исчезает.
         """
-        total_logged = False
+        total_expected: int | None = None
+        seen_ids: set[str] = set()
         emitted = 0
         for page in range(1, self.max_pages + 1):
             url = self._page_url(page)
             try:
                 html = await self.http.get_text(url)
-            except Exception:
-                logger.debug("[%s] page %d failed", self.slug, page, exc_info=True)
-                return
+            except Exception as e:
+                # НЕ глушим: тихий выход = неполный каталог с зелёным статусом.
+                raise TransientParserError(
+                    f"обход прерван на странице {page} ({emitted} товаров): {e}"
+                ) from e
 
             item_list = _extract_item_list(html)
             if item_list is None:
-                logger.info("[%s] каталог кончился на page %d (%d товаров)",
-                            self.slug, page, emitted)
+                _log_coverage(self.slug, page, emitted, total_expected)
                 return
 
-            if not total_logged:
+            if total_expected is None:
                 total = item_list.get("numberOfItems")
+                total_expected = int(total) if total else 0
                 logger.info("[%s] категория винила: %s товаров, ~%s страниц",
                             self.slug, total,
-                            (int(total) // self.catalog_page_size + 1) if total else "?")
-                total_logged = True
+                            (total_expected // self.catalog_page_size + 1) if total_expected else "?")
 
             products = [
                 el["item"] for el in item_list.get("itemListElement") or []
@@ -130,14 +140,24 @@ class SkifmusicParser(BaseStoreParser):
             if not products:
                 return
 
+            fresh = 0
             for p in products:
+                # Дедуп по external_id: даже при sort=name страницы могут
+                # перекрываться, если каталог пополнился во время обхода.
+                ext_id = _extract_id_from_url(p.get("url") or "")
+                if not ext_id or ext_id in seen_ids:
+                    continue
+                seen_ids.add(ext_id)
+                fresh += 1
                 yield p
                 emitted += 1
 
             # Неполная страница = последняя.
             if len(products) < self.catalog_page_size:
-                logger.info("[%s] последняя страница %d, всего %d товаров",
-                            self.slug, page, emitted)
+                _log_coverage(self.slug, page, emitted, total_expected)
+                return
+            if fresh == 0:
+                logger.warning("[%s] страница %d без новых товаров — стоп", self.slug, page)
                 return
 
     async def _load_catalog_by_id(self) -> dict[str, dict]:
@@ -282,6 +302,21 @@ class SkifmusicParser(BaseStoreParser):
 
 
 # ---- helpers ------------------------------------------------------------- #
+
+
+def _log_coverage(slug: str, page: int, emitted: int, expected: int | None) -> None:
+    """Итог обхода + предупреждение, если собрали заметно меньше заявленного.
+
+    `numberOfItems` из ItemList — размер всей категории, так что расхождение
+    сразу видно в логах, а не всплывает потом в БД.
+    """
+    if expected and emitted < expected * 0.9:
+        logger.warning(
+            "[%s] обход закончился на page %d: %d товаров из %d заявленных (%.0f%%)",
+            slug, page, emitted, expected, 100.0 * emitted / expected,
+        )
+    else:
+        logger.info("[%s] обход закончился на page %d: %d товаров", slug, page, emitted)
 
 
 def _extract_id_from_url(url: str) -> str | None:

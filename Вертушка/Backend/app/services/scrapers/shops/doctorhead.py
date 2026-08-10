@@ -52,7 +52,12 @@ from typing import AsyncIterator
 
 from bs4 import BeautifulSoup
 
-from app.services.scrapers.base import BaseStoreParser, ListingDTO, ParserError
+from app.services.scrapers.base import (
+    BaseStoreParser,
+    ListingDTO,
+    ParserError,
+    TransientParserError,
+)
 from app.services.scrapers.extractors import (
     extract_jsonld_product,
     infer_format,
@@ -120,6 +125,7 @@ class DoctorHeadParser(BaseStoreParser):
     requires_js = False
     sitemap_paths: list[str] = []  # discovery через category-walk, см. ниже
     listing_url_pattern = r"/product/[^/]+/?$"
+    stock_from_listing = True  # статус есть в карточке листинга
 
     @property
     def slug(self) -> str:
@@ -146,9 +152,14 @@ class DoctorHeadParser(BaseStoreParser):
                 url = base if page == 1 else f"{base}?PAGEN_1={page}"
                 try:
                     html = await self.http.get_text(url)
-                except Exception:
-                    logger.debug("[%s] category page failed: %s", self.slug, url, exc_info=True)
-                    break
+                except Exception as e:
+                    # НЕ глушим: обрыв на середине означает неполный каталог, а
+                    # runner по «тихому» выходу проставлял last_successful_scrape_at
+                    # (инцидент 08-10: взято 696 из 3548, магазин был зелёный).
+                    raise TransientParserError(
+                        f"обход прерван: {category} страница {page} из "
+                        f"{max_page or '?'} — {e}"
+                    ) from e
 
                 if max_page is None:
                     max_page = _detect_max_page(html)

@@ -48,7 +48,12 @@ from typing import AsyncIterator
 
 from bs4 import BeautifulSoup
 
-from app.services.scrapers.base import BaseStoreParser, ListingDTO, ParserError
+from app.services.scrapers.base import (
+    BaseStoreParser,
+    ListingDTO,
+    ParserError,
+    TransientParserError,
+)
 from app.services.scrapers.extractors import (
     parse_price,
     parse_year,
@@ -94,6 +99,8 @@ class PlastinkaComParser(BaseStoreParser):
 
     # Листинг LP: 200 товаров на страницу, `?page=N`. Пустая страница = конец
     # (проверено: page 39 отдаёт 53 товара, page 40 — ноль, итого 7 653).
+    stock_from_listing = True  # itemprop=availability есть в карточке
+
     catalog_path = "/lp"
     catalog_page_size = 200
     max_pages = 200
@@ -119,9 +126,11 @@ class PlastinkaComParser(BaseStoreParser):
                 url = f"{url}?page={page}"
             try:
                 html = await self.http.get_text(url)
-            except Exception:
-                logger.debug("[%s] listing page %d failed", self.slug, page, exc_info=True)
-                return
+            except Exception as e:
+                # НЕ глушим: тихий выход = неполный каталог с зелёным статусом.
+                raise TransientParserError(
+                    f"обход прерван на странице {page} ({emitted} товаров): {e}"
+                ) from e
 
             cards = _extract_cards(html)
             if not cards:

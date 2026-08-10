@@ -34,6 +34,13 @@ logger = logging.getLogger(__name__)
 
 CrawlMode = Literal["full", "incremental", "stock"]
 
+# Доля листингов из БД, которую обязан увидеть полный обход. Ниже — считаем
+# прогон битым и не проставляем last_successful_scrape_at.
+_SMOKE_MIN_COVERAGE = 0.5
+
+# Сколько подряд идущих ошибок записи терпит refresh, прежде чем бросить магазин.
+_REFRESH_MAX_CONSECUTIVE_ERRORS = 10
+
 
 async def crawl_store(slug: str, *, mode: CrawlMode = "full", limit: int | None = None) -> dict:
     """Прогнать парсер для магазина в указанном режиме.
@@ -124,6 +131,7 @@ async def refresh_store_listings(slug: str, items: list[tuple[object, str]]) -> 
             burst=parser.rate_burst,
         )
         url_to_id = {url: listing_id for listing_id, url in items}
+        consecutive_errors = 0
 
         try:
             async for url, dto in parser.refresh_urls(list(url_to_id)):
@@ -143,8 +151,20 @@ async def refresh_store_listings(slug: str, items: list[tuple[object, str]]) -> 
                     await db.commit()
                 except SQLAlchemyError:
                     counters["errors"] += 1
+                    consecutive_errors += 1
                     logger.exception("[%s] refresh upsert failed for %s", slug, url)
                     await db.rollback()
+                    # Один statement timeout ломает сессию, и дальше каждая
+                    # итерация падает на PendingRollbackError — в ночь 08-10
+                    # так набежало 200 ошибок из 200. Рвём рано и честно.
+                    if consecutive_errors >= _REFRESH_MAX_CONSECUTIVE_ERRORS:
+                        logger.error(
+                            "[%s] refresh прерван: %d ошибок подряд",
+                            slug, consecutive_errors,
+                        )
+                        break
+                else:
+                    consecutive_errors = 0
             await db.commit()
         except ParserBlocked as e:
             await _mark_error(db, store, f"blocked: {e}")
@@ -304,8 +324,15 @@ async def _smoke_check(
     if mode != "incremental" and limit is None:
         if counters["discovered"] == 0:
             return f"smoke: 0 discovered при {existing} листингах в БД"
-        if counters["discovered"] < existing * 0.1:
-            return f"smoke: discovered {counters['discovered']} < 10% от {existing} в БД"
+        # Порог был 10% — он пропускал обрыв обхода на четверти каталога
+        # (doctorhead 08-10: взято 696 из 3548, магазин помечен успешным).
+        # Полный обход обязан увидеть большую часть того, что уже в БД;
+        # ниже половины — это либо обрыв, либо сломанный парсер.
+        if counters["discovered"] < existing * _SMOKE_MIN_COVERAGE:
+            return (
+                f"smoke: discovered {counters['discovered']} < "
+                f"{int(_SMOKE_MIN_COVERAGE * 100)}% от {existing} в БД"
+            )
     if counters["discovered"] >= 10 and counters["errors"] > counters["discovered"] * 0.5:
         return f"smoke: errors {counters['errors']}/{counters['discovered']}"
     return None

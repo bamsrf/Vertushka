@@ -44,6 +44,8 @@ class TildaStoreParser(BaseStoreParser):
     store_partuid: str = ""
 
     # Размер страницы store-API. 100 — комфортный батч (≈135 КБ JSON).
+    stock_from_listing = True  # каталог store-API отдаёт quantity
+
     catalog_page_size: int = 100
     # Жёсткий потолок страниц на всякий случай (защита от бесконечного цикла,
     # если API внезапно начнёт игнорировать slice).

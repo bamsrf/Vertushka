@@ -86,6 +86,10 @@ class BaseStoreParser:
     sitemap_paths: list[str] = ["/sitemap.xml", "/yml.xml", "/feed.xml", "/sitemap_index.xml"]
     listing_url_pattern: str | None = None   # regex для фильтра sitemap-URL
     respect_robots: bool = True
+    # True — цена и наличие приезжают вместе с обходом каталога, поэтому
+    # точечный `stock_refresh_active` для магазина избыточен: он тратит по
+    # 800 запросов в сутки на то, что и так обновилось ночью.
+    stock_from_listing: bool = False
 
     def __init__(self, http: ScraperHttpClient, browser: BrowserPool | None = None) -> None:
         if not self.slug or not self.base_url:

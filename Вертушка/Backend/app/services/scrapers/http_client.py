@@ -163,7 +163,10 @@ class ScraperHttpClient:
         client = cls._clients.get(proxy)
         if client is None or client.is_closed:
             kwargs: dict = {
-                "timeout": httpx.Timeout(30.0, connect=10.0),
+                # 90 с на чтение: страницы листингов у магазинов тяжёлые
+                # (doctorhead ~2 МБ, plastinka ~9 МБ), и при пяти параллельных
+                # обходах 30 с не хватало — таймауты открывали брейкер.
+                "timeout": httpx.Timeout(90.0, connect=10.0),
                 "limits": httpx.Limits(
                     max_connections=50,
                     max_keepalive_connections=20,
@@ -234,10 +237,13 @@ class ScraperHttpClient:
                 resp = await client.get(url, headers=headers)
             except (httpx.HTTPError, asyncio.TimeoutError) as e:
                 last_exc = e
-                await breaker.record_failure(domain)
+                # Брейкер считает ОДИН провал на URL, а не на попытку: иначе
+                # два флакующих URL по 3 попытки выбирают порог в 5 и рвут
+                # обход из сотни страниц (инцидент doctorhead 08-10).
                 if attempt < retries:
                     await asyncio.sleep(2 ** attempt)
                     continue
+                await breaker.record_failure(domain)
                 raise TransientParserError(f"network error: {e}") from e
 
             if resp.status_code == 200:
@@ -264,10 +270,10 @@ class ScraperHttpClient:
                 raise ParserError_404(url)  # not transient — товар удалён
 
             if 500 <= resp.status_code < 600:
-                await breaker.record_failure(domain)
                 if attempt < retries:
                     await asyncio.sleep(2 ** attempt)
                     continue
+                await breaker.record_failure(domain)
                 raise TransientParserError(f"HTTP {resp.status_code} at {url}")
 
             raise TransientParserError(f"HTTP {resp.status_code} at {url}")
