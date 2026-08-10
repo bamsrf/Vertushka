@@ -27,6 +27,7 @@
    - [INV — Глас наружу](#серия-inv--глас-наружу) (6)
    - [H — Дискография](#серия-h--дискография) (5)
    - [M — Рыночный нюх](#серия-m--рыночный-нюх) (6)
+   - [MV — Стоимость коллекции](#серия-mv--стоимость-коллекции) (7)
    - [R — Рандомные пасхалки](#серия-r--рандомные-пасхалки) (14)
    - [META — Выпускные эпики](#серия-meta--выпускные-эпики) (9)
 5. [Фразы для итерации](#фразы-для-итерации)
@@ -923,6 +924,89 @@ Generate a soft enamel pin: a hound's head in profile, nose down, following a da
 Composition: one bold hound head in profile fills the upper left ~55% of the pin, facing down-right — a long tapered muzzle, one floppy ivory ear, a navy body with gold contour lines, an ember #E85A2A nose at the tip and a single round gold eye; from the nose, a thin dashed gold scent trail curves down and to the right in a lazy S, passing two tiny gold sniff-marks along the way; at the end of the trail hangs one small ivory price tag with a gold eyelet and a tiny vinyl record glyph with ember center on its face; a slim gold collar with a small round tag crosses the hound's neck at the lower left.
 Palette: navy #0B1438, ivory #FBF5EA, vinyl black #1A1A2E, ember #E85A2A, gold #D9A84E.
 Same enamel pin style as the previous Vertushka pins (gold contour, navy outline, recessed enamel, single specular per zone). No full dog body, no ground, no background, no frame.
+Output: 1024×1024 PNG, transparent background.
+```
+
+---
+
+### Серия MV — Стоимость коллекции
+
+> **Единый вектор серии:** денежная лестница по `total_estimated_value_rub`, пересчитывается на `daily_tick`. MV_crown_jewel — вне лестницы, отдельное условие (одна пластинка ≥20 000 ₽). Sparkles у 🌸/🌌/⚫ (MV4, MV5, MV6), у 💧/🔵 их нет.
+
+#### `MV1_appraised` — Оценено 💧 ✅ отрисован
+> Метафора: первый расчёт стоимости — ювелирная бирка-сертификат на верёвочке, привязанная к пластинке, с сургучной печатью.
+
+```text
+Generate a soft enamel pin: a jeweller's appraisal tag tied to a vinyl record with a string, stamped with a wax seal.
+Composition: in the lower left, one vinyl record (vinyl black, gold groove rings, ember #E85A2A center label) sits at an angle, about 40% of the pin, partly cropped by the left frame edge; a thin gold string runs from a small hole at its edge up to the right, where a bold ivory rectangular appraisal tag hangs at a tilt, filling ~50% of the pin; on the tag: a small gold magnifier glyph at the top, two short navy ruled lines like handwritten entries, and a chunky vintage serif gold "₽" on the lower half; overlapping the tag's bottom-right corner, a round ember wax seal with a gold rim and a tiny gold checkmark pressed into it.
+Palette: navy #0B1438, ivory #FBF5EA, vinyl black #1A1A2E, ember #E85A2A, gold #D9A84E.
+Same enamel pin style as the previous Vertushka pins (gold contour, navy outline, recessed enamel, single specular per zone). No hand, no desk, no background, no frame.
+Output: 1024×1024 PNG, transparent background.
+```
+
+#### `MV2_50k` — Полтинник 💧 ✅ отрисован
+> Метафора: 50 000 ₽ — пластинка-монета с рифлёным гуртом, номинал «50K» на лейбле.
+
+```text
+Generate a soft enamel pin: a thick collector coin whose face is a vinyl record, its edge milled like real currency, denomination "50K" struck across it.
+Composition: one bold round coin fills ~75% of the pin, drawn three-quarter so its thick side edge shows at the bottom with fine gold milling ridges; the coin face is a vinyl record — vinyl black with concentric gold groove rings — and at its center an ivory label carrying a chunky vintage serif gold "50K" with a small gold "₽" beside it; around the upper rim of the face, a ring of tiny gold beading like a minted border; the coin leans slightly right and its edge extends past the bottom frame edge; two small gold coin-glint dashes float at the upper left.
+Palette: navy #0B1438, ivory #FBF5EA, vinyl black #1A1A2E, ember #E85A2A, gold #D9A84E.
+Same enamel pin style as the previous Vertushka pins (gold contour, navy outline, recessed enamel, single specular per zone). No coin stack, no background, no frame.
+Output: 1024×1024 PNG, transparent background.
+```
+
+#### `MV3_100k` — Шестизнак 🔵 ✅ отрисован
+> Метафора буквальная: механический одометр, шестой разряд только что провернулся — «100000».
+
+```text
+Generate a soft enamel pin: a mechanical odometer counter with six digit drums reading "100000", the last drum caught mid-roll.
+Composition: one bold horizontal counter housing fills ~70% of the pin, a navy case with thick gold frame, gold corner screws and a slim gold rail above and below the digit window; inside the window, six separate ivory digit drums divided by thin gold lines, showing "1 0 0 0 0 0" in chunky vintage serif navy; the leftmost drum — the newly gained sixth digit — is ember #E85A2A instead of ivory, marking the digit that just appeared; the rightmost drum is caught mid-rotation, its digit partly cut by the window edge with a sliver of the next one below; a small gold "₽" sits to the right of the window on the case.
+Palette: navy #0B1438, ivory #FBF5EA, vinyl black #1A1A2E, ember #E85A2A, gold #D9A84E.
+Same enamel pin style as the previous Vertushka pins (gold contour, navy outline, recessed enamel, single specular per zone). No dashboard, no background, no frame.
+Output: 1024×1024 PNG, transparent background.
+```
+
+#### `MV4_250k` — Четверть лимона 🌸 ✅ отрисован
+> Метафора-каламбур: жёлтый лимон в профиль, отрезанные дольки — виниловые пластинки с ободком цедры. Требует разового исключения в палитре: lemon yellow #F2C14E (только тело лимона и ободок цедры) — иначе лимон не читается лимоном.
+
+```text
+Generate a soft enamel pin: a whole lemon lying on its side, seen in profile, being sliced by a knife — and every slice that falls away is a vinyl record.
+Composition: one bold lemon lies horizontally across the middle of the pin, seen from the side in profile with its pointed nubs at both ends, its body a warm lemon yellow #F2C14E with a thick gold outline and one specular highlight along the upper curve; the right third of the lemon has already been cut: three round slices have fallen away and stand slightly fanned to the right, each slice drawn as a vinyl record — vinyl black face with concentric gold groove rings, a lemon-yellow rind ring around the outside, ivory pith line between them and a small ember #E85A2A center label; the nearest slice tilts forward so its full round face reads clearly, and its edge extends past the right frame edge; entering from the upper right at a steep angle, a bold chef's knife — ivory blade with a gold spine and a navy handle — is caught mid-cut, its edge biting into the lemon exactly where the next slice will separate, with a thin gold cut-line already scored there; a chunky vintage serif gold "250K" sits on the intact left part of the lemon body; three 4-pointed gold sparkle stars float above the falling slices.
+Palette: navy #0B1438, ivory #FBF5EA, vinyl black #1A1A2E, ember #E85A2A, gold #D9A84E, lemon yellow #F2C14E (used ONLY for the lemon body and the rind rings).
+Same enamel pin style as the previous Vertushka pins (gold contour, navy outline, recessed enamel, single specular per zone). No cutting board, no table, no hands, no juice droplets, no background panel, no frame.
+Output: 1024×1024 PNG, transparent background.
+```
+
+#### `MV5_500k` — Сокровищница 🌌 ✅ отрисован
+> Метафора: окованный сундук, набитый пластинками вместо золота, крышка откинута.
+
+```text
+Generate a soft enamel pin: an iron-bound treasure chest thrown open, packed with vinyl records standing on edge instead of gold, light spilling out from inside.
+Composition: one bold chest fills ~75% of the pin, seen three-quarter from the front — a navy body with a domed lid, thick gold hasps, corner brackets, rivets and a heavy gold padlock hanging open on the front; the lid is flung back and slightly past the top frame edge; from the open mouth rise 6-7 vinyl records standing on edge in a tight row, discs in vinyl black with gold groove rings and center labels alternating ember #E85A2A and ivory, the middle one taller than the rest; an ivory wedge of light spills up out of the chest behind the records, drawn as a flat enamel shape with crisp edges, not a glow; a chunky vintage serif gold "500K" struck on the chest's front panel; three 4-pointed gold sparkle stars of varying size float above.
+Palette: navy #0B1438, ivory #FBF5EA, vinyl black #1A1A2E, ember #E85A2A, gold #D9A84E.
+Same enamel pin style as the previous Vertushka pins (gold contour, navy outline, recessed enamel, single specular per zone). No coins, no cave, no soft glow, no background panel, no frame.
+Output: 1024×1024 PNG, transparent background.
+```
+
+#### `MV6_million` — Миллионер ⚫ ✅ отрисован
+> Метафора: золотой слиток, отлитый в форме пластинки — коллекция стала активом. Клеймо «1M» как проба.
+
+```text
+Generate a soft enamel pin: a gold bullion bar cast in the shape of a vinyl record — a thick trapezoidal ingot whose top face carries groove rings and a stamped hallmark.
+Composition: one bold ingot fills ~70% of the pin, drawn three-quarter so both its top face and two beveled side walls read as solid metal, each wall with its own single specular streak; the top face is a vinyl record surface — concentric gold groove rings on a slightly deeper gold ground — with a raised rectangular hallmark panel stamped across it carrying a chunky vintage serif "1M" and a tiny "₽" in navy relief, plus two small navy assay marks beneath; a small ember #E85A2A spindle dot at the exact center; the ingot's near corner extends slightly past the bottom frame edge; four 4-pointed gold sparkle stars of varying size float around it, one overlapping the top edge.
+Palette: navy #0B1438, ivory #FBF5EA, vinyl black #1A1A2E, ember #E85A2A, gold #D9A84E.
+Same enamel pin style as the previous Vertushka pins (gold contour, navy outline, recessed enamel, single specular per zone). No cash, no vault, no glow, no background panel, no frame.
+Output: 1024×1024 PNG, transparent background.
+```
+
+#### `MV_crown_jewel` — Жемчужина 🌸 ⏳ нужен пин
+> Метафора: одна пластинка дороже 20 000 ₽ — раковина, открытая, а внутри вместо жемчужины лежит пластинка.
+
+```text
+Generate a soft enamel pin: an open scallop shell resting on a small gold stand, holding a single vinyl record where the pearl should be.
+Composition: one bold scallop shell fills ~70% of the pin, opened like a clam: the lower half sits wide with fan-shaped gold ribs radiating from its hinge, the upper half tilts back at an angle and extends past the top frame edge, its inner surface ivory with a soft specular sweep; cradled between the halves sits one vinyl record seen face-on, small and perfect (vinyl black, gold groove rings, ember #E85A2A center label), raised slightly on a tiny ivory cushion; the shell's hinge rests on a slim gold three-pronged display stand at the bottom; a small ivory tag hangs from the stand with a chunky vintage serif gold "20K"; three 4-pointed gold sparkle stars float around the record, one overlapping the shell's upper rim.
+Palette: navy #0B1438, ivory #FBF5EA, vinyl black #1A1A2E, ember #E85A2A, gold #D9A84E.
+Same enamel pin style as the previous Vertushka pins (gold contour, navy outline, recessed enamel, single specular per zone). No water, no sand, no glow, no background panel, no frame.
 Output: 1024×1024 PNG, transparent background.
 ```
 
