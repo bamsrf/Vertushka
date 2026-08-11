@@ -165,11 +165,31 @@ async def test_crawl_dedupes_overlapping_pages():
 
 
 @pytest.mark.asyncio
-async def test_crawl_raises_on_interrupted_page():
-    """Обрыв не должен молча дать неполный каталог: runner обязан узнать."""
+async def test_single_bad_page_is_skipped_not_fatal():
+    """Одна сбойная страница = минус 30 позиций, а не минус весь каталог."""
+    pages = {
+        1: _page([(str(i), f"A{i} - B") for i in range(30)]),
+        3: _page([(str(i), f"C{i} - D") for i in range(100, 130)]),
+    }
+    dtos = await _collect(SkifmusicParser(http=_FakeHttp(pages, fail_on=2)))
+    # Страница 2 пропущена, обход дошёл до 3-й и продолжил.
+    assert len(dtos) == 60
+
+
+@pytest.mark.asyncio
+async def test_crawl_raises_when_site_is_down():
+    """Сквозной обрыв не должен молча дать неполный каталог: runner обязан узнать."""
     from app.services.scrapers.base import TransientParserError
-    http = _FakeHttp({1: _page([(str(i), f"A{i} - B") for i in range(30)])}, fail_on=2)
-    with pytest.raises(TransientParserError, match="обход прерван"):
+
+    class _DeadHttp(_FakeHttp):
+        async def get_text(self, url, **kw):
+            page = 1 if "/page" not in url else int(url.split("/page")[1].split("?")[0])
+            if page == 1:
+                return self.pages[1]
+            raise RuntimeError("network error")
+
+    http = _DeadHttp({1: _page([(str(i), f"A{i} - B") for i in range(30)])})
+    with pytest.raises(TransientParserError, match="подряд"):
         await _collect(SkifmusicParser(http=http))
 
 

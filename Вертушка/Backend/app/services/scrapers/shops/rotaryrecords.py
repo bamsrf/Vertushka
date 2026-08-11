@@ -44,7 +44,12 @@ import logging
 import re
 from typing import AsyncIterator
 
-from app.services.scrapers.base import BaseStoreParser, ListingDTO, TransientParserError
+from app.services.scrapers.base import (
+    BaseStoreParser,
+    ListingDTO,
+    PageErrorBudget,
+    TransientParserError,
+)
 from app.services.scrapers.extractors import (
     parse_price,
     parse_year,
@@ -112,18 +117,21 @@ class RotaryRecordsParser(BaseStoreParser):
         """Постранично тянет каталог. Yields card-dict'ы."""
         offset = 0
         total: int | None = None
+        budget = PageErrorBudget(self.slug)
         for _ in range(self.max_pages):
             url = (
                 f"{self.base_url}{_API_PATH}?action=page&featured=all"
                 f"&offset={offset}&limit={self.catalog_page_size}"
             )
-            try:
-                text = await self.http.get_text(url, respect_robots=False)
-            except Exception as e:
-                # НЕ глушим: тихий выход = неполный каталог с зелёным статусом.
-                raise TransientParserError(
-                    f"обход прерван на offset={offset}: {e}"
-                ) from e
+            text = await self.fetch_page(
+                url, budget, page_label=f"offset={offset}", respect_robots=False,
+            )
+            if text is None:
+                # Пропуск ≠ конец каталога: сдвигаем окно и идём дальше.
+                offset += self.catalog_page_size
+                if total is not None and offset >= total:
+                    break
+                continue
 
             try:
                 data = json.loads(text)
@@ -132,6 +140,7 @@ class RotaryRecordsParser(BaseStoreParser):
 
             cards = data.get("cards") or []
             if not cards:
+                budget.log_summary()
                 return
 
             if total is None:
@@ -144,6 +153,7 @@ class RotaryRecordsParser(BaseStoreParser):
                 yield c
 
             if not data.get("has_more"):
+                budget.log_summary()
                 return
             offset += len(cards)
 

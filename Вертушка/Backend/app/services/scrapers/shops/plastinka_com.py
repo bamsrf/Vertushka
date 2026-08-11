@@ -51,8 +51,8 @@ from bs4 import BeautifulSoup
 from app.services.scrapers.base import (
     BaseStoreParser,
     ListingDTO,
+    PageErrorBudget,
     ParserError,
-    TransientParserError,
 )
 from app.services.scrapers.extractors import (
     parse_price,
@@ -119,21 +119,21 @@ class PlastinkaComParser(BaseStoreParser):
         """
         seen: set[str] = set()
         emitted = 0
+        budget = PageErrorBudget(self.slug)
 
         for page in range(1, self.max_pages + 1):
             url = f"{self.base_url}{self.catalog_path}"
             if page > 1:
                 url = f"{url}?page={page}"
-            try:
-                html = await self.http.get_text(url)
-            except Exception as e:
-                # НЕ глушим: тихий выход = неполный каталог с зелёным статусом.
-                raise TransientParserError(
-                    f"обход прерван на странице {page} ({emitted} товаров): {e}"
-                ) from e
+            html = await self.fetch_page(url, budget, page_label=f"стр. {page}")
+            if html is None:
+                # Пропуск ≠ конец каталога: теряем до 200 карточек, но обход
+                # продолжается. Сквозной обрыв ловит сам бюджет.
+                continue
 
             cards = _extract_cards(html)
             if not cards:
+                budget.log_summary()
                 logger.info("[%s] каталог кончился на page %d (%d товаров)",
                             self.slug, page, emitted)
                 return
@@ -156,8 +156,10 @@ class PlastinkaComParser(BaseStoreParser):
                     return
 
             if fresh == 0:
+                budget.log_summary()
                 return
             if len(cards) < self.catalog_page_size:
+                budget.log_summary()
                 logger.info("[%s] последняя страница %d, всего %d товаров",
                             self.slug, page, emitted)
                 return

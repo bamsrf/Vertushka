@@ -121,10 +121,32 @@ async def test_crawl_paginates_until_has_more_false():
 
 
 @pytest.mark.asyncio
-async def test_crawl_raises_on_interrupted_page():
-    pages = {0: {"ok": True, "total": 200, "has_more": True, "cards": [_card()]}}
-    with pytest.raises(TransientParserError, match="обход прерван"):
-        await _collect(RotaryRecordsParser(http=_FakeHttp(pages, fail_on=1)))
+async def test_single_bad_page_is_skipped_not_fatal():
+    """Одно окно пропущено — теряем до 80 позиций, но не весь каталог."""
+    other = "aaaaaaaa-7a12-11f1-0a80-0da4000f0192"
+    pages = {
+        0: {"ok": True, "total": 200, "has_more": True, "cards": [_card()]},
+        # offset=1 сбоит → окно сдвигается на catalog_page_size (80) → 81.
+        81: {"ok": True, "total": 200, "has_more": False,
+             "cards": [_card(id=other, url=f"/record/{other}/x", title="B - C")]},
+    }
+    dtos = await _collect(RotaryRecordsParser(http=_FakeHttp(pages, fail_on=1)))
+    assert [d.external_id for d in dtos] == [UUID, other]
+
+
+@pytest.mark.asyncio
+async def test_crawl_raises_when_api_is_down():
+    """Сквозной обрыв API должен долететь до runner'а."""
+    class _DeadHttp(_FakeHttp):
+        async def get_text(self, url, **kw):
+            offset = int(url.split("offset=")[1].split("&")[0])
+            if offset == 0:
+                return json.dumps(self.pages[0])
+            raise RuntimeError("network error")
+
+    pages = {0: {"ok": True, "total": 5000, "has_more": True, "cards": [_card()]}}
+    with pytest.raises(TransientParserError, match="подряд"):
+        await _collect(RotaryRecordsParser(http=_DeadHttp(pages)))
 
 
 @pytest.mark.asyncio

@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
 import random
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -61,6 +62,82 @@ class TransientParserError(ParserError):
     """5xx/network/таймаут — стоит ретраить, и инкрементить circuit-breaker."""
 
 
+# ---- Бюджет ошибок постраничного обхода --------------------------------- #
+
+class PageErrorBudget:
+    """Позволяет пропустить единичную сбойную страницу, но не потерять каталог.
+
+    До 08-11 любая ошибка фетча рвала весь обход: один HTTP 500 на 29-й
+    странице из 114 стоил doctorhead'у суток данных (взято 812 из 3548).
+    Обратный вариант — глушить ошибки — ещё хуже: обход молча заканчивается
+    на середине, а магазин помечается успешным (инцидент 08-10).
+
+    Компромисс: пропускаем страницу, но считаем пропуски. Рвём обход, если
+      * `max_consecutive` страниц подряд не отдались — сайт лёг, дальше
+        долбить бессмысленно;
+      * доля пропусков превысила `max_error_ratio` от пройденных страниц
+        (но не раньше `min_allowance` — на коротких каталогах ratio слишком
+        нервный: 3% от 24 страниц rotaryrecords это ноль).
+    """
+
+    def __init__(
+        self,
+        label: str,
+        *,
+        max_error_ratio: float = 0.05,
+        min_allowance: int = 3,
+        max_consecutive: int = 3,
+    ) -> None:
+        self.label = label
+        self.max_error_ratio = max_error_ratio
+        self.min_allowance = min_allowance
+        self.max_consecutive = max_consecutive
+        self.attempted = 0
+        self.failed = 0
+        self.consecutive = 0
+        self.skipped_pages: list[str] = []
+
+    @property
+    def allowance(self) -> int:
+        """Сколько пропусков допустимо при текущем числе пройденных страниц."""
+        return max(self.min_allowance, math.ceil(self.attempted * self.max_error_ratio))
+
+    def record_success(self) -> None:
+        self.attempted += 1
+        self.consecutive = 0
+
+    def record_failure(self, page_label: str, exc: BaseException) -> None:
+        """Учесть сбойную страницу. Бросает TransientParserError при исчерпании."""
+        self.attempted += 1
+        self.failed += 1
+        self.consecutive += 1
+        self.skipped_pages.append(page_label)
+
+        if self.consecutive >= self.max_consecutive:
+            raise TransientParserError(
+                f"{self.label}: {self.consecutive} страниц подряд не отдались "
+                f"(последняя — {page_label}): {exc}"
+            ) from exc
+        if self.failed > self.allowance:
+            raise TransientParserError(
+                f"{self.label}: пропущено {self.failed} страниц из {self.attempted} "
+                f"при лимите {self.allowance} (последняя — {page_label}): {exc}"
+            ) from exc
+
+        logger.warning(
+            "[%s] страница пропущена (%d/%d в бюджете): %s — %s",
+            self.label, self.failed, self.allowance, page_label, exc,
+        )
+
+    def log_summary(self) -> None:
+        if self.failed:
+            logger.warning(
+                "[%s] обход завершён с пропусками: %d из %d страниц (%s)",
+                self.label, self.failed, self.attempted,
+                ", ".join(self.skipped_pages[:10]),
+            )
+
+
 # ---- Базовый класс парсера ---------------------------------------------- #
 
 class BaseStoreParser:
@@ -96,6 +173,50 @@ class BaseStoreParser:
             raise RuntimeError(f"{type(self).__name__}: slug/base_url must be set")
         self.http = http
         self.browser = browser
+
+    # ---- Постраничный фетч с бюджетом ошибок ---------------------------- #
+
+    async def fetch_page(
+        self,
+        url: str,
+        budget: PageErrorBudget,
+        *,
+        page_label: str,
+        respect_robots: bool = True,
+        retries: int = 3,
+        second_chance_delay: float = 5.0,
+    ) -> str | None:
+        """GET страницы каталога. Возвращает None, если страницу решено пропустить.
+
+        Две ступени защиты от флака:
+          1. `retries` внутри http_client — быстрые попытки с backoff 1/2/4 c;
+          2. вторая попытка через `second_chance_delay` — Bitrix-овые 500 на
+             doctorhead отпускают за секунды, а первая серия ретраев успевает
+             уложиться в 7 с и упереться в ту же ошибку.
+
+        ParserBlocked/ParserNeedsBrowser не пропускаем: это не флак, а смена
+        режима доступа, её должен увидеть runner.
+        """
+        for is_second_chance in (False, True):
+            try:
+                text = await self.http.get_text(
+                    url, respect_robots=respect_robots, retries=retries
+                )
+                budget.record_success()
+                return text
+            except ParserBlocked:
+                raise
+            except Exception as e:
+                if not is_second_chance:
+                    logger.debug(
+                        "[%s] %s не отдалась, вторая попытка через %.0f c: %s",
+                        self.slug, page_label, second_chance_delay, e,
+                    )
+                    await asyncio.sleep(second_chance_delay)
+                    continue
+                budget.record_failure(page_label, e)
+                return None
+        return None
 
     # ---- Discovery ------------------------------------------------------ #
 

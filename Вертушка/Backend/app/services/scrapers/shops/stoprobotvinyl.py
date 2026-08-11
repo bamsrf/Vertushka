@@ -58,7 +58,7 @@ from app.services.scrapers.base import (
     BaseStoreParser,
     ListingDTO,
     ParserError,
-    TransientParserError,
+    PageErrorBudget,
 )
 from app.services.scrapers.extractors import (
     parse_price,
@@ -129,18 +129,22 @@ class StoprobotVinylParser(BaseStoreParser):
         """Постранично тянет AJAX-каталог. Yields product-dict'ы."""
         page = 1
         max_page: int | None = None
+        budget = PageErrorBudget(self.slug)
         while True:
             url = f"{_AJAX_URL}?{_AJAX_QUERY.format(page=page)}"
-            try:
-                # respect_robots=False: robots.txt запрещает PAGEN_1= для всех
-                # путей (анти-SEO-дублирование), но это backend-API, не страница.
-                text = await self.http.get_text(url, respect_robots=False)
-            except Exception as e:
-                # НЕ глушим: тихий выход = неполный каталог с зелёным статусом
-                # (инцидент 08-10 на doctorhead).
-                raise TransientParserError(
-                    f"обход прерван на AJAX-странице {page} из {max_page or '?'}: {e}"
-                ) from e
+            # respect_robots=False: robots.txt запрещает PAGEN_1= для всех
+            # путей (анти-SEO-дублирование), но это backend-API, не страница.
+            text = await self.fetch_page(
+                url, budget,
+                page_label=f"AJAX стр. {page} из {max_page or '?'}",
+                respect_robots=False,
+            )
+            if text is None:
+                # Пропуск ≠ конец каталога: теряем ~96 позиций, идём дальше.
+                page += 1
+                if max_page is not None and page > max_page:
+                    break
+                continue
 
             try:
                 data = json.loads(text)
@@ -149,6 +153,7 @@ class StoprobotVinylParser(BaseStoreParser):
 
             products = data.get("products") or []
             if not products:
+                budget.log_summary()
                 return
 
             if max_page is None:
@@ -161,6 +166,7 @@ class StoprobotVinylParser(BaseStoreParser):
 
             page += 1
             if max_page and page > max_page:
+                budget.log_summary()
                 return
 
     def parse_product(self, product: dict) -> ListingDTO | None:

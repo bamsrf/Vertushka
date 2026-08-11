@@ -37,7 +37,7 @@ import re
 from decimal import Decimal
 from typing import AsyncIterator
 
-from app.services.scrapers.base import BaseStoreParser, ListingDTO, TransientParserError
+from app.services.scrapers.base import BaseStoreParser, ListingDTO, PageErrorBudget
 from app.services.scrapers.extractors import (
     parse_price,
     infer_format,
@@ -111,18 +111,18 @@ class SkifmusicParser(BaseStoreParser):
         total_expected: int | None = None
         seen_ids: set[str] = set()
         emitted = 0
+        budget = PageErrorBudget(self.slug)
         for page in range(1, self.max_pages + 1):
             url = self._page_url(page)
-            try:
-                html = await self.http.get_text(url)
-            except Exception as e:
-                # НЕ глушим: тихий выход = неполный каталог с зелёным статусом.
-                raise TransientParserError(
-                    f"обход прерван на странице {page} ({emitted} товаров): {e}"
-                ) from e
+            html = await self.fetch_page(url, budget, page_label=f"стр. {page}")
+            if html is None:
+                # Пропуск страницы ≠ конец каталога: теряем ~30 позиций из 20k,
+                # обход продолжается. Сквозной обрыв ловит сам бюджет.
+                continue
 
             item_list = _extract_item_list(html)
             if item_list is None:
+                budget.log_summary()
                 _log_coverage(self.slug, page, emitted, total_expected)
                 return
 
@@ -154,9 +154,11 @@ class SkifmusicParser(BaseStoreParser):
 
             # Неполная страница = последняя.
             if len(products) < self.catalog_page_size:
+                budget.log_summary()
                 _log_coverage(self.slug, page, emitted, total_expected)
                 return
             if fresh == 0:
+                budget.log_summary()
                 logger.warning("[%s] страница %d без новых товаров — стоп", self.slug, page)
                 return
 

@@ -55,8 +55,8 @@ from bs4 import BeautifulSoup
 from app.services.scrapers.base import (
     BaseStoreParser,
     ListingDTO,
+    PageErrorBudget,
     ParserError,
-    TransientParserError,
 )
 from app.services.scrapers.extractors import (
     extract_jsonld_product,
@@ -142,6 +142,8 @@ class DoctorHeadParser(BaseStoreParser):
         """
         seen: set[str] = set()
         emitted = 0
+        # Бюджет общий на все категории: сайт лежит целиком, а не по разделам.
+        budget = PageErrorBudget(self.slug)
 
         for category in _MEDIA_CATEGORIES:
             base = f"{self.base_url}{_CATALOG_ROOT}/{category}/"
@@ -150,16 +152,15 @@ class DoctorHeadParser(BaseStoreParser):
 
             while page <= _MAX_PAGES_PER_CATEGORY:
                 url = base if page == 1 else f"{base}?PAGEN_1={page}"
-                try:
-                    html = await self.http.get_text(url)
-                except Exception as e:
-                    # НЕ глушим: обрыв на середине означает неполный каталог, а
-                    # runner по «тихому» выходу проставлял last_successful_scrape_at
-                    # (инцидент 08-10: взято 696 из 3548, магазин был зелёный).
-                    raise TransientParserError(
-                        f"обход прерван: {category} страница {page} из "
-                        f"{max_page or '?'} — {e}"
-                    ) from e
+                html = await self.fetch_page(
+                    url, budget,
+                    page_label=f"{category} стр. {page} из {max_page or '?'}",
+                )
+                if html is None:
+                    # Страница в бюджете пропусков: теряем ~30 карточек, но не
+                    # весь каталог. Сквозной обрыв ловит сам бюджет.
+                    page += 1
+                    continue
 
                 if max_page is None:
                     max_page = _detect_max_page(html)
@@ -190,6 +191,7 @@ class DoctorHeadParser(BaseStoreParser):
                     break
                 page += 1
 
+        budget.log_summary()
         logger.info("[%s] обход по карточкам: %d товаров", self.slug, emitted)
 
     # ---- Discovery (для sitemap-совместимости и отладки) ----------------- #

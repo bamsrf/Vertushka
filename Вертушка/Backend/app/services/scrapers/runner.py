@@ -45,9 +45,16 @@ _REFRESH_MAX_CONSECUTIVE_ERRORS = 10
 async def crawl_store(slug: str, *, mode: CrawlMode = "full", limit: int | None = None) -> dict:
     """Прогнать парсер для магазина в указанном режиме.
 
-    Возвращает счётчики: discovered/upserted/errors/skipped.
+    Возвращает счётчики: discovered/upserted/errors/skipped + `status`.
+
+    `status` — единственный достоверный признак исхода для вызывающего:
+    исключения парсера ловятся здесь, поэтому «не бросило» ≠ «прошло»
+    (батч рапортовал ok:7 при двух упавших магазинах, ночь 08-11).
     """
-    counters = {"discovered": 0, "upserted": 0, "errors": 0, "skipped": 0}
+    counters: dict = {
+        "discovered": 0, "upserted": 0, "errors": 0, "skipped": 0,
+        "status": "skipped",
+    }
 
     async with async_session_maker() as db:
         store = await _get_active_store(db, slug)
@@ -91,17 +98,22 @@ async def crawl_store(slug: str, *, mode: CrawlMode = "full", limit: int | None 
             if smoke_msg:
                 logger.error("[%s] smoke check failed: %s", slug, smoke_msg)
                 await _mark_error(db, store, smoke_msg)
+                counters["status"] = "failed"
             else:
                 await _mark_success(db, store)
+                counters["status"] = "ok"
         except ParserNeedsBrowser as e:
             await _mark_needs_browser(db, store, str(e))
             counters["errors"] += 1
+            counters["status"] = "needs_browser"
         except ParserBlocked as e:
             await _mark_error(db, store, f"blocked: {e}")
             counters["errors"] += 1
+            counters["status"] = "blocked"
         except Exception as e:
             await _mark_error(db, store, f"crash: {e}")
             counters["errors"] += 1
+            counters["status"] = "failed"
             logger.exception("[%s] crawl failed", slug)
         finally:
             await db.commit()

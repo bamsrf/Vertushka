@@ -65,23 +65,31 @@ async def _crawl_active_stores(filter_browser: bool | None = None, mode: str = "
     counters["stores"] = len(stores)
     sem = asyncio.Semaphore(SCRAPER_CONCURRENCY)
 
-    async def _one(slug: str) -> int | None:
+    async def _one(slug: str) -> tuple[str, dict]:
         async with sem:
             try:
-                res = await crawl_store(slug, mode=mode)
-                return res.get("upserted", 0)
+                return slug, await crawl_store(slug, mode=mode)
             except Exception:
                 logger.exception("crawl_store failed for %s", slug)
-                return None
+                return slug, {"status": "failed", "upserted": 0}
 
     results = await asyncio.gather(*(_one(s.slug) for s in stores))
-    for upserted in results:
-        if upserted is None:
-            counters["failed"] += 1
-        else:
+    failed_slugs: list[str] = []
+    for slug, res in results:
+        counters["total_upserted"] += res.get("upserted", 0)
+        # Судим по `status`, а не по «вызов не бросил»: crawl_store гасит
+        # исключения парсера внутри и всегда возвращает словарь, поэтому старый
+        # счётчик структурно не мог показать провал (ночь 08-11: ok:7 при двух
+        # магазинах с ошибкой в БД).
+        if res.get("status") == "ok":
             counters["ok"] += 1
-            counters["total_upserted"] += upserted
+        else:
+            counters["failed"] += 1
+            failed_slugs.append(f"{slug}:{res.get('status')}")
 
+    if failed_slugs:
+        counters["failed_stores"] = failed_slugs
+        logger.error("scraper batch: магазины не досчитаны — %s", ", ".join(failed_slugs))
     logger.info("scraper batch done: %s", counters)
     return counters
 

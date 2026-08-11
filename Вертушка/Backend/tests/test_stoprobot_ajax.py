@@ -106,10 +106,29 @@ async def test_crawl_walks_all_pages():
 
 
 @pytest.mark.asyncio
-async def test_crawl_raises_on_interrupted_page():
-    p1 = {"products": [_product()], "page_count": 3}
-    with pytest.raises(TransientParserError, match="обход прерван"):
-        await _collect(StoprobotVinylParser(http=_FakeHttp({1: p1}, fail_on=2)))
+async def test_single_bad_page_is_skipped_not_fatal():
+    """Ночь 08-11: ReadTimeout на 2-й странице стоил 8 860 позиций из 8 956."""
+    pages = {
+        1: {"products": [_product()], "page_count": 3},
+        3: {"products": [_product(url="/vinyl/product/333_c/")], "page_count": 3},
+    }
+    dtos = await _collect(StoprobotVinylParser(http=_FakeHttp(pages, fail_on=2)))
+    assert [d.external_id for d in dtos] == ["111254", "333"]
+
+
+@pytest.mark.asyncio
+async def test_crawl_raises_when_site_is_down():
+    """Сквозной обрыв должен долететь до runner'а, а не дать зелёный статус."""
+    class _DeadHttp(_FakeHttp):
+        async def get_text(self, url, **kw):
+            page = int(url.split("PAGEN_1=")[1])
+            if page == 1:
+                return json.dumps(self.pages[1])
+            raise RuntimeError("network error")
+
+    http = _DeadHttp({1: {"products": [_product()], "page_count": 9}})
+    with pytest.raises(TransientParserError, match="подряд"):
+        await _collect(StoprobotVinylParser(http=http))
 
 
 @pytest.mark.asyncio
