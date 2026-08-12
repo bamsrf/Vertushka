@@ -117,3 +117,63 @@ async def drip_covers_batch() -> None:
         if checked:
             await session.commit()
             logger.info("cover drip: %d checked, %d covers found", checked, warmed)
+
+
+# ---- Добор обложек из магазинных листингов ------------------------------ #
+
+# Сколько записей обрабатываем за прогон. Скачивание идёт к самим магазинам
+# (не к Discogs), квоту API не трогает, но долбить магазин тоже не надо.
+_STORE_BACKFILL_LIMIT = 2000
+# Пауза между обложками — суммарно по всем магазинам, вежливо и незаметно.
+_STORE_BACKFILL_PACE_SEC = 0.2
+
+
+async def backfill_store_covers(limit: int = _STORE_BACKFILL_LIMIT) -> dict:
+    """Проставить обложки записям, у которых магазинная картинка уже скачана.
+
+    Штатно это делает `_apply_match` в момент матча, но с 2026-07-22 по
+    2026-08-12 блок харвеста был недостижим (лежал после `return True`), и три
+    недели картинки выбрасывались. Этот добор закрывает накопленный хвост:
+    на момент починки 5 956 сматченных записей были без обложки, имея
+    магазинную под рукой.
+
+    Внешних API не трогает — только сами магазины, откуда мы и так качали.
+    Идемпотентен: берёт лишь записи без обложки и без локального файла.
+    """
+    from app.services.cover_storage import _harvest_store_cover
+
+    counters = {"scanned": 0, "harvested": 0, "skipped": 0}
+    async with async_session_maker() as db:
+        rows = (await db.execute(
+            text(
+                "SELECT DISTINCT ON (r.id) r.discogs_id, r.discogs_master_id, "
+                "       l.raw_payload->>'image_url' AS image_url "
+                "FROM store_listings l "
+                "JOIN records r ON r.id = l.matched_record_id "
+                "WHERE r.discogs_id IS NOT NULL "
+                "  AND r.cover_image_url IS NULL "
+                "  AND r.cover_local_path IS NULL "
+                "  AND l.raw_payload->>'image_url' IS NOT NULL "
+                "ORDER BY r.id, l.last_seen_at DESC "
+                "LIMIT :lim"
+            ),
+            {"lim": limit},
+        )).all()
+
+    for i, (discogs_id, master_id, image_url) in enumerate(rows):
+        counters["scanned"] += 1
+        if i:
+            await asyncio.sleep(_STORE_BACKFILL_PACE_SEC)
+        try:
+            ok = await _harvest_store_cover(
+                str(discogs_id), str(master_id) if master_id else None, image_url,
+                await_downloads=True,
+            )
+        except Exception:
+            logger.debug("store cover backfill failed for %s", discogs_id, exc_info=True)
+            counters["skipped"] += 1
+            continue
+        counters["harvested" if ok else "skipped"] += 1
+
+    logger.info("store cover backfill: %s", counters)
+    return counters

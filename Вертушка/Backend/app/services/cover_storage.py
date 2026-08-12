@@ -479,7 +479,8 @@ def _looks_like_junk_cover(url: str | None) -> bool:
 
 async def _harvest_store_cover(
     discogs_id: str, master_id: str | None, image_url: str,
-) -> None:
+    *, await_downloads: bool = False,
+) -> bool:
     """Осадить обложку из магазинного листинга в наш индекс/master_covers для
     непокрытого discogs-релиза + сразу скачать файл на диск.
 
@@ -488,9 +489,15 @@ async def _harvest_store_cover(
     covers/m{mid}.jpg для мастера), дальше nginx отдаёт статику навсегда.
     Заполняем ТОЛЬКО пустые (IS NULL / ON CONFLICT DO NOTHING) — не перетираем
     более каноничные источники.
+
+    `await_downloads=True` — дождаться скачивания файлов вместо fire-and-forget.
+    Нужно разовому добору (`backfill_store_covers`): он запускается через
+    `asyncio.run`, и петля закроется раньше, чем отработают фоновые задачи.
+
+    Возвращает True, если обложку взяли в работу (для счётчиков добора).
     """
     if _looks_like_junk_cover(image_url):
-        return
+        return False
     from app.database import async_session_maker
     from sqlalchemy import text as _text
 
@@ -517,10 +524,19 @@ async def _harvest_store_cover(
         logger.debug("harvest store cover failed: %s", discogs_id, exc_info=True)
 
     # Eager-зеркалирование: файл оседает сразу, до протухания хотлинка.
+    jobs = []
     if discogs_id.isdigit():
-        _retain(_download_cover_background(discogs_id, image_url))
+        jobs.append(_download_cover_background(discogs_id, image_url))
     if master_id and master_id.isdigit() and master_id != "0":
-        _retain(_download_cover_background(f"m{master_id}", image_url))
+        jobs.append(_download_cover_background(f"m{master_id}", image_url))
+
+    if await_downloads:
+        for job in jobs:
+            await job
+    else:
+        for job in jobs:
+            _retain(job)
+    return True
 
 
 def schedule_harvest_store_cover(

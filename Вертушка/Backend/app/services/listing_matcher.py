@@ -605,17 +605,23 @@ def _apply_match(listing: StoreListing, rec: Record, conf: Decimal, method: str)
     listing.match_confidence = conf
     listing.match_method = method
     listing.matched_at = datetime.utcnow()
-    return True
 
     # Харвест обложки магазина: если у нас нет обложки на этот discogs-релиз,
     # осаждаем бесплатную картинку из уже загруженного листинга в индекс +
     # master_covers и качаем файл. Закрывает хвост даром (ноль внешних API).
+    #
+    # ВАЖНО: блок обязан стоять ДО `return True`. С 2026-07-22 по 2026-08-12 он
+    # лежал после него и был недостижим (a52ad28 перевёл функцию на bool и
+    # вставил return выше). Три недели мы выбрасывали уже скачанные картинки:
+    # на момент починки 5 956 сматченных записей были без обложки при наличии
+    # магазинной. Тест test_apply_match_harvests_store_cover сторожит регрессию.
     image_url = (listing.raw_payload or {}).get("image_url")
     if rec.discogs_id and image_url:
         from app.services.cover_storage import schedule_harvest_store_cover
         schedule_harvest_store_cover(
             str(rec.discogs_id), rec.discogs_master_id, image_url,
         )
+    return True
 
 
 # ---- On-demand Discogs fetch ------------------------------------------- #
