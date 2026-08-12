@@ -41,6 +41,10 @@ _SMOKE_MIN_COVERAGE = 0.5
 # Сколько подряд идущих ошибок записи терпит refresh, прежде чем бросить магазин.
 _REFRESH_MAX_CONSECUTIVE_ERRORS = 10
 
+# То же для полного обхода. Битая сессия сама не чинится, а каталог большой:
+# без отсечки один сбой превращается в тысячи одинаковых трейсбеков.
+_CRAWL_MAX_CONSECUTIVE_ERRORS = 20
+
 
 async def crawl_store(slug: str, *, mode: CrawlMode = "full", limit: int | None = None) -> dict:
     """Прогнать парсер для магазина в указанном режиме.
@@ -69,12 +73,20 @@ async def crawl_store(slug: str, *, mode: CrawlMode = "full", limit: int | None 
             burst=parser.rate_burst,
         )
 
+        # Скаляр, а не ORM-атрибут: обход держит сессию открытой часами, и если
+        # соединение за это время умрёт (магазин отвечал 10 минут на страницу —
+        # ночь 08-12), SQLAlchemy пометит `store` протухшим. Тогда `store.id`
+        # уходит в ленивую перечитку → синхронный IO в async-контексте →
+        # MissingGreenlet на КАЖДОМ листинге: 8 956 позиций, 0 записанных.
+        store_id = store.id
+        consecutive_errors = 0
+
         try:
             iterator = _select_iterator(parser, mode, store)
             async for dto in iterator:
                 counters["discovered"] += 1
                 try:
-                    upserted = await _upsert_listing(db, store.id, dto)
+                    upserted = await _upsert_listing(db, store_id, dto)
                     # Коммит на КАЖДЫЙ листинг: транзакция живёт только на время
                     # одного INSERT и не переживает следующий сетевой fetch в
                     # `async for`. Раньше одна транзакция висела на весь краул
@@ -87,8 +99,18 @@ async def crawl_store(slug: str, *, mode: CrawlMode = "full", limit: int | None 
                         counters["skipped"] += 1
                 except SQLAlchemyError:
                     counters["errors"] += 1
+                    consecutive_errors += 1
                     logger.exception("[%s] upsert failed for %s", slug, dto.url)
                     await db.rollback()
+                    # Сломанную сессию не чинит следующая итерация: в ночь
+                    # 08-12 так набежало 8 957 одинаковых трейсбеков подряд.
+                    # Рвём рано — smoke-check всё равно не даст зелёный статус.
+                    if consecutive_errors >= _CRAWL_MAX_CONSECUTIVE_ERRORS:
+                        raise RuntimeError(
+                            f"обход прерван: {consecutive_errors} ошибок записи подряд"
+                        )
+                else:
+                    consecutive_errors = 0
 
                 if limit and counters["upserted"] >= limit:
                     break
@@ -97,7 +119,7 @@ async def crawl_store(slug: str, *, mode: CrawlMode = "full", limit: int | None 
             smoke_msg = await _smoke_check(db, store, counters, mode, limit)
             if smoke_msg:
                 logger.error("[%s] smoke check failed: %s", slug, smoke_msg)
-                await _mark_error(db, store, smoke_msg)
+                await _mark_error(db, store_id, smoke_msg)
                 counters["status"] = "failed"
             else:
                 await _mark_success(db, store)
@@ -107,11 +129,11 @@ async def crawl_store(slug: str, *, mode: CrawlMode = "full", limit: int | None 
             counters["errors"] += 1
             counters["status"] = "needs_browser"
         except ParserBlocked as e:
-            await _mark_error(db, store, f"blocked: {e}")
+            await _mark_error(db, store_id, f"blocked: {e}")
             counters["errors"] += 1
             counters["status"] = "blocked"
         except Exception as e:
-            await _mark_error(db, store, f"crash: {e}")
+            await _mark_error(db, store_id, f"crash: {e}")
             counters["errors"] += 1
             counters["status"] = "failed"
             logger.exception("[%s] crawl failed", slug)
@@ -144,6 +166,7 @@ async def refresh_store_listings(slug: str, items: list[tuple[object, str]]) -> 
         )
         url_to_id = {url: listing_id for listing_id, url in items}
         consecutive_errors = 0
+        store_id = store.id  # см. crawl_store: ORM-атрибут в долгом цикле опасен
 
         try:
             async for url, dto in parser.refresh_urls(list(url_to_id)):
@@ -157,7 +180,7 @@ async def refresh_store_listings(slug: str, items: list[tuple[object, str]]) -> 
                         )
                         counters["removed"] += 1
                     else:
-                        await _upsert_listing(db, store.id, dto)
+                        await _upsert_listing(db, store_id, dto)
                     # Коммит на каждый URL — транзакция не переживает следующий
                     # `refresh_urls` fetch (см. crawl_store, инцидент 07-10).
                     await db.commit()
@@ -179,11 +202,11 @@ async def refresh_store_listings(slug: str, items: list[tuple[object, str]]) -> 
                     consecutive_errors = 0
             await db.commit()
         except ParserBlocked as e:
-            await _mark_error(db, store, f"blocked: {e}")
+            await _mark_error(db, store_id, f"blocked: {e}")
             counters["errors"] += 1
             await db.commit()
         except Exception as e:
-            await _mark_error(db, store, f"refresh crash: {e}")
+            await _mark_error(db, store_id, f"refresh crash: {e}")
             counters["errors"] += 1
             logger.exception("[%s] refresh failed", slug)
             await db.commit()
@@ -362,5 +385,15 @@ async def _mark_needs_browser(db, store: Store, msg: str) -> None:
     store.last_error = msg
 
 
-async def _mark_error(db, store: Store, msg: str) -> None:
-    store.last_error = msg[:1000]
+async def _mark_error(db, store_id, msg: str) -> None:
+    """UPDATE по id, а не мутация ORM-объекта.
+
+    Этот путь вызывается именно тогда, когда всё сломалось: сессия могла
+    остаться в failed-состоянии, а `store` — протухнуть после инвалидации
+    соединения. Мутация атрибута тогда уронит сам обработчик ошибки, и магазин
+    останется с зелёным статусом при мёртвом обходе.
+    """
+    await db.rollback()
+    await db.execute(
+        update(Store).where(Store.id == store_id).values(last_error=msg[:1000])
+    )
