@@ -41,6 +41,7 @@ import {
   Easing as REasing,
 } from 'react-native-reanimated';
 import { api, resolveMediaUrl } from '../../../lib/api';
+import { analytics } from '../../../lib/analytics';
 import { useAuthStore, useFollowStore } from '../../../lib/store';
 import { useMessagesStore } from '../../../lib/messagesStore';
 import { ms } from '../../../lib/responsive';
@@ -618,6 +619,7 @@ export default function UserProfileScreen() {
         gifter_email: gifterEmail,
         gifter_message: bookingMessage.trim() || undefined,
       });
+      analytics.bookGift(bookingItem.id);
       toast.success('Готово!', 'Бронь на 60 дней. Подтверждение отправлено на email.');
       setBookingItem(null);
       setBookingMessage('');

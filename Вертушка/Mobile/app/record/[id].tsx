@@ -33,6 +33,7 @@ import { GradientText } from '../../components/GradientText';
 import { FolderPickerModal } from '../../components/FolderPickerModal';
 import { Button, Card, ActionSheet, ActionSheetAction } from '../../components/ui';
 import { api, getCoverUrl } from '../../lib/api';
+import { analytics } from '../../lib/analytics';
 import { countSpin } from '../../lib/eggTracker';
 import { cleanArtistName } from '../../lib/format';
 import { useCollectionStore, useAuthStore } from '../../lib/store';
@@ -287,6 +288,10 @@ export default function RecordDetailScreen() {
         ? await api.getRecord(id)
         : await api.getRecordByDiscogsId(id);
       setRecord(data);
+      // Середина воронки search → view_record → offer_click. Шлём после
+      // успешной загрузки, а не на маунт: открытый экран с ошибкой — это не
+      // просмотр карточки.
+      analytics.viewRecord(data.discogs_id);
     } catch (err) {
       setError('Не удалось загрузить информацию о пластинке');
     } finally {

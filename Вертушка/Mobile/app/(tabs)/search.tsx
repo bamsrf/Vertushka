@@ -550,13 +550,17 @@ export default function SearchScreen() {
     setSecondaryImgErrors(new Set());
 
     try {
-      analytics.search(trimmed, 0);
+      // Событие шлём ПОСЛЕ ответа, а не до запроса: без реального
+      // results_count нельзя отличить «искал и ничего не нашёл» от «искал и
+      // нашёл сорок штук», а это ровно та развилка, ради которой воронку
+      // search → view_record → offer_click и размечали.
       if (trimmed.startsWith('@')) {
         // Режим поиска пользователей — ищем без @
         const userQuery = trimmed.slice(1).trim();
         if (userQuery.length > 0) {
           clearResults();
           await searchUsers(userQuery);
+          analytics.search(trimmed, useUserSearchStore.getState().results.length);
         }
       } else {
         const [recordsResult, usersResult] = await Promise.allSettled([
@@ -570,7 +574,15 @@ export default function SearchScreen() {
             ? 'Сервис временно недоступен. Попробуйте позже.'
             : error?.message || 'Ошибка при поиске';
           toast.error('Ошибка', message);
+          // Упавший поиск — это не «ноль результатов». Событие с нулём здесь
+          // размыло бы долю пустых выдач ошибками сети.
+          return;
         }
+        const { totalResults, totalArtistResults } = useSearchStore.getState();
+        analytics.search(
+          trimmed,
+          totalResults + totalArtistResults + useUserSearchStore.getState().results.length,
+        );
         return;
       }
     } catch (error: any) {

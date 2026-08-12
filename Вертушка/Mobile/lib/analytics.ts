@@ -27,6 +27,9 @@ export async function initAmplitude(apiKey: string): Promise<void> {
     return; // Expo Go или модуль не собран — пропускаем
   }
   await Amplitude.init(apiKey, undefined, {
+    // Проект заведён в EU-регионе. Без serverZone SDK шлёт в US-endpoint,
+    // и события не появляются в дашборде вообще — без единой ошибки в логах.
+    serverZone: 'EU',
     trackingOptions: { ipAddress: false, adid: false, dma: false, carrier: false },
   }).promise;
   setAnalyticsProvider({
@@ -50,10 +53,15 @@ export async function initAmplitude(apiKey: string): Promise<void> {
 }
 
 function track(event: string, properties?: Record<string, unknown>) {
-  if (__DEV__) {
-    console.log(`[Analytics] ${event}`, properties ?? '');
-  }
+  const delivered = provider !== null;
   provider?.track(event, properties);
+  if (__DEV__) {
+    // Лог обязан отражать судьбу события, а не факт вызова. Пока провайдер не
+    // поднят (нет ключа, Expo Go, init ещё в полёте), track() молча всё
+    // выбрасывает — и лог без этой пометки при отладке «почему в Amplitude
+    // пусто» врёт в самый неподходящий момент.
+    console.log(`[Analytics]${delivered ? '' : ' (dropped)'} ${event}`, properties ?? '');
+  }
 }
 
 export const analytics = {
@@ -86,7 +94,9 @@ export const analytics = {
     track('import_completed', params),
 
   addToCollection: (discogsId: string) => track('add_to_collection', { discogs_id: discogsId }),
-  removeFromCollection: (discogsId: string) => track('remove_from_collection', { discogs_id: discogsId }),
+  /** discogs_id опционален по той же причине, что и в [viewRecord]. */
+  removeFromCollection: (discogsId?: string | null) =>
+    track('remove_from_collection', discogsId ? { discogs_id: discogsId } : {}),
   addToWishlist: (discogsId: string) => track('add_to_wishlist', { discogs_id: discogsId }),
 
   // --- Search ---
@@ -106,7 +116,14 @@ export const analytics = {
     }),
 
   // --- Content ---
-  viewRecord: (discogsId: string) => track('view_record', { discogs_id: discogsId }),
+  /**
+   * discogs_id опционален: у store-native и добавленных вручную пластинок его
+   * нет. Просмотр всё равно был — событие шлём, а свойство опускаем, иначе во
+   * внутренний id под именем discogs_id утечёт мусор и сегменты по нему
+   * перестанут сходиться.
+   */
+  viewRecord: (discogsId?: string | null) =>
+    track('view_record', discogsId ? { discogs_id: discogsId } : {}),
   viewArtist: (artistId: string) => track('view_artist', { artist_id: artistId }),
 
   // --- Social ---

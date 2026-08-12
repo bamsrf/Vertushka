@@ -70,6 +70,12 @@
             "NSPrivacyCollectedDataTypePurposes": ["NSPrivacyCollectedDataTypePurposeAppFunctionality"]
           },
           {
+            "NSPrivacyCollectedDataType": "NSPrivacyCollectedDataTypeProductInteraction",
+            "NSPrivacyCollectedDataTypeLinked": true,
+            "NSPrivacyCollectedDataTypeTracking": false,
+            "NSPrivacyCollectedDataTypePurposes": ["NSPrivacyCollectedDataTypePurposeAnalytics"]
+          },
+          {
             "NSPrivacyCollectedDataType": "NSPrivacyCollectedDataTypeCrashData",
             "NSPrivacyCollectedDataTypeLinked": false,
             "NSPrivacyCollectedDataTypeTracking": false,
@@ -147,7 +153,6 @@
       "termsOfServiceUrl": "https://vinyl-vertushka.ru/terms",
       "devApiUrl": "https://api.vinyl-vertushka.ru/api",
       "sentryDsn": "https://1e4252f834c54a1dbbf326b072c4479c@sentry.vinyl-vertushka.ru/1",
-      "amplitudeApiKey": "",
       "googleWebClientId": "550292169554-d0nfo6gmsidmmrooci4iiftcp77jqpgj.apps.googleusercontent.com",
       "googleIosClientId": "550292169554-quqge5locvvkfkgcv2f9in4ka9spgd4h.apps.googleusercontent.com",
       "router": {},

@@ -19,6 +19,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Header } from '../../components/Header';
 import { RecordCard } from '../../components/RecordCard';
 import { api } from '../../lib/api';
+import { analytics } from '../../lib/analytics';
 import { useCacheStore } from '../../lib/store';
 import { Artist, MasterSearchResult } from '../../lib/types';
 import { Colors, Typography, Spacing, BorderRadius } from '../../constants/theme';
@@ -171,6 +172,10 @@ export default function ArtistDetailScreen() {
     if (cached) {
       setArtist(cached);
       setIsLoading(false);
+      // Из кэша — такой же просмотр, как и из сети. Пропустить эту ветку
+      // значило бы занижать view_artist ровно у самых активных: у них
+      // артисты и лежат в кэше.
+      analytics.viewArtist(id);
       return;
     }
 
@@ -181,6 +186,7 @@ export default function ArtistDetailScreen() {
       const data = await api.getArtist(id);
       cache.setArtist(id, data);
       setArtist(data);
+      analytics.viewArtist(id);
     } catch (err) {
       console.error('Ошибка загрузки артиста:', err);
       setError('Не удалось загрузить информацию об артисте');

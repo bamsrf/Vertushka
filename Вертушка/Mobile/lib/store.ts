@@ -988,6 +988,9 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
     // Удаляем из основной коллекции
     await api.removeFromCollection(defaultCollection.id, itemId);
     useCacheStore.getState().invalidateAll();
+    // Парная метрика к add_to_collection: без неё чистый прирост коллекции
+    // не посчитать, видно только валовые добавления.
+    analytics.removeFromCollection(removedItem?.record.discogs_id);
 
     // Каскадно удаляем эту пластинку из всех папок
     if (recordId && folders.length > 0) {
@@ -1536,6 +1539,12 @@ export const useFollowStore = create<FollowState>((set, get) => ({
       await get().fetchFollowing();
       // Возможные анлоки: K1 (5 подписок), K7 mutual
       detectAchievementUnlocks();
+    }
+    // Только реально созданная подписка. 'requested' — это заявка в приватный
+    // профиль, которую ещё могут отклонить, а 'already_following' — повторный
+    // тап по уже нажатой кнопке; и то и другое надуло бы счётчик.
+    if (result.status === 'followed') {
+      analytics.followUser(userId);
     }
     return result;
   },
