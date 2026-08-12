@@ -24,7 +24,7 @@ from typing import Iterable
 import re
 
 from rapidfuzz import fuzz
-from sqlalchemy import select, text, func, or_
+from sqlalchemy import select, text, func, or_, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import async_session_maker
@@ -151,6 +151,13 @@ def _clean_title_for_search(title: str | None) -> str | None:
 # При 2000/час среднее ~33 req/min — всё ещё в безопасной зоне 60/min.
 # План разрешает (см. PARSING.md §5 «Что делать если хочется быстрее»).
 DISCOGS_FETCH_HOURLY_LIMIT = 2000
+
+# Через сколько дней повторять попытку по листингу, который не сматчился.
+# Неделя выбрана не наугад: столько же ждёт store-native gate (см. ниже), так
+# что второй заход по листингу приходится ровно на момент, когда он уже вправе
+# получить собственную запись. Заодно это потолок трат: пул несматченных
+# делится на 7 дней вместо того, чтобы целиком прокручиваться каждый час.
+_MATCH_RETRY_DAYS = 7
 
 # Store-native gate (см. шаг 6 в match_listing).
 # Listing должен существовать достаточно долго ИЛИ быть подтверждённым из
@@ -1082,8 +1089,17 @@ async def _try_yandex_native(
 async def match_unmatched_batch(batch_size: int = 200) -> dict[str, int]:
     """Найти `batch_size` unmatched листингов и попытаться сматчить.
 
+    Очередь: сначала ни разу не пробованные (`match_attempted_at IS NULL`),
+    затем самые давно пробованные, но не чаще чем раз в `_MATCH_RETRY_DAYS`.
+
+    Раньше сортировка шла по `first_seen_at`, а неудача не оставляла следа —
+    и матчер каждый час брал ту же голову из безнадёжных позиций, заново
+    спрашивая про них Discogs (~1 500 запросов в час на ~20 совпадений). Хвост
+    очереди не двигался: у нового магазина впереди стояло 12 535 листингов.
+
     Возвращает счётчики: matched/unmatched/errors + диагностика по сигналам
-    (какие из источников ID у листингов вообще есть).
+    (какие из источников ID у листингов вообще есть) + `queue_left` — сколько
+    ещё позиций ждут очереди прямо сейчас.
     """
     counters = {
         "processed": 0,
@@ -1092,21 +1108,44 @@ async def match_unmatched_batch(batch_size: int = 200) -> dict[str, int]:
         "errors": 0,
         "skipped_accessory": 0,
         "store_native_created": 0,
+        "queue_left": 0,
     }
     # Диагностика: сколько unmatched листингов вообще имеют сигналы для матчинга.
     # Без неё непонятно, парсер ли не вытаскивает barcode/discogs_url, или
     # matcher не находит. Лог помогает увидеть это сразу в выводе батча.
     signals = {"with_discogs_url": 0, "with_barcode": 0, "with_catalog": 0, "no_ids": 0}
     async with async_session_maker() as db:
-        res = await db.execute(
+        retry_before = datetime.utcnow() - timedelta(days=_MATCH_RETRY_DAYS)
+        eligible = (
             select(StoreListing)
             .where(StoreListing.matched_record_id.is_(None))
             .where(StoreListing.status.in_(("in_stock", "preorder")))
-            .order_by(StoreListing.first_seen_at.asc())
+            .where(
+                or_(
+                    StoreListing.match_attempted_at.is_(None),
+                    StoreListing.match_attempted_at < retry_before,
+                )
+            )
+        )
+        res = await db.execute(
+            eligible
+            # NULLS FIRST — новый магазин попадает в матчер сразу, не вставая
+            # в хвост за чужими 12 тысячами.
+            .order_by(
+                StoreListing.match_attempted_at.asc().nullsfirst(),
+                StoreListing.first_seen_at.asc(),
+            )
             .limit(batch_size)
         )
         listings = list(res.scalars().all())
 
+        counters["queue_left"] = int(
+            (await db.execute(
+                select(func.count()).select_from(eligible.subquery())
+            )).scalar() or 0
+        )
+
+        attempted_at = datetime.utcnow()
         for listing in listings:
             counters["processed"] += 1
             if _is_accessory(listing):
@@ -1140,6 +1179,17 @@ async def match_unmatched_batch(batch_size: int = 200) -> dict[str, int]:
                 counters["errors"] += 1
                 logger.exception("match failed for listing %s", listing.id)
                 continue
+
+        # Отметка попытки — одним UPDATE, вне савпоинтов и при любом исходе.
+        # Через ORM-атрибут было бы ненадёжно: `sp.rollback()` на упавшем
+        # листинге может откатить и её, и тогда он навсегда останется в голове
+        # очереди — ровно та болезнь, которую эта колонка лечит.
+        if listings:
+            await db.execute(
+                update(StoreListing)
+                .where(StoreListing.id.in_([lst.id for lst in listings]))
+                .values(match_attempted_at=attempted_at)
+            )
 
         try:
             await db.commit()

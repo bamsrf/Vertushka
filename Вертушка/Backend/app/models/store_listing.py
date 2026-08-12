@@ -5,7 +5,9 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import String, DateTime, Text, Numeric, ForeignKey, UniqueConstraint, Index
+from sqlalchemy import (
+    String, DateTime, Text, Numeric, ForeignKey, UniqueConstraint, Index, text,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 
@@ -75,6 +77,13 @@ class StoreListing(Base):
     match_confidence: Mapped[Decimal | None] = mapped_column(Numeric(4, 3), nullable=True)
     match_method: Mapped[str | None] = mapped_column(String(32), nullable=True)
     matched_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # Когда матчер В ПОСЛЕДНИЙ РАЗ ПЫТАЛСЯ привязать листинг — независимо от
+    # исхода. Без этой отметки неудача не оставляла следа: очередь сортировалась
+    # по first_seen_at, и каждый час матчер брал ту же голову из безнадёжных
+    # позиций, заново спрашивая про них Discogs (~1500 запросов в час на 20
+    # совпадений), а новые магазины не доходили до очереди в принципе —
+    # у rotaryrecords впереди стояло 12 535 листингов.
+    match_attempted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
@@ -88,6 +97,13 @@ class StoreListing(Base):
         UniqueConstraint("store_id", "external_id", name="uq_listing_store_external"),
         Index("ix_listing_match_active", "matched_record_id", "status", "last_seen_at"),
         Index("ix_listing_unmatched_review", "store_id", "matched_record_id", "first_seen_at"),
+        # Очередь матчера: сначала ни разу не пробованные (NULLS FIRST), затем
+        # самые давно пробованные. Частичный — вся очередь это matched IS NULL.
+        Index(
+            "ix_listing_match_queue",
+            "match_attempted_at", "first_seen_at",
+            postgresql_where=text("matched_record_id IS NULL"),
+        ),
     )
 
     def __repr__(self) -> str:
