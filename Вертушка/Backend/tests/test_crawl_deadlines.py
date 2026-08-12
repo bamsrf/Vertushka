@@ -76,8 +76,9 @@ async def test_fast_page_untouched_by_deadline():
 def test_every_parser_has_sane_budgets():
     """Потолки должны быть с запасом к реальным замерам, иначе сломаем рабочее.
 
-    Самый долгий обход в маркете — skifmusic, 688 страниц, ~15 минут.
-    Самая тяжёлая страница — plastinka, 200 карточек (~317 KB), секунды.
+    Замеры 08-12 (elapsed_sec с прода): skifmusic 1372 c / 20 621 позиция —
+    самый долгий обход; stoprobotvinyl 185 c / 8 956. Самая тяжёлая страница —
+    plastinka, 200 карточек (~317 KB), секунды.
     """
     for slug, cls in all_parsers().items():
         assert cls.page_deadline_sec >= 60, f"{slug}: слишком жёсткий потолок страницы"
