@@ -36,6 +36,7 @@ import Reanimated, {
 import * as Haptics from 'expo-haptics';
 import { Icon } from '@/components/ui';
 import { AnimatedGradientText } from '../../components/AnimatedGradientText';
+import { ProfileAvatarButton } from '../../components/ProfileAvatarButton';
 import { RecordGrid } from '../../components/RecordGrid';
 import { AutoRail } from '../../components/AutoRail';
 import { Section } from '../../components/Section';
@@ -1062,22 +1063,7 @@ export default function SearchScreen() {
       {/* Title row + avatar */}
       <View style={styles.topRow}>
         <AnimatedGradientText style={Typography.heroTitle}>Поиск</AnimatedGradientText>
-        <Pressable
-          style={styles.profileButton}
-          onPress={handleProfilePress}
-          hitSlop={12}
-        >
-          {user?.avatar_url ? (
-            <Image source={resolveMediaUrl(user.avatar_url)} style={styles.avatar} cachePolicy="disk" />
-          ) : (
-            <LinearGradient
-              colors={[Colors.royalBlue, Colors.periwinkle]}
-              style={styles.avatarPlaceholder}
-            >
-              <Icon name="disc" size={20} color={Colors.background} />
-            </LinearGradient>
-          )}
-        </Pressable>
+        <ProfileAvatarButton onPress={handleProfilePress} />
       </View>
 
       {/* Search input — pill style */}
@@ -1530,24 +1516,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     marginBottom: 4,
-  },
-  profileButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    overflow: 'hidden',
-    borderWidth: 2,
-    borderColor: Colors.lavender,
-  },
-  avatar: {
-    width: '100%',
-    height: '100%',
-  },
-  avatarPlaceholder: {
-    width: '100%',
-    height: '100%',
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   searchRow: {
     flexDirection: 'row',

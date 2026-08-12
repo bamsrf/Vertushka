@@ -13,6 +13,7 @@ import { RadarIcon } from '../../components/RadarIcon';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import { AnimatedGradientText } from '../../components/AnimatedGradientText';
+import { ProfileAvatarButton } from '../../components/ProfileAvatarButton';
 import { GradientText } from '../../components/GradientText';
 import { RecordGrid } from '../../components/RecordGrid';
 import { ZoomableRecordGrid } from '../../components/ZoomableRecordGrid';
@@ -853,18 +854,7 @@ export default function CollectionScreen() {
         {/* Title row: Коллекция + avatar */}
         <View style={styles.avatarRow}>
           <AnimatedGradientText style={Typography.heroTitle}>Коллекция</AnimatedGradientText>
-          <TouchableOpacity style={styles.profileButton} onPress={handleProfilePress}>
-            {user?.avatar_url ? (
-              <Image source={resolveMediaUrl(user.avatar_url)} style={styles.avatar} cachePolicy="disk" />
-            ) : (
-              <LinearGradient
-                colors={[Colors.royalBlue, Colors.periwinkle] as [string, string]}
-                style={styles.avatarPlaceholder}
-              >
-                <Icon name="disc" size={20} color={Colors.background} />
-              </LinearGradient>
-            )}
-          </TouchableOpacity>
+          <ProfileAvatarButton onPress={handleProfilePress} />
         </View>
 
         {/* Segmented control (В наличии / Вишлист) */}
@@ -1309,24 +1299,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     marginBottom: Spacing.sm,
-  },
-  profileButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    overflow: 'hidden',
-    borderWidth: 2,
-    borderColor: Colors.lavender,
-  },
-  avatar: {
-    width: '100%',
-    height: '100%',
-  },
-  avatarPlaceholder: {
-    width: '100%',
-    height: '100%',
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   toolbarRow: {
     flexDirection: 'row',
