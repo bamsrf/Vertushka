@@ -11,12 +11,15 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   RefreshControl,
+  Share,
 } from 'react-native';
+import * as Clipboard from 'expo-clipboard';
 import { Image } from 'expo-image';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Icon } from '@/components/ui';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useGiftStore } from '../../lib/store';
+import { useAuthStore, useGiftStore } from '../../lib/store';
+import { toast } from '../../lib/toast';
 import { GiftGivenItem, GiftReceivedItem } from '../../lib/types';
 import { cleanArtistName } from '../../lib/format';
 import { SegmentedControl } from '../../components/ui';
@@ -87,11 +90,42 @@ function GiftRow({
   );
 }
 
+function ShareLinkBlock({ url }: { url: string }) {
+  const handleCopy = useCallback(async () => {
+    await Clipboard.setStringAsync(url);
+    toast.success('Ссылка скопирована');
+  }, [url]);
+
+  const handleShare = useCallback(async () => {
+    try {
+      await Share.share({ message: `Мой вишлист: ${url}`, url });
+    } catch {
+      // Пользователь отменил
+    }
+  }, [url]);
+
+  return (
+    <View style={styles.shareCard}>
+      <Text style={styles.shareLabel}>Твоя публичная ссылка</Text>
+      <TouchableOpacity onPress={handleCopy} activeOpacity={0.7} style={styles.shareUrlRow}>
+        <Text style={styles.shareUrl} numberOfLines={1}>{url}</Text>
+        <Icon name="copy-outline" size={18} color={Colors.royalBlue} />
+      </TouchableOpacity>
+      <TouchableOpacity onPress={handleShare} activeOpacity={0.7} style={styles.shareButton}>
+        <Icon name="share-outline" size={18} color={Colors.background} />
+        <Text style={styles.shareButtonText}>Поделиться</Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
+
 export default function WishlistsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{ tab?: string }>();
   const { given, received, isLoaded, isLoading, loadAll } = useGiftStore();
+  const user = useAuthStore((s) => s.user);
+  const profileUrl = user ? `https://vinyl-vertushka.ru/@${user.username}` : '';
 
   const [activeTab, setActiveTab] = useState<Tab>(
     params.tab === 'received' ? 'received' : 'given',
@@ -154,6 +188,7 @@ export default function WishlistsScreen() {
             ? 'Открой вишлист друга по ссылке и забронируй пластинку — он не узнает, кто даритель'
             : 'Поделись своей публичной ссылкой на вишлист — друзья смогут забронировать пластинку в подарок'}
         </Text>
+        {activeTab === 'received' && profileUrl ? <ShareLinkBlock url={profileUrl} /> : null}
       </View>
     );
   };
@@ -200,6 +235,9 @@ export default function WishlistsScreen() {
           data={received}
           keyExtractor={(item) => item.id}
           renderItem={renderReceived}
+          ListHeaderComponent={
+            received.length > 0 && profileUrl ? <ShareLinkBlock url={profileUrl} /> : null
+          }
           ListEmptyComponent={renderEmpty}
           contentContainerStyle={[
             styles.listContent,
@@ -310,6 +348,45 @@ const styles = StyleSheet.create({
     ...Typography.caption,
     fontWeight: '600',
     fontSize: ms(11),
+  },
+  shareCard: {
+    backgroundColor: Colors.surface,
+    borderRadius: BorderRadius.md,
+    padding: Spacing.md,
+    gap: Spacing.sm,
+    marginTop: Spacing.lg,
+    alignSelf: 'stretch',
+  },
+  shareLabel: {
+    ...Typography.caption,
+    color: Colors.textSecondary,
+  },
+  shareUrlRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    backgroundColor: Colors.background,
+    borderRadius: BorderRadius.sm,
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.md,
+  },
+  shareUrl: {
+    ...Typography.body,
+    flex: 1,
+    color: Colors.text,
+  },
+  shareButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.sm,
+    backgroundColor: Colors.royalBlue,
+    borderRadius: BorderRadius.sm,
+    paddingVertical: Spacing.sm + 2,
+  },
+  shareButtonText: {
+    ...Typography.bodyBold,
+    color: Colors.background,
   },
   emptyContainer: {
     alignItems: 'center',
