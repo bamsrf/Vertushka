@@ -368,10 +368,20 @@ export type PreflightStatus =
   | 'FOUND_IN_DISCOGS'
   | 'ALLOW_CREATE';
 
+/** Превью релиза, найденного в Discogs (status=FOUND_IN_DISCOGS). */
+export interface PreflightDiscogsMatch {
+  discogs_id: string;
+  artist?: string | null;
+  title?: string | null;
+  year?: number | null;
+  cover_image_url?: string | null;
+}
+
 export interface PreflightResponse {
   status: PreflightStatus;
   match?: VinylRecord | null;
   discogs_id?: string | null;
+  discogs_match?: PreflightDiscogsMatch | null;
   score?: number | null;
 }
 

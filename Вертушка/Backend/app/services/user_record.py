@@ -11,6 +11,8 @@ scrapers.extractors. См. docs/plans/USER_SUBMITTED_RECORDS.md §2.
     2. catalog  → norm в records             → DUPLICATE
     3. fuzzy(artist+title+year) в records    → LIKELY_DUPLICATE (score ≥ thr)
     4. Discogs: dump-index (оффлайн) или live → FOUND_IN_DISCOGS
+       (у обеих веток свой порог схожести — Discogs search fuzzy и на мусорный
+        запрос возвращает популярный релиз; top-1 без проверки брать нельзя)
     5. чисто                                  → ALLOW_CREATE
 """
 import logging
@@ -45,7 +47,11 @@ LIKELY_DUPLICATE_THRESHOLD = 0.72
 # Discogs search сам по себе fuzzy и на мусорный запрос всегда возвращает
 # что-нибудь популярное. Без порога top-1 объявлялся дублем и юзер добавлял
 # в коллекцию случайный релиз.
-DISCOGS_LIVE_MATCH_THRESHOLD = 0.85
+# 0.78 = точное название + артист, узнаваемый на ~0.6 (у Discogs это «Cher (2)»,
+# «Various» и прочие суффиксы). Мусорные топы дают 0.1–0.3 — запас огромный.
+# Ошибку в эту сторону чинит сам юзер: он видит кандидата и жмёт «всё равно
+# создать своё».
+DISCOGS_LIVE_MATCH_THRESHOLD = 0.78
 
 
 class PreflightStatus:
@@ -193,14 +199,15 @@ async def _check_discogs(
     year: int | None,
     barcode: str | None,
     catalog: str | None,
-) -> str | None:
+    format_type: str | None = None,
+) -> DiscogsCandidate | None:
     """Discogs-проверка: сначала оффлайн dump-индекс, при промахе — live API.
 
     Дамп устаревает: свежий релиз в нём может отсутствовать, хотя в живом Discogs
     он есть. Поэтому при промахе дампа ВСЁ РАВНО проверяем live — иначе плодим
     лишние user-records на релизы, которые на самом деле в Discogs есть.
     """
-    # a) dump-индекс (быстро, оффлайн)
+    # a) dump-индекс (быстро, оффлайн). Пороги схожести — внутри lookup'а.
     if await _is_dump_available(db):
         hit = await _lookup_in_dump_index(
             db,
@@ -209,20 +216,58 @@ async def _check_discogs(
             artist=artist,
             title=title,
             year=year,
+            listing_format=format_type,
         )
         if hit is not None:
             row, _method, _conf = hit
-            return str(row.get("discogs_id")) if row.get("discogs_id") else None
+            if row.get("discogs_id"):
+                return DiscogsCandidate(
+                    discogs_id=str(row["discogs_id"]),
+                    artist=row.get("artist"),
+                    title=row.get("title"),
+                    year=row.get("year"),
+                    cover_image_url=row.get("cover_image_url"),
+                )
+            return None
         # промах дампа → проваливаемся в live (свежие/нишевые релизы)
 
-    # b) live Discogs search (дамп не залит ИЛИ промах дампа)
+    # b) live Discogs search (дамп не залит ИЛИ промах дампа).
+    # Discogs search — fuzzy: на мусорный запрос он всё равно вернёт что-то
+    # популярное. Поэтому каждого кандидата гоняем через тот же fuzzy-score,
+    # что и записи из нашей БД, и берём лучшего только выше порога.
     try:
         svc = DiscogsService()
         query = f"{artist} {title}".strip()
         resp = await svc.search(query=query, artist=artist or None, year=year, per_page=5)
-        if resp and resp.results:
-            top = resp.results[0]
-            return str(top.discogs_id) if getattr(top, "discogs_id", None) else None
+        best, best_score = None, 0.0
+        for r in (resp.results if resp else []):
+            if not getattr(r, "discogs_id", None):
+                continue
+            s = _fuzzy_score_fields(
+                cand_artist=r.artist,
+                cand_title=r.title,
+                cand_year=r.year,
+                cand_format=r.format_type,
+                artist=artist,
+                title=title,
+                year=year,
+                format_type=format_type,
+            )
+            if s > best_score:
+                best, best_score = r, s
+        if best is not None and best_score >= DISCOGS_LIVE_MATCH_THRESHOLD:
+            return DiscogsCandidate(
+                discogs_id=str(best.discogs_id),
+                artist=best.artist,
+                title=best.title,
+                year=best.year,
+                cover_image_url=best.cover_image_url or best.thumb_image_url,
+            )
+        if best is not None:
+            logger.info(
+                "preflight: discogs top candidate rejected (score %.3f < %.2f) for %r",
+                best_score, DISCOGS_LIVE_MATCH_THRESHOLD, query,
+            )
     except Exception as e:  # noqa: BLE001 — live discogs не должен ронять preflight
         logger.warning("preflight live discogs check failed: %s", e)
     return None

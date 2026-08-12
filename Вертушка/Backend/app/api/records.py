@@ -4,6 +4,7 @@ API для работы с пластинками
 import asyncio
 import logging
 import re
+from dataclasses import asdict
 from datetime import datetime
 from uuid import UUID
 
@@ -44,6 +45,7 @@ from app.schemas.record import (
     ReleaseSearchResponse,
     ArtistSearchResponse,
     Artist,
+    PreflightDiscogsMatch,
     PreflightRequest,
     PreflightResponse,
     SpotifyAlbumCandidate,
@@ -1564,6 +1566,9 @@ async def preflight(
         status=res.status,
         match=RecordResponse.model_validate(res.match) if res.match else None,
         discogs_id=res.discogs_id,
+        discogs_match=(
+            PreflightDiscogsMatch(**asdict(res.discogs_match)) if res.discogs_match else None
+        ),
         score=res.score,
     )
 
@@ -1620,7 +1625,7 @@ async def create_user_submitted_record(
         format_type=data.format_type,
         db=db,
     )
-    if pf.status in (PreflightStatus.DUPLICATE, PreflightStatus.FOUND_IN_DISCOGS):
+    if pf.status == PreflightStatus.DUPLICATE:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail={
@@ -1630,8 +1635,10 @@ async def create_user_submitted_record(
                 "message": "Эта пластинка уже есть — добавьте её из найденного.",
             },
         )
-    # LIKELY_DUPLICATE не блокируем жёстко — фронт уже показал юзеру кандидата
-    # на этапе preflight, и раз дошли до создания — юзер настоял (human-in-loop).
+    # LIKELY_DUPLICATE и FOUND_IN_DISCOGS не блокируем жёстко — фронт уже показал
+    # юзеру кандидата на этапе preflight вместе с метаданными, и раз дошли до
+    # создания — юзер посмотрел и настоял (human-in-loop). Жёсткий 409 на
+    # FOUND_IN_DISCOGS запирал юзера намертво, когда матчер ошибался.
 
     # 2) enrichment-merge: Spotify-данные (если есть album_id и треклист пуст)
     user_data: dict = {"manual": data.model_dump(exclude={"cover_photo_base64", "spine_photo_base64"})}

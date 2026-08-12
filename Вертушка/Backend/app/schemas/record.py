@@ -329,11 +329,22 @@ class PreflightRequest(BaseModel):
     format_type: str | None = Field(None, max_length=100)  # §9 format-aware dedup
 
 
+class PreflightDiscogsMatch(BaseModel):
+    """Превью найденного в Discogs релиза — чтобы экран-перехват показал юзеру,
+    что именно добавится, а не безымянную заглушку."""
+    discogs_id: str
+    artist: str | None = None
+    title: str | None = None
+    year: int | None = None
+    cover_image_url: str | None = None
+
+
 class PreflightResponse(BaseModel):
     """DUPLICATE/LIKELY_DUPLICATE/FOUND_IN_DISCOGS/ALLOW_CREATE."""
     status: str
     match: RecordResponse | None = None
     discogs_id: str | None = None
+    discogs_match: PreflightDiscogsMatch | None = None
     score: float | None = None
 
 

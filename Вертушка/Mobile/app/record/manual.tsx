@@ -61,6 +61,20 @@ function normalizeFormat(raw: string | null | undefined): string {
   return 'vinyl';
 }
 
+// Текст ошибки из ответа бэка. `detail` бывает трёх видов: строка (обычные
+// HTTPException), объект с `message` (409 дедупа — там ещё status/match_id) и
+// массив pydantic-ошибок валидации. Раньше брали только строку, поэтому 409
+// «эта пластинка уже есть» показывался как безликое «Попробуйте ещё раз».
+function errorText(e: any, fallback = 'Попробуйте ещё раз'): string {
+  const detail = e?.response?.data?.detail;
+  if (typeof detail === 'string' && detail.trim()) return detail;
+  if (detail && typeof detail === 'object') {
+    const msg = Array.isArray(detail) ? detail[0]?.msg : detail.message;
+    if (typeof msg === 'string' && msg.trim()) return msg;
+  }
+  return fallback;
+}
+
 // Сжать фото с camera/library → base64 JPEG (≤1024px), как в режиме скана.
 async function pickPhotoBase64(fromCamera: boolean): Promise<{ uri: string; base64: string } | null> {
   const perm = fromCamera
@@ -253,8 +267,7 @@ export default function ManualRecordScreen() {
       toast.success('Добавлено', 'Релиз в вашей коллекции', { position: 'bottom' });
       router.back();
     } catch (e: any) {
-      const detail = e?.response?.data?.detail;
-      toast.error('Не удалось добавить', typeof detail === 'string' ? detail : 'Попробуйте ещё раз', {
+      toast.error('Не удалось добавить', errorText(e), {
         position: 'bottom',
       });
     } finally {
@@ -278,8 +291,7 @@ export default function ManualRecordScreen() {
       toast.success('Добавлено', 'Релиз в вашей коллекции', { position: 'bottom' });
       router.back();
     } catch (e: any) {
-      const detail = e?.response?.data?.detail;
-      toast.error('Не удалось добавить', typeof detail === 'string' ? detail : 'Попробуйте ещё раз', {
+      toast.error('Не удалось добавить', errorText(e), {
         position: 'bottom',
       });
     } finally {
@@ -306,8 +318,7 @@ export default function ManualRecordScreen() {
         toast.success('Сохранено', 'Релиз обновлён', { position: 'bottom' });
         router.back();
       } catch (e: any) {
-        const detail = e?.response?.data?.detail;
-        toast.error('Не удалось сохранить', typeof detail === 'string' ? detail : 'Попробуйте ещё раз', {
+          toast.error('Не удалось сохранить', errorText(e), {
           position: 'bottom',
         });
       } finally {
@@ -333,8 +344,7 @@ export default function ManualRecordScreen() {
       // Дубль найден → показываем перехват-экран (§10).
       setIntercept(pf);
     } catch (e: any) {
-      const detail = e?.response?.data?.detail;
-      toast.error('Не удалось добавить', typeof detail === 'string' ? detail : 'Попробуйте ещё раз', {
+      toast.error('Не удалось добавить', errorText(e), {
         position: 'bottom',
       });
     } finally {
@@ -361,8 +371,7 @@ export default function ManualRecordScreen() {
       toast.success('Добавлено', 'Релиз в вашей коллекции', { position: 'bottom' });
       router.back();
     } catch (e: any) {
-      const detail = e?.response?.data?.detail;
-      toast.error('Не удалось добавить', typeof detail === 'string' ? detail : 'Попробуйте ещё раз', {
+      toast.error('Не удалось добавить', errorText(e), {
         position: 'bottom',
       });
     } finally {
@@ -500,8 +509,28 @@ function InterceptScreen({
   insetsTop: number;
   insetsBottom: number;
 }) {
-  const m = pf.match;
-  const soft = pf.status === 'LIKELY_DUPLICATE';
+  // Для DUPLICATE/LIKELY_DUPLICATE найденное лежит в match (наш Record), для
+  // FOUND_IN_DISCOGS — в discogs_match. Приводим к одному виду, чтобы карточка
+  // всегда показывала, ЧТО именно добавится (без этого юзер жал вслепую).
+  const dm = pf.discogs_match;
+  const m = pf.match
+    ? {
+        title: pf.match.title,
+        artist: pf.match.artist,
+        year: pf.match.year,
+        cover_image_url: getCoverUrl(pf.match),
+      }
+    : dm
+    ? {
+        title: dm.title,
+        artist: dm.artist,
+        year: dm.year,
+        cover_image_url: dm.cover_image_url,
+      }
+    : null;
+  // «Мягкий» перехват = юзеру можно настоять на своём. Это и fuzzy-матч по нашей
+  // базе, и находка в Discogs: и то и другое может ошибиться.
+  const soft = pf.status === 'LIKELY_DUPLICATE' || pf.status === 'FOUND_IN_DISCOGS';
   const title = soft ? 'Возможно, это оно' : 'Чел, такой релиз уже есть';
   const subtitle = soft
     ? 'Похоже на то, что вы добавляете. Добавить найденное — или всё равно создать своё?'
@@ -533,10 +562,12 @@ function InterceptScreen({
             </View>
             <View style={styles.flex}>
               <Text style={styles.albumTitle} numberOfLines={2}>
-                {m ? m.title : 'Релиз в Discogs'}
+                {m?.title || 'Релиз в Discogs'}
               </Text>
               <Text style={styles.albumMeta} numberOfLines={1}>
-                {m ? `${m.artist}${m.year ? ` · ${m.year}` : ''}` : 'Добавится из Discogs'}
+                {m
+                  ? [m.artist, m.year].filter(Boolean).join(' · ') || 'Добавится из Discogs'
+                  : 'Добавится из Discogs'}
               </Text>
             </View>
           </Card>
