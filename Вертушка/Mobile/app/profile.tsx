@@ -45,6 +45,7 @@ import { Colors, Typography, Spacing, BorderRadius, Shadows } from '../constants
 import { AchievementsBlock } from '../components/AchievementsBlock';
 import { ArchetypeChip } from '../components/ArchetypeChip';
 import { ActivityCard } from '../components/notifications/ActivityCard';
+import { MarketEntryBanner } from '../components/market/MarketEntryBanner';
 
 function MessagesMenuItem({ onPress }: { onPress: () => void }) {
   const unread = useMessagesStore((s) => s.unread.primary + s.unread.requests);
@@ -442,6 +443,12 @@ export default function ProfileScreen() {
             </TouchableOpacity>
           </View>
         </View>
+
+        {/* Вход в Маркет. Живёт прямо под шапкой профиля, а не в «Настройках»:
+            Маркет — это витрина, а не настройка. Тёмный market-градиент —
+            единственный тёмный блок на светлом профиле, поэтому читается как
+            «дверь в другой мир», а не как ещё одна строка меню. */}
+        <MarketEntryBanner onPress={() => router.push('/market')} />
 
         {/* Секция «Я дарю» */}
         {!giftsLoaded ? (

@@ -23,6 +23,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import Reanimated, {
+  Easing,
   Extrapolation,
   interpolate,
   runOnJS,
@@ -30,6 +31,7 @@ import Reanimated, {
   useAnimatedStyle,
   useDerivedValue,
   useSharedValue,
+  withRepeat,
   withSpring,
   withTiming,
 } from 'react-native-reanimated';
@@ -423,6 +425,10 @@ export default function SearchScreen() {
     }
   }, [committed]);
 
+  // Ширина экрана нужна для дистанции пробега блика по CTA-плашке.
+  const SCREEN_W = Dimensions.get('window').width;
+  const CTA_SHIMMER_W = 110;
+
   const COMMIT_DISTANCE = 110;
   const EXIT_COMMIT_DISTANCE = 110;
   const SPRING_CONFIG = { damping: 22, stiffness: 200, mass: 0.7, overshootClamping: true };
@@ -510,6 +516,40 @@ export default function SearchScreen() {
       ],
     };
   });
+
+  // ─── Glow CTA ──────────────────────────────────────────────────────
+  // Плашка «в Маркет» — единственная точка входа, которую юзер может не
+  // заметить: она живёт в самом низу home-view. Поэтому дышащий halo +
+  // пробегающий блик. Обе анимации бесконечные, на UI-потоке, без setState.
+  const glowPulse = useSharedValue(0);
+  const shimmerX = useSharedValue(0);
+
+  useEffect(() => {
+    glowPulse.value = withRepeat(
+      withTiming(1, { duration: 1600, easing: Easing.inOut(Easing.quad) }),
+      -1,
+      true
+    );
+    // Блик пробегает слева направо и делает паузу: 1100ms ход + хвост
+    // ожидания внутри того же таймлайна (easing выносит движение в начало).
+    shimmerX.value = withRepeat(
+      withTiming(1, { duration: 2600, easing: Easing.bezier(0.25, 0, 0.2, 1) }),
+      -1,
+      false
+    );
+  }, [glowPulse, shimmerX]);
+
+  const ctaGlowStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(glowPulse.value, [0, 1], [0.35, 0.95]),
+    transform: [{ scale: interpolate(glowPulse.value, [0, 1], [0.985, 1.015]) }],
+  }));
+
+  const ctaShimmerStyle = useAnimatedStyle(() => ({
+    transform: [
+      { translateX: interpolate(shimmerX.value, [0, 1], [-CTA_SHIMMER_W, SCREEN_W]) },
+      { rotate: '18deg' },
+    ],
+  }));
 
   // Fill-полоска: scaleX от 0 (нет pull'а) до 1 (commit-порог).
   const ctaProgressFillStyle = useAnimatedStyle(() => {
@@ -921,17 +961,52 @@ export default function SearchScreen() {
       {/* Curtain CTA — юзер прокручивает сюда, видит подсказку с
           progress-баром, продолжая тянуть → bar заполняется → на 100%
           haptic-success → release → auto-slide-in. */}
-      <Reanimated.View style={[styles.searchHintBlock, curtainLabelStyle]}>
-        <View style={styles.searchHintRow}>
-          <Icon name="chevron-down" size={20} color={Colors.royalBlue} />
-          <Text style={styles.searchHintText}>
-            Прокрути вниз, чтобы попасть в <Text style={styles.searchHintBrand}>Маркет</Text>
-          </Text>
-        </View>
-        {/* Progress-бар внизу CTA. Полностью заполнен на 100% pull'а. */}
-        <View style={styles.searchHintProgressTrack} pointerEvents="none">
-          <Reanimated.View style={[styles.searchHintProgressFill, ctaProgressFillStyle]} />
-        </View>
+      <Reanimated.View style={[styles.searchHintWrap, curtainLabelStyle]}>
+        {/* Дышащий halo под плашкой — живёт вне overflow:hidden блока,
+            иначе свечение обрезалось бы его же скруглением. */}
+        <Reanimated.View
+          style={[styles.searchHintGlow, ctaGlowStyle]}
+          pointerEvents="none"
+        />
+        <Pressable
+          onPress={handleMarketShowAll}
+          accessibilityRole="button"
+          accessibilityLabel="Перейти в Маркет"
+          style={({ pressed }) => [
+            styles.searchHintBlock,
+            pressed && styles.searchHintBlockPressed,
+          ]}
+        >
+          <View style={styles.searchHintRow}>
+            <Icon name="chevron-down" size={20} color={Colors.royalBlue} />
+            <Text style={styles.searchHintText}>
+              Прокрути вниз или нажми — и ты в{' '}
+              <Text style={styles.searchHintBrand}>Маркете</Text>
+            </Text>
+          </View>
+          {/* Пробегающий блик. Наклонён на 18°, поэтому по высоте с запасом. */}
+          <Reanimated.View
+            style={[styles.searchHintShimmer, ctaShimmerStyle]}
+            pointerEvents="none"
+          >
+            <LinearGradient
+              colors={[
+                'rgba(59,75,245,0)',
+                'rgba(59,75,245,0.18)',
+                'rgba(255,255,255,0.55)',
+                'rgba(59,75,245,0.18)',
+                'rgba(59,75,245,0)',
+              ]}
+              start={{ x: 0, y: 0.5 }}
+              end={{ x: 1, y: 0.5 }}
+              style={StyleSheet.absoluteFill}
+            />
+          </Reanimated.View>
+          {/* Progress-бар внизу CTA. Полностью заполнен на 100% pull'а. */}
+          <View style={styles.searchHintProgressTrack} pointerEvents="none">
+            <Reanimated.View style={[styles.searchHintProgressFill, ctaProgressFillStyle]} />
+          </View>
+        </Pressable>
       </Reanimated.View>
     </View>
   ) : null;
@@ -1461,10 +1536,40 @@ const styles = StyleSheet.create({
   // Curtain CTA — юзер скроллит сюда, продолжает тянуть → progress внизу
   // блока наполняется до 100% → commit запускает in-place slide-up Маркет-
   // слоя. overflow:hidden — чтобы fill-bar не вылезал из rounded corners.
-  searchHintBlock: {
+  searchHintWrap: {
     marginHorizontal: Spacing.md,
     marginTop: Spacing.lg,
     marginBottom: Spacing.md,
+  },
+  // Halo: та же геометрия, что и у плашки, но растянут наружу и с мягкой
+  // тенью бренд-цвета. Android игнорит shadow* — там работает borderColor.
+  searchHintGlow: {
+    position: 'absolute',
+    top: -6,
+    left: -6,
+    right: -6,
+    bottom: -6,
+    borderRadius: BorderRadius.md + 6,
+    backgroundColor: 'rgba(59, 75, 245, 0.10)',
+    borderWidth: 1,
+    borderColor: 'rgba(59, 75, 245, 0.28)',
+    shadowColor: Colors.royalBlue,
+    shadowOpacity: 0.55,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 6,
+  },
+  searchHintShimmer: {
+    position: 'absolute',
+    top: -30,
+    bottom: -30,
+    left: 0,
+    width: 110,
+  },
+  searchHintBlockPressed: {
+    backgroundColor: 'rgba(59, 75, 245, 0.14)',
+  },
+  searchHintBlock: {
     paddingVertical: 14,
     paddingHorizontal: 14,
     backgroundColor: 'rgba(59, 75, 245, 0.06)',

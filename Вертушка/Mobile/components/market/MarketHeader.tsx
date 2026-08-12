@@ -124,7 +124,9 @@ const styles = StyleSheet.create({
   },
   heroDiscIcon: {
     // Оптическая коррекция: визуально выровнять disc-иконку с глифами «МАРКЕТ».
-    transform: [{ translateY: -7 }],
+    // -7 оставлял диск нижним краем на baseline, т.е. его центр сидел ниже
+    // оптического центра капителей. -10 ставит центры на одну линию.
+    transform: [{ translateY: -10 }],
   },
   underline: {
     width: 56,

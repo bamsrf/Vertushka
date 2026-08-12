@@ -675,11 +675,27 @@ export default function RecordDetailScreen() {
         showBack
         showProfile={false}
         rightAction={
-          isForeignUserRecord ? (
-            <TouchableOpacity onPress={handleReportRecord} hitSlop={8}>
-              <Icon name="flag-outline" size={22} color={Colors.textSecondary} />
+          /* Маркет-чип в правом верхнем углу: с карточки релиза до витрины
+             один тап, без возврата в поиск и pull-жеста. Жалоба на чужую
+             user-запись (UGC) живёт рядом, не вытесняя вход в Маркет. */
+          <View style={styles.headerActions}>
+            {isForeignUserRecord ? (
+              <TouchableOpacity onPress={handleReportRecord} hitSlop={8}>
+                <Icon name="flag-outline" size={22} color={Colors.textSecondary} />
+              </TouchableOpacity>
+            ) : null}
+            <TouchableOpacity
+              onPress={() => router.push('/market')}
+              hitSlop={8}
+              activeOpacity={0.8}
+              accessibilityRole="button"
+              accessibilityLabel="Перейти в Маркет"
+              style={styles.marketChip}
+            >
+              <Icon name="disc-outline" size={16} color={Colors.royalBlue} />
+              <Text style={styles.marketChipText}>В Маркет</Text>
             </TouchableOpacity>
-          ) : undefined
+          </View>
         }
       />
 
@@ -1066,6 +1082,28 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: Colors.background,
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+  },
+  marketChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: BorderRadius.full,
+    backgroundColor: 'rgba(59, 75, 245, 0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(59, 75, 245, 0.22)',
+  },
+  marketChipText: {
+    ...Typography.caption,
+    fontFamily: 'Inter_700Bold',
+    fontWeight: '700',
+    color: Colors.royalBlue,
   },
   centered: {
     flex: 1,
