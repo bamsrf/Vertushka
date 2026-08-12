@@ -71,16 +71,23 @@ def test_attempt_stamped_outside_savepoint():
     # Отметка идёт одним UPDATE после цикла, а не присваиванием внутри него.
     assert "update(StoreListing)" in src
     assert "match_attempted_at=attempted_at" in src
-    loop_body = src.split("for listing in listings:", 1)[1].split("if listings:", 1)[0]
+    loop_body = src.split("for listing in listings:", 1)[1].split("if attempted_ids:", 1)[0]
     assert "listing.match_attempted_at" not in loop_body
 
 
-def test_attempt_stamped_for_every_processed_listing():
-    """Включая аксессуары и упавшие — иначе они и останутся головой очереди."""
+def test_attempt_stamped_for_accessories_and_crashes():
+    """Аксессуары и упавшие — состоявшиеся попытки, они не должны застревать.
+
+    Аксессуар пластинкой не станет, а упавший листинг падает из-за собственных
+    данных — повторять их через час бессмысленно. Единственное исключение —
+    исчерпанная квота Discogs (см. test_quota_block_does_not_stamp_attempt).
+    """
     src = inspect.getsource(listing_matcher.match_unmatched_batch)
-    stamp = src.split("if listings:", 1)[1]
-    # UPDATE берёт весь батч целиком, без фильтра по исходу.
-    assert "StoreListing.id.in_([lst.id for lst in listings])" in stamp
+    accessory_branch = src.split("_is_accessory(listing)", 1)[1].split("raw =", 1)[0]
+    assert "attempted_ids.append(listing.id)" in accessory_branch
+
+    crash_branch = src.split("logger.exception(\"match failed", 1)[1].split("if ok or", 1)[0]
+    assert "attempted_ids.append(listing.id)" in crash_branch
 
 
 def test_queue_left_is_reported():
@@ -93,3 +100,38 @@ def test_queue_left_is_reported():
 def test_model_has_attempt_column(field):
     assert hasattr(StoreListing, field)
     assert StoreListing.__table__.c[field].nullable
+
+
+# ---- Исчерпанная квота Discogs не должна «сжигать» попытку ------------- #
+
+def test_quota_block_does_not_stamp_attempt():
+    """Листинг, до которого Discogs не дошёл, обязан остаться в очереди.
+
+    Иначе исчерпанная квота молча отправляет остаток батча в недельный
+    кулдаун, ни разу про них не спросив — и мы даже не узнаем.
+    """
+    src = inspect.getsource(listing_matcher.match_unmatched_batch)
+    assert "if ok or not _quota_blocked.get():" in src
+    assert "attempted_ids" in src
+    # UPDATE идёт по отобранным id, а не по всему батчу.
+    assert "StoreListing.id.in_(attempted_ids)" in src
+
+
+def test_quota_gates_raise_the_flag():
+    """Оба on-demand пути (barcode/catalog и artist+title) должны его ставить."""
+    for fn in (listing_matcher._try_discogs_fetch, listing_matcher._try_discogs_fetch_by_text):
+        src = inspect.getsource(fn)
+        assert "_quota_blocked.set(True)" in src, fn.__name__
+
+
+def test_flag_is_reset_per_listing():
+    """Флаг с предыдущего листинга не должен подвешивать следующий."""
+    src = inspect.getsource(listing_matcher.match_unmatched_batch)
+    assert "_quota_blocked.set(False)" in src
+
+
+def test_flag_is_contextvar_not_global():
+    """Матчер живёт в общем event loop — глобальный флаг протёк бы в чужие задачи."""
+    from contextvars import ContextVar
+    assert isinstance(listing_matcher._quota_blocked, ContextVar)
+    assert listing_matcher._quota_blocked.get() is False

@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import logging
+from contextvars import ContextVar
 from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import Iterable
@@ -151,6 +152,12 @@ def _clean_title_for_search(title: str | None) -> str | None:
 # При 2000/час среднее ~33 req/min — всё ещё в безопасной зоне 60/min.
 # План разрешает (см. PARSING.md §5 «Что делать если хочется быстрее»).
 DISCOGS_FETCH_HOURLY_LIMIT = 2000
+
+# Выставляется, когда часовая квота Discogs исчерпана и on-demand шаг был
+# пропущен. Такой листинг НЕ считается попробованным: пометить его — значит
+# отправить в кулдаун на неделю, ни разу не спросив про него Discogs. ContextVar,
+# а не глобальный флаг: матчер гоняется в общем event loop с остальными задачами.
+_quota_blocked: ContextVar[bool] = ContextVar("discogs_quota_blocked", default=False)
 
 # Через сколько дней повторять попытку по листингу, который не сматчился.
 # Неделя выбрана не наугад: столько же ждёт store-native gate (см. ниже), так
@@ -655,6 +662,7 @@ async def _try_discogs_fetch(
             if count == 1:
                 await cache._pool.expire(redis_key, 3600)
             if count > DISCOGS_FETCH_HOURLY_LIMIT:
+                _quota_blocked.set(True)
                 return None
         except Exception:
             logger.debug("on-demand counter failed", exc_info=True)
@@ -705,6 +713,7 @@ async def _try_discogs_fetch_by_text(
             if count == 1:
                 await cache._pool.expire(redis_key, 3600)
             if count > DISCOGS_FETCH_HOURLY_LIMIT:
+                _quota_blocked.set(True)
                 return None
         except Exception:
             logger.debug("on-demand counter failed", exc_info=True)
@@ -1109,6 +1118,9 @@ async def match_unmatched_batch(batch_size: int = 200) -> dict[str, int]:
         "skipped_accessory": 0,
         "store_native_created": 0,
         "queue_left": 0,
+        # Сколько листингов не получили полноценной попытки: квота Discogs
+        # кончилась. Они остаются в очереди и вернутся следующим прогоном.
+        "quota_blocked": 0,
     }
     # Диагностика: сколько unmatched листингов вообще имеют сигналы для матчинга.
     # Без неё непонятно, парсер ли не вытаскивает barcode/discogs_url, или
@@ -1146,11 +1158,18 @@ async def match_unmatched_batch(batch_size: int = 200) -> dict[str, int]:
         )
 
         attempted_at = datetime.utcnow()
+        # Листинги, по которым попытка была полноценной. Те, что упёрлись в
+        # исчерпанную квоту Discogs, сюда не попадают: пометить их — значит
+        # отправить в недельный кулдаун, ни разу про них не спросив.
+        attempted_ids: list = []
         for listing in listings:
             counters["processed"] += 1
             if _is_accessory(listing):
                 counters["skipped_accessory"] += 1
                 counters["unmatched"] += 1
+                # Аксессуар — законченная попытка: пластинкой он не станет, и
+                # держать его в голове очереди незачем.
+                attempted_ids.append(listing.id)
                 continue
             raw = listing.raw_payload or {}
             has_url = bool(raw.get("discogs_release_url"))
@@ -1168,6 +1187,7 @@ async def match_unmatched_batch(batch_size: int = 200) -> dict[str, int]:
             # SAVEPOINT — если match_listing уронит транзакцию, откатываем
             # только этот savepoint, остальные листинги продолжаем матчить.
             sp = await db.begin_nested()
+            _quota_blocked.set(False)
             try:
                 ok = await match_listing(listing, db)
                 await sp.commit()
@@ -1178,16 +1198,25 @@ async def match_unmatched_batch(batch_size: int = 200) -> dict[str, int]:
                 await sp.rollback()
                 counters["errors"] += 1
                 logger.exception("match failed for listing %s", listing.id)
+                # Упавший листинг — попытка состоявшаяся: причина в нём самом
+                # или в наших данных, и повторять её через час бессмысленно.
+                attempted_ids.append(listing.id)
                 continue
 
-        # Отметка попытки — одним UPDATE, вне савпоинтов и при любом исходе.
-        # Через ORM-атрибут было бы ненадёжно: `sp.rollback()` на упавшем
-        # листинге может откатить и её, и тогда он навсегда останется в голове
-        # очереди — ровно та болезнь, которую эта колонка лечит.
-        if listings:
+            if ok or not _quota_blocked.get():
+                attempted_ids.append(listing.id)
+            else:
+                counters["quota_blocked"] += 1
+
+        # Отметка попытки — одним UPDATE, вне савпоинтов. Через ORM-атрибут было
+        # бы ненадёжно: `sp.rollback()` на упавшем листинге может откатить и её,
+        # и тогда он навсегда останется в голове очереди — ровно та болезнь,
+        # которую эта колонка лечит. Отмечаем только состоявшиеся попытки:
+        # упёршиеся в исчерпанную квоту Discogs остаются в очереди.
+        if attempted_ids:
             await db.execute(
                 update(StoreListing)
-                .where(StoreListing.id.in_([lst.id for lst in listings]))
+                .where(StoreListing.id.in_(attempted_ids))
                 .values(match_attempted_at=attempted_at)
             )
 

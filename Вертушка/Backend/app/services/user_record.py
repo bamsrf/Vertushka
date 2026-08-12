@@ -41,6 +41,12 @@ logger = logging.getLogger(__name__)
 # юзер подтверждает «да, это она» или настаивает на создании.
 LIKELY_DUPLICATE_THRESHOLD = 0.72
 
+# Порог для кандидата из live-поиска Discogs. Жёстче, чем LIKELY_DUPLICATE:
+# Discogs search сам по себе fuzzy и на мусорный запрос всегда возвращает
+# что-нибудь популярное. Без порога top-1 объявлялся дублем и юзер добавлял
+# в коллекцию случайный релиз.
+DISCOGS_LIVE_MATCH_THRESHOLD = 0.85
+
 
 class PreflightStatus:
     DUPLICATE = "DUPLICATE"            # точный матч (barcode/catalog) в records
@@ -50,13 +56,53 @@ class PreflightStatus:
 
 
 @dataclass
+class DiscogsCandidate:
+    """Найденный в Discogs релиз — с метаданными, чтобы фронт показал юзеру,
+    ЧТО именно он собирается добавить (иначе кнопка жмётся вслепую)."""
+    discogs_id: str
+    artist: str | None = None
+    title: str | None = None
+    year: int | None = None
+    cover_image_url: str | None = None
+
+
+@dataclass
 class PreflightResult:
     status: str
     # Для DUPLICATE/LIKELY_DUPLICATE — найденный Record (наш).
     match: Record | None = None
     # Для FOUND_IN_DISCOGS — discogs_id, чтобы фронт ушёл в Discogs-флоу.
     discogs_id: str | None = None
+    # Для FOUND_IN_DISCOGS — метаданные найденного (превью на экране-перехвате).
+    discogs_match: DiscogsCandidate | None = None
     score: float | None = None
+
+
+def _fuzzy_score_fields(
+    *,
+    cand_artist: str | None,
+    cand_title: str | None,
+    cand_year: int | None,
+    cand_format: str | None,
+    artist: str | None,
+    title: str | None,
+    year: int | None,
+    format_type: str | None,
+) -> float:
+    """0..1 score по user-payload (без StoreListing). Зеркалит _fuzzy_score."""
+    title_score = fuzz.token_sort_ratio(cand_title or "", title or "") / 100.0
+    artist_score = (
+        fuzz.token_sort_ratio(cand_artist or "", artist or "") / 100.0
+        if artist else 0.5
+    )
+    year_bonus = 0.1 if (cand_year and year and cand_year == year) else 0.0
+    score = min(1.0, title_score * 0.6 + artist_score * 0.3 + year_bonus)
+    # Format-aware (§9): известные и различные носители (винил-ввод → CD-релиз)
+    # давим ниже порога, чтобы fuzzy не путал форматы. Как в _fuzzy_score.
+    uf, rf = _format_family(format_type), _format_family(cand_format)
+    if uf and rf and uf != rf:
+        score *= FORMAT_MISMATCH_PENALTY
+    return score
 
 
 def _preflight_fuzzy_score(
@@ -66,20 +112,17 @@ def _preflight_fuzzy_score(
     year: int | None,
     format_type: str | None = None,
 ) -> float:
-    """0..1 score по user-payload (без StoreListing). Зеркалит _fuzzy_score."""
-    title_score = fuzz.token_sort_ratio(rec.title or "", title or "") / 100.0
-    artist_score = (
-        fuzz.token_sort_ratio(rec.artist or "", artist or "") / 100.0
-        if artist else 0.5
+    """Обёртка над _fuzzy_score_fields для нашего Record."""
+    return _fuzzy_score_fields(
+        cand_artist=rec.artist,
+        cand_title=rec.title,
+        cand_year=rec.year,
+        cand_format=rec.format_type,
+        artist=artist,
+        title=title,
+        year=year,
+        format_type=format_type,
     )
-    year_bonus = 0.1 if (rec.year and year and rec.year == year) else 0.0
-    score = min(1.0, title_score * 0.6 + artist_score * 0.3 + year_bonus)
-    # Format-aware (§9): известные и различные носители (винил-ввод → CD-релиз)
-    # давим ниже порога, чтобы fuzzy не путал форматы. Как в _fuzzy_score.
-    uf, rf = _format_family(format_type), _format_family(rec.format_type)
-    if uf and rf and uf != rf:
-        score *= FORMAT_MISMATCH_PENALTY
-    return score
 
 
 async def preflight_dedup(
@@ -122,12 +165,20 @@ async def preflight_dedup(
 
     # 4) Discogs check
     if check_discogs:
-        discogs_id = await _check_discogs(
-            db, artist=artist, title=title, year=year, barcode=bc, catalog=cat
+        cand = await _check_discogs(
+            db,
+            artist=artist,
+            title=title,
+            year=year,
+            barcode=bc,
+            catalog=cat,
+            format_type=format_type,
         )
-        if discogs_id:
+        if cand:
             return PreflightResult(
-                PreflightStatus.FOUND_IN_DISCOGS, discogs_id=discogs_id
+                PreflightStatus.FOUND_IN_DISCOGS,
+                discogs_id=cand.discogs_id,
+                discogs_match=cand,
             )
 
     # 5) чисто
