@@ -128,6 +128,17 @@ _STORE_BACKFILL_LIMIT = 2000
 _STORE_BACKFILL_PACE_SEC = 0.2
 
 
+async def hourly_backfill_store_covers() -> dict:
+    """Раз в час — добираем обложки из магазинных листингов.
+
+    Штатно обложку осаждает `_apply_match` в момент матча, но этого мало:
+    fire-and-forget задача может не успеть, магазин может добавить картинку
+    уже после матча, а разовый прогон не переживает деплой. Небольшой лимит
+    раз в час закрывает хвост непрерывно и переживает перезапуски.
+    """
+    return await backfill_store_covers(limit=300)
+
+
 async def backfill_store_covers(limit: int = _STORE_BACKFILL_LIMIT) -> dict:
     """Проставить обложки записям, у которых магазинная картинка уже скачана.
 

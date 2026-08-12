@@ -148,3 +148,19 @@ def test_thresholds_are_sane():
     # Разбор новых позиций обязан быть быстрее кулдауна повтора.
     from app.services.listing_matcher import _MATCH_RETRY_DAYS
     assert market_health.STALE_QUEUE_DAYS < _MATCH_RETRY_DAYS
+
+
+def test_cover_backfill_runs_on_schedule():
+    """Разовый прогон не годится: он не переживает деплой и не ловит новые матчи.
+
+    12.08 сводка сразу показала 155 записей без обложки при наличии магазинной
+    картинки — накопились после того, как разовый добор уже отработал.
+    """
+    import inspect
+    from app import main
+    from app.tasks import cover_drip_tasks
+
+    assert hasattr(cover_drip_tasks, "hourly_backfill_store_covers")
+    src = inspect.getsource(main)
+    assert "hourly_backfill_store_covers" in src
+    assert "store_cover_backfill" in src

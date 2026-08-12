@@ -113,6 +113,7 @@ async def lifespan(app: FastAPI):
                 cleanup_price_history,
             )
             from app.tasks.cover_drip_tasks import drip_covers_batch
+            from app.tasks.cover_drip_tasks import hourly_backfill_store_covers
             from app.tasks.cover_coverage_tasks import report_cover_coverage
             from app.services.cover_storage import CoverStorageService
 
@@ -205,6 +206,7 @@ async def lifespan(app: FastAPI):
                 scheduler.add_job(daily_rematch_album_with_barcode, 'cron', hour=4, minute=15, id='scrape_rematch_album_barcode')
                 # Сводка после ночного цикла: обход, матчинг, обложки уже отработали.
                 scheduler.add_job(daily_market_health_report, 'cron', hour=6, minute=0, id='market_health_report')
+                scheduler.add_job(hourly_backfill_store_covers, 'interval', minutes=60, id='store_cover_backfill', max_instances=1, coalesce=True)
                 scheduler.add_job(hourly_enrich_artist_thumbs, 'interval', minutes=60, id='enrich_artist_thumbs')
                 logger.info("✅ Scraper jobs зарегистрированы (SCRAPERS_ENABLED=true)")
 
