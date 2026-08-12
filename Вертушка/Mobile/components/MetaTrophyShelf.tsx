@@ -43,6 +43,12 @@ const NEAR_THRESHOLD = 0.75;
 const CARD_W = ms(148);
 const CARD_GAP = 12;
 
+/** Пин + вертикальный воздух вокруг него. Звезда-меты вылезает за рамку пина
+ *  примерно на PIN_SIZE * 0.14, поэтому зазор должен быть заведомо больше —
+ *  иначе значок наезжает на киккер серии сверху. */
+const PIN_SIZE = 72;
+const PIN_GAP = 10;
+
 function collectMetas(data: MyAchievementsResponse): MetaWithSeries[] {
   const out: MetaWithSeries[] = [];
   for (const series of data.series) {
@@ -108,7 +114,7 @@ export function MetaTrophyShelf({ data, onPin }: Props) {
             </Text>
 
             <View style={styles.cardPinWrap}>
-              <AchievementPin item={meta} size={96} />
+              <AchievementPin item={meta} size={PIN_SIZE} />
             </View>
 
             <View style={styles.cardFooter}>
@@ -203,7 +209,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   cardPinWrap: {
-    marginVertical: 4,
+    marginVertical: PIN_GAP,
   },
   cardFooter: {
     alignItems: 'center',
