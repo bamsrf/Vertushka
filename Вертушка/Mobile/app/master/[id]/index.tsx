@@ -16,6 +16,7 @@ import { Icon } from '@/components/ui';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Header } from '../../../components/Header';
 import { api } from '../../../lib/api';
+import { analytics } from '../../../lib/analytics';
 import { cleanArtistName } from '../../../lib/format';
 import { MasterRelease, Track } from '../../../lib/types';
 import { putVersionsPrefetch } from '../../../lib/versionsPrefetch';
@@ -48,6 +49,9 @@ export default function MasterScreen() {
         const data = await api.getMaster(id);
         setMaster(data);
         setIsLoading(false);
+        // Ретраи на 503 сюда не попадают: событие шлём только с успешной
+        // попытки, иначе один экран дал бы до трёх просмотров.
+        analytics.viewMaster(id);
         return;
       } catch (err: any) {
         const is503 = err?.response?.status === 503;

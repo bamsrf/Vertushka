@@ -124,6 +124,17 @@ export const analytics = {
    */
   viewRecord: (discogsId?: string | null) =>
     track('view_record', discogsId ? { discogs_id: discogsId } : {}),
+
+  /**
+   * Просмотр мастер-релиза — самый частый переход из выдачи поиска.
+   *
+   * Событие отдельное от view_record намеренно: мастер и релиз — разные
+   * сущности. У мастера сотня версий и нет ни цены, ни наличия; они есть
+   * только у конкретного релиза. Смешав их в одном событии, мы бы уже не
+   * смогли разделить «посмотрел альбом вообще» и «дошёл до конкретного
+   * прессинга, который можно купить» — а это два разных намерения.
+   */
+  viewMaster: (masterId: string) => track('view_master', { master_id: masterId }),
   viewArtist: (artistId: string) => track('view_artist', { artist_id: artistId }),
 
   // --- Social ---
