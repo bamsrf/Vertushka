@@ -305,13 +305,14 @@ function UnlockModal({
             <View style={[styles.tierChip, { borderColor: aura.aura }]}>
               <Text style={styles.tierChipText}>{main.tier.label_ru}</Text>
             </View>
-            {main.flavor_ru ? (
-              <Text style={styles.flavor}>«{main.flavor_ru}»</Text>
-            ) : main.description_done_ru || main.description_ru ? (
-              <Text style={styles.flavor}>
+            {(main.description_done_ru || main.description_ru) && (
+              <Text style={styles.reason}>
                 {main.description_done_ru || main.description_ru}
               </Text>
-            ) : null}
+            )}
+            {main.flavor_ru && (
+              <Text style={styles.flavor}>«{main.flavor_ru}»</Text>
+            )}
 
             {/* Batch — подписные пины */}
             {others.length > 0 && (
@@ -378,13 +379,14 @@ function UnlockModal({
                 {main.tier.label_ru.toUpperCase()}
               </Text>
             </View>
-            {main.flavor_ru ? (
-              <Text style={styles.shareCardFlavor}>«{main.flavor_ru}»</Text>
-            ) : main.description_done_ru || main.description_ru ? (
-              <Text style={styles.shareCardFlavor}>
+            {(main.description_done_ru || main.description_ru) && (
+              <Text style={styles.shareCardReason}>
                 {main.description_done_ru || main.description_ru}
               </Text>
-            ) : null}
+            )}
+            {main.flavor_ru && (
+              <Text style={styles.shareCardFlavor}>«{main.flavor_ru}»</Text>
+            )}
           </LinearGradient>
         </View>
       </View>
@@ -443,12 +445,21 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     letterSpacing: 1.5,
   },
+  shareCardReason: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: 'rgba(255,255,255,0.92)',
+    textAlign: 'center',
+    marginTop: 14,
+    lineHeight: 21,
+    paddingHorizontal: 12,
+  },
   shareCardFlavor: {
     fontSize: 15,
     fontStyle: 'italic',
     color: 'rgba(255,255,255,0.82)',
     textAlign: 'center',
-    marginTop: 14,
+    marginTop: 8,
     lineHeight: 21,
   },
   shareCardBrand: {
@@ -497,12 +508,20 @@ const styles = StyleSheet.create({
     letterSpacing: 0.4,
     color: '#FFFFFF',
   },
+  reason: {
+    color: 'rgba(255,255,255,0.88)',
+    fontSize: 14,
+    fontWeight: '600',
+    textAlign: 'center',
+    paddingHorizontal: 8,
+  },
   flavor: {
     color: 'rgba(255,255,255,0.75)',
     fontSize: 14,
     fontStyle: 'italic',
     textAlign: 'center',
     paddingHorizontal: 8,
+    marginTop: 6,
   },
   batchRow: {
     marginTop: 22,

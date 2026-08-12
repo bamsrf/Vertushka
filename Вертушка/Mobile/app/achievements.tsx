@@ -599,13 +599,14 @@ function DetailsSheet({
                 {item.tier.label_ru.toUpperCase()}
               </Text>
             </View>
-            {item.flavor_ru && !item.is_hidden ? (
-              <Text style={styles.shareCardFlavor}>«{item.flavor_ru}»</Text>
-            ) : item.description_done_ru || item.description_ru ? (
-              <Text style={styles.shareCardFlavor}>
+            {(item.description_done_ru || item.description_ru) && (
+              <Text style={styles.shareCardReason}>
                 {item.description_done_ru || item.description_ru}
               </Text>
-            ) : null}
+            )}
+            {item.flavor_ru && !item.is_hidden && (
+              <Text style={styles.shareCardFlavor}>«{item.flavor_ru}»</Text>
+            )}
             {item.unlocked_at && (
               <Text style={styles.shareCardDate}>Открыто {formatDate(item.unlocked_at)}</Text>
             )}
@@ -862,12 +863,21 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     letterSpacing: 1.5,
   },
+  shareCardReason: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: 'rgba(255,255,255,0.92)',
+    textAlign: 'center',
+    marginTop: 14,
+    lineHeight: 21,
+    paddingHorizontal: 12,
+  },
   shareCardFlavor: {
     fontSize: 15,
     fontStyle: 'italic',
     color: 'rgba(255,255,255,0.82)',
     textAlign: 'center',
-    marginTop: 14,
+    marginTop: 8,
     lineHeight: 21,
   },
   shareCardDate: {
