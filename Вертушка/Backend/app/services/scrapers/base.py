@@ -168,6 +168,23 @@ class BaseStoreParser:
     # 800 запросов в сутки на то, что и так обновилось ночью.
     stock_from_listing: bool = False
 
+    # Потолок на ОДНУ страницу каталога, секунды. Клиентский таймаут (90 с)
+    # перемножается с ретраями, поэтому без этой отсечки страница может держать
+    # обход десять минут (stoprobotvinyl, 08-12). 120 с — щедро: самая тяжёлая
+    # страница в маркете (plastinka, 200 карточек, ~317 KB) отдаётся за секунды.
+    #
+    # Цена решения: при HTTP 429 клиент честно спит по Retry-After (до 300 с), и
+    # дедлайн такую паузу оборвёт — страница уйдёт в пропуск вместо вежливого
+    # ожидания. Осознанно: за 72 ч логов в маркете ни одного 429/503, а
+    # per-domain token bucket (0.5 req/s) и так не даёт нам долбить магазин.
+    # Если 429 появятся — поднимать здесь, а не убирать дедлайн.
+    page_deadline_sec: float = 120.0
+
+    # Потолок на весь обход магазина, секунды. Ночное окно 3 часа делится между
+    # магазинами, и один тормозящий не должен съесть его целиком. Час — четыре
+    # запаса к самому долгому обходу в маркете (skifmusic, 688 страниц, ~15 мин).
+    max_crawl_seconds: float = 3600.0
+
     def __init__(self, http: ScraperHttpClient, browser: BrowserPool | None = None) -> None:
         if not self.slug or not self.base_url:
             raise RuntimeError(f"{type(self).__name__}: slug/base_url must be set")
@@ -185,6 +202,7 @@ class BaseStoreParser:
         respect_robots: bool = True,
         retries: int = 3,
         second_chance_delay: float = 5.0,
+        deadline_sec: float | None = None,
     ) -> str | None:
         """GET страницы каталога. Возвращает None, если страницу решено пропустить.
 
@@ -194,19 +212,32 @@ class BaseStoreParser:
              doctorhead отпускают за секунды, а первая серия ретраев успевает
              уложиться в 7 с и упереться в ту же ошибку.
 
+        Обе ступени ограничены `deadline_sec` (по умолчанию `page_deadline_sec`
+        класса). Без потолка ретраи перемножаются с 90-секундным таймаутом
+        клиента: в ночь 08-12 одна AJAX-страница stoprobotvinyl держала обход
+        ~10 минут. Дедлайн ставим на КАЖДУЮ ступень, а не на весь метод: иначе
+        вторая попытка получала бы остаток времени первой и была бы бесполезна.
+
         ParserBlocked/ParserNeedsBrowser не пропускаем: это не флак, а смена
         режима доступа, её должен увидеть runner.
         """
+        limit = self.page_deadline_sec if deadline_sec is None else deadline_sec
+
         for is_second_chance in (False, True):
             try:
-                text = await self.http.get_text(
-                    url, respect_robots=respect_robots, retries=retries
+                text = await asyncio.wait_for(
+                    self.http.get_text(
+                        url, respect_robots=respect_robots, retries=retries
+                    ),
+                    timeout=limit,
                 )
                 budget.record_success()
                 return text
             except ParserBlocked:
                 raise
             except Exception as e:
+                if isinstance(e, asyncio.TimeoutError):
+                    e = TransientParserError(f"страница не уложилась в {limit:.0f} c")
                 if not is_second_chance:
                     logger.debug(
                         "[%s] %s не отдалась, вторая попытка через %.0f c: %s",

@@ -7,6 +7,7 @@ discover_urls → parse_listing → upsert StoreListing.
 from __future__ import annotations
 
 import logging
+import time
 from datetime import datetime
 from decimal import Decimal
 from typing import Literal
@@ -24,6 +25,7 @@ from app.services.scrapers.base import (
     ListingDTO,
     ParserBlocked,
     ParserNeedsBrowser,
+    TransientParserError,
 )
 from app.services.scrapers.browser import browser_pool
 from app.services.scrapers.http_client import http_client
@@ -80,10 +82,21 @@ async def crawl_store(slug: str, *, mode: CrawlMode = "full", limit: int | None 
         # MissingGreenlet на КАЖДОМ листинге: 8 956 позиций, 0 записанных.
         store_id = store.id
         consecutive_errors = 0
+        started = time.monotonic()
+        deadline = started + parser.max_crawl_seconds
 
         try:
             iterator = _select_iterator(parser, mode, store)
             async for dto in iterator:
+                # Потолок на весь магазин. Дедлайн одной страницы (см.
+                # `fetch_page`) ловит зависший запрос, но не ловит обход,
+                # который просто ползёт: 94 страницы по минуте — это полтора
+                # часа, и остальным магазинам ночного окна уже не хватит.
+                if time.monotonic() > deadline:
+                    raise TransientParserError(
+                        f"обход прерван по времени: {parser.max_crawl_seconds:.0f} c, "
+                        f"взято {counters['upserted']} позиций"
+                    )
                 counters["discovered"] += 1
                 try:
                     upserted = await _upsert_listing(db, store_id, dto)
@@ -139,6 +152,8 @@ async def crawl_store(slug: str, *, mode: CrawlMode = "full", limit: int | None 
             logger.exception("[%s] crawl failed", slug)
         finally:
             await db.commit()
+
+        counters["elapsed_sec"] = round(time.monotonic() - started, 1)
 
     logger.info("[%s] crawl(%s) done: %s", slug, mode, counters)
     return counters
