@@ -17,6 +17,7 @@ import {
   RefreshControl,
   Share,
   Platform,
+  Dimensions,
 } from 'react-native';
 import { Stack, useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -52,6 +53,21 @@ import type {
   AchievementStats,
   MyAchievementsResponse,
 } from '../lib/types';
+
+// ─── Метрики грида ──────────────────────────────────────────────────────────
+// Ячейки считаем от ширины экрана, а не фиксируем в 88pt: на узких телефонах
+// (iPhone mini/SE, 375pt) при фиксе три колонки не влезали в карточку на 1pt
+// и грид схлопывался в две. Ширина карточки = экран − 2×marginHorizontal(md)
+// − 2×paddingHorizontal(lg).
+const GRID_COLS = 3;
+const GRID_GAP = 16;
+const GRID_MAX_CELL = 88;
+const GRID_INNER_WIDTH =
+  Dimensions.get('window').width - 2 * Spacing.md - 2 * Spacing.lg;
+const GRID_CELL = Math.min(
+  GRID_MAX_CELL,
+  Math.floor((GRID_INNER_WIDTH - GRID_GAP * (GRID_COLS - 1)) / GRID_COLS),
+);
 
 export default function AchievementsScreen() {
   const router = useRouter();
@@ -275,6 +291,8 @@ function SeriesGroup({
             onPress={() => onPin(meta)}
             activeOpacity={0.7}
           >
+            {/* Пин фиксированных размеров (PinSize); на узких экранах он
+                чуть шире ячейки и заходит в гэп — это ок, он центрирован. */}
             <AchievementPin item={meta} size={96} />
             <Text
               numberOfLines={1}
@@ -763,15 +781,15 @@ const styles = StyleSheet.create({
   gridWrap: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 16,
+    gap: GRID_GAP,
     rowGap: 18,
   },
   gridCell: {
-    width: 88,
+    width: GRID_CELL,
     alignItems: 'center',
   },
   gridCellMeta: {
-    width: 100,
+    width: GRID_CELL,
   },
   gridLabel: {
     marginTop: 8,

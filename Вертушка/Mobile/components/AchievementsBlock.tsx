@@ -185,7 +185,10 @@ const styles = StyleSheet.create({
   },
   pinCell: {
     alignItems: 'center',
-    width: 88,
+    // Не фиксируем 88pt: на узких экранах (mini/SE) три ячейки + гэпы вылезают
+    // за карточку. flex делит доступную ширину поровну.
+    flex: 1,
+    maxWidth: 88,
   },
   pinLabel: {
     marginTop: 6,
