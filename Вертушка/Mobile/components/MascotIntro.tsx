@@ -1,69 +1,82 @@
 /**
- * MascotIntro — полноэкранная заставка маскота на Lottie, играет ОДИН раз
- * при старте (после native splash). Анимация — `assets/animations/intro-mascot.json`.
+ * MascotIntro — полноэкранная заставка маскота, играет ОДИН раз при старте
+ * (после native splash). Источник — `assets/video/intro-mascot.mp4` (expo-video).
  *
  * Native splash (app.json) анимировать нельзя — платформенное ограничение, см.
  * docs/plans/MASCOT_ANIMATION_SPEC.md §6. Поэтому «живое» интро живёт здесь, уже
  * внутри приложения, поверх остального UI.
  *
- * Устойчивость: `lottie-react-native` есть только в dev-build/проде. Если модуля
- * нет (Expo Go) — интро тихо пропускается (onFinish вызывается сразу), пользователь
- * просто попадает в приложение без заставки. Никаких заглушек на весь экран.
+ * Раньше интро было на Lottie (`assets/animations/intro-mascot.json`) — растровые
+ * кадры внутри JSON давали ~2 класса немых поломок (webp-кадры, пропавшее поле
+ * "u" у ассетов) и белый экран на старте вместо анимации. Видео этих граблей
+ * лишено; Lottie остался только для лоадера (`MascotLoader`).
  *
- * Placeholder-guard: пока в intro-mascot.json лежит заглушка (поле "nm" содержит
- * "-PLACEHOLDER"), интро НЕ показывается — синий кружок не должен утечь в релиз.
- * Как только дизайнер подложит финальный .json (без маркера), интро включится
- * само, править код не нужно. См. docs/plans/MASCOT_ANIMATION_SPEC.md §7.5.
+ * Устойчивость: `expo-video` — нативный модуль, его нет в Expo Go. Если модуль
+ * не подгрузился — интро тихо пропускается (onFinish зовётся сразу), пользователь
+ * просто попадает в приложение без заставки.
  *
- * Фон интро = INTRO_BACKDROP (#000000). Тот же цвет должен стоять в трёх местах,
- * иначе на стыке видна ступенька: `splash.backgroundColor` в app.json, этот
- * контейнер и фон самих кадров внутри intro-mascot.json.
- *
- * Почему чёрный, а не Colors.background (#FAFBFF), как было раньше и как просит
- * §8 ТЗ: исходная анимация отрисована на чёрном, и осветлить её постобработкой
- * нельзя. Обводка маскота — почти чёрный тёмно-синий, поэтому colorkey по фону
- * съедает её вместе с фоном: контуры пропадают, по краям остаются ореолы. Кадры
- * идут как есть (JPEG, альфы нет), а под них подгоняется фон.
+ * Фон интро = INTRO_BACKDROP. Кадры видео отрисованы на белом, поэтому здесь
+ * белый: он же близок к splash.backgroundColor (#FAFBFF в app.json) и к фону
+ * приложения, так что на стыках ступеньки не видно.
  */
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Animated, StyleSheet } from 'react-native';
 
-/** Фон кадров intro-mascot.json. Держать в паре со splash.backgroundColor (app.json). */
-const INTRO_BACKDROP = '#000000';
-/** Длительность анимации: op(70) / fr(12) ≈ 5.83с. Safety-timeout берётся с запасом. */
-const INTRO_DURATION_MS = 5830;
-/**
- * Затухание перед снятием интро. Нужно, потому что интро чёрное, а приложение
- * под ним светлое (#FAFBFF): без него на стыке резкая вспышка. Убрать, если
- * интро перерисуют на светлом фоне и стык исчезнет сам.
- */
+/** Фон кадров intro-mascot.mp4. Держать в паре со splash.backgroundColor (app.json). */
+const INTRO_BACKDROP = '#FFFFFF';
+/** Длительность intro-mascot.mp4 ≈ 5.7с. Safety-timeout берётся с запасом. */
+const INTRO_DURATION_MS = 5710;
+/** Затухание перед снятием интро — чтобы стык с UI приложения не мигал. */
 const FADE_OUT_MS = 250;
 
-let LottieView: React.ComponentType<Record<string, unknown>> | null = null;
+// expo-video отсутствует в Expo Go: грузим лениво, чтобы не ронять бандл.
+let videoModule: typeof import('expo-video') | null = null;
 try {
-  LottieView = require('lottie-react-native').default;
+  videoModule = require('expo-video');
 } catch {
-  LottieView = null;
+  videoModule = null;
 }
 
-const INTRO_SOURCE = require('../assets/animations/intro-mascot.json');
-// Заглушка? Не показываем интро вообще, пока не придёт финальная анимация.
-const IS_PLACEHOLDER =
-  typeof INTRO_SOURCE?.nm === 'string' && INTRO_SOURCE.nm.includes('PLACEHOLDER');
+const INTRO_SOURCE = require('../assets/video/intro-mascot.mp4');
 
 interface MascotIntroProps {
-  /** Вызывается когда интро отыграло (или сразу, если lottie недоступен). */
+  /** Вызывается когда интро отыграло (или сразу, если expo-video недоступен). */
   onFinish: () => void;
 }
 
 export function MascotIntro({ onFinish }: MascotIntroProps) {
-  // Гарантия, что onFinish не выстрелит дважды (onAnimationFinish + safety-timeout).
+  if (!videoModule) return <IntroSkipped onFinish={onFinish} />;
+  return <IntroVideo onFinish={onFinish} video={videoModule} />;
+}
+
+/** Ветка «модуля нет» — отдельным компонентом, чтобы хуки ниже вызывались безусловно. */
+function IntroSkipped({ onFinish }: MascotIntroProps) {
+  useEffect(() => {
+    onFinish();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  return null;
+}
+
+function IntroVideo({
+  onFinish,
+  video,
+}: MascotIntroProps & { video: typeof import('expo-video') }) {
+  const { VideoView, useVideoPlayer } = video;
+  // Гарантия, что onFinish не выстрелит дважды (статус playToEnd + safety-timeout).
   const finished = useRef(false);
   const opacity = useRef(new Animated.Value(1)).current;
+  // Пока первый кадр не отрисован, видео не показываем: иначе на стыке со splash
+  // мелькает пустой прямоугольник плеера.
+  const [ready, setReady] = useState(false);
 
-  // Гасим интро и только потом отдаём экран приложению. Если анимацию оборвали
-  // (unmount на полпути), колбэк придёт с finished: false — onFinish всё равно
-  // зовём, иначе пользователь останется под чёрным слоем навсегда.
+  const player = useVideoPlayer(INTRO_SOURCE, (p) => {
+    p.loop = false;
+    p.muted = true;
+    p.play();
+  });
+
+  // Гасим интро и только потом отдаём экран приложению.
   const finish = () => {
     if (finished.current) return;
     finished.current = true;
@@ -74,62 +87,47 @@ export function MascotIntro({ onFinish }: MascotIntroProps) {
     }).start(() => onFinish());
   };
 
-  // onAnimationFailure ловит только асинхронные сбои (например, загрузку по URL).
-  // Ошибку разбора JSON он на iOS пропускает: она случается синхронно внутри
-  // updateProps, когда Fabric ещё не выставил _eventEmitter, и событие молча
-  // отбрасывается (LottieAnimationViewComponentView.mm, `if(!_eventEmitter) return`).
-  // Оставляем как есть — лишним не будет, но полагаться на него нельзя.
-  const handleFailure = (error: string) => {
-    console.warn(`[MascotIntro] Lottie сообщил об ошибке: ${error}`);
-    finish();
-  };
-
   useEffect(() => {
-    if (!LottieView || IS_PLACEHOLDER) {
-      // Модуля нет ИЛИ в файле заглушка — интро пропускаем сразу. Гасить нечего
-      // (ниже return null), поэтому мимо finish() с его затуханием.
-      if (!finished.current) {
-        finished.current = true;
-        onFinish();
+    const sub = player.addListener('statusChange', ({ status, error }) => {
+      if (status === 'readyToPlay') setReady(true);
+      if (status === 'error') {
+        console.warn(`[MascotIntro] expo-video сообщил об ошибке: ${error?.message ?? 'unknown'}`);
+        finish();
       }
-      return;
-    }
-    // Safety-net: если onAnimationFinish не прилетит (редко на Android при
-    // прерывании), всё равно закрываемся с запасом ~1с к длине анимации.
-    //
-    // Он же — единственный надёжный детектор немых поломок Lottie. Битый ассет
-    // не роняет приложение и ничего не пишет в лог: контейнер просто стоит
-    // пустым весь таймаут, что выглядит как «белый экран на старте» и ищется
-    // часами. За историю intro-mascot.json так проявились уже две разные
-    // причины — webp-кадры и пропавшее поле "u" у ассетов. Если сюда дошли,
-    // значит анимация не доиграла до конца, и это стоит увидеть в логе.
+    });
+    const end = player.addListener('playToEnd', finish);
+    // Safety-net: если playToEnd не прилетит (прерывание, битый ассет), всё равно
+    // закрываемся с запасом ~1с к длине ролика. Он же — единственный надёжный
+    // детектор немых поломок: пустой чёрный/белый экран весь таймаут ищется часами.
     const t = setTimeout(() => {
       if (!finished.current) {
         console.warn(
           `[MascotIntro] интро не доиграло за ${INTRO_DURATION_MS + 1000}мс — вероятно, ` +
-            'Lottie не смог разобрать assets/animations/intro-mascot.json ' +
-            'и показывал пустой экран',
+            'плеер не смог прочитать assets/video/intro-mascot.mp4',
         );
       }
       finish();
     }, INTRO_DURATION_MS + 1000);
-    return () => clearTimeout(t);
+    return () => {
+      clearTimeout(t);
+      sub.remove();
+      end.remove();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  if (!LottieView || IS_PLACEHOLDER) return null;
-
   return (
     <Animated.View style={[styles.fill, { opacity }]} pointerEvents="auto">
-      <LottieView
-        source={INTRO_SOURCE}
-        autoPlay
-        loop={false}
-        onAnimationFinish={finish}
-        onAnimationFailure={handleFailure}
-        resizeMode="contain"
-        style={styles.anim}
-      />
+      {ready && (
+        <VideoView
+          player={player}
+          style={styles.video}
+          contentFit="contain"
+          nativeControls={false}
+          allowsFullscreen={false}
+          allowsPictureInPicture={false}
+        />
+      )}
     </Animated.View>
   );
 }
@@ -142,7 +140,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     zIndex: 9999,
   },
-  anim: {
+  video: {
     width: '82%',
     aspectRatio: 1,
   },

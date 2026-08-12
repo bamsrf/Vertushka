@@ -156,6 +156,7 @@
       "expo-notifications",
       "expo-font",
       "expo-web-browser",
+      "expo-video",
       [
         "expo-build-properties",
         {
