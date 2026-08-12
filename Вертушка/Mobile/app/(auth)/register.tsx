@@ -69,7 +69,7 @@ export default function RegisterScreen() {
     }
 
     if (!termsAccepted) {
-      newErrors.terms = 'Нужно принять условия использования';
+      newErrors.terms = 'Без согласия не получится создать аккаунт';
     }
 
     setErrors(newErrors);
@@ -182,8 +182,7 @@ export default function RegisterScreen() {
           {/* Google-кнопка выключена (SocialAuthButtons: showGoogle = false),
               поэтому не обещаем вход, которого нет. */}
           <Text style={styles.socialTermsNote}>
-            Продолжая через Apple или Discogs, вы принимаете Условия использования и Политику
-            конфиденциальности
+            Вход через Apple или Discogs — тоже согласие с ними
           </Text>
         </View>
       </ScrollView>
