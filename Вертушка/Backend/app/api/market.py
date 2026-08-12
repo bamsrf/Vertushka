@@ -73,10 +73,29 @@ GENRES: list[tuple[str, str, list[str]]] = [
     ("jazz",       "Jazz",        ["%jazz%", "%bebop%", "%swing%", "%fusion%", "%bossa%"]),
     ("pop",        "Pop",         ["%pop%", "%ballad%"]),
     ("funk",       "Funk / Soul", ["%funk%", "%soul%", "%disco%", "%rhythm & blues%", "%r&b%"]),
-    ("classical",  "Classical",   ["%classical%", "%baroque%", "%romantic%", "%opera%", "%contemporary%"]),
+    ("classical",  "Classical",   ["%classical%", "%baroque%", "%opera%", "%romantic era%",
+                                    "%neo-classical%", "%neoclassical%", "%modern classical%",
+                                    "%contemporary classical%", "%choral%", "%symphon%"]),
 ]
 _GENRE_PATTERNS: dict[str, list[str]] = {key: pats for key, _label, pats in GENRES}
 _GENRE_LABELS: dict[str, str] = {key: label for key, label, _pats in GENRES}
+
+# Жанры, которые матчим ТОЛЬКО по r.genre, без r.style.
+#
+# Дефолт «genre OR style» задуман для recall: запись с genre='Electronic' и
+# style='Trap' должна попадать в hiphop. Но у классики это работает наоборот —
+# суб-жанры классики Discogs почти всегда ставит вместе с верхним genre='Classical',
+# так что recall от style тут ничего не добавляет, зато тянет мусор: `%contemporary%`
+# ловил «Contemporary R&B», из-за чего в чипе Classical оказывались Beyoncé и
+# neo-soul. Паттерны выше уже сужены, флаг — вторая линия защиты.
+GENRE_STRICT: frozenset[str] = frozenset({"classical"})
+
+
+def _genre_match_sql(key: str, param: str, genre_col: str = "r.genre", style_col: str = "r.style") -> str:
+    """Предикат «запись относится к жанру `key`» для одного набора паттернов."""
+    if key in GENRE_STRICT:
+        return f"{genre_col} ILIKE ANY(:{param})"
+    return f"({genre_col} ILIKE ANY(:{param}) OR {style_col} ILIKE ANY(:{param}))"
 
 # Особенности: ключ → (label, SQL-предикат). Предикаты — доверенные строки (не
 # пользовательский ввод), sql_color_family подставляет только имя колонки.
@@ -112,13 +131,19 @@ def _filters_clause(
     sql = ""
     params: dict = {}
     if genre:
-        pats: list[str] = []
+        # По жанру — OR предикатов, а не один общий массив паттернов: у строгих
+        # жанров (GENRE_STRICT) style не участвует, склеить их в один ILIKE ANY
+        # нельзя. Неизвестные ключи отсеиваются здесь же.
+        preds: list[str] = []
         for key in genre:
-            pats.extend(_GENRE_PATTERNS.get(key, []))
-        if pats:
-            # Матч и по genre (верхний уровень), и по style (суб-жанр) — шире recall.
-            sql += " AND (r.genre ILIKE ANY(:genre_pats) OR r.style ILIKE ANY(:genre_pats))"
-            params["genre_pats"] = pats
+            pats = _GENRE_PATTERNS.get(key)
+            if not pats:
+                continue
+            param = f"genre_pats_{key}"
+            preds.append(_genre_match_sql(key, param))
+            params[param] = pats
+        if preds:
+            sql += " AND (" + " OR ".join(preds) + ")"
     if colored:
         sql += f" AND {_FEATURE_PREDS['colored']}"
     if limited:
@@ -584,7 +609,9 @@ async def search_market(
     # для стабильности ключа независимо от порядка чипов.
     genre_key = ",".join(sorted(genre_list)) if genre_list else ""
     cache_key = (
-        f"search:{q or ''}:{format or 'all'}:{sort}:{limit}:{offset}"
+        # v2 в префиксе — версия жанровых паттернов: правишь GENRES/GENRE_STRICT,
+        # бампаешь версию, иначе старые (неверные) выдачи доживут в кэше до TTL.
+        f"search:v2:{q or ''}:{format or 'all'}:{sort}:{limit}:{offset}"
         f":g={genre_key}:c={int(colored)}:l={int(limited)}:n={int(new)}"
     )
     cached = await cache.get(CACHE_NS_SEARCH, cache_key)
@@ -693,7 +720,7 @@ async def market_facets(
     чипы жанров, которых у него нет, и фильтр вёл бы в пустоту.
     """
     store_clause = " AND s.slug = :store" if store else ""
-    cache_key = f"facets:v2:{store or 'all'}"
+    cache_key = f"facets:v3:{store or 'all'}"
     cached = await cache.get(CACHE_NS_SEARCH, cache_key)
     if cached is not None:
         return MarketFacetsResponse.model_validate(cached)
@@ -703,7 +730,7 @@ async def market_facets(
     new_year = datetime.utcnow().year - NEW_RELEASE_LOOKBACK_YEARS
 
     genre_selects = ",\n            ".join(
-        f"count(*) FILTER (WHERE genre ILIKE ANY(:g_{key}) OR style ILIKE ANY(:g_{key})) AS g_{key}"
+        f"count(*) FILTER (WHERE {_genre_match_sql(key, f'g_{key}', 'genre', 'style')}) AS g_{key}"
         for key, _label, _pats in GENRES
     )
     genre_params = {f"g_{key}": pats for key, _label, pats in GENRES}
