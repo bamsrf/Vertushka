@@ -243,6 +243,29 @@ async def hourly_match_unmatched() -> dict:
     return await match_unmatched_batch(batch_size=2000)
 
 
+async def daily_market_health_report() -> dict:
+    """Раз в сутки — сводка здоровья Маркета в лог.
+
+    Единственная задача: сделать застой видимым без ручного похода в БД. Все три
+    поломки, найденные 12.08, молчали неделями именно потому, что их некому было
+    заметить. При проблемах пишем ERROR — его видно в логах отдельно от рутины.
+    """
+    from app.services.market_health import build_market_health_report
+
+    report = await build_market_health_report()
+    summary = {
+        "stores": len(report["stores"]),
+        "queue_never_tried": report["match_queue"]["never_tried"],
+        "harvestable_covers": report["covers"]["harvestable"],
+    }
+    if report["problems"]:
+        logger.error("market health: %d проблем | %s | %s",
+                     len(report["problems"]), summary, "; ".join(report["problems"]))
+    else:
+        logger.info("market health: ок | %s", summary)
+    return report
+
+
 async def hourly_enrich_artist_thumbs(batch_size: int = 100) -> dict:
     """Раз в час — догружает artist_thumb_image_url для discogs-записей.
 

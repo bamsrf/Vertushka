@@ -85,3 +85,17 @@ async def reject_record(
     await db.commit()
     await db.refresh(rec)
     return RecordResponse.model_validate(rec)
+
+
+@router.get("/market/health")
+async def market_health(_: User = Depends(require_staff)) -> dict:
+    """Сводка здоровья Маркета: свежесть обхода, матчинг, обложки, очередь.
+
+    Отвечает на вопрос «что встало?» — за 12.08 три поломки (стоящая очередь
+    матчинга, магазин без обновлений 48 дней, три недели выброшенных обложек)
+    нашлись только вручную. Та же сводка каждый день уходит в лог джобой
+    `daily_market_health_report`.
+    """
+    from app.services.market_health import build_market_health_report
+
+    return await build_market_health_report()
