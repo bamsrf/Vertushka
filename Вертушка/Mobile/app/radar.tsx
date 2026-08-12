@@ -31,6 +31,7 @@ import { PriceHistorySheet, type PriceHistorySheetRef, type PriceHistorySheetDat
 import { AltVersionSheet, type AltVersionSheetRef } from '../components/wishlist/AltVersionSheet';
 import { ThresholdSheet, type ThresholdSheetRef } from '../components/wishlist/ThresholdSheet';
 import { api, getCoverUrl, resolveMediaUrl } from '../lib/api';
+import { analytics } from '../lib/analytics';
 import { useAuthStore } from '../lib/store';
 import { useRadarReopen } from '../lib/radarReopen';
 import { RadarItem, RadarResponse, RadarStatus } from '../lib/types';
@@ -233,6 +234,7 @@ export default function RadarScreen() {
       status: item.status,
       buyUrl: item.buy_url ?? null,
       buyListingId: item.buy_listing_id ?? null,
+      discogsId: item.record.discogs_id ?? null,
       offersCount: item.offers_count ?? 0,
     });
   };
@@ -256,6 +258,21 @@ export default function RadarScreen() {
     // кормит серию «Рыночный нюх». Прямой openURL терял и комиссию, и ачивки.
     let urlToOpen = d.buyUrl;
     if (d.buyListingId) {
+      // Amplitude раньше про радар не знал вовсе: серверный клик тут был, а
+      // продуктовое событие — нет, и канал выглядел мёртвым при живых
+      // переходах. Шлём до сетевого запроса, как и в остальных трёх точках:
+      // упавший бэкенд не должен съедать аналитику.
+      analytics.offerClick({
+        listing_id: d.buyListingId,
+        source: 'radar_price_history',
+        ...(d.discogsId ? { discogs_id: d.discogsId } : {}),
+        // Number() обязателен: тип обещает number, но бэкенд отдаёт цену
+        // строкой ("3990.0"). Строковое свойство в Amplitude не усредняется
+        // и не суммируется — средний чек по радару считался бы мимо.
+        ...(d.currentPrice != null && Number.isFinite(Number(d.currentPrice))
+          ? { price_rub: Number(d.currentPrice) }
+          : {}),
+      });
       try {
         const { url } = await api.trackOfferClick(d.buyListingId, 'radar_price_history');
         urlToOpen = url;

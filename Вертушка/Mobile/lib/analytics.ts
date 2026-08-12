@@ -153,12 +153,18 @@ export const analytics = {
    * отчёт магазину и продуктовая воронка считались по одной разбивке.
    *
    * `discogs_id` опционален: свайп-ценник знает листинг, но не запись.
+   *
+   * `store_slug` и `price_rub` тоже опциональны — шторка истории цен на радаре
+   * несёт только id листинга. Пропущенное свойство честнее подставленного нуля:
+   * ноль осел бы в средних чеках и тихо занизил их, а отсутствие поля видно
+   * в фильтре. Если разбивка радара по магазинам понадобится — это правка
+   * бэкенда, в RadarItem сейчас нет store_slug.
    */
   offerClick: (params: {
     listing_id: string;
-    store_slug: string;
-    price_rub: number;
     source: ClickSource;
+    store_slug?: string;
+    price_rub?: number;
     discogs_id?: string;
   }) => track('offer_click', params),
 
