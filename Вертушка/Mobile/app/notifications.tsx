@@ -652,13 +652,18 @@ function routeForPersonal(item: NotificationItemType, router: ReturnType<typeof 
       if (item.actor?.username) router.push(`/user/${item.actor.username}`);
       return;
     case 'gift_booked':
-    case 'gift_confirmed':
+    case 'gift_confirmed': {
       if (item.entity_id) {
-        router.push(`/gift/${item.entity_id}` as any);
+        // gift_booked приходит владельцу вишлиста (подарок ему) → received;
+        // gift_confirmed — дарителю (он подтвердил выдачу) → given.
+        // Без direction экран искал бронь не в том списке и показывал «не найден».
+        const direction = item.type === 'gift_booked' ? 'received' : 'given';
+        router.push(`/gift/${item.entity_id}?direction=${direction}` as any);
       } else if (recordId) {
         router.push(`/record/${recordId}` as any);
       }
       return;
+    }
     case 'wishlist_in_stock':
     case 'wishlist_in_stock_alt':
     case 'wishlist_price_drop':

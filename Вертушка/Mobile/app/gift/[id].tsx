@@ -17,6 +17,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Icon } from '@/components/ui';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { api } from '../../lib/api';
+import { analytics } from '../../lib/analytics';
 import { cleanArtistName } from '../../lib/format';
 import { toast } from '../../lib/toast';
 import { useGiftStore, useCollectionStore } from '../../lib/store';
@@ -62,7 +63,7 @@ export default function GiftDetailScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{ id: string; direction: string }>();
-  const direction: Direction = params.direction === 'received' ? 'received' : 'given';
+  const requestedDirection: Direction = params.direction === 'received' ? 'received' : 'given';
 
   const { given, received, isLoaded, loadAll, removeGiven, removeReceived } = useGiftStore();
   const { fetchCollectionItems, fetchWishlistItems } = useCollectionStore();
@@ -71,21 +72,49 @@ export default function GiftDetailScreen() {
   // Локальный «снимок» gift'а: пока он null — рендерим из стора (быстрый путь на mount);
   // как только засняли — экран показывает снимок, не реагируя на последующие удаления
   // из стора (иначе после успешного действия до router.back() мелькает «не найден»).
-  const [snapshot, setSnapshot] = useState<GiftGivenItem | GiftReceivedItem | null>(null);
+  const [snapshot, setSnapshot] = useState<
+    { direction: Direction; gift: GiftGivenItem | GiftReceivedItem } | null
+  >(null);
 
-  const giftFromStore = direction === 'given'
-    ? (given.find((g) => g.id === params.id) as GiftGivenItem | undefined)
-    : (received.find((g) => g.id === params.id) as GiftReceivedItem | undefined);
-  const gift = snapshot ?? giftFromStore ?? null;
+  // Ищем бронь в обоих списках: направление из ссылки — только подсказка.
+  // Если оно не совпало (например, пуш открыли не с той стороны), берём тот
+  // список, где бронь реально есть, — иначе экран показывал «Подарок не найден».
+  const givenMatch = given.find((g) => g.id === params.id) as GiftGivenItem | undefined;
+  const receivedMatch = received.find((g) => g.id === params.id) as GiftReceivedItem | undefined;
+  const preferred = requestedDirection === 'given' ? givenMatch : receivedMatch;
+  const fallback = requestedDirection === 'given' ? receivedMatch : givenMatch;
+  const giftFromStore = preferred ?? fallback;
+  const directionFromStore: Direction = preferred
+    ? requestedDirection
+    : requestedDirection === 'given'
+      ? 'received'
+      : 'given';
+
+  const direction: Direction = snapshot?.direction ?? directionFromStore;
+  const gift = snapshot?.gift ?? giftFromStore ?? null;
+
+  // Один принудительный refetch, если брони нет в уже загруженном сторе:
+  // экран открывают из свежего пуша, а списки могли закешироваться до брони.
+  const [didRefetch, setDidRefetch] = useState(false);
+  const isRefetching = isLoaded && !giftFromStore && !snapshot && !didRefetch;
 
   useEffect(() => {
-    if (!isLoaded) loadAll();
-  }, [isLoaded, loadAll]);
+    if (!isLoaded) {
+      loadAll();
+      return;
+    }
+    if (isRefetching) {
+      setDidRefetch(true);
+      loadAll();
+    }
+  }, [isLoaded, isRefetching, loadAll]);
 
   useEffect(() => {
     // Сохраняем снимок при первом обнаружении gift'а в сторе.
-    if (giftFromStore && !snapshot) setSnapshot(giftFromStore);
-  }, [giftFromStore, snapshot]);
+    if (giftFromStore && !snapshot) {
+      setSnapshot({ direction: directionFromStore, gift: giftFromStore });
+    }
+  }, [giftFromStore, directionFromStore, snapshot]);
 
   const handleCancel = () => {
     if (!gift || direction !== 'given') return;
@@ -102,6 +131,7 @@ export default function GiftDetailScreen() {
             setIsActing(true);
             try {
               await api.cancelGiftBooking(gift.id, givenGift.cancel_token);
+              analytics.giftBookingCancelled(gift.record.discogs_id);
               removeGiven(gift.id);
               toast.success('Бронь отменена');
               router.back();
@@ -136,6 +166,7 @@ export default function GiftDetailScreen() {
             setIsActing(true);
             try {
               await api.completeGiftBooking(gift.id);
+              analytics.giftCompleted({ via: 'gift_screen', discogs_id: gift.record.discogs_id });
               removeReceived(gift.id);
               await Promise.all([fetchCollectionItems(), fetchWishlistItems()]);
               toast.success('Спасибо!', 'Пластинка теперь в твоей коллекции');
@@ -158,7 +189,7 @@ export default function GiftDetailScreen() {
     );
   };
 
-  if (!isLoaded) {
+  if (!isLoaded || isRefetching) {
     return (
       <View style={[styles.container, styles.center, { paddingTop: insets.top }]}>
         <ActivityIndicator size="large" color={Colors.royalBlue} />
