@@ -1404,6 +1404,26 @@ class ApiClient {
     });
   }
 
+  // Подтверждение «да, эту пластинку мне подарили» после скана. Пластинка уже
+  // в коллекции — бэк только закрывает бронь и убирает пункт из вишлиста.
+  async completeGiftBookingWithRecord(
+    bookingId: string,
+    collectionItemId: string
+  ): Promise<void> {
+    await this.client.put(
+      `/gifts/me/received/${bookingId}/complete-with-record`,
+      undefined,
+      { params: { collection_item_id: collectionItemId }, timeout: 15000 }
+    );
+  }
+
+  // «Нет, это не подарок» — бронь остаётся, но больше не переспрашиваем.
+  async dismissGiftMatch(bookingId: string): Promise<void> {
+    await this.client.put(`/gifts/me/received/${bookingId}/dismiss-match`, undefined, {
+      timeout: 15000,
+    });
+  }
+
   // ==================== Achievements ====================
 
   async getMyAchievements(): Promise<MyAchievementsResponse> {

@@ -477,6 +477,17 @@ export interface Collection {
   updated_at: string;
 }
 
+// Кандидат «эту пластинку вам подарили»: бэк нашёл активную бронь в вишлисте,
+// под которую подошла добавленная запись. match_kind — уверенность совпадения:
+// exact (та же запись), master (другой прессинг того же альбома), fuzzy
+// (совпали артист и название). Имени дарителя тут нет — бронь анонимна.
+export interface GiftMatchInfo {
+  booking_id: string;
+  wishlist_item_id: string;
+  match_kind: 'exact' | 'master' | 'fuzzy';
+  wished_record: VinylRecord;
+}
+
 export interface CollectionItem {
   id: string;
   collection_id: string;
@@ -488,6 +499,7 @@ export interface CollectionItem {
   purchase_date?: string;
   estimated_price_rub?: number;
   added_at: string;
+  gift_match?: GiftMatchInfo | null;
 }
 
 export interface CollectionStats {

@@ -22,6 +22,25 @@ import {
  */
 const inFlightActions = new Map<string, Promise<unknown>>();
 
+/**
+ * Если бэк опознал в добавленной пластинке забронированный подарок — кладём
+ * кандидата в стор, GiftMatchModal покажет вопрос «вам её подарили?».
+ * Ничего не решаем сами: master/fuzzy-совпадение — гипотеза, а не факт.
+ */
+function captureGiftMatch(
+  item: CollectionItem,
+  set: (partial: { pendingGiftMatch: PendingGiftMatch }) => void
+): void {
+  if (!item.gift_match) return;
+  set({
+    pendingGiftMatch: {
+      match: item.gift_match,
+      collectionItemId: item.id,
+      addedRecord: item.record,
+    },
+  });
+}
+
 function dedupeAction<T>(key: string, fn: () => Promise<T>): Promise<T> {
   const existing = inFlightActions.get(key) as Promise<T> | undefined;
   if (existing) return existing;
@@ -58,7 +77,19 @@ import {
   SuggestResponse,
   GiftGivenItem,
   GiftReceivedItem,
+  GiftMatchInfo,
 } from './types';
+
+/**
+ * Опознанный подарок, ожидающий подтверждения пользователя.
+ * `collectionItemId` — уже созданный элемент коллекции (подаренная версия),
+ * `addedRecord` — что именно отсканировали, `match` — бронь и версия из вишлиста.
+ */
+export interface PendingGiftMatch {
+  match: GiftMatchInfo;
+  collectionItemId: string;
+  addedRecord: VinylRecord;
+}
 
 const getSearchHistoryKey = () => {
   const userId = useAuthStore.getState().user?.id;
@@ -591,6 +622,12 @@ interface CollectionState {
   fetchWishlistItems: () => Promise<void>;
   fetchStats: () => Promise<void>;
   setSortBy: (sort: 'added_at' | 'price_desc' | 'price_asc') => void;
+  // Подарок, который бэк опознал при добавлении в коллекцию: показываем поп-ап
+  // «вам её подарили?». Держим в сторе, а не на экране, — добавить пластинку
+  // можно из четырёх мест (скан, поиск, карточка релиза, ручное добавление).
+  pendingGiftMatch: PendingGiftMatch | null;
+  confirmGiftMatch: () => Promise<void>;
+  dismissGiftMatch: () => Promise<void>;
   addToCollection: (discogsId: string) => Promise<void>;
   addToCollectionByRecordId: (recordId: string) => Promise<void>;
   // Добавить релиз + перекрыть обложку своим фото (UserRecordPhoto.is_primary).
@@ -867,6 +904,33 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
     }
   },
 
+  pendingGiftMatch: null,
+
+  confirmGiftMatch: async () => {
+    const pending = get().pendingGiftMatch;
+    if (!pending) return;
+    // Закрываем поп-ап сразу: пластинка уже в коллекции, а бронь на сервере
+    // идемпотентна — повторное подтверждение вернёт тот же completed.
+    set({ pendingGiftMatch: null });
+    await api.completeGiftBookingWithRecord(
+      pending.match.booking_id,
+      pending.collectionItemId
+    );
+    await get().fetchWishlistItems();
+  },
+
+  dismissGiftMatch: async () => {
+    const pending = get().pendingGiftMatch;
+    if (!pending) return;
+    set({ pendingGiftMatch: null });
+    // Отказ не критичен: не дошёл — в худшем случае переспросим позже.
+    try {
+      await api.dismissGiftMatch(pending.match.booking_id);
+    } catch (e) {
+      console.warn('dismissGiftMatch failed', e);
+    }
+  },
+
   addToCollection: async (discogsId) => {
     return dedupeAction(`addToCollection:${discogsId}`, async () => {
       let { defaultCollection, collections, fetchCollectionItems, fetchWishlistItems } = get();
@@ -883,7 +947,8 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
         }
       }
 
-      await api.addToCollection(defaultCollection.id, discogsId);
+      const added = await api.addToCollection(defaultCollection.id, discogsId);
+      captureGiftMatch(added, set);
       // Инвалидируем кэш поиска — счётчики коллекции могли измениться
       useCacheStore.getState().invalidateAll();
 
@@ -909,7 +974,8 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
           throw new Error('Не удалось создать коллекцию');
         }
       }
-      await api.addToCollectionByRecordId(defaultCollection.id, recordId);
+      const added = await api.addToCollectionByRecordId(defaultCollection.id, recordId);
+      captureGiftMatch(added, set);
       useCacheStore.getState().invalidateAll();
       await Promise.all([fetchCollectionItems(), fetchWishlistItems()]);
       detectAchievementUnlocks();
@@ -933,6 +999,7 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
       const item = discogsId
         ? await api.addToCollection(defaultCollection.id, discogsId)
         : await api.addToCollectionByRecordId(defaultCollection.id, recordId!);
+      captureGiftMatch(item, set);
 
       // Фото не критично: релиз уже в коллекции — при сбое аплоада просто
       // останется обложка Discogs.

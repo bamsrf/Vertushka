@@ -53,6 +53,7 @@ import { Colors } from '../constants/theme';
 import { OfflineBanner } from '../components/OfflineBanner';
 import { OnboardingOverlay } from '../components/OnboardingOverlay';
 import { AchievementUnlockHost } from '../components/AchievementUnlockOverlay';
+import { GiftMatchModal } from '../components/GiftMatchModal';
 import { MascotIntro } from '../components/MascotIntro';
 import { InAppNotificationToastHost, inAppToast } from '../components/notifications/InAppNotificationToast';
 import Toast from 'react-native-toast-message';
@@ -499,6 +500,10 @@ function RootLayout() {
         </Stack>
         <OnboardingOverlay />
         <AchievementUnlockHost />
+        {/* Спрашивает «это подарок?», когда добавленная пластинка совпала
+            с забронированным пунктом вишлиста. Живёт здесь, а не на экранах:
+            добавить в коллекцию можно из скана, поиска и карточки релиза. */}
+        <GiftMatchModal />
         {!introDone && <MascotIntro onFinish={() => setIntroDone(true)} />}
         <InAppNotificationToastHost />
         <Toast config={toastConfig} topOffset={56} bottomOffset={100} />
