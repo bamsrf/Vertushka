@@ -72,30 +72,50 @@ async def upgrade_low_res_covers(
     stats = {"considered": 0, "attempted": 0, "upgraded": 0, "no_source": 0, "still_small": 0}
 
     async with async_session_maker() as session:
-        # Худшие первыми: 150px раздражает сильнее, чем 400px.
-        # discogs_id в records — text, в дампе — bigint, отсюда каст и фильтр по
-        # цифрам (у store-native записей id вида 'store:...').
-        rows = (
+        # ДВА запроса, а не JOIN. Соблазнительный
+        # `LEFT JOIN discogs_releases_index d ON d.discogs_id::text = r.discogs_id`
+        # даёт statement timeout: каст левой части выключает индекс по primary key,
+        # и Postgres идёт полным проходом по 13.1 млн строк дампа. Проверено на
+        # проде — первый запуск упал именно так.
+        #
+        # Худшие первыми: 150px раздражает сильнее, чем 400px. `records` — 34k
+        # строк / 51 МБ, seq scan по ним стоит копейки, индекс не нужен.
+        # Фильтр по цифрам — у store-native записей id вида 'store:...'.
+        cand = (
             await session.execute(
                 text(
                     """
-                    SELECT r.discogs_id, r.title, r.artist, r.cover_min_side,
-                           d.barcode_norm, d.year, d.label
-                    FROM records r
-                    LEFT JOIN discogs_releases_index d
-                        ON d.discogs_id::text = r.discogs_id
-                    WHERE r.cover_local_path IS NOT NULL
-                      AND r.cover_min_side IS NOT NULL
-                      AND r.cover_min_side < :thr
-                      AND r.discogs_id ~ '^[0-9]+$'
-                      AND r.merged_into_id IS NULL
-                    ORDER BY r.cover_min_side ASC
+                    SELECT discogs_id, title, artist, cover_min_side
+                    FROM records
+                    WHERE cover_local_path IS NOT NULL
+                      AND cover_min_side IS NOT NULL
+                      AND cover_min_side < :thr
+                      AND discogs_id ~ '^[0-9]+$'
+                      AND merged_into_id IS NULL
+                    ORDER BY cover_min_side ASC
                     LIMIT :lim
                     """
                 ),
                 {"thr": MASTER_MIN_SIDE, "lim": limit * _FETCH_MULTIPLIER},
             )
         ).mappings().all()
+
+        # Метаданные для 2-5 ступеней лестницы — одним индексным запросом по
+        # bigint-массиву (так же, как _covers_from_index в records.py).
+        meta: dict[str, dict] = {}
+        if cand:
+            meta_rows = (
+                await session.execute(
+                    text(
+                        "SELECT discogs_id::text AS did, barcode_norm, year, label "
+                        "FROM discogs_releases_index WHERE discogs_id = ANY(:ids)"
+                    ),
+                    {"ids": [int(c["discogs_id"]) for c in cand]},
+                )
+            ).mappings().all()
+            meta = {m["did"]: dict(m) for m in meta_rows}
+
+        rows = [{**dict(c), **meta.get(c["discogs_id"], {})} for c in cand]
 
         for row in rows:
             stats["considered"] += 1
