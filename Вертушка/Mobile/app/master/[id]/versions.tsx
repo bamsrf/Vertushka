@@ -11,12 +11,13 @@ import {
   ScrollView,
   TouchableOpacity,
 } from 'react-native';
+import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Icon } from '@/components/ui';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Header } from '../../../components/Header';
 import { VersionCard } from '../../../components/VersionCard';
-import { api } from '../../../lib/api';
+import { api, getMasterCoverUrl, getPlaceholderCoverUrl, isThumbGrade } from '../../../lib/api';
 import { toast } from '../../../lib/toast';
 import { MasterVersion } from '../../../lib/types';
 import { takeVersionsPrefetch } from '../../../lib/versionsPrefetch';
@@ -152,12 +153,21 @@ export default function VersionsScreen() {
   };
 
   const handleVersionPress = (version: MasterVersion) => {
+    // Тёплый старт героя карточки: строка списка рисует мелкую обложку, а деталь
+    // запросит мастер — начинаем тянуть его на кадр раньше навигации.
+    // Fire-and-forget, ошибка не важна.
+    const master = getMasterCoverUrl(version);
+    if (master) void Image.prefetch(master, 'memory-disk').catch(() => {});
     router.push({
       pathname: `/record/${version.release_id}`,
       params: {
         previewTitle: version.title || title || '',
         previewArtist: artist || '',
-        previewCover: version.cover_image_url || version.thumb_image_url || version.cover_url || cover || '',
+        // Мастер и превью — разными параметрами. Раньше здесь стоял
+        // `cover_image_url || thumb_image_url`, и 150px-thumb из Discogs уезжал
+        // в full-size слот детали, где растягивался на 1170px и залипал.
+        previewCover: getMasterCoverUrl(version) || (cover && !isThumbGrade(cover) ? cover : '') || '',
+        previewThumb: getPlaceholderCoverUrl(version) || (cover && isThumbGrade(cover) ? cover : '') || '',
         previewYear: version.year?.toString() || year || '',
       },
     });
