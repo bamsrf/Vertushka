@@ -189,11 +189,27 @@ class CoverStorageService:
                 stored_min_side is not None and stored_min_side < MASTER_MIN_SIDE
             )
             if not needs_upgrade:
-                # Обновить БД-поля если файл уже есть, но cover_local_path не записан
+                # Обновить БД-поля если файл уже есть, но cover_local_path не записан.
+                # Размер меряем здесь же: иначе запись получала бы cover_local_path
+                # без cover_min_side и навсегда выпадала и из метрики тира, и из
+                # ночного перегрева (тот берёт только промеренных). Именно так
+                # набежало 125 «непромеренных» после heal-скрипта.
+                # Чтение заголовка JPEG — единицы миллисекунд, не ресайз.
+                if stored_min_side is None:
+                    try:
+                        with Image.open(dest) as img:
+                            measured = min(img.width, img.height)
+                    except Exception:
+                        measured = None
+                else:
+                    measured = stored_min_side
+                values = {"cover_local_path": rel_path, "cover_cached_at": datetime.utcnow()}
+                if measured is not None:
+                    values["cover_min_side"] = measured
                 await db.execute(
                     update(Record)
                     .where(Record.discogs_id == discogs_id, Record.cover_local_path.is_(None))
-                    .values(cover_local_path=rel_path, cover_cached_at=datetime.utcnow())
+                    .values(**values)
                 )
                 await db.commit()
                 return rel_path
