@@ -58,6 +58,17 @@ class GiftBooking(Base):
         index=True
     )
 
+    # Какую пластинку дарят. Денормализовано по той же причине, что и
+    # recipient_user_id: при завершении брони wishlist_item_id обнуляется, и
+    # достать релиз через пункт вишлиста уже нельзя. Без этой колонки раздел
+    # «Я дарю» не мог показать вручённые подарки — ему нечего было отрисовать.
+    record_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("records.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True
+    )
+
     # Данные дарителя (для незарегистрированных пользователей)
     gifter_name: Mapped[str] = mapped_column(
         String(100),
@@ -151,6 +162,7 @@ class GiftBooking(Base):
 
     # Отношения
     wishlist_item = relationship("WishlistItem", back_populates="gift_booking")
+    record = relationship("Record")
     booked_by_user = relationship("User", foreign_keys=[booked_by_user_id])
     recipient_user = relationship("User", foreign_keys=[recipient_user_id])
     

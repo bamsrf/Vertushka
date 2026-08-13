@@ -91,6 +91,12 @@ async def complete_gift_booking(
     # после wishlist_item_id=None владельца уже не достать).
     if booking.recipient_user_id is None:
         booking.recipient_user_id = owner.id
+    # То же и с пластинкой — иначе «Я дарю» останется без обложки и названия.
+    # Берём подаренную версию, если она известна: подарить могли другой прессинг.
+    if collection_item.record_id is not None:
+        booking.record_id = collection_item.record_id
+    elif booking.record_id is None:
+        booking.record_id = item.record_id
     booking.wishlist_item_id = None
 
     # Удаляем сам пункт вишлиста (поведение симметрично move-to-collection)
