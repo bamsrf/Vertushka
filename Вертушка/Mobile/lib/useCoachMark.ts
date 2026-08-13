@@ -6,19 +6,21 @@
  *   {tip.visible && <CoachTip meta={tip.meta} onDismiss={tip.dismiss} />}
  *
  * `enabled` — это условие РАЗБЛОКИРОВКИ фичи, а не «показать сейчас».
- * Всё остальное (был ли уже показ, кто выиграл слот сессии) хук решает сам:
- * он подаёт заявку в арбитраж, и победителя выбирает `priority` из каталога,
- * а не порядок объявления хуков в компоненте.
+ * Всё остальное (сколько раз уже показывали, кто выиграл слот сессии) хук
+ * решает сам: он подаёт заявку в арбитраж, и победителя выбирает `priority`
+ * из каталога, а не порядок объявления хуков в компоненте.
  */
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAuthStore } from './store';
 import { analytics } from './analytics';
 import {
   CoachMarkKey,
   getCoachMark,
   isSessionSlotTaken,
-  loadSeenCoachMarks,
-  markCoachMarkSeen,
+  isSuppressed,
+  loadCoachMarkStates,
+  markCoachMarkAcknowledged,
+  markCoachMarkShown,
   releaseSessionSlot,
   requestCoachMark,
 } from './coachMarks';
@@ -33,6 +35,12 @@ interface UseCoachMarkResult {
 export function useCoachMark(key: CoachMarkKey, enabled: boolean): UseCoachMarkResult {
   const userId = useAuthStore((s) => s.user?.id);
   const [visible, setVisible] = useState(false);
+  /**
+   * Зажигал ли подсветку именно ЭТОТ экземпляр хука. Один ключ может жить на
+   * двух экранах (market — коллекция и карточка релиза), и без отметки
+   * размонтирование одного гасило бы подсветку, зажжённую другим.
+   */
+  const ownsSpotlight = useRef(false);
 
   useEffect(() => {
     if (!enabled || !userId || visible) return;
@@ -41,8 +49,8 @@ export function useCoachMark(key: CoachMarkKey, enabled: boolean): UseCoachMarkR
 
     let cancelled = false;
     (async () => {
-      const seen = await loadSeenCoachMarks(userId);
-      if (cancelled || seen.has(key)) return;
+      const states = await loadCoachMarkStates(userId);
+      if (cancelled || isSuppressed(states.get(key))) return;
 
       const won = await requestCoachMark(key);
       if (!won) return;
@@ -54,8 +62,13 @@ export function useCoachMark(key: CoachMarkKey, enabled: boolean): UseCoachMarkR
       }
 
       analytics.onboardingHintShown(key);
-      // Одновременно с карточкой зажигаем цель: текст называет фичу, кольцо
-      // показывает, где она физически лежит.
+      // Показ засчитываем сразу, а не при закрытии: иначе тот, кто уходит с
+      // экрана свайпом, получал бы одну и ту же подсказку при каждом запуске
+      // бесконечно — она никогда не помечалась показанной.
+      void markCoachMarkShown(userId, key);
+      // Одновременно с карточкой зажигаем цель: текст называет фичу,
+      // подсветка показывает, где она физически лежит.
+      ownsSpotlight.current = true;
       setCoachSpotlight(key);
       setVisible(true);
     })();
@@ -65,14 +78,25 @@ export function useCoachMark(key: CoachMarkKey, enabled: boolean): UseCoachMarkR
     };
   }, [enabled, userId, key, visible]);
 
-  // Экран ушёл, а подсказка была видима — гасим цель, иначе кольцо осталось
-  // бы пульсировать при следующем возврате на экран.
-  useEffect(() => () => clearCoachSpotlight(key), [key]);
+  // Экран ушёл, а подсказка была видима — гасим цель, иначе подсветка осталась
+  // бы висеть при следующем возврате на экран.
+  useEffect(
+    () => () => {
+      if (!ownsSpotlight.current) return;
+      ownsSpotlight.current = false;
+      clearCoachSpotlight(key);
+    },
+    [key],
+  );
 
   const dismiss = useCallback(() => {
     setVisible(false);
-    clearCoachSpotlight(key);
-    if (userId) void markCoachMarkSeen(userId, key);
+    if (ownsSpotlight.current) {
+      ownsSpotlight.current = false;
+      clearCoachSpotlight(key);
+    }
+    // Явное подтверждение: больше не показываем, независимо от счётчика.
+    if (userId) void markCoachMarkAcknowledged(userId, key);
   }, [userId, key]);
 
   return { visible, meta: getCoachMark(key), dismiss };
