@@ -32,7 +32,11 @@ export function routeForPush(data: Record<string, unknown> | undefined): string 
   // Уровень: ведём в hero-блок ачивок, где отыграется анимация повышения.
   if (type === 'level_up') return '/achievements?levelup=1';
   if ((type === 'gift_booked' || type === 'gift_confirmed') && entityId) {
-    return `/gift/${entityId}`;
+    // gift_booked получает владелец вишлиста (бронь на его подарок) → received;
+    // gift_confirmed — даритель → given. Без direction экран искал бронь
+    // в чужом списке и упирался в «Подарок не найден».
+    const direction = type === 'gift_booked' ? 'received' : 'given';
+    return `/gift/${entityId}?direction=${direction}`;
   }
   if (type === 'wishlist_in_stock_alt') {
     // Push сообщает, что в продаже ДРУГОЕ издание. Ведём на него, а не на

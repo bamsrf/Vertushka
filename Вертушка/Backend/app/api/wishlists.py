@@ -18,6 +18,7 @@ from app.models.radar_status_event import RadarStatusEvent
 from app.models.gift_booking import GiftBooking, GiftStatus
 from app.api.auth import get_current_user, get_current_user_optional
 from app.services.cover_storage import ensure_cover_cached
+from app.services.alt_media_match import alt_media_ok
 from app.schemas.wishlist import (
     WishlistResponse,
     WishlistItemCreate,
@@ -145,6 +146,17 @@ def _condition_ok(condition_raw: str | None, accepted: list | None) -> bool:
     return grade in accepted
 
 
+def _alt_media_ok(wanted: Record, alt: Record | None, listing: StoreListing) -> bool:
+    """Носитель альтернативы совпадает с желаемым (винил→винил, а не mp3)."""
+    return alt_media_ok(
+        getattr(wanted, "format_type", None),
+        getattr(wanted, "format_description", None),
+        getattr(alt, "format_type", None),
+        getattr(alt, "format_description", None),
+        getattr(listing, "format_raw", None),
+    )
+
+
 RADAR_MAX = 5  # максимум подписанных пластинок на радаре
 # Окно свежести: на радаре учитываем только листинги, перепроверенные за N часов.
 # Гарантированное протухание (weekly_cleanup_stale) — лишь через 30 дней, а
@@ -269,6 +281,9 @@ async def get_radar(
             and str(l.matched_record_id) not in rejected_alts
             and l.price_rub is not None
             and _condition_ok(l.condition, accepted)
+            # Мастер объединяет винил, CD и цифру — предлагаем только тот же
+            # носитель, что в вишлисте. Иначе под винил прилетал «File, MP3».
+            and _alt_media_ok(rec, alt_records.get(l.matched_record_id), l)
         ]
         if alt_candidates:
             cheapest_alt, alt_rid = min(alt_candidates, key=lambda x: (float(x[0].price_rub), str(x[0].id)))

@@ -279,13 +279,23 @@ class DiscogsService:
         return last_response.json()
 
     @staticmethod
-    def _thumb_to_cover(thumb_url: str | None) -> str | None:
-        """Из URL CDN-миниатюры Discogs делает URL большего размера.
-        Работает только для стабильных i.discogs.com CDN URL.
-        Подписанные api-img.discogs.com URL возвращает как None — они истекают."""
+    def _stable_image_url(thumb_url: str | None) -> str | None:
+        """Отфильтровывает протухающие URL картинок, остальные отдаёт как есть.
+
+        Подписанные `api-img.discogs.com` истекают → None, хранить их бессмысленно.
+        Стабильные `i.discogs.com` возвращаются БЕЗ изменений.
+
+        Раньше здесь жил апскейл `_\\d+\\.(jpg|jpeg|png)` → `_500.\\1` под старую
+        схему CDN, где размер был суффиксом файла. Нынешний URL выглядит как
+        `i.discogs.com/<HMAC>/rs:fit/g:sm/q:90/h:600/w:600/<base64(s3-путь)>.jpeg`:
+        размер входит в подпись, подмена `w:` даёт 403, а regex просто не
+        матчился — функция три недели молча возвращала вход, и 150px-thumb из
+        `/masters/{id}/versions` уезжал в поле «обложка». Увеличить thumb Discogs
+        нельзя в принципе; тир решается на стороне записи (см. cover_quality).
+        """
         if not thumb_url or "api-img.discogs.com" in thumb_url:
             return None
-        return re.sub(r'_\d+\.(jpg|jpeg|png)', r'_500.\1', thumb_url)
+        return thumb_url
 
     async def _single_flight(
         self,
@@ -1114,7 +1124,7 @@ class DiscogsService:
                 format=format_info if format_info else None,
                 major_formats=major_formats if major_formats else [],
                 thumb_image_url=item.get("thumb"),
-                cover_image_url=self._thumb_to_cover(item.get("thumb")),
+                cover_image_url=self._stable_image_url(item.get("thumb")),
                 have=have,
                 want=want,
                 is_hot=is_hot,
@@ -1261,7 +1271,7 @@ class DiscogsService:
                 country=None,
                 year=int(year) if year else None,
                 format=format_info if format_info else None,
-                cover_image_url=self._thumb_to_cover(thumb),
+                cover_image_url=self._stable_image_url(thumb),
                 thumb_image_url=thumb,
             ))
 

@@ -12,6 +12,8 @@ import {
   BottomSheetBackdrop,
   type BottomSheetBackdropProps,
 } from '@gorhom/bottom-sheet';
+import { useRouter } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 import { Colors, Typography } from '../../constants/theme';
 import { useCollectionStore } from '../../lib/store';
 import { toast } from '../../lib/toast';
@@ -44,6 +46,7 @@ interface Props {
 const fmt = (n: number) => Math.round(n).toLocaleString('ru-RU');
 
 export const AltVersionSheet = forwardRef<AltVersionSheetRef, Props>(({ onConfirm }, ref) => {
+  const router = useRouter();
   const sheetRef = useRef<BottomSheetModal>(null);
   const [data, setData] = useState<AltVersionSheetData | null>(null);
   const setAcceptAlt = useCollectionStore((s) => s.setWishlistAcceptAlt);
@@ -92,7 +95,22 @@ export const AltVersionSheet = forwardRef<AltVersionSheetRef, Props>(({ onConfir
       .catch(() => toast.error('Не удалось сохранить'));
   };
 
+  // Открыть карточку самого прессинга: до этого решение «следить / не следить»
+  // приходилось принимать по обложке и трём строчкам отличий.
+  const onOpenRelease = () => {
+    if (!data?.altRecordId) return;
+    const params = new URLSearchParams();
+    if (data.altTitle) params.set('previewTitle', data.altTitle);
+    if (data.recordArtist) params.set('previewArtist', data.recordArtist);
+    if (data.altCoverUrl) params.set('previewCover', data.altCoverUrl);
+    if (data.altYear) params.set('previewYear', String(data.altYear));
+    const qs = params.toString();
+    sheetRef.current?.dismiss();
+    router.push(`/record/${data.altRecordId}${qs ? `?${qs}` : ''}` as any);
+  };
+
   const cover = data?.altCoverUrl ?? null;
+  const canOpen = Boolean(data?.altRecordId);
 
   // Отличия альт-версии от версии из вишлиста.
   const diffs: { label: string; value: string }[] = [];
@@ -109,11 +127,19 @@ export const AltVersionSheet = forwardRef<AltVersionSheetRef, Props>(({ onConfir
       backgroundStyle={styles.sheetBg}
     >
       <BottomSheetView style={styles.container}>
-        {cover ? (
-          <Image source={{ uri: cover }} style={styles.cover} />
-        ) : (
-          <View style={[styles.cover, styles.coverPlaceholder]} />
-        )}
+        <TouchableOpacity
+          onPress={onOpenRelease}
+          disabled={!canOpen}
+          activeOpacity={0.8}
+          accessibilityRole="button"
+          accessibilityLabel="Открыть карточку релиза"
+        >
+          {cover ? (
+            <Image source={{ uri: cover }} style={styles.cover} />
+          ) : (
+            <View style={[styles.cover, styles.coverPlaceholder]} />
+          )}
+        </TouchableOpacity>
         <Text style={styles.title}>
           {accepted ? 'Следим за другой версией' : 'Другая версия в наличии'}
         </Text>
@@ -136,7 +162,19 @@ export const AltVersionSheet = forwardRef<AltVersionSheetRef, Props>(({ onConfir
           </View>
         ) : null}
 
-        <View style={styles.btns}>
+        {canOpen ? (
+          <TouchableOpacity
+            style={styles.openLink}
+            onPress={onOpenRelease}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+          >
+            <Text style={styles.openTxt}>Посмотреть релиз</Text>
+            <Ionicons name="chevron-forward" size={16} color={Colors.royalBlue} />
+          </TouchableOpacity>
+        ) : null}
+
+        <View style={[styles.btns, canOpen && styles.btnsTight]}>
           <TouchableOpacity style={styles.primaryBtn} onPress={onYes} activeOpacity={0.9}>
             <Text style={styles.primaryTxt}>{accepted ? 'Продолжить следить' : 'Да, следить'}</Text>
           </TouchableOpacity>
@@ -166,7 +204,10 @@ const styles = StyleSheet.create({
   diffRowBorder: { borderBottomWidth: 1, borderBottomColor: Colors.divider },
   diffLabel: { fontSize: 14, color: Colors.textSecondary },
   diffValue: { fontSize: 14, color: Colors.text, fontFamily: 'Inter_600SemiBold' },
+  openLink: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 16, paddingVertical: 6 },
+  openTxt: { fontSize: 15, fontFamily: 'Inter_600SemiBold', color: Colors.royalBlue },
   btns: { alignSelf: 'stretch', gap: 12, marginTop: 24 },
+  btnsTight: { marginTop: 12 },
   primaryBtn: { alignItems: 'center', paddingVertical: 18, backgroundColor: Colors.royalBlue, borderRadius: 16 },
   primaryTxt: { ...Typography.button, color: '#fff' },
   secondaryBtn: { alignItems: 'center', paddingVertical: 16, backgroundColor: '#E8EBFA', borderRadius: 16 },

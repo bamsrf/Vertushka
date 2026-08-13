@@ -41,6 +41,7 @@ from app.schemas.offer import (
     StoreInfo,
 )
 from app.services.affiliate import wrap_url
+from app.services.alt_media_match import alt_media_ok
 from app.services.cache import cache
 from app.utils.rate_limit import limiter
 from app.utils.request_ip import get_client_ip
@@ -665,6 +666,8 @@ async def get_record_offers_full(
             Record.id,
             Record.discogs_master_id,
             Record.discogs_data["vinyl_color_raw"].astext,
+            Record.format_type,
+            Record.format_description,
         ).where(Record.discogs_id == discogs_id)
     )
     rec_row = rec_res.first()
@@ -673,7 +676,7 @@ async def get_record_offers_full(
             summary=RecordOffersSummary(),
             offers=[],
         )
-    record_id, master_id, record_color_raw = rec_row
+    record_id, master_id, record_color_raw, record_format, record_format_desc = rec_row
     record_color_fam = color_family(record_color_raw)
 
     # Exact offers
@@ -709,6 +712,18 @@ async def get_record_offers_full(
             .limit(20)
         )
         alt_listings = list((await db.execute(alt_stmt)).unique().scalars().all())
+        # Мастер объединяет винил, CD и цифру. «Другая версия» — это другой
+        # прессинг того же носителя, а не mp3-файл вместо винила.
+        alt_listings = [
+            li for li in alt_listings
+            if alt_media_ok(
+                record_format,
+                record_format_desc,
+                getattr(li.record, "format_type", None),
+                getattr(li.record, "format_description", None),
+                li.format_raw,
+            )
+        ]
 
     # Тиры для exact-листингов (на этой же записи). alt-листинги всегда album.
     exact_tier = {li.id: pressing_tier(li, record_color_fam) for li in exact_listings}

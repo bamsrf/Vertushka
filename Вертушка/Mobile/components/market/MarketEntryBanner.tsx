@@ -26,7 +26,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useFocusEffect } from 'expo-router';
 
 import { Icon } from '../ui/Icon';
-import { BorderRadius, MarketPalette, Spacing, Typography } from '../../constants/theme';
+import { MarketPalette, Spacing, Typography } from '../../constants/theme';
 
 const AnimatedGradient = Reanimated.createAnimatedComponent(LinearGradient);
 
@@ -105,7 +105,7 @@ export function MarketEntryBanner({ onPress }: MarketEntryBannerProps) {
             Пластинки из магазинов — цены, наличие, доставка
           </Text>
         </View>
-        <Icon name="chevron-forward" size={20} color={MarketPalette.chrome.textMuted} />
+        <Icon name="chevron-forward" size={18} color={MarketPalette.chrome.textDim} />
       </View>
     </TouchableOpacity>
   );
@@ -113,10 +113,16 @@ export function MarketEntryBanner({ onPress }: MarketEntryBannerProps) {
 
 const styles = StyleSheet.create({
   banner: {
-    borderRadius: BorderRadius.lg,
+    // Блок широкий и тёмный — на светлом профиле обычные углы читаются
+    // острыми даже на большом радиусе. Спасает не столько радиус, сколько
+    // borderCurve: 'continuous' — это apple'овский squircle, у которого нет
+    // резкого стыка дуги с прямой стороной (iOS 13+/RN 0.71+; на Android
+    // проп игнорируется, остаётся просто крупный радиус).
+    borderRadius: 30,
+    borderCurve: 'continuous',
     marginBottom: Spacing.xl,
     borderWidth: 1,
-    borderColor: MarketPalette.chrome.border,
+    borderColor: MarketPalette.chrome.borderSoft,
     // overflow:hidden — иначе absoluteFill-градиенты вылезут за скругления.
     overflow: 'hidden',
   },
@@ -133,7 +139,9 @@ const styles = StyleSheet.create({
     borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: MarketPalette.chrome.fillStrong,
+    backgroundColor: MarketPalette.chrome.fill,
+    borderWidth: 1,
+    borderColor: MarketPalette.chrome.borderSoft,
   },
   text: {
     flex: 1,

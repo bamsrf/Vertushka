@@ -250,7 +250,16 @@ class Record(Base):
         DateTime,
         nullable=True
     )
-    
+    # Меньшая сторона уложенного мастера в пикселях. Тир обложки: ниже
+    # cover_quality.MASTER_MIN_SIDE — мелкая, годится только в плейсхолдер, и
+    # зеркало имеет право перезаписать её лучшим источником. NULL = «не мерили»
+    # (файлы до этой правки) — такие апгрейд не трогает, чтобы прогрев после
+    # деплоя не устроил массовую перекачку; размеры им проставит heal-скрипт.
+    cover_min_side: Mapped[int | None] = mapped_column(
+        Integer,
+        nullable=True
+    )
+
     # Полные данные от Discogs (JSON)
     discogs_data: Mapped[dict | None] = mapped_column(
         JSONB,

@@ -25,6 +25,7 @@ from app.models.record import Record
 from app.api.auth import get_current_user, get_current_user_optional
 from app.api.app_config import require_flag
 from app.services import quota
+from app.services.cover_quality import is_thumb_grade
 from app.utils.rate_limit import limiter
 from app.services.exchange import get_usd_rub_rate
 from app.services.pricing import PricingParams, estimate_rub, effective_markup, is_local_country
@@ -2689,7 +2690,11 @@ async def _fetch_versions_from_local_index(
                              THEN '/uploads/' || r.cover_local_path END,
                         r.cover_image_url,
                         dri.cover_image_url
-                    ) AS cover_image_url
+                    ) AS cover_image_url,
+                    -- Мелкий превью отдаём ОТДЕЛЬНЫМ полем, а не в хвосте
+                    -- COALESCE выше: клиент рисует его в плейсхолдер-тире, пока
+                    -- грузится мастер, и никогда не растягивает на весь экран.
+                    dri.thumb_image_url AS thumb_image_url
                 FROM discogs_releases_index dri
                 LEFT JOIN records r
                     ON r.discogs_id = dri.discogs_id::text
@@ -2713,7 +2718,7 @@ async def _fetch_versions_from_local_index(
             year=row["year"],
             format=row["format_type"],
             major_formats=[row["format_type"]] if row["format_type"] else [],
-            thumb_image_url=None,
+            thumb_image_url=row["thumb_image_url"],
             cover_image_url=row["cover_image_url"],
             # Durable-флаг: посчитан однажды фоновым таском, живёт в дампе.
             # Плашка редкости видна СРАЗУ на холодном мастере, если релиз уже
@@ -2903,23 +2908,33 @@ async def _enrich_covers_from_api(
                         changed = True
                 cover_by_id.update(release_covers)
 
-        # P1: персистим обложки в discogs_releases_index.cover_image_url —
-        # переживает Redis-TTL, виден всем юзерам и detail-stub'у через COALESCE.
-        # Пишем только в NULL-строки, чтобы не затереть уже прогретое (CAA/cover_warm).
+        # P1: персистим обложки в discogs_releases_index — переживает Redis-TTL,
+        # видно всем юзерам и detail-stub'у через COALESCE. Пишем только в
+        # NULL-строки, чтобы не затереть уже прогретое (CAA/cover_warm).
+        #
+        # Тир решается ЗДЕСЬ, потому что это точка промоушена. Discogs в
+        # /masters/{id}/versions отдаёт только `thumb` (h:150/w:150, размер внутри
+        # подписи HMAC — не увеличивается), и раньше он уезжал в cover_image_url.
+        # Дальше строка становилась NOT NULL, а офлайн-каналы CAA пишут ТОЛЬКО в
+        # IS NULL — full-1200 для этого релиза не приезжал уже никогда, и зеркало
+        # клало 150px как мастер. Теперь мелкие URL идут в thumb_image_url:
+        # не теряем ничего (база копится), но канонический слот держим свободным.
         if cover_by_id:
             from app.database import async_session_maker
             async with async_session_maker() as session:
                 for rid, url in cover_by_id.items():
-                    if rid and rid.isdigit():
-                        await session.execute(
-                            text(
-                                "UPDATE discogs_releases_index "
-                                "SET cover_image_url = :url "
-                                "WHERE discogs_id = :did "
-                                "AND cover_image_url IS NULL"
-                            ),
-                            {"url": url, "did": int(rid)},
-                        )
+                    if not rid or not rid.isdigit():
+                        continue
+                    # Имя колонки — литерал из закрытого набора двух значений,
+                    # не пользовательский ввод: интерполяция безопасна.
+                    column = "thumb_image_url" if is_thumb_grade(url) else "cover_image_url"
+                    await session.execute(
+                        text(
+                            f"UPDATE discogs_releases_index SET {column} = :url "
+                            f"WHERE discogs_id = :did AND {column} IS NULL"
+                        ),
+                        {"url": url, "did": int(rid)},
+                    )
                 await session.commit()
 
         # 2) Версии из API, которых нет в дампе (дедуп по release_id).

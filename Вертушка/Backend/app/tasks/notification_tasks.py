@@ -41,6 +41,7 @@ from app.services.notification_service import (
 )
 from app.services import push_copy
 from app.services.affiliate import wrap_url
+from app.services.alt_media_match import alt_media_ok
 from app.services.radar_status import condition_ok, record_radar_event
 
 logger = logging.getLogger(__name__)
@@ -299,6 +300,14 @@ async def _emit_alt_versions(
             l for l in related
             if condition_ok(l.condition, wi.conditions)
             and str(getattr(l, "matched_record_id", "")) not in rejected_alts
+            # Тот же носитель, что в вишлисте: под винил не шлём «File, MP3».
+            and alt_media_ok(
+                getattr(wanted, "format_type", None),
+                getattr(wanted, "format_description", None),
+                getattr(l.record, "format_type", None),
+                getattr(l.record, "format_description", None),
+                getattr(l, "format_raw", None),
+            )
         ]
         if not related:
             continue
