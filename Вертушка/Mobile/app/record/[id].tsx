@@ -32,7 +32,7 @@ import { Header } from '../../components/Header';
 import { GradientText } from '../../components/GradientText';
 import { FolderPickerModal } from '../../components/FolderPickerModal';
 import { Button, Card, ActionSheet, ActionSheetAction } from '../../components/ui';
-import { api, getCoverUrl } from '../../lib/api';
+import { api, getMasterCoverUrl, getPlaceholderCoverUrl } from '../../lib/api';
 import { analytics } from '../../lib/analytics';
 import { countSpin } from '../../lib/eggTracker';
 import { cleanArtistName } from '../../lib/format';
@@ -43,6 +43,8 @@ import { ms } from '../../lib/responsive';
 import { VinylColorTag } from '../../components/VinylColorTag';
 import { VinylSpinner } from '../../components/VinylSpinner';
 import { OffersBlock } from '../../components/OffersBlock';
+import { CoachTip } from '../../components/onboarding/CoachTip';
+import { useCoachMark } from '../../lib/useCoachMark';
 import { PriceSparkline } from '../../components/PriceSparkline';
 import { RadarIcon } from '../../components/RadarIcon';
 import { ThresholdSheet, type ThresholdSheetRef } from '../../components/wishlist/ThresholdSheet';
@@ -117,6 +119,7 @@ export default function RecordDetailScreen() {
     previewTitle,
     previewArtist,
     previewCover,
+    previewThumb,
     previewYear,
     previewBlurhash,
   } = useLocalSearchParams<{
@@ -126,6 +129,7 @@ export default function RecordDetailScreen() {
     previewTitle?: string;
     previewArtist?: string;
     previewCover?: string;
+    previewThumb?: string;
     previewYear?: string;
     previewBlurhash?: string;
   }>();
@@ -142,7 +146,14 @@ export default function RecordDetailScreen() {
     opacity: (1 - radarPulse.value) * 0.55,
     transform: [{ scale: 1 + radarPulse.value * 1.2 }],
   }));
-  const hasPreview = Boolean(previewTitle || previewCover || previewArtist);
+  const hasPreview = Boolean(previewTitle || previewCover || previewThumb || previewArtist);
+
+  // Подсказка про Маркет разблокируется там, где блок офферов вообще
+  // отрисуется, — иначе объясняли бы витрину рядом с пустотой.
+  const marketTip = useCoachMark(
+    'market',
+    Boolean(record?.discogs_id || record?.source === 'store'),
+  );
 
   // Динамика цены — грузим лениво после появления записи. Тихо игнорим ошибку:
   // блок графика просто не отрисуется, если истории нет.
@@ -594,13 +605,24 @@ export default function RecordDetailScreen() {
             showsVerticalScrollIndicator={false}
           >
             <View style={styles.coverContainer}>
-              {previewCover ? (
+              {previewCover || previewThumb ? (
                 <Image
-                  source={previewCover}
+                  // Мастер в source, мелкий превью — в placeholder. Если мастера
+                  // ещё нет, показываем один thumb: он мгновенный, но уступит
+                  // место мастеру, как только тот приедет. Раньше thumb стоял в
+                  // source и залипал растянутым на всю ширину (пикселизация ×8).
+                  source={previewCover || undefined}
                   style={styles.cover}
                   contentFit="cover"
-                  cachePolicy="disk"
-                  placeholder={previewBlurhash ? { blurhash: previewBlurhash } : undefined}
+                  cachePolicy="memory-disk"
+                  placeholder={
+                    previewThumb
+                      ? previewThumb
+                      : previewBlurhash
+                        ? { blurhash: previewBlurhash }
+                        : undefined
+                  }
+                  placeholderContentFit="cover"
                 />
               ) : (
                 <View style={[styles.cover, styles.coverPlaceholder]}>
@@ -660,7 +682,11 @@ export default function RecordDetailScreen() {
     );
   }
 
-  const imageUrl = getCoverUrl(record);
+  // Герой карточки — только мастер-грейд. Мелкий превью (в том числе у старых
+  // записей, куда 150px-thumb успел попасть в cover_image_url) уходит в
+  // плейсхолдер: видно сразу, но не растянуто на всю ширину.
+  const imageUrl = getMasterCoverUrl(record);
+  const thumbUrl = previewThumb || getPlaceholderCoverUrl(record);
 
   // UGC: чужая user-запись — жалоба доступна из хедера даже вне коллекции.
   const isForeignUserRecord =
@@ -705,19 +731,25 @@ export default function RecordDetailScreen() {
       >
         {/* Обложка */}
         <View style={styles.coverContainer}>
-          {imageUrl ? (
+          {imageUrl || thumbUrl ? (
             <Image
-              source={imageUrl}
+              source={imageUrl || undefined}
               style={styles.cover}
               contentFit="cover"
-              cachePolicy="disk"
+              cachePolicy="memory-disk"
+              // Приоритет плейсхолдера: уже показанный thumb (пиксели, но
+              // мгновенно и без мигания на blur) → blurhash записи → blurhash
+              // из preview-параметров.
               placeholder={
-                record.blurhash
-                  ? { blurhash: record.blurhash }
-                  : previewBlurhash
-                    ? { blurhash: previewBlurhash }
-                    : undefined
+                thumbUrl
+                  ? thumbUrl
+                  : record.blurhash
+                    ? { blurhash: record.blurhash }
+                    : previewBlurhash
+                      ? { blurhash: previewBlurhash }
+                      : undefined
               }
+              placeholderContentFit="cover"
             />
           ) : (
             <View style={[styles.cover, styles.coverPlaceholder]}>
@@ -749,7 +781,7 @@ export default function RecordDetailScreen() {
                   source={record.artist_thumb_image_url}
                   style={styles.artistAvatar}
                   contentFit="cover"
-                  cachePolicy="disk"
+                  cachePolicy="memory-disk"
                 />
               ) : (
                 <View style={styles.artistAvatarPlaceholder}>
@@ -918,6 +950,17 @@ export default function RecordDetailScreen() {
             </Card>
           );
         })()}
+
+        {/* Подсказка про Маркет живёт и здесь, а не только на вишлисте: на
+            вкладку «Вишлист» заходят не все, а карточка релиза с офферами —
+            ровно тот момент, когда витрина магазинов объясняет сама себя. */}
+        {marketTip.visible && (
+          <CoachTip
+            meta={marketTip.meta}
+            onDismiss={marketTip.dismiss}
+            action={{ label: 'Открыть Маркет', onPress: () => router.push('/market') }}
+          />
+        )}
 
         {/* Где купить — живые предложения магазинов */}
         {record.discogs_id ? (

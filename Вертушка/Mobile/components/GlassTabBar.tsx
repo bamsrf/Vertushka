@@ -17,15 +17,6 @@ import Animated, {
 } from 'react-native-reanimated';
 import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { Colors, Shadows, Gradients } from '../constants/theme';
-import { useTourTarget } from '../lib/useTourTarget';
-import type { TourTargetKey } from '../lib/store';
-
-const TAB_TARGET_KEYS: Record<string, TourTargetKey> = {
-  search: 'tab-search',
-  index: 'tab-index',
-  collection: 'tab-collection',
-};
-
 // Единое имя на таб; визуальная разница inactive ↔ active — через weight в <Icon>.
 const TAB_ICONS: Record<string, string> = {
   search: 'magnifying-glass',
@@ -50,8 +41,6 @@ function TabIcon({
   onLongPress: () => void;
 }) {
   const iconName = TAB_ICONS[routeName] || TAB_ICONS.search;
-  const targetKey = TAB_TARGET_KEYS[routeName];
-  const tourTarget = useTourTarget(targetKey ?? 'tab-index');
 
   const animatedIcon = useAnimatedStyle(() => {
     const scale = withSpring(isFocused ? 1.25 : 1.0, {
@@ -68,9 +57,6 @@ function TabIcon({
 
   return (
     <TouchableOpacity
-      ref={targetKey ? tourTarget.ref : undefined}
-      onLayout={targetKey ? tourTarget.onLayout : undefined}
-      collapsable={false}
       style={styles.tabItem}
       onPress={onPress}
       onLongPress={onLongPress}

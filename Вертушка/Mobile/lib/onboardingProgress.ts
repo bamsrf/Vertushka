@@ -1,0 +1,429 @@
+/**
+ * «Первые шаги» — чеклист новичка в коллекции.
+ *
+ * Ключевое решение: прогресс ВЫВОДИТСЯ из реальных данных, а не копится в
+ * отдельных флагах. Поэтому человек, импортировавший 200 пластинок из Discogs,
+ * сразу видит закрытый первый пункт, а не фальшивый ноль. Исключения — только
+ * то, чего в данных нет: факт отправки ссылки на профиль.
+ *
+ * ВАЖНО про реактивность. Пункты читаются из zustand-сторов и обновляются
+ * сами. Флаг «поделился» когда-то жил в useState, заполнялся один раз в
+ * useEffect — и шаг не закрывался, пока карточку не перемонтирует переключение
+ * вкладки. Поэтому всё состояние чеклиста тоже лежит в сторе: любой источник
+ * правды, от которого зависит пункт, обязан быть реактивным.
+ *
+ * Обратная связь. Шаги закрываются на других экранах (профиль, поиск,
+ * настройки Discogs), где карточки не видно. Поэтому есть глобальный
+ * наблюдатель initFirstStepsWatcher: он ловит переход пункта в «сделано» и
+ * показывает тост там, где человек находится в этот момент.
+ *
+ * Карточка не блокирует и не перекрывает интерфейс: она живёт в потоке
+ * ScrollableHeader коллекции и уезжает вместе с блоком папок.
+ */
+import { useEffect } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { create } from 'zustand';
+import { useAuthStore, useCollectionStore } from './store';
+import { api } from './api';
+import { analytics } from './analytics';
+import { toast } from './toast';
+import type { User } from './types';
+
+export type FirstStepKey =
+  | 'first-record'
+  | 'discogs-import'
+  | 'profile'
+  | 'wishlist'
+  | 'folders'
+  | 'share';
+
+export interface FirstStep {
+  key: FirstStepKey;
+  label: string;
+  /**
+   * Зачем этот шаг. Показывается только у ближайшего невыполненного пункта —
+   * иначе карточка разрастается в стену текста, а объяснение нужно ровно
+   * тому шагу, который человек делает следующим.
+   */
+  why: string;
+  /** Куда ведёт тап по невыполненному пункту. */
+  route: string;
+  done: boolean;
+}
+
+const dismissKey = (userId: string) => `@vertushka:first_steps_dismissed:${userId}`;
+const sharedKey = (userId: string) => `@vertushka:first_steps_shared:${userId}`;
+const opensKey = (userId: string) => `@vertushka:first_steps_opens:${userId}`;
+
+/** После стольких ЗАПУСКОВ приложения карточка по умолчанию свёрнута в строку. */
+const EXPANDED_OPENS = 3;
+
+/**
+ * Порог, до которого предлагаем импорт из Discogs. Выше него человек уже
+ * набивает коллекцию своим способом, и предложение «перенести всё разом»
+ * выглядит как непрошеный совет.
+ */
+const DISCOGS_OFFER_BELOW = 10;
+
+// ==================== Стор флагов ====================
+
+interface FirstStepsFlagsState {
+  /** Для какого аккаунта прочитаны флаги — защита от гонки при смене юзера. */
+  hydratedFor: string | null;
+  loaded: boolean;
+  dismissed: boolean;
+  shared: boolean;
+  expanded: boolean;
+  /**
+   * null — статус Discogs ещё не known (или запрос упал). В этом случае шаг
+   * не показываем вовсе: лучше промолчать, чем предложить подключить уже
+   * подключённое.
+   */
+  discogsConnected: boolean | null;
+  /**
+   * Счётчик запусков инкрементится один раз за сессию, а не на каждый маунт:
+   * карточка размонтируется при уходе на «Вишлист» и монтируется обратно, и
+   * без флага три переключения таба выглядели бы как три запуска.
+   */
+  opensCounted: boolean;
+
+  hydrate: (userId: string) => Promise<void>;
+  markShared: (userId: string) => Promise<void>;
+  dismiss: (userId: string) => void;
+  toggleExpanded: () => void;
+}
+
+const useFirstStepsFlags = create<FirstStepsFlagsState>((set, get) => ({
+  hydratedFor: null,
+  loaded: false,
+  dismissed: true,
+  shared: false,
+  expanded: true,
+  discogsConnected: null,
+  opensCounted: false,
+
+  hydrate: async (userId) => {
+    if (get().hydratedFor === userId) return;
+    // Занимаем слот сразу, чтобы параллельные маунты не читали хранилище дважды.
+    // Заодно обнуляем данные прошлого аккаунта: иначе до конца чтения чеклист
+    // показывал бы чужие галочки, а наблюдатель принял бы их за свежие.
+    set({
+      hydratedFor: userId,
+      loaded: false,
+      shared: false,
+      dismissed: true,
+      discogsConnected: null,
+    });
+    try {
+      const [[, isDismissed], [, isShared], [, opensRaw]] = await AsyncStorage.multiGet([
+        dismissKey(userId),
+        sharedKey(userId),
+        opensKey(userId),
+      ]);
+
+      const stored = Number(opensRaw ?? '0');
+      const alreadyCounted = get().opensCounted;
+      const opens = alreadyCounted ? stored : stored + 1;
+      if (!alreadyCounted) {
+        void AsyncStorage.setItem(opensKey(userId), String(opens));
+      }
+
+      set({
+        loaded: true,
+        opensCounted: true,
+        dismissed: isDismissed === '1',
+        shared: isShared === '1',
+        // Первые запуски — развёрнута, дальше сворачивается сама: тому, кто её
+        // проигнорировал, она перестаёт мозолить глаза, но не пропадает.
+        expanded: opens <= EXPANDED_OPENS,
+      });
+    } catch {
+      set({ loaded: true });
+    }
+
+    // Статус Discogs — отдельно и не блокируя остальное: это сеть, и падать
+    // из-за неё весь чеклист не должен.
+    try {
+      const status = await api.getDiscogsStatus();
+      set({ discogsConnected: Boolean(status?.connected) });
+    } catch {
+      set({ discogsConnected: null });
+    }
+  },
+
+  markShared: async (userId) => {
+    if (get().shared) return;
+    set({ shared: true });
+    try {
+      await AsyncStorage.setItem(sharedKey(userId), '1');
+    } catch {
+      // Молча: пункт останется открытым, это не ломает сценарий.
+    }
+  },
+
+  dismiss: (userId) => {
+    set({ dismissed: true });
+    void AsyncStorage.setItem(dismissKey(userId), '1').catch(() => {});
+  },
+
+  toggleExpanded: () => set((s) => ({ expanded: !s.expanded })),
+}));
+
+// ==================== Публичные отметки ====================
+
+/** Отметить «поделился профилем» — из share-листа и из копирования ссылки. */
+export async function markProfileShared() {
+  const userId = useAuthStore.getState().user?.id;
+  if (!userId) return;
+  // Тост покажет наблюдатель — здесь только факт.
+  await useFirstStepsFlags.getState().markShared(userId);
+}
+
+/**
+ * Синхронизировать статус Discogs — зовётся из настроек, где он и меняется.
+ * Без этого шаг чеклиста узнал бы о подключении только в следующую сессию.
+ */
+export function setDiscogsConnected(connected: boolean) {
+  useFirstStepsFlags.setState({ discogsConnected: connected });
+}
+
+/**
+ * Вернуть закрытый крестиком чеклист. Зовётся из «Как это работает» —
+ * без этого дверь была в одну сторону: скрыл карточку и потерял навсегда.
+ */
+export async function restoreFirstSteps() {
+  const userId = useAuthStore.getState().user?.id;
+  if (!userId) return;
+  useFirstStepsFlags.setState({ dismissed: false, expanded: true });
+  try {
+    await AsyncStorage.removeItem(dismissKey(userId));
+  } catch {
+    // Молча: в этой сессии карточка уже вернулась.
+  }
+}
+
+/** Скрыт ли чеклист сейчас — чтобы «Как это работает» не предлагал лишнего. */
+export const useFirstStepsDismissed = () => useFirstStepsFlags((s) => s.dismissed);
+
+// ==================== Сборка шагов ====================
+
+interface StepsInput {
+  user: User | null;
+  recordCount: number;
+  wishlistCount: number;
+  folderCount: number;
+  shared: boolean;
+  discogsConnected: boolean | null;
+}
+
+/**
+ * Чистая функция: используется и хуком карточки, и глобальным наблюдателем.
+ * Держать логику в одном месте обязательно — иначе тост и галочка разъедутся.
+ */
+function buildSteps(input: StepsInput): FirstStep[] {
+  const { user, recordCount, wishlistCount, folderCount, shared, discogsConnected } = input;
+
+  const steps: FirstStep[] = [
+    {
+      key: 'first-record',
+      label: 'Добавить первую пластинку',
+      why: 'Сканируй штрихкод, ищи по каталогу Discogs или перенеси всю коллекцию разом.',
+      route: '/(tabs)',
+      done: recordCount > 0,
+    },
+  ];
+
+  // Импорт предлагаем только тем, кому он ещё полезен: пустая полка и
+  // неподключённый аккаунт. Уже подключённым пункт остаётся, но закрытым —
+  // исчезающий из чеклиста пункт читается как баг.
+  if (discogsConnected === true || (discogsConnected === false && recordCount < DISCOGS_OFFER_BELOW)) {
+    steps.push({
+      key: 'discogs-import',
+      label: 'Перенести коллекцию из Discogs',
+      why: 'Если ведёшь коллекцию там — заберём всё разом, вручную добавлять не придётся.',
+      route: '/settings/discogs',
+      done: discogsConnected === true,
+    });
+  }
+
+  steps.push(
+    {
+      key: 'profile',
+      label: 'Добавить имя и аватар',
+      // Требуем оба поля намеренно: раньше шаг закрывался по «имя ИЛИ аватар
+      // ИЛИ описание», и у входа через Google он был закрыт с нулевого дня —
+      // человек не понимал, что вообще сделал.
+      why: 'Их видят те, кому ты покажешь коллекцию или вишлист.',
+      route: '/settings/edit-profile',
+      done: Boolean(user?.display_name && user?.avatar_url),
+    },
+    {
+      key: 'wishlist',
+      label: 'Собрать вишлист',
+      why: 'Из него работают Радар и Маркет — и из него друзья выбирают подарок.',
+      route: '/(tabs)/search',
+      done: wishlistCount > 0,
+    },
+    {
+      key: 'folders',
+      label: 'Разложить по папкам',
+      why: 'Жанры, эпохи, «на продажу» — любая своя логика. Папки живут над сеткой.',
+      route: '/(tabs)/collection',
+      done: folderCount > 0,
+    },
+    {
+      key: 'share',
+      label: 'Поделиться профилем',
+      why: 'Скопируй ссылку или отправь её — друзья забронируют подарок из вишлиста.',
+      route: '/profile',
+      done: shared,
+    },
+  );
+
+  return steps;
+}
+
+/** Снимок входных данных из всех сторов — один источник для хука и наблюдателя. */
+function currentInput(): StepsInput {
+  const { user } = useAuthStore.getState();
+  const collection = useCollectionStore.getState();
+  const flags = useFirstStepsFlags.getState();
+  return {
+    user,
+    // total_records надёжнее длины collectionItems: список постраничный, а
+    // после импорта из Discogs первая страница может ещё не приехать.
+    recordCount: collection.stats?.total_records ?? collection.collectionItems.length,
+    wishlistCount: collection.wishlistItems.length,
+    folderCount: collection.folders.length,
+    shared: flags.shared,
+    discogsConnected: flags.discogsConnected,
+  };
+}
+
+// ==================== Наблюдатель прогресса ====================
+
+let watcherStarted = false;
+/**
+ * Базовая линия: набор шагов, закрытых на момент первого замера. Всё, что
+ * закрылось до неё, — это состояние аккаунта, а не заслуга текущей сессии,
+ * и тостов по нему быть не должно.
+ */
+let baseline: Set<FirstStepKey> | null = null;
+/** Чья это линия. Смена аккаунта на устройстве обязана её обнулить. */
+let baselineUserId: string | null = null;
+
+function evaluateProgress() {
+  const flags = useFirstStepsFlags.getState();
+  // До загрузки флагов состав шагов неполон (нет shared, нет Discogs) —
+  // замер по нему дал бы ложную базовую линию и залп тостов следом.
+  if (!flags.loaded) return;
+
+  const userId = useAuthStore.getState().user?.id ?? null;
+  if (userId !== baselineUserId) {
+    // Другой аккаунт: его закрытые шаги — не достижение текущей сессии.
+    baseline = null;
+    baselineUserId = userId;
+  }
+
+  const doneNow = new Set(buildSteps(currentInput()).filter((s) => s.done).map((s) => s.key));
+
+  if (baseline === null) {
+    baseline = doneNow;
+    return;
+  }
+
+  for (const key of doneNow) {
+    if (baseline.has(key)) continue;
+    baseline.add(key);
+    analytics.onboardingStepDone(key);
+    // Закрывшему чеклист напоминание не нужно — он от него отказался.
+    if (!flags.dismissed) {
+      toast.success('Шаг пройден', stepToastLabel(key));
+    }
+  }
+}
+
+function stepToastLabel(key: FirstStepKey): string {
+  const step = buildSteps(currentInput()).find((s) => s.key === key);
+  return step?.label ?? 'Первые шаги';
+}
+
+/**
+ * Подписка на сторы, из которых выводится прогресс. Вызывается один раз из
+ * корневого layout: шаги закрываются на экранах, где карточки не видно, и без
+ * глобального наблюдателя действие выглядит как «ничего не произошло».
+ */
+export function initFirstStepsWatcher() {
+  if (watcherStarted) return;
+  watcherStarted = true;
+  useCollectionStore.subscribe(evaluateProgress);
+  useAuthStore.subscribe(evaluateProgress);
+  useFirstStepsFlags.subscribe(evaluateProgress);
+}
+
+// ==================== Хук карточки ====================
+
+export interface FirstStepsState {
+  steps: FirstStep[];
+  doneCount: number;
+  total: number;
+  /** Показывать ли карточку вообще. */
+  visible: boolean;
+  /** Все пункты закрыты — карточка показывает финальную строку и самоуничтожается. */
+  allDone: boolean;
+  /** Ключ ближайшего невыполненного шага — у него раскрыт текст «зачем». */
+  nextStepKey: FirstStepKey | null;
+  /** Развёрнута или свёрнута в одну строку. */
+  expanded: boolean;
+  toggleExpanded: () => void;
+  dismiss: () => void;
+}
+
+export function useFirstSteps(): FirstStepsState {
+  const userId = useAuthStore((s) => s.user?.id);
+  const user = useAuthStore((s) => s.user);
+  const collectionItems = useCollectionStore((s) => s.collectionItems);
+  const wishlistItems = useCollectionStore((s) => s.wishlistItems);
+  const folders = useCollectionStore((s) => s.folders);
+  const stats = useCollectionStore((s) => s.stats);
+
+  const loaded = useFirstStepsFlags((s) => s.loaded);
+  const dismissed = useFirstStepsFlags((s) => s.dismissed);
+  const shared = useFirstStepsFlags((s) => s.shared);
+  const expanded = useFirstStepsFlags((s) => s.expanded);
+  const discogsConnected = useFirstStepsFlags((s) => s.discogsConnected);
+  const hydrate = useFirstStepsFlags((s) => s.hydrate);
+  const toggleExpanded = useFirstStepsFlags((s) => s.toggleExpanded);
+  const dismissFlag = useFirstStepsFlags((s) => s.dismiss);
+
+  useEffect(() => {
+    if (userId) void hydrate(userId);
+  }, [userId, hydrate]);
+
+  const steps = buildSteps({
+    user,
+    recordCount: stats?.total_records ?? collectionItems.length,
+    wishlistCount: wishlistItems.length,
+    folderCount: folders.length,
+    shared,
+    discogsConnected,
+  });
+
+  const doneCount = steps.filter((s) => s.done).length;
+
+  return {
+    steps,
+    doneCount,
+    total: steps.length,
+    // Пока не прочитали хранилище — не показываем: мигание карточки на старте
+    // выглядит как баг рендера.
+    visible: loaded && !dismissed,
+    allDone: doneCount === steps.length,
+    nextStepKey: steps.find((s) => !s.done)?.key ?? null,
+    expanded,
+    toggleExpanded,
+    dismiss: () => {
+      if (userId) dismissFlag(userId);
+    },
+  };
+}

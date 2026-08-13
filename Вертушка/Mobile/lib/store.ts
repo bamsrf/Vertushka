@@ -97,109 +97,84 @@ const getSearchHistoryKey = () => {
   return userId ? `@vertushka:search_history:${userId}` : '@vertushka:search_history';
 };
 const MAX_HISTORY_ITEMS = 20;
-const ONBOARDING_KEY = '@vertushka:onboarding_complete';
+// Легаси-ключ: до перехода на per-user онбординг флаг был один на устройство,
+// поэтому второй аккаунт на том же телефоне онбординг не видел. Читаем его
+// только для миграции уже установленных приложений.
+const ONBOARDING_KEY_LEGACY = '@vertushka:onboarding_complete';
+const onboardingKey = (userId: string | null) =>
+  userId ? `@vertushka:onboarding_complete:${userId}` : ONBOARDING_KEY_LEGACY;
 
 // ==================== Onboarding Store ====================
 
-export const TOUR_STEP_COUNT = 10;
-
-export type TourTargetKey =
-  | 'tab-search'
-  | 'tab-index'
-  | 'tab-collection'
-  | 'scan-segments'
-  | 'search-filters'
-  | 'collection-view-toggle'
-  | 'collection-record-card'
-  | 'collection-folders'
-  | 'collection-value'
-  | 'profile-share';
-
-export interface TargetLayout {
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-}
-
+/**
+ * Онбординг = welcome-карусель (один раз на аккаунт) и ничего больше.
+ *
+ * Пошаговый spotlight-тур убран намеренно: он держался на measureInWindow
+ * с таймерами 60/280/600 мс после навигации, и любая анимация, не уложившаяся
+ * в это окно, оставляла рамку висеть в пустоте. Плюс он подсвечивал папки,
+ * ценность коллекции и мультивыбор на ПУСТОМ аккаунте, где ими нельзя
+ * воспользоваться.
+ *
+ * Вместо него два механизма, которые ничего не измеряют:
+ *   - lib/onboardingProgress.ts — чеклист «Первые шаги» в коллекции;
+ *   - lib/useCoachMark.ts       — контекстные подсказки по факту разблокировки.
+ */
 interface OnboardingState {
   hasSeenWelcome: boolean;
-  tourStep: number | null;
   isReady: boolean;
-  tourTargets: Partial<Record<TourTargetKey, TargetLayout>>;
+  /** id аккаунта, для которого прочитан флаг: чтобы не гонять AsyncStorage вхолостую. */
+  loadedForUserId: string | null;
 
-  checkOnboarding: () => Promise<void>;
+  checkOnboarding: (userId: string | null) => Promise<void>;
   completeWelcome: () => Promise<void>;
-  startTour: () => void;
-  nextStep: () => void;
-  setTourStep: (step: number) => void;
-  skipTour: () => Promise<void>;
-  completeTour: () => Promise<void>;
-  setTourTarget: (key: TourTargetKey, layout: TargetLayout) => void;
   resetOnboarding: () => Promise<void>;
 }
 
 export const useOnboardingStore = create<OnboardingState>((set, get) => ({
   hasSeenWelcome: true,
-  tourStep: null,
   isReady: false,
-  tourTargets: {},
+  loadedForUserId: null,
 
-  checkOnboarding: async () => {
+  checkOnboarding: async (userId) => {
+    if (get().loadedForUserId === userId && get().isReady) return;
     try {
-      const value = await AsyncStorage.getItem(ONBOARDING_KEY);
-      set({ hasSeenWelcome: value === 'true', isReady: true });
+      let value = await AsyncStorage.getItem(onboardingKey(userId));
+
+      // Миграция: у аккаунта своего флага ещё нет, но на устройстве лежит
+      // легаси-ключ — значит этот человек онбординг уже проходил. Переносим,
+      // чтобы апдейт приложения не показал карусель повторно.
+      if (value === null && userId) {
+        const legacy = await AsyncStorage.getItem(ONBOARDING_KEY_LEGACY);
+        if (legacy === 'true') {
+          value = 'true';
+          await AsyncStorage.setItem(onboardingKey(userId), 'true');
+        }
+      }
+
+      set({ hasSeenWelcome: value === 'true', isReady: true, loadedForUserId: userId });
     } catch {
-      set({ hasSeenWelcome: true, isReady: true });
+      // Не смогли прочитать — считаем, что онбординг пройден. Показать карусель
+      // тому, кто её уже видел, хуже, чем не показать новичку: новичка подхватит
+      // чеклист «Первые шаги».
+      set({ hasSeenWelcome: true, isReady: true, loadedForUserId: userId });
     }
   },
 
   completeWelcome: async () => {
     set({ hasSeenWelcome: true });
     try {
-      await AsyncStorage.setItem(ONBOARDING_KEY, 'true');
+      const userId = useAuthStore.getState().user?.id ?? null;
+      await AsyncStorage.setItem(onboardingKey(userId), 'true');
     } catch (error) {
       console.error('Failed to save onboarding state:', error);
     }
   },
-
-  startTour: () => set({ tourStep: 0 }),
-
-  setTourStep: (step) => set({ tourStep: step }),
-
-  nextStep: () => {
-    const { tourStep } = get();
-    if (tourStep !== null && tourStep < TOUR_STEP_COUNT - 1) {
-      set({ tourStep: tourStep + 1 });
-    }
-  },
-
-  skipTour: async () => {
-    set({ tourStep: null, hasSeenWelcome: true });
-    try {
-      await AsyncStorage.setItem(ONBOARDING_KEY, 'true');
-    } catch (error) {
-      console.error('Failed to save onboarding state:', error);
-    }
-  },
-
-  completeTour: async () => {
-    set({ tourStep: null, hasSeenWelcome: true });
-    try {
-      await AsyncStorage.setItem(ONBOARDING_KEY, 'true');
-    } catch (error) {
-      console.error('Failed to save onboarding state:', error);
-    }
-  },
-
-  setTourTarget: (key, layout) => set((state) => ({
-    tourTargets: { ...state.tourTargets, [key]: layout },
-  })),
 
   resetOnboarding: async () => {
-    set({ hasSeenWelcome: false, tourStep: null, tourTargets: {} });
+    set({ hasSeenWelcome: false });
     try {
-      await AsyncStorage.removeItem(ONBOARDING_KEY);
+      const userId = useAuthStore.getState().user?.id ?? null;
+      await AsyncStorage.removeItem(onboardingKey(userId));
     } catch (error) {
       console.error('Failed to reset onboarding state:', error);
     }
@@ -913,10 +888,17 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
     // Закрываем поп-ап сразу: пластинка уже в коллекции, а бронь на сервере
     // идемпотентна — повторное подтверждение вернёт тот же completed.
     set({ pendingGiftMatch: null });
+    analytics.giftMatchConfirmed(pending.match.match_kind);
     await api.completeGiftBookingWithRecord(
       pending.match.booking_id,
       pending.collectionItemId
     );
+    // Подтверждённый матч закрывает бронь на сервере — для воронки подарка это
+    // такое же завершение, как ручное «Получено!» в карточке.
+    analytics.giftCompleted({
+      via: 'match_modal',
+      discogs_id: pending.addedRecord.discogs_id,
+    });
     await get().fetchWishlistItems();
   },
 
@@ -924,6 +906,9 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
     const pending = get().pendingGiftMatch;
     if (!pending) return;
     set({ pendingGiftMatch: null });
+    // Событие шлём до сетевого вызова: отказ пользователя — факт независимо
+    // от того, дошёл ли он до сервера.
+    analytics.giftMatchDismissed(pending.match.match_kind);
     // Отказ не критичен: не дошёл — в худшем случае переспросим позже.
     try {
       await api.dismissGiftMatch(pending.match.booking_id);

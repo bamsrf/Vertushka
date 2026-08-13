@@ -25,19 +25,17 @@ import { useRouter } from 'expo-router';
 import { Icon } from '@/components/ui';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useAuthStore, useCollectionStore, useOnboardingStore, useFollowStore, useGiftStore } from '../lib/store';
+import { useAuthStore, useCollectionStore, useFollowStore, useGiftStore } from '../lib/store';
 import { useMessagesStore } from '../lib/messagesStore';
-import { useTourTarget } from '../lib/useTourTarget';
 import { ms } from '../lib/responsive';
-import { OnboardingOverlay } from '../components/OnboardingOverlay';
 import { CollectionTab, GiftGivenItem } from '../lib/types';
 import { Button } from '../components/ui';
 import { AnimatedGradientText } from '../components/AnimatedGradientText';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker';
 import { api, resolveMediaUrl } from '../lib/api';
 import { cleanArtistName } from '../lib/format';
 import { detectAchievementUnlocks } from '../lib/achievementsBus';
+import { markProfileShared } from '../lib/onboardingProgress';
 import { toast } from '../lib/toast';
 import Toast from 'react-native-toast-message';
 import { toastConfig } from '../components/CustomToast';
@@ -92,10 +90,8 @@ function FollowRequestsMenuItem({ onPress }: { onPress: () => void }) {
 export default function ProfileScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const shareTarget = useTourTarget('profile-share');
   const { user, logout, setUser } = useAuthStore();
   const { collectionItems, wishlistItems, stats, setActiveTab, fetchCollectionItems, fetchWishlistItems, fetchStats } = useCollectionStore();
-  const onboarding = useOnboardingStore();
   const { followers, following, fetchFollowers, fetchFollowing } = useFollowStore();
   const { given: givenGifts, isLoaded: giftsLoaded, loadAll: loadGifts } = useGiftStore();
 
@@ -266,6 +262,9 @@ export default function ProfileScreen() {
     await Clipboard.setStringAsync(profileUrl);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+    // Копирование ссылки — такой же «поделился», как и системный share-лист:
+    // чаще всего её тут же кидают в мессенджер.
+    void markProfileShared();
   }, [profileUrl]);
 
   const handleShareProfile = useCallback(async () => {
@@ -274,6 +273,9 @@ export default function ProfileScreen() {
         message: `Моя коллекция винила: ${profileUrl}`,
         url: profileUrl,
       });
+      // Факт отправки из данных не восстановить — единственный пункт чеклиста
+      // «Первые шаги», который приходится запоминать явно.
+      void markProfileShared();
     } catch {
       // Пользователь отменил
     }
@@ -424,12 +426,7 @@ export default function ProfileScreen() {
         </View>
 
         {/* Ссылка на профиль */}
-        <View
-          ref={shareTarget.ref}
-          onLayout={shareTarget.onLayout}
-          collapsable={false}
-          style={[styles.linkCard, Shadows.sm]}
-        >
+        <View style={[styles.linkCard, Shadows.sm]}>
           <Text style={styles.linkLabel}>Ваш профиль</Text>
           <Text style={styles.linkUrl} numberOfLines={1} ellipsizeMode="tail">{profileUrl}</Text>
           <View style={styles.linkActions}>
@@ -628,6 +625,14 @@ export default function ProfileScreen() {
 
           <TouchableOpacity
             style={styles.settingsItem}
+            onPress={() => router.push('/settings/how-it-works' as any)}
+          >
+            <Icon name="help-circle-outline" size={24} color={Colors.royalBlue} />
+            <Text style={styles.settingsItemText}>Как это работает</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.settingsItem}
             onPress={() => Linking.openURL('https://timestripe.com/boards/sX8B5Keg/')}
           >
             <Icon name="map-outline" size={24} color={Colors.royalBlue} />
@@ -640,18 +645,6 @@ export default function ProfileScreen() {
           >
             <Icon name="help-circle-outline" size={24} color={Colors.royalBlue} />
             <Text style={styles.settingsItemText}>Помощь</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.settingsItem}
-            onPress={async () => {
-              await AsyncStorage.removeItem('@vertushka:onboarding_complete');
-              await onboarding.checkOnboarding();
-              router.dismiss();
-            }}
-          >
-            <Icon name="refresh-outline" size={24} color={Colors.warning} />
-            <Text style={styles.settingsItemText}>Запустить онбординг</Text>
           </TouchableOpacity>
 
           {/* DEV: галерея иконок B2 — убрать перед релизом */}
@@ -716,7 +709,6 @@ export default function ProfileScreen() {
         </View>
       </ScrollView>
 
-      <OnboardingOverlay />
       <Toast config={toastConfig} topOffset={56} />
     </View>
   );

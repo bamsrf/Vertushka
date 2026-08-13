@@ -51,10 +51,10 @@ try {
 }
 import { Colors } from '../constants/theme';
 import { OfflineBanner } from '../components/OfflineBanner';
-import { OnboardingOverlay } from '../components/OnboardingOverlay';
 import { AchievementUnlockHost } from '../components/AchievementUnlockOverlay';
 import { GiftMatchModal } from '../components/GiftMatchModal';
 import { MascotIntro } from '../components/MascotIntro';
+import { initFirstStepsWatcher } from '../lib/onboardingProgress';
 import { InAppNotificationToastHost, inAppToast } from '../components/notifications/InAppNotificationToast';
 import Toast from 'react-native-toast-message';
 import { toastConfig } from '../components/CustomToast';
@@ -195,9 +195,18 @@ function RootLayout() {
 
   useEffect(() => {
     checkAuth();
-    checkOnboarding();
     loadRemoteConfig();
+    // Шаги чеклиста закрываются на экранах, где самой карточки не видно
+    // (профиль, поиск, настройки Discogs). Наблюдатель живёт в корне и
+    // показывает тост там, где человек находится в этот момент.
+    initFirstStepsWatcher();
   }, []);
+
+  // Флаг онбординга живёт per-user, поэтому читается не на маунте, а когда
+  // стал известен аккаунт — и перечитывается при смене аккаунта на устройстве.
+  useEffect(() => {
+    checkOnboarding(user?.id ?? null);
+  }, [user?.id, checkOnboarding]);
 
   // Привязка событий Sentry к аккаунту.
   //
@@ -498,7 +507,6 @@ function RootLayout() {
             options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
           />
         </Stack>
-        <OnboardingOverlay />
         <AchievementUnlockHost />
         {/* Спрашивает «это подарок?», когда добавленная пластинка совпала
             с забронированным пунктом вишлиста. Живёт здесь, а не на экранах:

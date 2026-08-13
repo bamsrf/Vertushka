@@ -27,6 +27,8 @@ import * as Linking from 'expo-linking';
 import { Icon } from '@/components/ui';
 import { api } from '../../lib/api';
 import { analytics } from '../../lib/analytics';
+import { useCollectionStore } from '../../lib/store';
+import { setDiscogsConnected } from '../../lib/onboardingProgress';
 import { Colors, Spacing, BorderRadius, Typography } from '../../constants/theme';
 
 const REDIRECT = 'vertushka://discogs-callback';
@@ -45,6 +47,9 @@ export default function DiscogsSettings() {
       const s = await api.getDiscogsStatus();
       setConnected(s.connected);
       setUsername(s.username);
+      // Чеклист «Первые шаги» держит статус у себя — иначе узнал бы о
+      // подключении только в следующую сессию.
+      setDiscogsConnected(s.connected);
     } catch {
       Alert.alert('Discogs', 'Не удалось загрузить статус Discogs');
     } finally {
@@ -102,6 +107,12 @@ export default function DiscogsSettings() {
                 skipped: r.skipped,
                 total: r.total,
               });
+              // Экран коллекции грузится один раз на маунте и остаётся
+              // смонтированным, поэтому сам импорт он бы не заметил: до
+              // pull-to-refresh полка выглядела бы пустой, а чеклист —
+              // сломанным сразу после главного действия онбординга.
+              await useCollectionStore.getState().fetchCollections();
+              await useCollectionStore.getState().fetchCollectionItems();
               // Alert, не toast: этот экран — нативный stack-screen и рендерится
               // поверх корневого <Toast>, поэтому toast тут не виден. Alert
               // нативный и всегда поверх.
@@ -134,6 +145,7 @@ export default function DiscogsSettings() {
             try {
               await api.disconnectDiscogs();
               setConnected(false);
+              setDiscogsConnected(false);
               setUsername(null);
               Alert.alert('Discogs', 'Аккаунт отключён');
             } catch {

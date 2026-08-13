@@ -122,35 +122,53 @@ async def _flush_sizes(session, pending: list[dict]) -> None:
 
 
 async def demote_thumb_urls(batch: int, dry_run: bool) -> int:
-    """Перенести thumb-grade cover_image_url в thumb_image_url. Возвращает счёт."""
+    """Перенести thumb-grade cover_image_url в thumb_image_url. Возвращает счёт.
+
+    Keyset-пагинация по discogs_id, а НЕ один SELECT на всю таблицу: строк с
+    обложкой в дампе ~1.65 млн, и материализовать их разом в контейнере на 2 ГБ
+    рядом с живым API — верный OOM. LIMIT/OFFSET тоже не годится: на глубоких
+    смещениях Postgres каждый раз перечитывает префикс.
+    """
     moved = 0
-    pending: list[dict] = []
+    scanned = 0
+    last_id = -1
+    page = max(batch, 5000)
 
     async with async_session_maker() as session:
-        rows = (
-            await session.execute(
-                text(
-                    "SELECT discogs_id, cover_image_url FROM discogs_releases_index "
-                    "WHERE cover_image_url IS NOT NULL AND thumb_image_url IS NULL"
+        while True:
+            rows = (
+                await session.execute(
+                    text(
+                        "SELECT discogs_id, cover_image_url "
+                        "FROM discogs_releases_index "
+                        "WHERE cover_image_url IS NOT NULL AND thumb_image_url IS NULL "
+                        "AND discogs_id > :last "
+                        "ORDER BY discogs_id "
+                        "LIMIT :lim"
+                    ),
+                    {"last": last_id, "lim": page},
                 )
-            )
-        ).mappings().all()
+            ).mappings().all()
+            if not rows:
+                break
 
-        logger.info("dump rows with a cover URL: %d", len(rows))
+            scanned += len(rows)
+            last_id = rows[-1]["discogs_id"]
 
-        for row in rows:
-            if not is_thumb_grade(row["cover_image_url"]):
-                continue
-            moved += 1
-            pending.append({"did": row["discogs_id"], "url": row["cover_image_url"]})
+            pending = [
+                {"did": r["discogs_id"], "url": r["cover_image_url"]}
+                for r in rows
+                if is_thumb_grade(r["cover_image_url"])
+            ]
+            moved += len(pending)
 
-            if not dry_run and len(pending) >= batch:
+            if pending and not dry_run:
                 await _flush_demote(session, pending)
-                pending.clear()
 
-        if not dry_run and pending:
-            await _flush_demote(session, pending)
+            if scanned % 100_000 < page:
+                logger.info("demote: scanned %d rows, thumb-grade so far %d", scanned, moved)
 
+    logger.info("demote: scanned %d dump rows total", scanned)
     return moved
 
 

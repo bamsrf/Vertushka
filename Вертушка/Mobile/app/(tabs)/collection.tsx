@@ -21,8 +21,11 @@ import { FolderPickerModal } from '../../components/FolderPickerModal';
 import { WishlistFolderPickerModal } from '../../components/WishlistFolderPickerModal';
 import { SegmentedControl } from '../../components/ui';
 import { useCollectionStore, useAuthStore } from '../../lib/store';
+import { FirstStepsCard } from '../../components/onboarding/FirstStepsCard';
+import { CoachTip } from '../../components/onboarding/CoachTip';
+import { PinchHint } from '../../components/onboarding/PinchHint';
+import { useCoachMark } from '../../lib/useCoachMark';
 import { ms } from '../../lib/responsive';
-import { useTourTarget } from '../../lib/useTourTarget';
 import { api, resolveMediaUrl, recordPreviewParams } from '../../lib/api';
 import { analytics } from '../../lib/analytics';
 import { countPull } from '../../lib/eggTracker';
@@ -76,10 +79,6 @@ const FORMAT_OPTIONS: { key: FormatFilter; label: string; match: string[] }[] = 
 export default function CollectionScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const viewToggleTarget = useTourTarget('collection-view-toggle');
-  const valueTarget = useTourTarget('collection-value');
-  const foldersTarget = useTourTarget('collection-folders');
-  const recordCardTarget = useTourTarget('collection-record-card');
   const [isSelectionMode, setIsSelectionMode] = useState(false);
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -94,6 +93,8 @@ export default function CollectionScreen() {
   const radarPulse = useRef(new Animated.Value(0)).current;     // радар-кнопка sonar-loop
   const radarPulse2 = useRef(new Animated.Value(0)).current;    // второе кольцо (стаггер)
   const [radarMatchCount, setRadarMatchCount] = useState(0);
+  // Счётчик удалений «по одной» за сессию — триггер подсказки про мультивыбор.
+  const [soloRemovals, setSoloRemovals] = useState(0);
 
   const filterMenuOpen = useRef(false);
   const sortMenuOpen = useRef(false);
@@ -115,6 +116,7 @@ export default function CollectionScreen() {
     folders,
     wishlistFolders,
     isLoading,
+    stats,
     setActiveTab,
     fetchCollections,
     fetchCollectionItems,
@@ -461,6 +463,8 @@ export default function CollectionScreen() {
           onPress: async () => {
             try {
               await removeFromCollection(item.id);
+              // Удаление по одной — сигнал, что человек не знает про мультивыбор.
+              setSoloRemovals((n) => n + 1);
             } catch (error) {
               toast.error('Не удалось удалить из коллекции');
             }
@@ -488,6 +492,7 @@ export default function CollectionScreen() {
           onPress: async () => {
             try {
               await removeFromWishlist(item.id);
+              setSoloRemovals((n) => n + 1);
             } catch (error) {
               toast.error('Не удалось удалить из списка');
             }
@@ -767,17 +772,87 @@ export default function CollectionScreen() {
 
   const activeFilterLabel = FORMAT_OPTIONS.find(f => f.key === activeFilter)?.label || 'Все';
 
+  // ==================== Контекстные подсказки ====================
+  //
+  // Каждая объясняет фичу в момент её разблокировки, а не «на входе». Порядок
+  // объявления = приоритет: за запуск приложения показывается ровно одна
+  // (лимит держит lib/coachMarks.ts), и достаётся он первому сработавшему.
+  //
+  // total_records, а не collectionItems.length: список постраничный, и после
+  // импорта из Discogs первая страница может ещё не приехать.
+  const recordCount = stats?.total_records ?? collectionItems.length;
+  const isCollectionTab = activeTab === 'collection';
+
+  const pinchTip = useCoachMark(
+    'pinch-zoom',
+    isCollectionTab && viewMode === 'grid' && recordCount >= 12,
+  );
+  const foldersTip = useCoachMark(
+    'folders',
+    isCollectionTab && recordCount >= 15 && folders.length === 0,
+  );
+  const valueTip = useCoachMark('collection-value', isCollectionTab && recordCount >= 5);
+  const multiSelectTip = useCoachMark('multi-select', soloRemovals >= 2);
+  const radarTip = useCoachMark('radar', !isCollectionTab && wishlistItems.length > 0);
+  const marketTip = useCoachMark('market', !isCollectionTab && wishlistItems.length >= 3);
+  const giftsTip = useCoachMark('gifts-incoming', !isCollectionTab && wishlistItems.length > 0);
+
   const ScrollableHeader = (
     <View style={styles.headerContainer}>
-      {/* Folders section (scrolls away) */}
-      <Animated.View style={{ opacity: menuOpacity, maxHeight: menuAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 500] }), overflow: 'hidden' }}>
+      {/* Чеклист новичка и контекстные подсказки. Живут в скроллящейся шапке,
+          а не в липкой: та уже занята (Выбрать / вид / ₽ / фильтр / сортировка),
+          и постоянно висящий блок съел бы высоту экрана. Здесь они уезжают
+          вместе с папками. */}
+      <Animated.View style={{ opacity: menuOpacity, maxHeight: menuAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 900] }), overflow: 'hidden' }}>
+        {activeTab === 'collection' && (
+          <FirstStepsCard overrides={{ folders: handleCreateFolder }} />
+        )}
+
+        {/* Условие таба дублируется в рендере, а не только в enabled: подсказка
+            уже могла стать видимой, и без этого она осталась бы висеть после
+            переключения на соседнюю вкладку, где объясняет не то. */}
+        {isCollectionTab && foldersTip.visible && (
+          <CoachTip
+            meta={foldersTip.meta}
+            onDismiss={foldersTip.dismiss}
+            action={{ label: 'Создать папку', onPress: handleCreateFolder }}
+          />
+        )}
+        {isCollectionTab && valueTip.visible && (
+          <CoachTip
+            meta={valueTip.meta}
+            onDismiss={valueTip.dismiss}
+            action={{ label: 'Посчитать', onPress: () => router.push('/collection/value') }}
+          />
+        )}
+        {!isCollectionTab && radarTip.visible && (
+          <CoachTip
+            meta={radarTip.meta}
+            onDismiss={radarTip.dismiss}
+            action={{ label: 'Открыть Радар', onPress: () => router.push('/radar' as any) }}
+          />
+        )}
+        {!isCollectionTab && marketTip.visible && (
+          <CoachTip
+            meta={marketTip.meta}
+            onDismiss={marketTip.dismiss}
+            action={{ label: 'Открыть Маркет', onPress: () => router.push('/market') }}
+          />
+        )}
+        {!isCollectionTab && giftsTip.visible && (
+          <CoachTip
+            meta={giftsTip.meta}
+            onDismiss={giftsTip.dismiss}
+            action={{ label: 'Поделиться профилем', onPress: () => router.push('/profile') }}
+          />
+        )}
+        {multiSelectTip.visible && (
+          <CoachTip meta={multiSelectTip.meta} onDismiss={multiSelectTip.dismiss} />
+        )}
+
+        {/* Folders section (scrolls away) */}
         {activeTab === 'collection' && folders.length > 0 && (
-          <View
-            ref={foldersTarget.ref}
-            onLayout={foldersTarget.onLayout}
-            collapsable={false}
-            style={styles.foldersSection}
-          >
+          <View style={styles.foldersSection}>
             <Text style={styles.foldersSectionTitle}>Папки</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.foldersScroll}>
               <TouchableOpacity style={styles.newFolderCard} onPress={handleCreateFolder}>
@@ -802,7 +877,7 @@ export default function CollectionScreen() {
         )}
 
         {activeTab === 'collection' && folders.length === 0 && (
-          <View ref={foldersTarget.ref} onLayout={foldersTarget.onLayout} collapsable={false}>
+          <View>
             <TouchableOpacity style={styles.createFirstFolder} onPress={handleCreateFolder}>
               <Icon name="folder-outline" size={20} color={Colors.textMuted} />
               <Text style={styles.createFirstFolderText}>Создать папку</Text>
@@ -904,9 +979,6 @@ export default function CollectionScreen() {
           {/* Grid / List toggle */}
           {!isSelectionMode && (
             <TouchableOpacity
-              ref={viewToggleTarget.ref}
-              onLayout={viewToggleTarget.onLayout}
-              collapsable={false}
               style={styles.viewToggleButton}
               onPress={handleToggleViewMode}
               activeOpacity={0.7}
@@ -925,9 +997,6 @@ export default function CollectionScreen() {
           {/* Value button */}
           {!isSelectionMode && activeTab === 'collection' && (
             <TouchableOpacity
-              ref={valueTarget.ref}
-              onLayout={valueTarget.onLayout}
-              collapsable={false}
               style={styles.valueButton}
               onPress={() => router.push('/collection/value')}
               activeOpacity={0.7}
@@ -1050,12 +1119,8 @@ export default function CollectionScreen() {
         </Animated.View>
       </View>
 
-      <View
-        ref={recordCardTarget.ref}
-        onLayout={recordCardTarget.onLayout}
-        collapsable={false}
-        style={styles.recordGridContainer}
-      >
+      <View style={styles.recordGridContainer}>
+      {pinchTip.visible && <PinchHint onDismiss={pinchTip.dismiss} />}
       {viewMode === 'grid' && data.length > 0 ? (
         <ZoomableRecordGrid
           data={data as (CollectionItem | WishlistItem)[]}

@@ -43,7 +43,6 @@ import { RecordGrid } from '../../components/RecordGrid';
 import { AutoRail } from '../../components/AutoRail';
 import { Section } from '../../components/Section';
 import { useSearchStore, useCollectionStore, useUserSearchStore, useAuthStore, useSuggestStore } from '../../lib/store';
-import { useTourTarget } from '../../lib/useTourTarget';
 import { ms } from '../../lib/responsive';
 import { analytics } from '../../lib/analytics';
 import { api, resolveMediaUrl, recordPreviewParams } from '../../lib/api';
@@ -134,7 +133,6 @@ export default function SearchScreen() {
   // сразу проскроллить к Маркет-секции, а не показать пустой Поиск.
   const { focus } = useLocalSearchParams<{ focus?: string }>();
   const { user } = useAuthStore();
-  const filtersTarget = useTourTarget('search-filters');
   const [searchInput, setSearchInput] = useState('');
   const [inputFocused, setInputFocused] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
@@ -1166,9 +1164,6 @@ export default function SearchScreen() {
         </View>
         {!isUserSearch && (
           <TouchableOpacity
-            ref={filtersTarget.ref}
-            onLayout={filtersTarget.onLayout}
-            collapsable={false}
             style={[styles.filterButton, hasActiveFilters && styles.filterButtonActive]}
             onPress={openFilters}
           >
