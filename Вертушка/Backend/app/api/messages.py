@@ -282,6 +282,12 @@ async def create_or_get_conversation(
     # «Написать» показывало бы мой же тред в моих «Запросах» с кнопкой «Принять».
     if me_part.request_status == "pending":
         me_part.request_status = "accepted"
+    # Диалог мог быть архивирован/удалён у меня раньше (swipe-delete, reject,
+    # блокировка). Раз я сам инициирую его заново — он должен вернуться в
+    # список: иначе GET /conversations/ будет молча фильтровать его и по видимости
+    # он «теряется» и появляется только пока это состояние держится в клиенте.
+    if me_part.archived_at is not None:
+        me_part.archived_at = None
     await db.commit()
     await db.refresh(conv)
     await db.refresh(me_part)
@@ -311,6 +317,14 @@ async def get_conversation_detail(
     conv = await db.get(Conversation, conversation_id)
     if not conv:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Диалог не найден")
+
+    # Открытие треда (например, по deep link/пушу, минуя create_or_get_conversation) —
+    # тоже явное вовлечение: снимаем архивацию, иначе диалог виден только в текущей
+    # сессии клиента (локальный upsert в сторе), а после перезапуска приложения снова
+    # пропадёт из GET /conversations/, потому что archived_at там не сбрасывался.
+    if me_part.archived_at is not None:
+        me_part.archived_at = None
+        await db.commit()
 
     partner_id = partner_id_of(conv, current_user.id)
     partner = await db.get(User, partner_id)
@@ -507,6 +521,10 @@ async def send_message(
     # Если у меня тред был в pending (необычно — я инициатор), сбросить на accepted
     if me_part.request_status == "pending":
         me_part.request_status = "accepted"
+    # Отправка сообщения — явное вовлечение в диалог: если он был архивирован
+    # у меня, вернуть его в список (иначе он снова «пропадёт» после перезагрузки).
+    if me_part.archived_at is not None:
+        me_part.archived_at = None
 
     await db.commit()
     await db.refresh(message)
