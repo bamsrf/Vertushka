@@ -10,7 +10,7 @@
 #
 # Подробности: docs/dev/DEV_SETUP_LOCAL.md
 
-.PHONY: help dev-up dev-down dev-status migrate downgrade seed run shell scrape-test scrape-match psql studio clean
+.PHONY: help dev-up dev-down dev-status migrate downgrade seed run shell scrape-test scrape-match psql studio clean test test-db-up test-db-down test-integration test-all
 
 PYTHON := ./venv/bin/python
 PIP := ./venv/bin/pip
@@ -75,6 +75,25 @@ scrape-match:  ## только сматчить unmatched листинги
 
 run:  ## запустить FastAPI на :8000 с reload
 	$(PYTHON) -m uvicorn app.main:app --reload --port 8000
+
+# ---- Тесты ------------------------------------------------------------- #
+
+test:  ## быстрый прогон без БД (интеграционные пропустятся)
+	$(PYTHON) -m pytest tests
+
+test-db-up:  ## поднять Postgres под интеграционные тесты (:55432)
+	docker compose -f docker-compose.test.yml up -d --wait
+
+test-db-down:  ## погасить тестовый Postgres
+	docker compose -f docker-compose.test.yml down -v
+
+test-integration:  ## интеграционные тесты (нужен test-db-up)
+	$(PYTHON) -m pytest tests/integration
+
+test-all:  ## поднять БД, прогнать всё, погасить
+	$(MAKE) test-db-up
+	$(PYTHON) -m pytest tests; \
+		status=$$?; $(MAKE) test-db-down; exit $$status
 
 # ---- Прочее ----------------------------------------------------------- #
 

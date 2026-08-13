@@ -225,11 +225,17 @@ class WishlistItem(Base):
     # Отношения
     wishlist = relationship("Wishlist", back_populates="items")
     record = relationship("Record", back_populates="wishlist_items")
+    # Без delete-orphan: бронь переживает удаление пункта вишлиста.
+    # Раньше каскад сносил её вместе с пунктом — а завершение подарка как раз
+    # удаляет пункт, поэтому COMPLETED-строка исчезала сразу после создания.
+    # Из-за этого вся серия ачивок «Дарящая рука» (J2/J3/J4/J7/J9), которая
+    # считает завершённые брони, не могла открыться в принципе, и история
+    # подарков не хранилась. FK объявлен с ondelete="SET NULL" — связь и так
+    # рвётся на уровне базы, удалять строку не требуется.
     gift_booking = relationship(
         "GiftBooking",
         back_populates="wishlist_item",
         uselist=False,
-        cascade="all, delete-orphan"
     )
     folders = relationship(
         "WishlistFolder",

@@ -1,0 +1,23 @@
+# Postgres под интеграционные тесты. Отдельный контейнер и порт, чтобы не
+# пересекаться с dev-базой (supabase на 54322) и не ходить в прод.
+#
+#   make test-db-up && make test-integration && make test-db-down
+#
+# База эфемерная: том не монтируется, данные живут только пока поднят контейнер.
+services:
+  test-db:
+    image: postgres:16-alpine
+    container_name: vertushka_test_db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: vertushka_test
+    ports:
+      - "55432:5432"
+    # fsync выключен: durability тестовой базе не нужна, зато прогон заметно быстрее
+    command: postgres -c fsync=off -c synchronous_commit=off -c full_page_writes=off
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d vertushka_test"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
