@@ -141,6 +141,52 @@ export const analytics = {
   followUser: (targetUserId: string) => track('follow_user', { target_user_id: targetUserId }),
   bookGift: (recordId: string) => track('book_gift', { record_id: recordId }),
 
+  // --- Подарки: жизненный цикл брони ---
+  /**
+   * Подарок дошёл до получателя — финал воронки book_gift → gift_completed.
+   *
+   * `via` разделяет два пути: ручная отметка «Получено!» в карточке подарка и
+   * автоматическое подтверждение через модалку матчинга при сканировании. Без
+   * этого свойства нельзя понять, окупается ли матчинг или люди всё равно
+   * доходят до карточки руками.
+   */
+  giftCompleted: (params: { via: 'gift_screen' | 'match_modal'; discogs_id?: string | null }) =>
+    track('gift_completed', {
+      via: params.via,
+      ...(params.discogs_id ? { discogs_id: params.discogs_id } : {}),
+    }),
+
+  /**
+   * Даритель сам отменил бронь.
+   *
+   * Молчаливое истечение 60-дневной брони сюда НЕ попадает: срок сгорает на
+   * сервере, приложение об этом не узнаёт. Долю протухших броней считать по
+   * бэкенду — в воронке они будут выглядеть просто как недошедшие.
+   */
+  giftBookingCancelled: (discogsId?: string | null) =>
+    track('gift_booking_cancelled', {
+      by: 'gifter',
+      ...(discogsId ? { discogs_id: discogsId } : {}),
+    }),
+
+  // --- Подарки: точность матчинга ---
+  /**
+   * Показали вопрос «вам её подарили?» — знаменатель точности алгоритма.
+   *
+   * `match_kind` обязателен: exact-совпадение и fuzzy/master — это разные по
+   * надёжности гипотезы, и мерить их одной цифрой бессмысленно. Именно доля
+   * подтверждений по каждому виду отвечает, можно ли доверять матчингу
+   * настолько, чтобы однажды перестать спрашивать пользователя.
+   *
+   * gift_match_confirmed идёт в паре с gift_completed(via: 'match_modal') —
+   * это не дубль: первое про качество алгоритма, второе про воронку подарка.
+   */
+  giftMatchShown: (matchKind: string) => track('gift_match_shown', { match_kind: matchKind }),
+  giftMatchConfirmed: (matchKind: string) =>
+    track('gift_match_confirmed', { match_kind: matchKind }),
+  giftMatchDismissed: (matchKind: string) =>
+    track('gift_match_dismissed', { match_kind: matchKind }),
+
   // --- Offers (магазины) ---
   viewOffers: (discogsId: string, count: number) =>
     track('view_offers', { discogs_id: discogsId, count }),
@@ -182,4 +228,31 @@ export const analytics = {
    */
   marketRecordOpen: (params: { record_ref: string; from: 'market' | 'market_store' }) =>
     track('market_record_open', params),
+
+  // --- Онбординг ---
+  /**
+   * Выбор на развилке «с чего начнём» в конце welcome-карусели.
+   *
+   * Главный срез активации: у `discogs_import` и `scan` принципиально разные
+   * первые пять минут, и ретеншен по ним надо смотреть отдельно (см.
+   * docs/plans/AMPLITUDE_DASHBOARDS.md §2).
+   */
+  onboardingStartChoice: (choice: 'scan' | 'discogs_import' | 'search' | 'explore') =>
+    track('onboarding_start_choice', { choice }),
+
+  /**
+   * Показ контекстной подсказки. Вместе с onboarding_hint_action показывает,
+   * какие формулировки реально доводят до фичи, а какие просто закрывают.
+   */
+  onboardingHintShown: (key: string) => track('onboarding_hint_shown', { key }),
+  /** Тап по действию в подсказке («Открыть Радар», «Создать папку»). */
+  onboardingHintAction: (key: string) => track('onboarding_hint_action', { key }),
+  /** Тап по невыполненному пункту чеклиста «Первые шаги». */
+  onboardingStepTap: (key: string) => track('onboarding_step_tap', { key }),
+  /**
+   * Пункт чеклиста закрылся. Отличается от step_tap: тап — это намерение,
+   * а done — факт. Их разница по каждому шагу и показывает, где человек
+   * пошёл делать и не дошёл.
+   */
+  onboardingStepDone: (key: string) => track('onboarding_step_done', { key }),
 };

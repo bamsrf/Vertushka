@@ -24,7 +24,6 @@ import { Button, SegmentedControl } from '../../components/ui';
 import { RecordCard } from '../../components/RecordCard';
 import { ManualAddVinylToggle } from '../../components/ManualAddVinylToggle';
 import { useScannerStore, useCollectionStore } from '../../lib/store';
-import { useTourTarget } from '../../lib/useTourTarget';
 import { analytics } from '../../lib/analytics';
 import { RecordSearchResult, ScanMode } from '../../lib/types';
 import { recordPreviewParams } from '../../lib/api';
@@ -44,7 +43,6 @@ export default function ScannerScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const cameraRef = useRef<CameraView>(null);
-  const segmentsTarget = useTourTarget('scan-segments');
   const [permission, requestPermission] = useCameraPermissions();
   // Expo Router держит табы смонтированными: без этого гейта сенсор и превью
   // продолжают работать на Поиске и в Коллекции. Камера — самый горячий
@@ -278,12 +276,7 @@ export default function ScannerScreen() {
           >
             Сканирование
           </Text>
-          <View
-            ref={segmentsTarget.ref}
-            onLayout={segmentsTarget.onLayout}
-            collapsable={false}
-            style={styles.modeSwitch}
-          >
+          <View style={styles.modeSwitch}>
             <SegmentedControl<ScanMode>
               segments={[
                 { key: 'barcode', label: 'Штрихкод' },
