@@ -12,7 +12,7 @@
  *
  * Имя дарителя здесь не показывается: бронь для получателя анонимна.
  */
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -27,6 +27,7 @@ import { Icon } from '@/components/ui';
 import { useCollectionStore } from '../lib/store';
 import { resolveMediaUrl } from '../lib/api';
 import { toast } from '../lib/toast';
+import { analytics } from '../lib/analytics';
 import { Colors, Spacing, BorderRadius } from '../constants/theme';
 
 export function GiftMatchModal() {
@@ -34,6 +35,17 @@ export function GiftMatchModal() {
   const confirmGiftMatch = useCollectionStore((s) => s.confirmGiftMatch);
   const dismissGiftMatch = useCollectionStore((s) => s.dismissGiftMatch);
   const [isBusy, setIsBusy] = useState(false);
+
+  // Знаменатель точности матчинга. Ключ — booking_id, а не факт наличия
+  // pending: без него повторный рендер по любой причине слал бы показ заново
+  // и раздувал знаменатель. Хук стоит выше раннего return — иначе порядок
+  // хуков менялся бы между рендерами.
+  const shownBookingId = pending?.match.booking_id;
+  const matchKind = pending?.match.match_kind;
+  useEffect(() => {
+    if (!shownBookingId || !matchKind) return;
+    analytics.giftMatchShown(matchKind);
+  }, [shownBookingId, matchKind]);
 
   if (!pending) return null;
 

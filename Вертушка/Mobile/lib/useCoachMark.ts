@@ -22,6 +22,7 @@ import {
   releaseSessionSlot,
   requestCoachMark,
 } from './coachMarks';
+import { clearCoachSpotlight, setCoachSpotlight } from './coachSpotlight';
 
 interface UseCoachMarkResult {
   visible: boolean;
@@ -53,6 +54,9 @@ export function useCoachMark(key: CoachMarkKey, enabled: boolean): UseCoachMarkR
       }
 
       analytics.onboardingHintShown(key);
+      // Одновременно с карточкой зажигаем цель: текст называет фичу, кольцо
+      // показывает, где она физически лежит.
+      setCoachSpotlight(key);
       setVisible(true);
     })();
 
@@ -61,8 +65,13 @@ export function useCoachMark(key: CoachMarkKey, enabled: boolean): UseCoachMarkR
     };
   }, [enabled, userId, key, visible]);
 
+  // Экран ушёл, а подсказка была видима — гасим цель, иначе кольцо осталось
+  // бы пульсировать при следующем возврате на экран.
+  useEffect(() => () => clearCoachSpotlight(key), [key]);
+
   const dismiss = useCallback(() => {
     setVisible(false);
+    clearCoachSpotlight(key);
     if (userId) void markCoachMarkSeen(userId, key);
   }, [userId, key]);
 

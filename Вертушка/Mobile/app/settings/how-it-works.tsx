@@ -109,6 +109,12 @@ export default function HowItWorksScreen() {
                 <View style={styles.cardText}>
                   <Text style={styles.cardTitle}>{mark.title}</Text>
                   <Text style={styles.cardBody}>{mark.body}</Text>
+                  {/* Маршрут важнее условия разблокировки: на этот экран
+                      заходят, когда фича уже нужна, но не находится. */}
+                  <View style={styles.whereRow}>
+                    <Icon name="location-outline" size={12} color={Colors.royalBlue} />
+                    <Text style={styles.cardWhere}>{mark.where}</Text>
+                  </View>
                   <Text style={styles.cardUnlock}>Появляется: {mark.unlock}</Text>
                 </View>
               </View>
@@ -213,6 +219,19 @@ const styles = StyleSheet.create({
   cardBody: {
     ...Typography.caption,
     color: Colors.textSecondary,
+  },
+  whereRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 5,
+    marginTop: 6,
+  },
+  cardWhere: {
+    ...Typography.caption,
+    flex: 1,
+    fontSize: 12,
+    lineHeight: 16,
+    color: Colors.royalBlue,
   },
   cardUnlock: {
     ...Typography.caption,

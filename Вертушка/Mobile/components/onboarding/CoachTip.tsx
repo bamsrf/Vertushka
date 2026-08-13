@@ -47,6 +47,13 @@ export function CoachTip({ meta, onDismiss, action }: CoachTipProps) {
         <View style={styles.text}>
           <Text style={styles.title}>{meta.title}</Text>
           <Text style={styles.body}>{meta.body}</Text>
+          {/* Маршрут до фичи. Отдельной строкой, а не внутри body: юзер
+              возвращается к подсказке именно за «а где это», и искать
+              ответ внутри абзаца он не должен. */}
+          <View style={styles.whereRow}>
+            <Icon name="location-outline" size={12} color={Colors.royalBlue} />
+            <Text style={styles.whereText}>{meta.where}</Text>
+          </View>
         </View>
         <Pressable
           onPress={onDismiss}
@@ -112,6 +119,19 @@ const styles = StyleSheet.create({
   body: {
     ...Typography.caption,
     color: Colors.textSecondary,
+  },
+  whereRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 5,
+    marginTop: 6,
+  },
+  whereText: {
+    ...Typography.caption,
+    flex: 1,
+    fontSize: 12,
+    lineHeight: 16,
+    color: Colors.royalBlue,
   },
   action: {
     flexDirection: 'row',

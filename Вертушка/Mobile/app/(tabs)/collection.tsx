@@ -23,6 +23,8 @@ import { SegmentedControl } from '../../components/ui';
 import { useCollectionStore, useAuthStore } from '../../lib/store';
 import { FirstStepsCard } from '../../components/onboarding/FirstStepsCard';
 import { CoachTip } from '../../components/onboarding/CoachTip';
+import { CoachPulse } from '../../components/onboarding/CoachPulse';
+import { useCoachSpotlight } from '../../lib/coachSpotlight';
 import { PinchHint } from '../../components/onboarding/PinchHint';
 import { useCoachMark } from '../../lib/useCoachMark';
 import { ms } from '../../lib/responsive';
@@ -792,6 +794,9 @@ export default function CollectionScreen() {
     isCollectionTab && recordCount >= 15 && folders.length === 0,
   );
   const valueTip = useCoachMark('collection-value', isCollectionTab && recordCount >= 5);
+  // Кольцо на кнопке ₽ в липкой шапке — она за пределами карточки подсказки,
+  // поэтому связь между ними держится через спотлайт-ключ, а не через вёрстку.
+  const valueSpotlight = useCoachSpotlight('collection-value');
   const multiSelectTip = useCoachMark('multi-select', soloRemovals >= 2);
   const radarTip = useCoachMark('radar', !isCollectionTab && wishlistItems.length > 0);
   const marketTip = useCoachMark('market', !isCollectionTab && wishlistItems.length >= 3);
@@ -994,15 +999,19 @@ export default function CollectionScreen() {
             </TouchableOpacity>
           )}
 
-          {/* Value button */}
+          {/* Value button. Пока висит подсказка «Сколько стоит коллекция»,
+              кнопка пульсирует — иначе текст называет ₽, а глазами её всё
+              равно приходится искать среди пяти иконок шапки. */}
           {!isSelectionMode && activeTab === 'collection' && (
-            <TouchableOpacity
-              style={styles.valueButton}
-              onPress={() => router.push('/collection/value')}
-              activeOpacity={0.7}
-            >
-              <Icon name="cash-outline" size={18} color={Colors.royalBlue} />
-            </TouchableOpacity>
+            <CoachPulse active={valueSpotlight} radius={18}>
+              <TouchableOpacity
+                style={styles.valueButton}
+                onPress={() => router.push('/collection/value')}
+                activeOpacity={0.7}
+              >
+                <Icon name="cash-outline" size={18} color={Colors.royalBlue} />
+              </TouchableOpacity>
+            </CoachPulse>
           )}
 
           {/* Filter button */}

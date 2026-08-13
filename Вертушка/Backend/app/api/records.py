@@ -998,9 +998,10 @@ async def search_records(
         # Обложки — через своё зеркало /covers/{discogs_id}.jpg: nginx-статика
         # после первого обращения, вместо прямых ссылок на медленные из РФ CDN.
         covers_base = get_settings().public_covers_base
+        stamps = await _cover_stamps(db, [r.discogs_id for r in local])
         for r in local:
             if r.cover_image_url and not r.cover_image_url.startswith(covers_base):
-                r.cover_image_url = f"{covers_base}/{r.discogs_id}.jpg"
+                r.cover_image_url = _mirror_url(covers_base, r.discogs_id, stamps)
         # Неполные обложки → no-store: warm уже запущен, повторный запрос
         # должен дойти до бэкенда, а не получить запиненную nginx копию.
         if any(not r.cover_image_url for r in local):
@@ -1329,9 +1330,10 @@ async def scan_cover(
     # Rewrite ПОСЛЕ visual_rerank — ему нужны прямые image-URL для CLIP.
     from app.config import get_settings as _gs
     _cov_base = _gs().public_covers_base
+    _stamps = await _cover_stamps(db, [_r.discogs_id for _r in results])
     for _r in results:
         if _r.discogs_id and str(_r.discogs_id).isdigit():
-            _r.cover_image_url = f"{_cov_base}/{_r.discogs_id}.jpg"
+            _r.cover_image_url = _mirror_url(_cov_base, str(_r.discogs_id), _stamps)
             _r.thumb_image_url = _r.cover_image_url
 
     return CoverScanResponse(
@@ -2977,6 +2979,42 @@ _COVER_WARM_SLICE = 8
 # прямым фан-аутом get_release_cover — теперь потолок втрое ниже, и то лишь
 # после того как отработали CAA, barcode-CAA и Deezer.
 _COVER_DISCOGS_BUDGET = 3
+
+
+async def _cover_stamps(db: AsyncSession, discogs_ids: list[str | None]) -> dict[str, int]:
+    """discogs_id → epoch(cover_cached_at) для уже зеркалированных обложек.
+
+    Метка версии в URL — то, что делает `immutable` в nginx безопасным: зеркало
+    ПЕРЕЗАПИСЫВАЕТ мелкий мастер лучшим источником, и без смены URL клиент с
+    годовым кэшем никогда не увидел бы обновление. Схемы (RecordResponse /
+    RecordBrief) ставят её сами, а поиск и скан обложки собирают URL руками —
+    здесь и добираем.
+
+    Один батч-запрос на страницу (≤50 id), не N запросов. Отсутствие записи в
+    ответе — нормально: файла ещё нет, URL уйдёт без метки и получит
+    консервативный Cache-Control (неделя вместо года).
+    """
+    ids = [d for d in discogs_ids if d and str(d).isdigit()]
+    if not ids:
+        return {}
+    rows = (
+        await db.execute(
+            text(
+                "SELECT discogs_id, cover_cached_at FROM records "
+                "WHERE discogs_id = ANY(:ids) AND cover_cached_at IS NOT NULL "
+                "AND cover_local_path IS NOT NULL AND merged_into_id IS NULL"
+            ),
+            {"ids": [str(d) for d in ids]},
+        )
+    ).mappings().all()
+    return {r["discogs_id"]: int(r["cover_cached_at"].timestamp()) for r in rows}
+
+
+def _mirror_url(covers_base: str, discogs_id: str, stamps: dict[str, int]) -> str:
+    """URL зеркала с меткой версии, если обложка уже зеркалирована."""
+    url = f"{covers_base}/{discogs_id}.jpg"
+    stamp = stamps.get(str(discogs_id))
+    return f"{url}?v={stamp}" if stamp else url
 
 
 async def _covers_from_index(release_ids: list[str]) -> dict[str, str]:
