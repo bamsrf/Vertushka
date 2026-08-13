@@ -7,6 +7,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { api } from './api';
 import { analytics } from './analytics';
 import { useMessagesStore } from './messagesStore';
+import { useNotificationsStore } from './notificationsStore';
 import {
   initAchievementsCache,
   resetAchievementsCache,
@@ -1770,6 +1771,7 @@ export function resetUserStores(): void {
   });
   useGiftStore.setState({ given: [], received: [], isLoading: false, isLoaded: false });
   useMessagesStore.getState().reset();
+  useNotificationsStore.getState().reset();
   // Кэш Discogs — формально не user-specific, но безопаснее почистить
   useCacheStore.getState().invalidateAll();
 }
