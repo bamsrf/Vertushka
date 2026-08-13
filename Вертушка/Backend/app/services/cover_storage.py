@@ -477,6 +477,36 @@ def _looks_like_junk_cover(url: str | None) -> bool:
     return any(m in low for m in ("spacer.gif", "no-image", "no_image", "noimage", "placeholder", "default.jp"))
 
 
+async def _release_cover_is_empty(discogs_id: str) -> bool:
+    """True, если у discogs-релиза НЕТ ни своей обложки, ни зеркала на диске.
+
+    Единственный рубеж приоритета источников для магазинного харвеста. Записи
+    нет в БД (обложка живёт только в dump-индексе) — тоже True: перетирать
+    нечего, а `discogs_releases_index` защищён своим `cover_image_url IS NULL`.
+    Ошибку БД трактуем как «занято» — молчаливая порча дороже пропущенной
+    бесплатной картинки, добор всё равно вернётся следующим прогоном.
+    """
+    from app.database import async_session_maker
+    from sqlalchemy import text as _text
+
+    try:
+        async with async_session_maker() as db:
+            row = (await db.execute(
+                _text(
+                    "SELECT cover_image_url, cover_local_path FROM records "
+                    "WHERE discogs_id = :did"
+                ),
+                {"did": discogs_id},
+            )).first()
+    except Exception:
+        logger.debug("harvest guard: lookup failed for %s", discogs_id, exc_info=True)
+        return False
+
+    if row is None:
+        return True
+    return not row.cover_image_url and not row.cover_local_path
+
+
 async def _harvest_store_cover(
     discogs_id: str, master_id: str | None, image_url: str,
     *, await_downloads: bool = False,
@@ -490,6 +520,18 @@ async def _harvest_store_cover(
     Заполняем ТОЛЬКО пустые (IS NULL / ON CONFLICT DO NOTHING) — не перетираем
     более каноничные источники.
 
+    Магазин — источник ПОСЛЕДНЕЙ очереди: он закрывает дырку, но никогда не
+    ложится поверх Discogs. Раньше это соблюдалось лишь для записей в БД, а
+    скачивание файла шло мимо guard'а: `download_and_store` безусловно ставит
+    `cover_local_path` + свежий `cover_cached_at` (cache-bust), и запись с
+    дискогсовским `cover_image_url`, но ещё не зеркалированная, молча
+    перекрашивалась магазинной картинкой. Так 12.08.2026 разовый добор
+    `backfill_store_covers` подменил обложку у release 2875867 (Tim Maia 1980,
+    master 805853): к нему fuzzy-матчем прилип листинг переиздания 2023 года
+    из другого мастера (434521), трек-лист остался прежним — обложка чужая.
+    Точечный фильтр в SQL добора этого не ловил: он про строки, а порча шла
+    через файл. Guard здесь держится независимо от вызывающего.
+
     `await_downloads=True` — дождаться скачивания файлов вместо fire-and-forget.
     Нужно разовому добору (`backfill_store_covers`): он запускается через
     `asyncio.run`, и петля закроется раньше, чем отработают фоновые задачи.
@@ -500,6 +542,9 @@ async def _harvest_store_cover(
         return False
     from app.database import async_session_maker
     from sqlalchemy import text as _text
+
+    if not await _release_cover_is_empty(discogs_id):
+        return False
 
     try:
         async with async_session_maker() as db:
