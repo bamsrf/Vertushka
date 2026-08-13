@@ -2,12 +2,13 @@
  * Вишлисты: «Я дарю» / «Мне дарят» — список бронирований
  * Тап по карточке открывает детальный экран /gift/[id]
  */
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   FlatList,
+  SectionList,
   TouchableOpacity,
   ActivityIndicator,
   RefreshControl,
@@ -21,7 +22,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuthStore, useGiftStore } from '../../lib/store';
 import { toast } from '../../lib/toast';
 import { GiftGivenItem, GiftReceivedItem } from '../../lib/types';
-import { cleanArtistName } from '../../lib/format';
+import { cleanArtistName, plural } from '../../lib/format';
 import { SegmentedControl } from '../../components/ui';
 import { Colors, Typography, Spacing, BorderRadius } from '../../constants/theme';
 import { ms } from '../../lib/responsive';
@@ -169,6 +170,44 @@ export default function WishlistsScreen() {
     />
   );
 
+  // «Я дарю» разбивается надвое: что дарю сейчас и что уже вручил.
+  // Архив — это ещё и статистика: сколько подарков дошло и скольким людям.
+  const givenSections = useMemo(() => {
+    const active = given.filter((g) => g.status !== 'completed');
+    const delivered = given.filter((g) => g.status === 'completed');
+    const sections: { key: string; title: string; caption?: string; data: GiftGivenItem[] }[] = [];
+
+    if (active.length > 0) {
+      sections.push({ key: 'active', title: 'Сейчас дарю', data: active });
+    }
+    if (delivered.length > 0) {
+      const people = new Set(delivered.map((g) => g.for_user.username)).size;
+      sections.push({
+        key: 'delivered',
+        title: 'Уже подарил',
+        caption: `${plural(delivered.length, 'подарок', 'подарка', 'подарков')} · ${plural(
+          people,
+          'человеку',
+          'людям',
+          'людям',
+        )}`,
+        data: delivered,
+      });
+    }
+    return sections;
+  }, [given]);
+
+  const renderSectionHeader = ({
+    section,
+  }: {
+    section: { title: string; caption?: string };
+  }) => (
+    <View style={styles.sectionHeader}>
+      <Text style={styles.sectionTitle}>{section.title}</Text>
+      {section.caption ? <Text style={styles.sectionCaption}>{section.caption}</Text> : null}
+    </View>
+  );
+
   const renderEmpty = () => {
     if (!isLoaded) return null;
     return (
@@ -216,10 +255,14 @@ export default function WishlistsScreen() {
           <ActivityIndicator size="large" color={Colors.royalBlue} />
         </View>
       ) : activeTab === 'given' ? (
-        <FlatList
-          data={given}
+        <SectionList
+          sections={givenSections}
           keyExtractor={(item) => item.id}
           renderItem={renderGiven}
+          // Заголовок секции не липкий: секций максимум две, а «прилипший»
+          // заголовок на коротком списке выглядит шумом.
+          stickySectionHeadersEnabled={false}
+          renderSectionHeader={givenSections.length > 1 ? renderSectionHeader : undefined}
           ListEmptyComponent={renderEmpty}
           contentContainerStyle={[
             styles.listContent,
@@ -290,6 +333,22 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.lg,
     paddingTop: Spacing.md,
     paddingBottom: Spacing.sm,
+  },
+  sectionHeader: {
+    paddingTop: Spacing.lg,
+    paddingBottom: Spacing.xs,
+  },
+  sectionTitle: {
+    fontSize: ms(13),
+    fontWeight: '700',
+    color: Colors.text,
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+  },
+  sectionCaption: {
+    fontSize: ms(12),
+    color: Colors.textMuted,
+    marginTop: 2,
   },
   listContent: {
     paddingHorizontal: Spacing.lg,
