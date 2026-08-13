@@ -60,12 +60,60 @@ async def warm_dump_covers(discogs_ids: list[str], discogs_budget: int | None = 
         logger.exception("cover warm batch failed")
 
 
-async def _warm_batch(discogs_ids: list[str], budget_override: int | None = None) -> None:
+async def resolve_cover_url(
+    session,
+    row,
+    *,
+    discogs_probe=None,
+) -> str | None:
+    """Лестница источников обложки для одного релиза. Единственная реализация.
+
+    Порядок неслучаен и описан в COVERS_ARCHITECTURE_NORMALIZATION:
+      1. CAA по офлайн-маппингу `mb_discogs_map` — 1 HEAD, без MB-троттла;
+      2. CAA по barcode — бесплатно, но MB-троттл 1 rps;
+      3. Deezer `cover_xl` (1000-1400) — бесплатно, публичный URL, не протухает;
+      4. Discogs — ТОЛЬКО если вызывающий дал `discogs_probe` (он же считает свой
+         бюджет). Подписанные `i.discogs.com` протухают, поэтому низкий приоритет;
+      5. iTunes 600 — album-level арт, последний шанс.
+
+    `discogs_probe(discogs_id) -> str | None`. Не передан — Discogs не трогаем
+    вообще: так работает ночной перегрев мелких мастеров, где вся цель в
+    независимости от их API.
+
+    `row` — mapping с discogs_id / barcode_norm / artist / title / year / label.
+    """
     from app.services.cover_fallback import (
         cover_url_by_artist_title,
         cover_url_by_barcode,
         cover_url_by_discogs_id,
     )
+
+    did = row["discogs_id"]
+
+    cover = await cover_url_by_discogs_id(session, did)
+
+    if not cover and row.get("barcode_norm"):
+        cover = await cover_url_by_barcode(row["barcode_norm"])
+
+    if not cover:
+        from app.services.deezer import cover_by_meta
+        dz = await cover_by_meta(
+            row.get("artist"), row.get("title"),
+            year=row.get("year"), label=row.get("label"),
+        )
+        if dz:
+            cover = dz.url
+
+    if not cover and discogs_probe is not None:
+        cover = await discogs_probe(did)
+
+    if not cover:
+        cover = await cover_url_by_artist_title(row.get("artist"), row.get("title"))
+
+    return cover
+
+
+async def _warm_batch(discogs_ids: list[str], budget_override: int | None = None) -> None:
     from app.services.discogs import DiscogsService
 
     # Дедуп через Redis: берём в работу только те id, что никто не греет
@@ -96,39 +144,21 @@ async def _warm_batch(discogs_ids: list[str], budget_override: int | None = None
         )).mappings().all()
 
         warmed = 0
+
+        # Discogs как проба с бюджетом батча: замыкание считает остаток, сама
+        # лестница о бюджете ничего не знает.
+        async def _discogs_probe(did: str) -> str | None:
+            nonlocal discogs_budget
+            if discogs_budget <= 0:
+                return None
+            discogs_budget -= 1
+            return await discogs.get_release_cover(did)
+
         for row in rows:
-            did = row["discogs_id"]
-            cover: str | None = None
-
-            # 1) CAA по офлайн mb_discogs_map — 1 HEAD, без MB-троттла
-            cover = await cover_url_by_discogs_id(session, did)
-
-            # 2) CAA по barcode — бесплатно, но с MB-троттлом 1 rps
-            if not cover and row["barcode_norm"]:
-                cover = await cover_url_by_barcode(row["barcode_norm"])
-
-            # 3) Deezer — бесплатно, cover_xl 1000+, стабильный публичный URL.
-            #    До Discogs: экономит бюджет и не протухает (i.discogs.com — да).
-            if not cover:
-                from app.services.deezer import cover_by_meta
-                dz = await cover_by_meta(
-                    row["artist"], row["title"], year=row.get("year"),
-                    label=row.get("label"),
-                )
-                if dz:
-                    cover = dz.url
-
-            # 4) Discogs — низкий приоритет, в рамках бюджета батча
-            if not cover and discogs_budget > 0:
-                discogs_budget -= 1
-                cover = await discogs.get_release_cover(did)
-
-            # 5) iTunes — album-level artwork, последний шанс
-            if not cover:
-                cover = await cover_url_by_artist_title(row["artist"], row["title"])
-
+            cover = await resolve_cover_url(session, row, discogs_probe=_discogs_probe)
             if not cover:
                 continue
+            did = row["discogs_id"]
 
             await session.execute(
                 text(
