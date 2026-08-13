@@ -1178,7 +1178,11 @@
             </div>
             <div class="grid" id="wishlistGrid">
                 {% for item in wishlist_items %}
-                {% set is_booked = item.gift_booking is not none and item.gift_booking.status.value in ['booked', 'completed'] %}
+                {# Любая живая бронь занимает пункт, включая pending (ждёт
+                   подтверждения email). Отменённые сюда не попадают — у них
+                   wishlist_item_id обнулён. Раньше pending считался свободным,
+                   и клик по карточке упирался в «уже забронирован». #}
+                {% set is_booked = item.gift_booking is not none %}
                 <div class="card" {% if not is_booked %}
                     data-wishlist-id="{{ item.id }}"
                     data-artist="{{ item.record.artist|e }}"

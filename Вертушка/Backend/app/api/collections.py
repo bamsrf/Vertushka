@@ -47,6 +47,7 @@ from app.schemas.collection import (
     CollectionItemResponse,
     CollectionWithItems,
     CollectionStats,
+    GiftMatchInfo,
 )
 from app.schemas.record import RecordBrief
 
@@ -496,22 +497,33 @@ async def add_record_to_collection(
             detail="Пока эту пластинку нельзя добавить в коллекцию — её ещё нет на Discogs",
         )
 
-    # Проверяем, есть ли эта пластинка в вишлисте текущего пользователя
+    # Есть ли под эту пластинку активная бронь подарка в вишлисте?
+    # Ищем не только точное совпадение записи: дарят часто другой прессинг
+    # того же альбома (см. app/services/gift_match.py).
     from app.models.wishlist import Wishlist, WishlistItem
+    from app.services.gift_match import find_gift_match
 
-    wishlist_item_query = await db.execute(
-        select(WishlistItem)
-        .join(Wishlist)
-        .where(
-            Wishlist.user_id == current_user.id,
-            WishlistItem.record_id == record.id
+    gift_match = await find_gift_match(db, user_id=current_user.id, record=record)
+
+    # Пункт вишлиста с активной бронью НЕ удаляем: сначала спросим у
+    # пользователя, подарок ли это. Раньше удаление шло безусловно — бронь
+    # теряла wishlist_item_id, навсегда зависала в BOOKED, даритель не получал
+    # ни подтверждения, ни ачивки, а через 60 дней ему уходило письмо
+    # «срок брони истёк» за уже вручённый подарок.
+    if gift_match is None:
+        wishlist_item_query = await db.execute(
+            select(WishlistItem)
+            .join(Wishlist)
+            .where(
+                Wishlist.user_id == current_user.id,
+                WishlistItem.record_id == record.id
+            )
         )
-    )
-    wishlist_item = wishlist_item_query.scalar_one_or_none()
+        wishlist_item = wishlist_item_query.scalar_one_or_none()
 
-    # Если в вишлисте - автоматически удаляем (атомарный перенос)
-    if wishlist_item:
-        await db.delete(wishlist_item)
+        # Если в вишлисте и брони нет — автоматически удаляем (атомарный перенос)
+        if wishlist_item:
+            await db.delete(wishlist_item)
 
     # Пересчитываем цену в рубли (lowest_price из Discogs)
     estimated_price_rub = None
@@ -590,7 +602,13 @@ async def add_record_to_collection(
         shelf_position=item.shelf_position,
         estimated_price_rub=float(item.estimated_price_rub) if item.estimated_price_rub else None,
         added_at=item.added_at,
-        record=record
+        record=record,
+        gift_match=GiftMatchInfo(
+            booking_id=gift_match.booking.id,
+            wishlist_item_id=gift_match.wishlist_item.id,
+            match_kind=gift_match.match_kind,
+            wished_record=RecordBrief.model_validate(gift_match.wishlist_item.record),
+        ) if gift_match else None,
     )
 
 

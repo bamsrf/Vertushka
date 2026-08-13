@@ -190,6 +190,7 @@ async def lifespan(app: FastAPI):
                     daily_rematch_format_conflicts,
                     daily_rematch_album_with_barcode,
                     daily_market_health_report,
+                    daily_retire_vanished_listings,
                     hourly_enrich_artist_thumbs,
                 )
                 # Цепочки crawl→match→offers→covers: новинки в маркете сразу после обхода
@@ -200,12 +201,18 @@ async def lifespan(app: FastAPI):
                 scheduler.add_job(stock_refresh_active, 'interval', hours=6, id='scrape_stock_refresh')
                 scheduler.add_job(hourly_match_unmatched, 'interval', minutes=60, id='scrape_match_unmatched')
                 scheduler.add_job(weekly_cleanup_stale, 'cron', day_of_week='sun', hour=4, minute=0, id='scrape_cleanup_stale')
+                # Сразу после ночного обхода: снимаем с витрины то, чего больше нет
+                # в каталоге. Обход к 02:30 заканчивается с запасом (23 мин).
+                scheduler.add_job(daily_retire_vanished_listings, 'cron', hour=3, minute=0, id='retire_vanished')
                 scheduler.add_job(invalidate_offers_for_recently_updated, 'interval', minutes=15, id='scrape_invalidate_offers')
                 scheduler.add_job(daily_rematch_store_native, 'cron', hour=3, minute=30, id='scrape_rematch_store_native')
                 scheduler.add_job(daily_rematch_format_conflicts, 'cron', hour=3, minute=45, id='scrape_rematch_format_conflicts')
                 scheduler.add_job(daily_rematch_album_with_barcode, 'cron', hour=4, minute=15, id='scrape_rematch_album_barcode')
-                # Сводка после ночного цикла: обход, матчинг, обложки уже отработали.
-                scheduler.add_job(daily_market_health_report, 'cron', hour=6, minute=0, id='market_health_report')
+                # 04:00 UTC = 07:00 MSK: обход (02:00) и основные rematch'и (03:30,
+                # 03:45) позади, сводка ждёт человека к началу дня. Догоняющий
+                # rematch в 04:15 в неё не попадёт — он правит привязки, а не
+                # свежесть обхода, ради которой сводку и читают.
+                scheduler.add_job(daily_market_health_report, 'cron', hour=4, minute=0, id='market_health_report')
                 scheduler.add_job(hourly_backfill_store_covers, 'interval', minutes=60, id='store_cover_backfill', max_instances=1, coalesce=True)
                 scheduler.add_job(hourly_enrich_artist_thumbs, 'interval', minutes=60, id='enrich_artist_thumbs')
                 logger.info("✅ Scraper jobs зарегистрированы (SCRAPERS_ENABLED=true)")

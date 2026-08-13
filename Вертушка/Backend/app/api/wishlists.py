@@ -94,9 +94,15 @@ async def get_my_wishlist(
             conditions=item.conditions,
             accept_alt=item.accept_alt,
             is_booked=item.gift_booking is not None,
+            # Имя дарителя владельцу — только если он сам включил
+            # reveal_gifter_to_owner. Раньше оно уходило безусловно, и бронь,
+            # обещанная анонимной, раскрывалась прямо в своём же вишлисте.
             gift_booking=GiftBookingInfo(
                 id=item.gift_booking.id,
-                gifter_name=item.gift_booking.gifter_name,
+                gifter_name=(
+                    item.gift_booking.gifter_name
+                    if wishlist.reveal_gifter_to_owner else ""
+                ),
                 status=item.gift_booking.status,
                 booked_at=item.gift_booking.booked_at
             ) if item.gift_booking else None
@@ -575,9 +581,13 @@ async def update_wishlist_item(
         conditions=item.conditions,
         accept_alt=item.accept_alt,
         is_booked=item.gift_booking is not None,
+        # Имя дарителя — только при явном reveal_gifter_to_owner (см. GET /)
         gift_booking=GiftBookingInfo(
             id=item.gift_booking.id,
-            gifter_name=item.gift_booking.gifter_name,
+            gifter_name=(
+                item.gift_booking.gifter_name
+                if item.wishlist.reveal_gifter_to_owner else ""
+            ),
             status=item.gift_booking.status,
             booked_at=item.gift_booking.booked_at
         ) if item.gift_booking else None

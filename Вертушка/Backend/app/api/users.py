@@ -340,7 +340,14 @@ async def get_user_wishlist_by_username(
         if not item.is_purchased:
             is_booked = item.gift_booking is not None
             gifter_name = None
-            if is_booked and wishlist.show_gifter_names:
+            # show_gifter_names — витрина для гостей («кто уже что дарит»).
+            # Владельцу имя не показываем никогда, если он сам не включил
+            # reveal_gifter_to_owner: иначе он читал бы его из собственного
+            # публичного профиля в обход анонимности брони.
+            reveal_to_viewer = (
+                wishlist.reveal_gifter_to_owner if is_owner else wishlist.show_gifter_names
+            )
+            if is_booked and reveal_to_viewer:
                 gifter_name = item.gift_booking.gifter_name
 
             public_items.append(WishlistPublicItemResponse(

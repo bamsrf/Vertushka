@@ -11,7 +11,7 @@ import logging
 import os
 from datetime import datetime, timedelta
 
-from sqlalchemy import select, update
+from sqlalchemy import select, text, update
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.database import async_session_maker
@@ -356,8 +356,64 @@ async def daily_rematch_album_with_barcode() -> dict:
 # ---- Чистка stale ------------------------------------------------------ #
 
 
+async def daily_retire_vanished_listings(grace_hours: int = 25) -> dict:
+    """Снять с витрины позиции, которых больше нет в каталоге магазина.
+
+    Зачем отдельно от `weekly_cleanup_stale`. Тот снимает по возрасту (30 дней),
+    и проданная пластинка висит «в наличии» до месяца. На 13.08 таких видимых
+    офферов было 3 633, из них 3 517 у plastinka_com — то есть обещание
+    «обновляется ежедневно» не выполнялось именно здесь, а не в обходе.
+
+    Почему теперь можно снимать быстро: после WS1 все активные магазины ходят
+    полным каталогом каждую ночь и берут наличие из карточки листинга
+    (`stock_from_listing`). Значит «не встретился при обходе» — надёжный
+    признак того, что позиции в каталоге нет.
+
+    ДВА ПРЕДОХРАНИТЕЛЯ, без них правило опасно:
+
+    1. Сравниваем с `last_successful_scrape_at`, а НЕ с now(). Если обход
+       магазина падает третьи сутки, отметка не двигается и снимать нечего —
+       иначе сбой на стороне магазина стирал бы его витрину. Ровно этот случай
+       был ночью 13.08: doctorhead взял 145 позиций из 3572 и упал; по now()
+       мы бы сняли 3 400 живых офферов.
+    2. `grace_hours=25` — позиция должна быть пропущена не одним успешным
+       обходом, а как минимум двумя подряд (обходы идут раз в сутки). Один
+       пропуск бывает от частичного обхода, прошедшего smoke-порог.
+    """
+    cutoff_expr = text(
+        "last_seen_at < ("
+        "  SELECT s.last_successful_scrape_at - make_interval(hours => :gh)"
+        "  FROM stores s WHERE s.id = store_listings.store_id"
+        "    AND s.last_successful_scrape_at IS NOT NULL"
+        ")"
+    )
+    async with async_session_maker() as db:
+        try:
+            res = await db.execute(
+                update(StoreListing)
+                .where(cutoff_expr)
+                .where(StoreListing.status != ListingStatus.REMOVED)
+                .values(status=ListingStatus.REMOVED, updated_at=datetime.utcnow())
+                .execution_options(synchronize_session=False),
+                {"gh": grace_hours},
+            )
+            await db.commit()
+            retired = res.rowcount or 0
+            logger.info("retire vanished: снято %d позиций", retired)
+            return {"retired": retired}
+        except SQLAlchemyError:
+            await db.rollback()
+            logger.exception("retire_vanished failed")
+            return {"retired": 0, "error": True}
+
+
 async def weekly_cleanup_stale(days: int = 30) -> dict:
-    """Помечаем как 'removed' листинги, которые не видели больше N дней."""
+    """Помечаем как 'removed' листинги, которые не видели больше N дней.
+
+    Подстраховка под `daily_retire_vanished_listings`: ловит магазины, у
+    которых обход давно не проходил успешно (там дневное правило намеренно
+    не срабатывает) — такие позиции всё равно нельзя показывать вечно.
+    """
     cutoff = datetime.utcnow() - timedelta(days=days)
     async with async_session_maker() as db:
         try:

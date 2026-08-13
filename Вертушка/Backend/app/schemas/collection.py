@@ -56,6 +56,25 @@ class CollectionItemUpdate(BaseModel):
     shelf_position: int | None = None
 
 
+class GiftMatchInfo(BaseModel):
+    """
+    Кандидат «эту пластинку вам подарили»: активная бронь в вишлисте, под
+    которую подошла только что добавленная в коллекцию запись.
+
+    Отдаётся вместе с элементом коллекции, чтобы клиент показал поп-ап
+    подтверждения без второго запроса. Имя дарителя здесь не передаётся —
+    бронь для получателя анонимна.
+    """
+    model_config = ConfigDict(from_attributes=True)
+
+    booking_id: UUID
+    wishlist_item_id: UUID
+    match_kind: str = Field(..., description="exact | master | fuzzy")
+    # Версия, которая лежала в вишлисте — её показываем рядом, когда подарили
+    # другой прессинг, чтобы пользователь понял, о чём его спрашивают.
+    wished_record: RecordBrief
+
+
 class CollectionItemResponse(BaseModel):
     """Схема элемента коллекции"""
     model_config = ConfigDict(from_attributes=True)
@@ -70,6 +89,7 @@ class CollectionItemResponse(BaseModel):
     estimated_price_rub: float | None
     added_at: datetime
     record: RecordBrief
+    gift_match: GiftMatchInfo | None = None
 
 
 class CollectionWithItems(CollectionResponse):

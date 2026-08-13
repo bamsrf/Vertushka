@@ -47,6 +47,7 @@ async def complete_gift_booking(
     *,
     collection: Collection | None = None,
     send_email: bool = True,
+    existing_collection_item: CollectionItem | None = None,
 ) -> CollectionItem:
     """
     Атомарно завершает бронь подарка:
@@ -54,6 +55,11 @@ async def complete_gift_booking(
       2. CollectionItem добавляется в указанную/дефолтную коллекцию владельца
       3. Бронь переводится в COMPLETED, completed_at, wishlist_item_id обнуляется
       4. Дарителю уходит письмо «подарок получен»
+
+    `existing_collection_item` — путь «подтверждение после скана»: пластинка уже
+    попала в коллекцию через POST /collections/{id}/items, второй раз её
+    создавать не надо. Важно для подарка другой версией альбома: в коллекции
+    лежит подаренный прессинг, а из вишлиста уходит тот, что там был.
 
     Caller обязан загрузить booking с eager-load:
         selectinload(GiftBooking.wishlist_item).selectinload(WishlistItem.record)
@@ -67,14 +73,16 @@ async def complete_gift_booking(
 
     record = item.record  # сохраняем до удаления
 
-    target_collection = collection or await get_or_create_default_collection(owner, db)
-
-    # Создаём элемент коллекции
-    collection_item = CollectionItem(
-        collection_id=target_collection.id,
-        record_id=item.record_id,
-    )
-    db.add(collection_item)
+    if existing_collection_item is not None:
+        # Пластинку уже добавил скан — берём её как есть, чтобы не создать дубль.
+        collection_item = existing_collection_item
+    else:
+        target_collection = collection or await get_or_create_default_collection(owner, db)
+        collection_item = CollectionItem(
+            collection_id=target_collection.id,
+            record_id=item.record_id,
+        )
+        db.add(collection_item)
 
     # Бронь — COMPLETED, отвязываем от wishlist_item
     booking.status = GiftStatus.COMPLETED
@@ -93,7 +101,7 @@ async def complete_gift_booking(
         "gift_completed",
         extra={
             "booking_id": str(booking.id),
-            "collection_id": str(target_collection.id),
+            "collection_id": str(collection_item.collection_id),
             "record_id": str(collection_item.record_id),
         },
     )

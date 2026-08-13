@@ -164,12 +164,26 @@ async def book_gift(
             detail="Элемент вишлиста не найден"
         )
 
-    # Проверяем, что вишлист публичный
+    # Доступ: публичный вишлист ИЛИ подписчик владельца.
+    # Правило синхронизировано с GET /users/{username}/wishlist — там фолловер
+    # видит непубличный вишлист. Раньше бронь требовала строго is_public, и
+    # подписчик упирался в 403 на пункте, который прекрасно видел.
     if not item.wishlist.is_public:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Вишлист недоступен"
-        )
+        is_follower = False
+        if current_user:
+            from app.models.follow import Follow
+            follow_check = await db.execute(
+                select(Follow.id).where(
+                    Follow.follower_id == current_user.id,
+                    Follow.following_id == item.wishlist.user_id,
+                ).limit(1)
+            )
+            is_follower = follow_check.scalar_one_or_none() is not None
+        if not is_follower:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Вишлист недоступен"
+            )
 
     # Запрещаем самобронь — владелец не может бронировать пункты из собственного вишлиста
     owner = item.wishlist.user
@@ -379,9 +393,16 @@ async def book_gift(
 @router.get("/{booking_id}", response_model=GiftBookingResponse)
 async def get_booking(
     booking_id: UUID,
+    cancel_token: str,
     db: AsyncSession = Depends(get_db)
 ):
-    """Получение информации о бронировании"""
+    """Получение информации о бронировании.
+
+    Требует cancel_token — тот же, что и для отмены; он есть только у дарителя
+    (приходит ему письмом). Раньше ручка была открытой, а booking_id владелец
+    получает из /me/received, где имя дарителя как раз скрыто, — то есть
+    анонимность брони снималась одним запросом.
+    """
     result = await db.execute(
         select(GiftBooking)
         .where(GiftBooking.id == booking_id)
@@ -397,7 +418,13 @@ async def get_booking(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Бронирование не найдено"
         )
-    
+
+    if booking.cancel_token != cancel_token:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Неверный токен"
+        )
+
     return GiftBookingResponse(
         id=booking.id,
         wishlist_item_id=booking.wishlist_item_id,
@@ -566,7 +593,10 @@ async def get_given_bookings(
         .where(
             or_(
                 GiftBooking.booked_by_user_id == current_user.id,
-                GiftBooking.gifter_email == current_user.email,
+                # Регистр не важен: бронь с сайта могли оформить как Ivan@Mail.ru,
+                # а в аккаунте лежит ivan@mail.ru — при точном сравнении такой
+                # подарок просто не появлялся в разделе «Я дарю».
+                func.lower(GiftBooking.gifter_email) == (current_user.email or "").strip().lower(),
             ),
             GiftBooking.status.in_([GiftStatus.BOOKED, GiftStatus.COMPLETED]),
             GiftBooking.wishlist_item_id.is_not(None),
@@ -688,12 +718,38 @@ async def complete_booking(
     if booking.status == GiftStatus.COMPLETED:
         return {"status": "completed"}
 
+    # PENDING — даритель ещё не подтвердил email, брони фактически нет.
+    # Завершать её нельзя: иначе верификация обходится через «отметить полученным».
+    if booking.status != GiftStatus.BOOKED:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Бронь ещё не подтверждена дарителем"
+        )
+
+    return await _finalize_completion(booking=booking, owner=current_user, db=db)
+
+
+async def _finalize_completion(
+    *,
+    booking: GiftBooking,
+    owner: User,
+    db: AsyncSession,
+    existing_collection_item=None,
+) -> dict:
+    """
+    Общий хвост завершения подарка: коллекция + статус + пуш дарителю + ачивки.
+
+    Два входа: ручное «отметить полученным» из раздела подарков и подтверждение
+    поп-апа после скана штрих-кода (там пластинка уже в коллекции, поэтому
+    приходит existing_collection_item).
+    """
     from app.services.gifts import (
         complete_gift_booking,
         emit_gift_completion_events,
         send_pending_gift_email,
     )
 
+    current_user = owner
     record = booking.wishlist_item.record if booking.wishlist_item else None
     gifter_user_id = booking.booked_by_user_id
     booking_id_done = booking.id
@@ -702,6 +758,7 @@ async def complete_booking(
         booking=booking,
         owner=current_user,
         db=db,
+        existing_collection_item=existing_collection_item,
     )
 
     # In-app + push дарителю (если это зарегистрированный пользователь)
@@ -745,3 +802,123 @@ async def complete_booking(
 
     return {"status": "completed"}
 
+
+
+@router.put("/me/received/{booking_id}/complete-with-record")
+async def complete_booking_with_record(
+    booking_id: UUID,
+    collection_item_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Подтверждение подарка после скана штрих-хода: «да, эту пластинку мне подарили».
+
+    Пластинка уже лежит в коллекции (её добавил POST /collections/{id}/items,
+    который и вернул gift_match). Здесь мы только закрываем бронь и убираем
+    пункт из вишлиста — в том числе когда подарили другой прессинг альбома:
+    в коллекции остаётся подаренная версия, из вишлиста уходит та, что там была.
+    """
+    from app.models.collection import Collection, CollectionItem
+
+    result = await db.execute(
+        select(GiftBooking)
+        .where(GiftBooking.id == booking_id)
+        .options(
+            selectinload(GiftBooking.wishlist_item).selectinload(WishlistItem.record),
+            selectinload(GiftBooking.wishlist_item)
+            .selectinload(WishlistItem.wishlist)
+            .selectinload(Wishlist.user),
+        )
+    )
+    booking = result.scalar_one_or_none()
+
+    if not booking:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Бронирование не найдено"
+        )
+
+    if booking.wishlist_item is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Бронирование уже завершено или отменено"
+        )
+
+    if booking.wishlist_item.wishlist.user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Нет доступа"
+        )
+
+    if booking.status == GiftStatus.COMPLETED:
+        return {"status": "completed"}
+
+    if booking.status != GiftStatus.BOOKED:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Бронь ещё не подтверждена дарителем"
+        )
+
+    # Элемент коллекции должен принадлежать текущему пользователю — иначе
+    # можно было бы закрыть свою бронь чужой пластинкой.
+    ci_result = await db.execute(
+        select(CollectionItem)
+        .join(Collection)
+        .where(
+            CollectionItem.id == collection_item_id,
+            Collection.user_id == current_user.id,
+        )
+    )
+    collection_item = ci_result.scalar_one_or_none()
+    if collection_item is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Пластинка не найдена в вашей коллекции"
+        )
+
+    return await _finalize_completion(
+        booking=booking,
+        owner=current_user,
+        db=db,
+        existing_collection_item=collection_item,
+    )
+
+
+@router.put("/me/received/{booking_id}/dismiss-match")
+async def dismiss_gift_match(
+    booking_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    «Нет, это не подарок» — бронь и пункт вишлиста остаются как были,
+    но больше не предлагаем связать их с добавленными пластинками.
+    Иначе поп-ап всплывал бы при каждом сканировании того же альбома.
+    """
+    result = await db.execute(
+        select(GiftBooking)
+        .where(GiftBooking.id == booking_id)
+        .options(
+            selectinload(GiftBooking.wishlist_item)
+            .selectinload(WishlistItem.wishlist)
+        )
+    )
+    booking = result.scalar_one_or_none()
+
+    if not booking or booking.wishlist_item is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Бронирование не найдено"
+        )
+
+    if booking.wishlist_item.wishlist.user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Нет доступа"
+        )
+
+    booking.match_dismissed_at = datetime.utcnow()
+    await db.commit()
+
+    return {"status": "dismissed"}

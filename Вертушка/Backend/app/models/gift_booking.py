@@ -141,6 +141,14 @@ class GiftBooking(Base):
         nullable=True
     )
 
+    # Получатель добавил в коллекцию похожую пластинку, мы спросили «это подарок?»
+    # и он ответил «нет». Больше не спрашиваем по этой броне — иначе поп-ап
+    # всплывал бы при каждом следующем сканировании того же альбома.
+    match_dismissed_at: Mapped[datetime | None] = mapped_column(
+        DateTime,
+        nullable=True
+    )
+
     # Отношения
     wishlist_item = relationship("WishlistItem", back_populates="gift_booking")
     booked_by_user = relationship("User", foreign_keys=[booked_by_user_id])
