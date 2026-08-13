@@ -12,7 +12,7 @@ import { Image } from 'expo-image';
 import { Icon } from '@/components/ui';
 import { Colors, Typography, BorderRadius, Shadows, Spacing } from '../constants/theme';
 import { MasterVersion } from '../lib/types';
-import { resolveMediaUrl } from '../lib/api';
+import { resolveMediaUrl, sizedCoverUrl } from '../lib/api';
 import { RarityAura, TierCoverEffects, TierEdgeStrip, TierLabel, pickRarityTier } from './RarityAura';
 
 interface VersionCardProps {
@@ -20,8 +20,16 @@ interface VersionCardProps {
   onPress?: () => void;
 }
 
+// Ноготь строки — 80×80pt (styles.imageContainer), на 3x это 240px ⇒ ступень 320.
+// Раньше строка тянула мастер целиком: страница из 29 версий = 29×~84 КБ вместо
+// 29×~15 КБ, причём ради картинки в 80 точек.
+const ROW_COVER_PX = 80 * 3;
+
 export function VersionCard({ version, onPress }: VersionCardProps) {
-  const imageUrl = resolveMediaUrl(version.cover_image_url || version.thumb_image_url);
+  const imageUrl = sizedCoverUrl(
+    resolveMediaUrl(version.cover_image_url || version.thumb_image_url),
+    ROW_COVER_PX,
+  );
   const rarityTier = pickRarityTier(version, 'search');
 
   const inner = (
@@ -41,7 +49,7 @@ export function VersionCard({ version, onPress }: VersionCardProps) {
             source={imageUrl}
             style={styles.image}
             contentFit="cover"
-            cachePolicy="disk"
+            cachePolicy="memory-disk"
           />
         ) : (
           <View style={styles.placeholderImage}>

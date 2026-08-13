@@ -99,11 +99,89 @@ export function getCoverUrl(
 }
 
 /**
+ * Порог «это мастер» в пикселях. Должен совпадать с
+ * `Backend/app/services/cover_quality.MASTER_MIN_SIDE` — правило одно, просто
+ * применяется по обе стороны: бэк не пускает мелкое в мастера, клиент не тянет
+ * мелкое в full-size слот.
+ */
+const MASTER_MIN_SIDE = 500;
+
+/**
+ * Заведомо мелкая картинка? Размер читается из URL: imgproxy-сегменты
+ * (`/w:150/h:150/` у Discogs), CAA `front-250`, iTunes `100x100bb`, Deezer
+ * `250x250-...`. Неизвестная схема → false: рубить то, чего не разобрали,
+ * значило бы терять покрытие (у CAA `/front` и у магазинных CDN размера в URL
+ * нет вообще).
+ */
+export function isThumbGrade(url: string | undefined | null): boolean {
+  if (!url) return false;
+  const sides: number[] = [];
+  for (const rx of [/(?:^|\/)w:(\d+)(?:\/|$)/g, /(?:^|\/)h:(\d+)(?:\/|$)/g, /\/(?:front|back|\d+)-(\d+)(?:\.\w+)?(?:\?|$)/g]) {
+    for (const m of url.matchAll(rx)) sides.push(Number(m[1]));
+  }
+  for (const rx of [/\/(\d+)x(\d+)[a-z]*\.\w+(?:\?|$)/g, /\/images\/[a-z]+\/[0-9a-f]+\/(\d+)x(\d+)/g]) {
+    for (const m of url.matchAll(rx)) sides.push(Number(m[1]), Number(m[2]));
+  }
+  const known = sides.filter((s) => s > 0);
+  return known.length > 0 && Math.min(...known) < MASTER_MIN_SIDE;
+}
+
+/**
+ * URL для full-size слота (герой карточки): только мастер-грейд.
+ * В отличие от getCoverUrl НЕ падает на thumb_image_url — 150px-thumb Discogs
+ * растянутый на 1170px давал ту самую пикселизацию, и он оставался навсегда,
+ * потому что источник у него уже максимальный (размер внутри подписи HMAC).
+ */
+export function getMasterCoverUrl(
+  record: { cover_url?: string; cover_image_url?: string } | null | undefined
+): string | undefined {
+  if (!record) return undefined;
+  if (record.cover_url) return resolveMediaUrl(record.cover_url);
+  if (record.cover_image_url && !isThumbGrade(record.cover_image_url)) {
+    return record.cover_image_url;
+  }
+  return undefined;
+}
+
+/**
+ * URL для плейсхолдер-тира: мелкая картинка, которую можно показать мгновенно,
+ * пока грузится мастер. Именно так делает Discogs — в их RN-бандле рядом с
+ * основной рецептурой `q:90/h:600/w:600` лежит дешёвая `q:40/h:300/w:400`.
+ */
+export function getPlaceholderCoverUrl(
+  record: { thumb_image_url?: string; cover_image_url?: string } | null | undefined
+): string | undefined {
+  if (!record) return undefined;
+  if (record.thumb_image_url) return record.thumb_image_url;
+  if (record.cover_image_url && isThumbGrade(record.cover_image_url)) {
+    return record.cover_image_url;
+  }
+  return undefined;
+}
+
+/**
+ * Ступени ширины обложек. Клиент округляет свой запрос ВВЕРХ до ближайшей —
+ * никогда вниз, иначе картинка растягивалась бы.
+ *
+ * Зачем ступени вместо точной ширины: ширина ячейки зависит от DPR устройства
+ * (2x → 393, 3x → 590, планшет → своё), и каждая уникальная ширина создавала
+ * отдельную запись в nginx covers_cache (capped 2 ГБ). Одна и та же обложка
+ * лежала там в пяти-шести вариантах, вытесняя другие. Со ступенями вариантов
+ * ровно два: 320 (мелкие ячейки) и 640 (крупные), плюс сам мастер на детали.
+ *
+ * Так же устроено у Discogs: в их RN-бандле зашиты ровно две рецептуры
+ * (`h:600/w:600` и `h:300/w:400`), а не размер под конкретный экран — отсюда
+ * высокий hit-rate их CDN.
+ */
+const COVER_LADDER = [320, 640] as const;
+
+/**
  * Ресайз-URL обложки под нужную ширину в пикселях (imgproxy на бэке).
  * Берёт имя файла из нашей mirror-ссылки (…/covers/{name}.jpg или
- * …/uploads/covers/{name}.jpg) и строит {origin}/covers/w/{px}/{name}.jpg —
- * сервер режет мастер под {px} на лету. Никогда не апскейлит выше мастера
- * (enlarge=0 в nginx) ⇒ пикселей нет.
+ * …/uploads/covers/{name}.jpg) и строит {origin}/covers/w/{rung}/{name}.jpg,
+ * где {rung} — ступень из COVER_LADDER, округлённая ВВЕРХ от запрошенной
+ * ширины. Сервер режет мастер под неё на лету и никогда не апскейлит выше
+ * мастера (enlarge=0 в nginx) ⇒ пикселей нет.
  *
  * Возвращает исходный URL без изменений, если это НЕ наша плоская обложка:
  * внешние Discogs/CDN, store-сабдиры (…/covers/store/…), относительные пути.
@@ -114,19 +192,34 @@ export function sizedCoverUrl(
 ): string | undefined {
   if (!url) return url;
   // Имя файла обложки: только плоский …/covers/{name}.jpg (без '/' в имени).
-  const name = url.match(/\/covers\/([A-Za-z0-9._-]+\.jpg)(?:\?|$)/i)?.[1];
+  // Хвост `?v=…` (cache-bust по cover_cached_at, ставится в схемах на бэке)
+  // ОБЯЗАН доехать до деривативного URL: зеркало перезаписывает мелкий мастер
+  // лучшим источником, и без метки версии nginx отдавал бы старую нарезку из
+  // 30-дневного кэша, а expo-image — старую картинку из своего disk-кэша.
+  const m = url.match(/\/covers\/([A-Za-z0-9._-]+\.jpg)(\?[^#]*)?$/i);
+  const name = m?.[1];
+  const version = m?.[2] ?? '';
   if (!name) return url;
   const origin = url.match(/^(https?:\/\/[^/]+)/i)?.[1];
   if (!origin) return url;
-  return `${origin}/covers/w/${Math.round(widthPx)}/${name}`;
+  const rung = COVER_LADDER.find((r) => widthPx <= r);
+  // Запрос крупнее последней ступени обслуживает сам мастер: он капнут 1000px,
+  // поэтому дериватив w:1000 был бы его побайтовой копией — вторая запись в
+  // covers_cache за те же пиксели.
+  if (!rung) return url;
+  return `${origin}/covers/w/${rung}/${name}${version}`;
 }
 
 /**
  * Preview-параметры для мгновенной отрисовки /record/[id] из уже известных
  * полей списка (заголовок/артист/обложка/год). Экран карточки рисует их сразу
  * (ветка hasPreview), пока грузится полный payload — тап больше не упирается в
- * спиннер. Обложка — тот же full-res URL через getCoverUrl (качество не меняется,
- * файл уже в disk-кэше сетки). Защитный: кладёт только непустые ключи.
+ * спиннер. Защитный: кладёт только непустые ключи.
+ *
+ * Обложка разведена по двум тирам. `previewCover` — только мастер-грейд, идёт в
+ * `source`. `previewThumb` — мелкий превью, идёт в `placeholder`: показывается
+ * мгновенно и уступает место мастеру, вместо того чтобы залипнуть растянутым на
+ * весь экран (так вели себя 150px-thumb'ы из списка версий).
  */
 export function recordPreviewParams(
   record:
@@ -146,8 +239,10 @@ export function recordPreviewParams(
   const params: Record<string, string> = {};
   if (record.title) params.previewTitle = String(record.title);
   if (record.artist) params.previewArtist = String(record.artist);
-  const cover = getCoverUrl(record);
+  const cover = getMasterCoverUrl(record);
   if (cover) params.previewCover = cover;
+  const thumb = getPlaceholderCoverUrl(record);
+  if (thumb) params.previewThumb = thumb;
   if (record.year !== null && record.year !== undefined && record.year !== '') {
     params.previewYear = String(record.year);
   }

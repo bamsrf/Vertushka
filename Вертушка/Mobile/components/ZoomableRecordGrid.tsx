@@ -48,7 +48,7 @@ import Animated, {
 import * as Haptics from 'expo-haptics';
 import { Colors, Spacing, BorderRadius, Typography } from '../constants/theme';
 import { CollectionItem, WishlistItem } from '../lib/types';
-import { getCoverUrl, sizedCoverUrl } from '../lib/api';
+import { getCoverUrl, getMasterCoverUrl, sizedCoverUrl } from '../lib/api';
 import { RecordCard } from './RecordCard';
 import {
   RarityContext,
@@ -60,6 +60,22 @@ import {
 function cleanArtistName(name: string | null | undefined): string {
   if (!name) return '';
   return name.replace(/\s*\(\d+\)\s*$/, '').trim();
+}
+
+/**
+ * Тёплый старт карточки: тянем мастер-обложку в кэш в момент тапа.
+ *
+ * Сетка и деталь по определению грузят разные файлы — ячейка берёт ступень
+ * 320/640, герой карточки берёт мастер (1000px). Раньше docstring
+ * recordPreviewParams утверждал, что файл «уже в disk-кэше сетки»; с появлением
+ * ступеней это неправда, и тап упирался в свежее скачивание. Prefetch стартует
+ * его на кадр раньше навигации, пока едет анимация перехода.
+ *
+ * Fire-and-forget: ошибку глотаем — это оптимизация, а не функциональность.
+ */
+function prefetchMasterCover(item: ZoomItem): void {
+  const master = getMasterCoverUrl(item.record);
+  if (master) void Image.prefetch(master, 'memory-disk').catch(() => {});
 }
 
 type ZoomItem = CollectionItem | WishlistItem;
@@ -215,7 +231,11 @@ const BareCell = memo(function BareCell({
             source={coverUrl}
             style={{ width: '100%', height: '100%' }}
             contentFit="cover"
-            cachePolicy="disk"
+            // memory-disk, не disk: дефолт expo-image держит только диск, из-за
+            // чего каждый ремаунт ячейки (смена уровня зума, возврат с карточки)
+            // заново декодировал JPEG. Память здесь дешёвая — ячейки грузят
+            // ступень 320/640, а не мастер.
+            cachePolicy="memory-disk"
             recyclingKey={item.id}
             transition={0}
             placeholder={record.blurhash ? { blurhash: record.blurhash } : undefined}
@@ -417,11 +437,13 @@ export function ZoomableRecordGrid({
         return;
       }
       if (level !== MAX_LEVEL) {
+        prefetchMasterCover(item);
         onRecordPress?.(item);
         return;
       }
       const idx = data.findIndex((d) => d.id === item.id);
       if (idx < 0) {
+        prefetchMasterCover(item);
         onRecordPress?.(item);
         return;
       }
