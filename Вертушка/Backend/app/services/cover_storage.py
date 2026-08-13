@@ -20,6 +20,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.services.cache import cache
+from app.services.cover_quality import (
+    MASTER_MIN_SIDE,
+    is_thumb_grade,
+    min_side_from_url,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -63,9 +68,14 @@ def _compute_blurhash(img: "Image.Image") -> str | None:
         return None
 
 
-def _encode_and_place(raw: bytes, tmp_path: Path, dest: Path) -> str | None:
+def _encode_and_place(raw: bytes, tmp_path: Path, dest: Path) -> tuple[str | None, int]:
     """CPU-bound: decode → blurhash → resize (LANCZOS) → JPEG q85 → атомарный
-    rename. Возвращает blurhash обложки (или None) для записи в records.blurhash.
+    rename. Возвращает `(blurhash | None, min_side)`, где min_side — меньшая
+    сторона УЖЕ УЛОЖЕННОГО файла (после даунскейла, но без апскейла).
+
+    min_side — авторитетная проверка тира: формы URL у источников меняются, а
+    пиксели не врут. Пишется в `records.cover_min_side`, по нему потом решается,
+    можно ли перезаписать мастер лучшим источником (см. download_and_store).
 
     Pillow-ресайз 1000px + optimize=True — это 50-150мс чистого CPU на файл.
     В single-worker проде (--workers 1) вызов прямо в корутине морозил event
@@ -81,7 +91,7 @@ def _encode_and_place(raw: bytes, tmp_path: Path, dest: Path) -> str | None:
         img.thumbnail((_MAX_SIDE, _MAX_SIDE), Image.LANCZOS)
     img.save(tmp_path, format="JPEG", quality=_JPEG_QUALITY, optimize=True)
     os.rename(tmp_path, dest)
-    return bhash
+    return bhash, min(img.width, img.height)
 
 
 class CoverStorageService:
@@ -145,18 +155,52 @@ class CoverStorageService:
         """
         from app.models.record import Record  # отложенный импорт — нет циклов
 
+        # Гейт «не мастер»: 150px-thumb Discogs увеличить нельзя (размер внутри
+        # подписи HMAC), а уложенный на диск он навсегда становится мастером —
+        # imgproxy режет из него, деталь-экран получает апскейл ×8. Дешёвый
+        # пре-фильтр по URL до сети; неизвестный размер пропускаем.
+        if is_thumb_grade(image_url):
+            logger.info(
+                "cover_storage: skip thumb-grade source for %s (min_side=%s) — %s",
+                discogs_id, min_side_from_url(image_url), image_url,
+            )
+            return None
+
+        rel_path = f"covers/{self._cover_filename(discogs_id)}"
+
         # Проверяем: возможно уже скачано другим воркером пока мы ждали
         dest = self._cover_path(discogs_id)
         if dest.exists():
-            # Обновить БД-поля если файл уже есть, но cover_local_path не записан
-            rel_path = f"covers/{self._cover_filename(discogs_id)}"
-            await db.execute(
-                update(Record)
-                .where(Record.discogs_id == discogs_id, Record.cover_local_path.is_(None))
-                .values(cover_local_path=rel_path, cover_cached_at=datetime.utcnow())
+            # Апгрейд, а не пропуск: если лежащий мастер заведомо мелкий, а
+            # источник крупный — перекачиваем и перезаписываем. Так «плохая»
+            # обложка лечится сама, когда бесплатная лестница (CAA-1200 →
+            # Deezer xl → iTunes 600) наконец находит нормальную.
+            #
+            # NULL в cover_min_side = «не мерили» (все файлы до этой правки).
+            # Такие НЕ трогаем: иначе первый же прогрев после деплоя устроил бы
+            # массовую перекачку всех 13K зеркал. Их размеры проставит
+            # heal-скрипт, и апгрейд включится точечно.
+            stored_min_side = (
+                await db.execute(
+                    select(Record.cover_min_side).where(Record.discogs_id == discogs_id)
+                )
+            ).scalars().first()
+            needs_upgrade = (
+                stored_min_side is not None and stored_min_side < MASTER_MIN_SIDE
             )
-            await db.commit()
-            return rel_path
+            if not needs_upgrade:
+                # Обновить БД-поля если файл уже есть, но cover_local_path не записан
+                await db.execute(
+                    update(Record)
+                    .where(Record.discogs_id == discogs_id, Record.cover_local_path.is_(None))
+                    .values(cover_local_path=rel_path, cover_cached_at=datetime.utcnow())
+                )
+                await db.commit()
+                return rel_path
+            logger.info(
+                "cover_storage: upgrading %s from min_side=%s via %s",
+                discogs_id, stored_min_side, image_url,
+            )
 
         if not await self._acquire_lock(discogs_id):
             logger.debug("cover_storage: lock busy for %s, skipping", discogs_id)
@@ -181,17 +225,31 @@ class CoverStorageService:
 
             # Конвертация + resize + атомарный rename — CPU-bound, в threadpool,
             # иначе single-worker event loop морозится на всю пачку прогрева.
-            bhash = await asyncio.to_thread(_encode_and_place, raw, tmp_path, dest)
+            bhash, min_side = await asyncio.to_thread(_encode_and_place, raw, tmp_path, dest)
             tmp_path = None  # переименован — не удалять в finally
 
-            rel_path = f"covers/{self._cover_filename(discogs_id)}"
+            # Файл кладём даже если он оказался мелким (демоут, не удаление —
+            # база обложек только накапливается). Но помечаем размером: пока он
+            # ниже порога, апгрейд-ветка выше будет пускать перекачку с лучшего
+            # источника, а мобильный отрисует его в плейсхолдер-тире.
             await db.execute(
                 update(Record)
                 .where(Record.discogs_id == discogs_id)
-                .values(cover_local_path=rel_path, cover_cached_at=datetime.utcnow(), blurhash=bhash)
+                .values(
+                    cover_local_path=rel_path,
+                    cover_cached_at=datetime.utcnow(),
+                    blurhash=bhash,
+                    cover_min_side=min_side,
+                )
             )
             await db.commit()
-            logger.info("cover_storage: saved cover for %s → %s", discogs_id, rel_path)
+            if min_side < MASTER_MIN_SIDE:
+                logger.warning(
+                    "cover_storage: %s stored below master threshold (min_side=%d) from %s",
+                    discogs_id, min_side, image_url,
+                )
+            else:
+                logger.info("cover_storage: saved cover for %s → %s", discogs_id, rel_path)
             return rel_path
 
         except Exception as exc:
@@ -407,7 +465,7 @@ async def _download_store_native_cover_background(
             resp.raise_for_status()
             raw = resp.content
 
-        bhash = await asyncio.to_thread(_encode_and_place, raw, tmp_path, dest)
+        bhash, min_side = await asyncio.to_thread(_encode_and_place, raw, tmp_path, dest)
         tmp_path = None
 
         rel_path = f"{rel_subdir}/{filename}"
@@ -415,7 +473,12 @@ async def _download_store_native_cover_background(
             await db.execute(
                 update(Record)
                 .where(Record.id == record_id)
-                .values(cover_local_path=rel_path, cover_cached_at=datetime.utcnow(), blurhash=bhash)
+                .values(
+                    cover_local_path=rel_path,
+                    cover_cached_at=datetime.utcnow(),
+                    blurhash=bhash,
+                    cover_min_side=min_side,
+                )
             )
             await db.commit()
         logger.info("cover_storage: saved store-native cover for %s", record_id)
