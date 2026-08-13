@@ -240,6 +240,7 @@ async def book_gift(
         wishlist_item_id=item.id,
         booked_by_user_id=current_user.id if current_user else None,
         recipient_user_id=owner.id if owner else None,
+        record_id=item.record_id,
         gifter_name=data.gifter_name,
         gifter_email=data.gifter_email,
         gifter_phone=data.gifter_phone,
@@ -599,14 +600,15 @@ async def get_given_bookings(
                 func.lower(GiftBooking.gifter_email) == (current_user.email or "").strip().lower(),
             ),
             GiftBooking.status.in_([GiftStatus.BOOKED, GiftStatus.COMPLETED]),
-            GiftBooking.wishlist_item_id.is_not(None),
+            # Раньше здесь стояло wishlist_item_id IS NOT NULL, и вручённые
+            # подарки выпадали из списка: при завершении связь обнуляется.
+            # Теперь релиз и получатель лежат на самой броне.
+            GiftBooking.record_id.is_not(None),
+            GiftBooking.recipient_user_id.is_not(None),
         )
         .options(
-            selectinload(GiftBooking.wishlist_item)
-            .selectinload(WishlistItem.record),
-            selectinload(GiftBooking.wishlist_item)
-            .selectinload(WishlistItem.wishlist)
-            .selectinload(Wishlist.user)
+            selectinload(GiftBooking.record),
+            selectinload(GiftBooking.recipient_user),
         )
         .order_by(GiftBooking.booked_at.desc())
     )
@@ -618,13 +620,13 @@ async def get_given_bookings(
         cancel_token=b.cancel_token,
         booked_at=b.booked_at,
         completed_at=b.completed_at,
-        record=RecordBrief.model_validate(b.wishlist_item.record),
+        record=RecordBrief.model_validate(b.record),
         for_user=GiftRecipientInfo(
-            username=b.wishlist_item.wishlist.user.username,
-            display_name=b.wishlist_item.wishlist.user.display_name,
-            avatar_url=b.wishlist_item.wishlist.user.avatar_url
+            username=b.recipient_user.username,
+            display_name=b.recipient_user.display_name,
+            avatar_url=b.recipient_user.avatar_url
         )
-    ) for b in bookings if b.wishlist_item is not None]
+    ) for b in bookings if b.record is not None and b.recipient_user is not None]
 
 
 @router.get("/me/received", response_model=list[GiftBookingOwnerResponse])

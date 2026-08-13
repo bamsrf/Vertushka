@@ -204,3 +204,65 @@ async def test_owner_does_not_see_who_booked_the_gift(
     received = await client.get("/gifts/me/received")
     assert received.status_code == 200, received.text
     assert received.json()[0]["gifter_name"] == ""
+
+
+async def test_given_list_survives_completion(
+    client, db, collection_id, make_record, wishlist_item, owner, gifter, as_user
+):
+    """Вручённый подарок остаётся в «Я дарю» — раньше он оттуда пропадал.
+
+    Список строился через пункт вишлиста, а при завершении связь обнуляется,
+    поэтому фильтр wishlist_item_id IS NOT NULL выбрасывал ровно те подарки,
+    которые дошли до адресата. Теперь релиз и получатель лежат на самой броне.
+    """
+    wished = await make_record(master="m1", year=2023)
+    item = await wishlist_item(wished)
+    booked = await book(client, item.id)
+
+    # Пока бронь активна, даритель видит забронированную версию.
+    as_user(gifter)
+    active = await client.get("/gifts/me/given")
+    assert active.status_code == 200, active.text
+    assert [g["id"] for g in active.json()] == [booked["id"]]
+    assert active.json()[0]["record"]["year"] == 2023
+
+    # Отмечает получение владелец вишлиста, а не даритель.
+    as_user(owner)
+    gifted = await make_record(master="m1", year=2026)
+    added = await add_to_collection(client, collection_id, gifted)
+    await client.put(
+        f"/gifts/me/received/{added['gift_match']['booking_id']}/complete-with-record",
+        params={"collection_item_id": added["id"]},
+    )
+
+    as_user(gifter)
+    given = await client.get("/gifts/me/given")
+    assert given.status_code == 200, given.text
+    rows = given.json()
+    assert len(rows) == 1, "вручённый подарок не должен исчезать из списка"
+    assert rows[0]["status"] == "completed"
+    assert rows[0]["completed_at"] is not None
+    # Показываем подаренную версию, а не ту, что лежала в вишлисте.
+    assert rows[0]["record"]["year"] == 2026
+    assert rows[0]["for_user"]["username"] == owner.username
+
+    booking = await db.scalar(select(GiftBooking))
+    assert booking.record_id == gifted.id
+
+
+async def test_manual_completion_also_keeps_the_record(
+    client, db, make_record, wishlist_item, gifter, as_user
+):
+    """Тот же результат для обычного «отметить полученным», без скана."""
+    record = await make_record()
+    item = await wishlist_item(record)
+    booked = await book(client, item.id)
+
+    done = await client.put(f"/gifts/me/received/{booked['id']}/complete")
+    assert done.status_code == 200, done.text
+
+    as_user(gifter)
+    rows = (await client.get("/gifts/me/given")).json()
+    assert len(rows) == 1
+    assert rows[0]["status"] == "completed"
+    assert rows[0]["record"]["id"] == str(record.id)

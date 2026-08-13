@@ -212,3 +212,33 @@ async def collection_id(db, owner) -> str:
         Collection.__table__.select().where(Collection.user_id == owner.id)
     )
     return str(result.first().id)
+
+
+@pytest_asyncio.fixture
+async def gifter(db) -> User:
+    """Даритель. Бронь оформляется анонимно, но с его email — так /gifts/me/given
+    и связывает подарок с аккаунтом (booked_by_user_id у анонимной брони пуст)."""
+    user = User(
+        email="gifter@example.com",
+        username=f"gifter{uuid4().hex[:8]}",
+        password_hash="x",
+        display_name="Даритель",
+    )
+    db.add(user)
+    await db.commit()
+    await db.refresh(user)
+    return user
+
+
+@pytest.fixture
+def as_user():
+    """Переключает авторизацию клиента на другого пользователя.
+
+    Нужно там, где один и тот же сценарий смотрится с двух сторон: получатель
+    отмечает подарок, а список «Я дарю» читает уже даритель.
+    """
+
+    def _switch(user):
+        app.dependency_overrides[get_current_user] = lambda: user
+
+    return _switch

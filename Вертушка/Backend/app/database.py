@@ -66,6 +66,18 @@ async def init_db():
             "ALTER TABLE gift_bookings ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP",
             "ALTER TABLE gift_bookings ADD COLUMN IF NOT EXISTS reminder_sent_at TIMESTAMP",
             "ALTER TABLE gift_bookings ADD COLUMN IF NOT EXISTS match_dismissed_at TIMESTAMP",
+            "ALTER TABLE gift_bookings ADD COLUMN IF NOT EXISTS record_id UUID REFERENCES records(id) ON DELETE SET NULL",
+            "CREATE INDEX IF NOT EXISTS ix_gift_bookings_record_id ON gift_bookings (record_id)",
+            # Бэкфилл для живых броней: у них связь с пунктом вишлиста ещё цела.
+            # У завершённых её нет — там колонка останется пустой, и такие
+            # подарки в «Я дарю» не покажутся (данных для них просто не сохранилось).
+            """
+            UPDATE gift_bookings b
+               SET record_id = wi.record_id
+              FROM wishlist_items wi
+             WHERE b.wishlist_item_id = wi.id
+               AND b.record_id IS NULL
+            """,
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS notify_follow_request BOOLEAN NOT NULL DEFAULT TRUE",
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS notify_wishlist_in_stock BOOLEAN NOT NULL DEFAULT TRUE",
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS notify_achievement BOOLEAN NOT NULL DEFAULT TRUE",
