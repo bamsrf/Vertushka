@@ -108,6 +108,12 @@ class Settings(BaseSettings):
         default="https://api.vinyl-vertushka.ru/covers", alias="PUBLIC_COVERS_BASE",
     )
     covers_max_cache_mb: int = Field(default=5000, alias="COVERS_MAX_CACHE_MB")
+    # Ночной перегрев мелких мастеров (cover_upgrade_tasks). Батч 1000 при ~13K
+    # помеченных = около двух недель на разбор накопленного; wall-clock 30 мин
+    # держит прогон в границах, даже если партия уходит на медленный iTunes.
+    cover_upgrade_enabled: bool = Field(default=True, alias="COVER_UPGRADE_ENABLED")
+    cover_upgrade_batch: int = Field(default=1000, alias="COVER_UPGRADE_BATCH")
+    cover_upgrade_max_seconds: int = Field(default=1800, alias="COVER_UPGRADE_MAX_SECONDS")
     # Метрика покрытия обложек (cover_coverage_tasks). Пол — абсолютный порог
     # доли in_stock matched-листингов с рабочей обложкой; ниже → алерт.
     # Дефолт консервативный: подстроить под реальный базовый уровень после

@@ -29,6 +29,7 @@ from app.config import get_settings
 from app.database import async_session_maker
 from app.services import alerts
 from app.services.cache import cache
+from app.services.cover_quality import MASTER_MIN_SIDE
 
 logger = logging.getLogger(__name__)
 
@@ -70,6 +71,37 @@ async def report_cover_coverage() -> dict:
             f"WHERE sl.status = 'in_stock'"
         ))).mappings().one()
 
+        # Тир зеркалированных мастеров. Это детектор той самой поломки: пока
+        # `_thumb_to_cover` молча возвращала 150px-thumb, доля мелких доросла до
+        # 54% (13 124 из 24 404), и увидели мы это случайно, глазами, через
+        # недели. `unmeasured` — файлы до появления cover_min_side; их размер
+        # проставляет scripts/heal_cover_tiers, и в норме он стремится к нулю.
+        tier_row = (await db.execute(text(
+            "SELECT count(*) AS mirrored, "
+            "count(*) FILTER (WHERE cover_min_side IS NULL) AS unmeasured, "
+            "count(*) FILTER (WHERE cover_min_side IS NOT NULL "
+            f"                  AND cover_min_side < {MASTER_MIN_SIDE}) AS low_res "
+            "FROM records WHERE cover_local_path IS NOT NULL"
+        ))).mappings().one()
+
+        # Откуда пришли обложки. Считаем по хосту URL в дамп-индексе: отдельной
+        # колонки source там нет, а хост однозначен. Цифра нужна для решения по
+        # изоляции — выпиливать Discogs из лестницы мастеров можно только зная,
+        # сколько релизов реально закрывают бесплатные источники.
+        source_row = (await db.execute(text(
+            "SELECT "
+            "  count(*) FILTER (WHERE cover_image_url LIKE '%coverartarchive.org%') AS caa, "
+            "  count(*) FILTER (WHERE cover_image_url LIKE '%dzcdn.net%') AS deezer, "
+            "  count(*) FILTER (WHERE cover_image_url LIKE '%mzstatic.com%') AS itunes, "
+            "  count(*) FILTER (WHERE cover_image_url LIKE '%discogs.com%') AS discogs, "
+            "  count(*) FILTER (WHERE cover_image_url IS NOT NULL "
+            "    AND cover_image_url NOT LIKE '%coverartarchive.org%' "
+            "    AND cover_image_url NOT LIKE '%dzcdn.net%' "
+            "    AND cover_image_url NOT LIKE '%mzstatic.com%' "
+            "    AND cover_image_url NOT LIKE '%discogs.com%') AS other "
+            "FROM discogs_releases_index"
+        ))).mappings().one()
+
     dump = {
         "with_cover": dump_row["with_cover"],
         "total": dump_row["total"],
@@ -80,21 +112,65 @@ async def report_cover_coverage() -> dict:
         "total": market_row["total"],
         "pct": _pct(market_row["with_cover"], market_row["total"]),
     }
+    tier = {
+        "mirrored": tier_row["mirrored"],
+        "low_res": tier_row["low_res"],
+        "unmeasured": tier_row["unmeasured"],
+        "threshold_px": MASTER_MIN_SIDE,
+        # Доля считается от ПРОМЕРЕННЫХ, а не от всех зеркал: иначе метрика
+        # выглядела бы тем лучше, чем больше файлов мы ещё не измерили.
+        "low_res_pct": _pct(tier_row["low_res"], tier_row["mirrored"] - tier_row["unmeasured"]),
+    }
+    sources = {k: source_row[k] for k in ("caa", "deezer", "itunes", "discogs", "other")}
+    free = sources["caa"] + sources["deezer"] + sources["itunes"]
+    sources["free_pct"] = _pct(free, free + sources["discogs"] + sources["other"])
+
     snapshot = {
         "computed_at": datetime.now(timezone.utc).isoformat(),
         "dump_index": dump,
         "market_in_stock": market,
+        "master_tier": tier,
+        "cover_sources": sources,
     }
 
     await cache.set(_SNAPSHOT_NS, _SNAPSHOT_KEY, snapshot, ttl=_SNAPSHOT_TTL)
     logger.info(
-        "cover coverage: dump_index %d/%d (%.1f%%), market_in_stock %d/%d (%.1f%%)",
+        "cover coverage: dump_index %d/%d (%.1f%%), market_in_stock %d/%d (%.1f%%), "
+        "low-res masters %d (%.1f%% of measured, %d unmeasured), free sources %.1f%%",
         dump["with_cover"], dump["total"], dump["pct"] * 100,
         market["with_cover"], market["total"], market["pct"] * 100,
+        tier["low_res"], tier["low_res_pct"] * 100, tier["unmeasured"],
+        sources["free_pct"] * 100,
     )
 
     _maybe_alert(market, prev)
+    _maybe_alert_tier(tier, prev)
     return snapshot
+
+
+def _maybe_alert_tier(tier: dict, prev: dict | None) -> None:
+    """Алерт на РОСТ доли мелких мастеров — детектор повтора поломки тира.
+
+    Именно рост, а не абсолютный уровень: накопленные 13 124 мелких обложек
+    рассасываются ночным перегревом постепенно, и алертить на них каждый день
+    значит выучиться игнорировать алерты. А вот если доля пошла ВВЕРХ — значит
+    в зеркало снова течёт мелкое, и гейт где-то обойдён.
+    """
+    prev_tier = (prev or {}).get("master_tier") if prev else None
+    if not prev_tier or not tier["low_res_pct"]:
+        return
+    growth_pp = (tier["low_res_pct"] - prev_tier.get("low_res_pct", 0)) * 100
+    if growth_pp > 1.0:
+        alerts.fire_and_forget(
+            key="cover_tier_regression",
+            title=f"Доля мелких мастеров обложек выросла на {growth_pp:.1f} п.п.",
+            body=(
+                f"Было {prev_tier.get('low_res_pct', 0) * 100:.1f}%, стало "
+                f"{tier['low_res_pct'] * 100:.1f}% ({tier['low_res']} обложек "
+                f"мельче {tier['threshold_px']}px). Рост означает, что гейт тира "
+                f"обойдён — проверить cover_quality и источники в лестнице."
+            ),
+        )
 
 
 def _maybe_alert(market: dict, prev: dict | None) -> None:
