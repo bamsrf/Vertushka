@@ -448,6 +448,15 @@ location /api/messages/ws { access_log /var/log/nginx/ws.log ws_safe; ... }
 Более чистое решение на потом — одноразовый короткоживущий ticket: `POST /api/messages/ws-ticket`
 отдаёт UUID с TTL 30 с в Redis, WS принимает его вместо access-токена.
 
+> **Что сделано и что осталось (2026-08-14).** Отдельный `log_format ws_safe` с `$uri`
+> вместо `$request` и свой `location = /api/messages/ws` — из access-лога токен ушёл.
+> **Но это половина решения:** формат настраивается только у `access_log`, а `error_log`
+> пишет строку запроса целиком, и в nginx это не конфигурируется. При любой ошибке
+> (429, недоступный апстрим, разрыв соединения) токен по-прежнему попадёт в `error.log`.
+> Проверено на throwaway-контейнере: в записи `limiting requests` видно
+> `request: "POST /api/auth/login HTTP/2.0"` — то есть `$request` как есть.
+> Полностью закрывает только ticket-схема выше; оставлено в бэклоге.
+
 ### S10. Загрузка фото: чтение до проверки размера, нет защиты от bomb, нет квоты
 
 [`app/api/user_photos.py:113`](../../Backend/app/api/user_photos.py):

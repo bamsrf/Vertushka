@@ -606,6 +606,223 @@ def test_password_reset_log_has_no_email():
             assert "email" not in line, line
 
 
+# ── §S10: загрузка фотографий ───────────────────────────────────────────────
+
+
+def _png_bytes(width: int, height: int) -> bytes:
+    """Одноцветный PNG: сжимается в килобайты при любом разрешении."""
+    from io import BytesIO
+
+    from PIL import Image
+
+    buf = BytesIO()
+    Image.new("L", (width, height), 0).save(buf, "PNG", compress_level=9)
+    return buf.getvalue()
+
+
+def test_decompression_bomb_rejected():
+    """900 Мп в файле на ~850 КБ: лимит размера файла тут бессилен."""
+    from fastapi import HTTPException
+
+    from app.api.user_photos import decode_user_photo
+
+    bomb = _png_bytes(30000, 30000)
+    assert len(bomb) < 10 * 1024 * 1024, "бомба должна проходить лимит размера файла"
+
+    with pytest.raises(HTTPException) as exc:
+        decode_user_photo(bomb)
+    assert exc.value.status_code == 422
+
+
+def test_bomb_between_limit_and_double_limit_rejected():
+    """Промежуток, который Pillow пропускает с одним лишь предупреждением.
+
+    DecompressionBombError срабатывает только на удвоенном MAX_IMAGE_PIXELS,
+    поэтому при лимите 40 Мп картинка на 56 Мп (файл ~50 КБ) проходила бы
+    молча. Её ловит явная проверка по заголовку.
+    """
+    from fastapi import HTTPException
+
+    from app.api.user_photos import _MAX_PIXELS, decode_user_photo
+
+    width = height = 7500
+    assert _MAX_PIXELS < width * height < _MAX_PIXELS * 2, "тест потерял смысл"
+
+    with pytest.raises(HTTPException) as exc:
+        decode_user_photo(_png_bytes(width, height))
+    assert exc.value.status_code == 422
+
+
+@pytest.mark.parametrize("size", [(1200, 1200), (4000, 3000), (800, 600)])
+def test_normal_photos_still_accepted(size):
+    from app.api.user_photos import decode_user_photo
+
+    img = decode_user_photo(_png_bytes(*size))
+    assert img.size == size
+    assert img.mode == "RGB"
+
+
+def test_global_pillow_limit_is_restored():
+    """MAX_IMAGE_PIXELS — настройка модуля; менять её насовсем нельзя."""
+    from PIL import Image
+    from fastapi import HTTPException
+
+    from app.api.user_photos import decode_user_photo
+
+    before = Image.MAX_IMAGE_PIXELS
+    decode_user_photo(_png_bytes(100, 100))
+    assert Image.MAX_IMAGE_PIXELS == before
+
+    with pytest.raises(HTTPException):
+        decode_user_photo(_png_bytes(30000, 30000))
+    assert Image.MAX_IMAGE_PIXELS == before, "лимит не восстановлен после ошибки"
+
+
+def test_garbage_upload_rejected():
+    from fastapi import HTTPException
+
+    from app.api.user_photos import decode_user_photo
+
+    with pytest.raises(HTTPException) as exc:
+        decode_user_photo(b"this is definitely not an image")
+    assert exc.value.status_code == 422
+
+
+def test_upload_reads_with_ceiling_not_after():
+    """`await file.read()` без аргумента тянет тело целиком в память."""
+    src = Path("app/api/user_photos.py").read_text(encoding="utf-8")
+    assert "await file.read(limit + 1)" in src
+    assert "raw = await file.read()" not in src
+
+
+def test_upload_has_per_user_quota():
+    src = Path("app/api/user_photos.py").read_text(encoding="utf-8")
+    assert "_MAX_PHOTOS_PER_USER" in src
+    quota_at = src.index("_MAX_PHOTOS_PER_USER:")
+    write_at = src.index("img.save(tmp_path")
+    assert quota_at < write_at, "квота должна проверяться до записи файла"
+
+
+# ── §S9/§S11/§S13/§S15/§S16: конфиг nginx ───────────────────────────────────
+#
+# Проверки текстовые: nginx в CI нет. Синтаксис и реальные заголовки
+# проверялись throwaway-контейнером (`docker run --rm nginx:alpine nginx -t`
+# плюс curl по каждому location) — эти тесты стерегут, чтобы правки не уехали.
+
+
+@pytest.fixture(scope="module")
+def nginx_conf():
+    return Path("nginx/nginx.conf").read_text(encoding="utf-8")
+
+
+def _location_blocks(conf: str) -> list[tuple[int, str, str, str]]:
+    """Нарезка на location-блоки: (номер строки, server_name, заголовок, тело).
+
+    Список, а не словарь: `location / {` встречается в конфиге восемь раз, и
+    словарь схлопывал бы их в одну запись — тест молча перестал бы проверять
+    все, кроме последней. Ровно на этом он и попался в первой версии.
+
+    server_name нужен, чтобы отличать наши домены от посторонних блоков в том
+    же файле (на 443 этого сервера живут и чужие проекты).
+    """
+    blocks: list[tuple[int, str, str, str]] = []
+    current: list[str] = []
+    name, start, server = None, 0, "?"
+    for lineno, line in enumerate(conf.splitlines(), 1):
+        stripped = line.strip()
+        if stripped.startswith("server_name "):
+            server = stripped[len("server_name ") :].rstrip(";")
+        if stripped.startswith("location ") and stripped.endswith("{"):
+            name, start, current = stripped, lineno, []
+        elif name is not None:
+            if stripped == "}":
+                blocks.append((start, server, name, "\n".join(current)))
+                name = None
+            else:
+                current.append(stripped)
+    return blocks
+
+
+# Домены Вертушки. Всё прочее в этом nginx.conf — соседние проекты на том же
+# сервере, их конфиг живёт своей жизнью и правится вне этой работы.
+_OUR_SERVERS = {"vinyl-vertushka.ru", "api.vinyl-vertushka.ru"}
+
+
+def test_covers_locations_keep_security_headers(nginx_conf):
+    """add_header в location ОТМЕНЯЕТ унаследованные из server.
+
+    Проверено вживую: до фикса `/covers/1.jpg` с существующим файлом отдавался
+    только с Cache-Control — без HSTS и nosniff.
+    """
+    checked = 0
+    for lineno, server, name, body in _location_blocks(nginx_conf):
+        if server not in _OUR_SERVERS or "add_header" not in body:
+            continue  # чужой домен либо ничего не переопределяет
+        where = f"строка {lineno}, {server}, {name}"
+        assert "X-Content-Type-Options" in body, f"{where}: потерян nosniff"
+        assert "Strict-Transport-Security" in body, f"{where}: потерян HSTS"
+        checked += 1
+
+    # Страховка от «тест позеленел, потому что ничего не нашёл».
+    assert checked >= 7, f"проверено всего {checked} блоков — парсер что-то не увидел"
+
+
+def test_csp_present_and_blocks_known_payloads(nginx_conf):
+    """CSP должна гасить ровно те нагрузки, которыми эксплуатировался §S1."""
+    assert "Content-Security-Policy" in nginx_conf
+    csp = next(l for l in nginx_conf.splitlines() if "Content-Security-Policy" in l)
+
+    assert "base-uri 'self'" in csp, "<base href=//x.ru> не заблокирован"
+    assert "object-src 'none'" in csp
+    assert "form-action 'self'" in csp
+    assert "frame-ancestors 'none'" in csp
+    # script-src без wildcard — иначе <script src=//evil.ru> пройдёт.
+    assert "script-src" in csp and "script-src *" not in csp
+
+
+def test_deprecated_xss_header_removed(nginx_conf):
+    """X-XSS-Protection устарел и в ряде браузеров сам был вектором (§S15)."""
+    active = [
+        line for line in nginx_conf.splitlines()
+        if "X-XSS-Protection" in line and not line.strip().startswith("#")
+    ]
+    assert not active
+
+
+def test_connection_upgrade_is_conditional(nginx_conf):
+    """Безусловный Connection: upgrade на каждый запрос ломает keep-alive (§S16)."""
+    assert "map $http_upgrade $connection_upgrade" in nginx_conf
+    active = [
+        line for line in nginx_conf.splitlines()
+        if 'Connection "upgrade"' in line and not line.strip().startswith("#")
+    ]
+    assert not active, "остался литеральный Connection: upgrade"
+
+
+def test_rate_limiting_configured(nginx_conf):
+    """slowapi живёт в памяти процесса и обнуляется деплоем — нужен потолок на эдже."""
+    assert "limit_req_zone" in nginx_conf
+    assert "limit_req zone=api_general" in nginx_conf
+    assert "limit_req zone=api_write" in nginx_conf
+    assert "limit_conn api_conn" in nginx_conf
+
+
+def test_ws_access_log_hides_query_string(nginx_conf):
+    """Токен едет в query, дефолтный combined писал бы его на диск (§S9)."""
+    assert "log_format ws_safe" in nginx_conf
+    ws_format = next(l for l in nginx_conf.splitlines() if "log_format ws_safe" in l)
+    # $request содержит query-строку целиком, $uri — нет.
+    assert "$request " not in ws_format and "$request'" not in ws_format
+    assert "$uri" in nginx_conf[nginx_conf.index("log_format ws_safe") :][:400]
+
+    ws = next(
+        (body for _, _, name, body in _location_blocks(nginx_conf) if "/api/messages/ws" in name),
+        None,
+    )
+    assert ws is not None, "нет отдельного location для WS"
+    assert "access_log" in ws and "ws_safe" in ws
+
+
 # ── §S5: гейт на секреты при старте ─────────────────────────────────────────
 
 
