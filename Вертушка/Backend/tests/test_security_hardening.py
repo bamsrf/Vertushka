@@ -1002,6 +1002,163 @@ def test_blocking_severs_existing_follows():
     assert "FollowRequest.__table__.delete()" in src
 
 
+# ── §S14: PII в телеметрии ──────────────────────────────────────────────────
+
+
+def test_sentry_scope_has_no_email():
+    """send_default_pii=False рядом, а email клали руками — обходили сами себя."""
+    src = Path("app/api/auth.py").read_text(encoding="utf-8")
+    start = src.index("sentry_sdk.set_user(")
+    block = src[start : src.index("})", start)]
+    assert '"id"' in block
+    assert "email" not in block, "email вернулся в Sentry-скоуп"
+
+
+def test_500_alert_carries_no_exception_text():
+    """`str(exc)` регулярно содержит пользовательский ввод.
+
+    IntegrityError печатает конфликтующие значения (email, username),
+    ValidationError — сам ввод. В Telegram уходят только тип и request_id.
+    """
+    src = Path("app/main.py").read_text(encoding="utf-8")
+    start = src.index("async def global_exception_handler")
+    body = src[start : start + 1400]
+
+    assert 'f"{type(exc).__name__}: {exc}"' not in body
+    assert "request_id=" in body, "потеряли корреляцию с логами"
+
+
+# ── §S17: служебные ручки ───────────────────────────────────────────────────
+
+
+class _StubSession:
+    """Сессия-заглушка: /health делает ровно SELECT 1 и больше ничего."""
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc):
+        return False
+
+    async def execute(self, *args, **kwargs):
+        return None
+
+
+def test_public_health_exposes_no_infrastructure(monkeypatch):
+    """Наружу — только статус; состояние БД и Redis переехало под токен.
+
+    БД подменена намеренно. Живое соединение здесь оставляло в пуле движка
+    коннект, привязанный к уже закрытому event loop, и следующий за ним
+    интеграционный тест падал на teardown — тесты в этом наборе не должны
+    трогать реальную инфраструктуру.
+    """
+    from fastapi.testclient import TestClient
+
+    import app.main as main_mod
+
+    monkeypatch.setattr(main_mod, "async_session_maker", lambda: _StubSession())
+
+    body = TestClient(main_mod.app).get("/health").json()
+    assert set(body) <= {"status"}, f"публичный /health отдаёт лишнее: {body}"
+    assert body["status"] == "healthy"
+
+
+def test_public_health_stays_quiet_when_db_is_down(monkeypatch):
+    """И в аварийной ветке наружу не должно уезжать ничего лишнего."""
+    from fastapi.testclient import TestClient
+
+    import app.main as main_mod
+
+    class _Broken(_StubSession):
+        async def execute(self, *args, **kwargs):
+            raise RuntimeError("db is down")
+
+    monkeypatch.setattr(main_mod, "async_session_maker", lambda: _Broken())
+
+    response = TestClient(main_mod.app).get("/health")
+    assert response.status_code == 503
+    assert set(response.json()) <= {"status"}
+
+
+@pytest.mark.parametrize("path", ["/health/detailed", "/health/covers"])
+@pytest.mark.parametrize("headers", [{}, {"X-Internal-Token": "wrong-token"}])
+def test_internal_health_endpoints_require_token(path, headers):
+    from fastapi.testclient import TestClient
+
+    from app.main import app
+
+    assert TestClient(app).get(path, headers=headers).status_code == 403
+
+
+def test_internal_token_compared_in_constant_time():
+    src = Path("app/main.py").read_text(encoding="utf-8")
+    assert "secrets.compare_digest" in src
+
+
+def test_deploy_gate_only_checks_status_code():
+    """/health урезан в расчёте на то, что deploy.sh не парсит тело."""
+    script = Path("scripts/deploy.sh").read_text(encoding="utf-8")
+    assert "curl -fsS --max-time 3 \"$HEALTH_URL\" > /dev/null" in script
+
+
+# ── §S19: предел bcrypt в 72 байта ──────────────────────────────────────────
+
+
+def test_bcrypt_truncation_is_real():
+    """Фиксируем поведение, ради которого введён лимит.
+
+    Без валидации hash_password('A'*100) успешно проверяется паролем
+    'A'*72 + произвольный мусор — то есть хвост не участвует вообще.
+    """
+    from app.utils.security import hash_password, verify_password
+
+    stored = hash_password("A" * 100)
+    assert verify_password("A" * 72 + "совершенно другой хвост", stored)
+
+
+@pytest.mark.parametrize(
+    "password,ok",
+    [
+        ("A" * 72, True),
+        ("A" * 73, False),
+        ("П" * 36, True),   # 72 байта
+        ("П" * 37, False),  # 74 байта
+        ("П" * 40, False),  # 80 байт — раньше молча резался до 36 символов
+        ("нормальный-пароль-2026", True),
+        ("8симвбез", True),
+    ],
+)
+def test_new_password_length_validated_in_bytes(password, ok):
+    from pydantic import ValidationError
+
+    from app.schemas.user import UserCreate
+
+    def build():
+        return UserCreate(email="a@b.co", username="user", password=password)
+
+    if ok:
+        assert build().password == password
+    else:
+        with pytest.raises(ValidationError):
+            build()
+
+
+def test_reset_password_uses_same_limit():
+    from pydantic import ValidationError
+
+    from app.schemas.auth import ResetPasswordRequest
+
+    with pytest.raises(ValidationError):
+        ResetPasswordRequest(reset_token="t", new_password="П" * 40)
+
+
+def test_login_has_no_password_length_limit():
+    """Лимит на входе запер бы снаружи всех, кто зарегистрировался раньше."""
+    from app.schemas.user import UserLogin
+
+    assert UserLogin(login="a@b.co", password="П" * 100).password
+
+
 # ── §S3: вычистка удалённых аккаунтов ───────────────────────────────────────
 
 

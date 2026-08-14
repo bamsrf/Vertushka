@@ -278,11 +278,14 @@ async def get_current_user(
 
     await _maybe_touch_last_seen(user.id)
 
-    # Привязываем юзера к Sentry/GlitchTip-скоупу, чтобы по нику/id находить его ошибки
+    # Привязываем юзера к Sentry/GlitchTip-скоупу, чтобы по нику/id находить его
+    # ошибки. Без email: рядом стоит send_default_pii=False, и класть адрес
+    # руками означало бы обойти собственную же настройку. Username оставлен —
+    # это публичный хэндл (он в URL публичного профиля), а искать по нему
+    # ошибки конкретного человека реально нужно. См. §S14.
     sentry_sdk.set_user({
         "id": str(user.id),
         "username": user.username,
-        "email": user.email,
     })
 
     return user
