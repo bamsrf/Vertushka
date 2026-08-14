@@ -32,7 +32,6 @@ from app.services.pricing import PricingParams, estimate_rub, effective_markup, 
 from app.services.marketplace_pricing import marketplace_price_range
 from app.config import get_settings
 from app.schemas.record import (
-    RecordCreate,
     RecordResponse,
     RecordSearchResult,
     RecordSearchResponse,
@@ -2108,22 +2107,20 @@ async def get_record_by_discogs_id(
         )
 
 
-@router.post("/", response_model=RecordResponse, status_code=status.HTTP_201_CREATED)
-async def create_record(
-    record_data: RecordCreate,
-    current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
-):
-    """
-    Создание пластинки вручную (без Discogs).
-    Требует авторизации.
-    """
-    record = Record(**record_data.model_dump())
-    db.add(record)
-    await db.commit()
-    await db.refresh(record)
-
-    return record
+# УДАЛЁН: POST /api/records/ (создание пластинки «вручную»).
+#
+# Делал `Record(**record_data.model_dump())` — splat входа в модель без единой
+# проверки. Дефолты модели (models/record.py) — source='discogs',
+# moderation_status='approved', created_by_user_id=NULL, поэтому запись
+# рождалась мимо всей модерации UGC: сразу одобренной, замаскированной под
+# каноничную запись Discogs и без автора. Последнее ломало и бан по жалобе —
+# reports._resolve_target_user_id() возвращал None, банить было некого.
+# Плюс cover_image_url из запроса утекал в RedirectResponse (открытый редирект
+# на api-домене) и в серверную закачку (SSRF).
+#
+# Замены не требуется: правильный путь для пользовательских записей —
+# POST /api/records/user/ (UserRecordCreate), он ставит source='user',
+# moderation_status='pending' и автора. Мобилка ходит только туда.
 
 
 @router.get("/masters/search", response_model=MasterSearchResponse)

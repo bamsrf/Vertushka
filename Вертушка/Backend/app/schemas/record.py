@@ -18,7 +18,19 @@ class RecordBase(BaseModel):
 
 
 class RecordCreate(RecordBase):
-    """Схема для создания пластинки"""
+    """Схема для создания пластинки.
+
+    НЕ ИСПОЛЬЗУЕТСЯ ни одним эндпоинтом и не должна использоваться в новом коде.
+    Эндпоинт POST /api/records/, который её принимал, удалён: он splat'ил вход
+    в модель (`Record(**data.model_dump())`), из-за чего запись создавалась
+    мимо модерации — source='discogs', moderation_status='approved', без автора.
+    Для пользовательских записей есть UserRecordCreate + POST /records/user/.
+
+    Если понадобится серверное создание записи — присваивай поля явно и
+    проставляй source/moderation_status/created_by_user_id сам; cover_image_url
+    из клиентского запроса не брать (открытый редирект + SSRF, см.
+    docs/plans/SECURITY_AUDIT_PRERELEASE.md §S2).
+    """
     discogs_id: str | None = None
     discogs_master_id: str | None = None
     catalog_number: str | None = None

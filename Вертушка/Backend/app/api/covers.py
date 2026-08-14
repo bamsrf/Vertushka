@@ -23,6 +23,7 @@ from app.services.cover_storage import (
     _download_cover_background,
     schedule_store_native_cover_cache,
 )
+from app.utils.url_guard import is_safe_redirect_target
 
 logger = logging.getLogger(__name__)
 
@@ -130,6 +131,16 @@ async def get_store_cover(
     if not record.cover_image_url:
         raise HTTPException(status_code=404, detail="Cover image not available")
 
+    # 302 на URL из БД, а тот пришёл из парсера чужой витрины. Без проверки
+    # наш api-домен работает открытым редиректором — ровно то, чего избегает
+    # /go/{click_id} в web/routes.py. Отдаём 404 вместо редиректа: для nginx
+    # @covers_fallback это штатный исход (обложки просто не будет).
+    if not is_safe_redirect_target(record.cover_image_url):
+        logger.warning(
+            "covers: небезопасный cover_image_url у записи %s — редирект не отдаём", rid,
+        )
+        raise HTTPException(status_code=404, detail="Cover image not available")
+
     return RedirectResponse(url=record.cover_image_url, status_code=302)
 
 
@@ -148,13 +159,23 @@ async def get_cover(
     discogs_id = discogs_id.removesuffix(".jpg")
 
     def _safe(url: str | None) -> str | None:
-        """Guard: не редиректим на собственное зеркало (петля) и на no-image
-        заглушку Discogs (st.discogs.com/.../spacer.gif)."""
+        """Guard для всех 302 этой ручки.
+
+        Три разные причины не редиректить:
+        1. собственное зеркало — петля;
+        2. no-image заглушка Discogs (st.discogs.com/.../spacer.gif);
+        3. небезопасная цель — иначе api-домен работает открытым редиректором.
+           URL едет из dump-индекса и из живого резолва, то есть в конечном
+           счёте из внешних данных. См. SECURITY_AUDIT_PRERELEASE.md §S2.
+        """
         if not url:
             return None
         if url.startswith(get_settings().public_covers_base):
             return None
         if "spacer.gif" in url or "st.discogs.com" in url:
+            return None
+        if not is_safe_redirect_target(url):
+            logger.warning("covers: небезопасная цель редиректа отброшена: %s", url)
             return None
         return url
 

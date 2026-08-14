@@ -149,6 +149,14 @@ async def lifespan(app: FastAPI):
             scheduler.add_job(emit_wishlist_absent_notifications, 'interval', minutes=15, id='wishlist_absent_notifications')
             scheduler.add_job(emit_weekly_wishlist_digest, 'cron', day_of_week='mon', hour=10, minute=0, id='weekly_wishlist_digest')
             scheduler.add_job(cleanup_price_history, 'cron', hour=3, minute=30, id='price_history_cleanup')
+            # Окончательное удаление аккаунтов, у которых истекло 30-дневное окно
+            # отмены. Джоба существовала давно, но нигде не была запущена — то
+            # есть данные удалённых аккаунтов не вычищались вообще, вопреки
+            # обещанию в UI и в политике (Guideline 5.1.1(v), 152-ФЗ).
+            # 04:30 — после ночных обходов, до утренних отчётов.
+            from app.scripts.purge_deleted_users import purge as purge_deleted_users
+            scheduler.add_job(purge_deleted_users, 'cron', hour=4, minute=30,
+                              id='purge_deleted_users', max_instances=1, coalesce=True)
             # Drip-прогрев обложек: каждую минуту, тратит только простой app-bucket'а
             scheduler.add_job(drip_covers_batch, 'interval', minutes=1, id='cover_drip', max_instances=1, coalesce=True)
 

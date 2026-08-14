@@ -19,6 +19,7 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
+from app.utils.url_guard import UnsafeUrlError, safe_image_get
 from app.services.cache import cache
 from app.services.cover_quality import (
     MASTER_MIN_SIDE,
@@ -227,17 +228,22 @@ class CoverStorageService:
             self._ensure_covers_dir()
             tmp_path = self._tmp_path(discogs_id)
 
-            async with httpx.AsyncClient(timeout=_DOWNLOAD_TIMEOUT, follow_redirects=True) as client:
-                resp = await client.get(image_url)
-                if resp.status_code in (403, 404, 410):
-                    logger.info(
-                        "cover_storage: discogs returned %d for %s, skipping",
-                        resp.status_code,
-                        discogs_id,
-                    )
-                    return None
-                resp.raise_for_status()
-                raw = resp.content
+            try:
+                resp = await safe_image_get(image_url, timeout=_DOWNLOAD_TIMEOUT)
+            except UnsafeUrlError as exc:
+                logger.warning(
+                    "cover_storage: отказ качать %s для %s — %s", image_url, discogs_id, exc,
+                )
+                return None
+            if resp.status_code in (403, 404, 410):
+                logger.info(
+                    "cover_storage: discogs returned %d for %s, skipping",
+                    resp.status_code,
+                    discogs_id,
+                )
+                return None
+            resp.raise_for_status()
+            raw = resp.content
 
             # Конвертация + resize + атомарный rename — CPU-bound, в threadpool,
             # иначе single-worker event loop морозится на всю пачку прогрева.
@@ -458,28 +464,38 @@ async def _download_store_native_cover_background(
         store_dir.mkdir(parents=True, exist_ok=True)
         tmp_path = store_dir / f".tmp_{record_id}_{uuid.uuid4().hex}.jpg"
 
-        async with httpx.AsyncClient(timeout=_DOWNLOAD_TIMEOUT, follow_redirects=True) as client:
-            resp = await client.get(image_url)
-            if resp.status_code in (403, 404, 410):
-                # Магазин удалил товар → CDN навсегда возвращает 4xx.
-                # Зануляем r.cover_image_url, фильтр /market/* отсеет запись
-                # (COALESCE подставит raw_payload.image_url из листинга — он
-                # обычно тот же мёртвый URL, но это уже не проблема Маркета,
-                # а weekly_cleanup_stale пометит листинг как 'removed').
-                logger.info(
-                    "cover_storage: store-native cover unavailable (%d) for %s — nulling cover_image_url",
-                    resp.status_code, record_id,
+        # URL приходит из парсера чужого магазина, то есть по происхождению это
+        # содержимое стороннего HTML. Гоняем через url_guard: скомпрометированная
+        # или просто вредная витрина иначе направила бы нашу закачку внутрь
+        # docker-сети. См. docs/plans/SECURITY_AUDIT_PRERELEASE.md §S2.
+        try:
+            resp = await safe_image_get(image_url, timeout=_DOWNLOAD_TIMEOUT)
+        except UnsafeUrlError as exc:
+            logger.warning(
+                "cover_storage: отказ качать store-native обложку %s для %s — %s",
+                image_url, record_id, exc,
+            )
+            return
+        if resp.status_code in (403, 404, 410):
+            # Магазин удалил товар → CDN навсегда возвращает 4xx.
+            # Зануляем r.cover_image_url, фильтр /market/* отсеет запись
+            # (COALESCE подставит raw_payload.image_url из листинга — он
+            # обычно тот же мёртвый URL, но это уже не проблема Маркета,
+            # а weekly_cleanup_stale пометит листинг как 'removed').
+            logger.info(
+                "cover_storage: store-native cover unavailable (%d) for %s — nulling cover_image_url",
+                resp.status_code, record_id,
+            )
+            async with async_session_maker() as db:
+                await db.execute(
+                    update(Record)
+                    .where(Record.id == record_id)
+                    .values(cover_image_url=None)
                 )
-                async with async_session_maker() as db:
-                    await db.execute(
-                        update(Record)
-                        .where(Record.id == record_id)
-                        .values(cover_image_url=None)
-                    )
-                    await db.commit()
-                return
-            resp.raise_for_status()
-            raw = resp.content
+                await db.commit()
+            return
+        resp.raise_for_status()
+        raw = resp.content
 
         bhash, min_side = await asyncio.to_thread(_encode_and_place, raw, tmp_path, dest)
         tmp_path = None
