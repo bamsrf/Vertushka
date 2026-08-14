@@ -24,7 +24,9 @@ import { useAuthStore, useOnboardingStore } from '../../lib/store';
 import {
   COACH_MARKS,
   CoachMarkKey,
-  loadSeenCoachMarks,
+  type CoachMarkState,
+  isSuppressed,
+  loadCoachMarkStates,
   resetCoachMarks,
 } from '../../lib/coachMarks';
 import { restoreFirstSteps, useFirstStepsDismissed } from '../../lib/onboardingProgress';
@@ -38,13 +40,13 @@ export default function HowItWorksScreen() {
 
   const stepsDismissed = useFirstStepsDismissed();
 
-  const [seen, setSeen] = useState<Set<CoachMarkKey>>(new Set());
+  const [states, setStates] = useState<Map<CoachMarkKey, CoachMarkState>>(new Map());
 
   const refresh = useCallback(async () => {
     if (!userId) return;
-    const keys = await loadSeenCoachMarks(userId);
-    // Новый Set, иначе React не увидит мутацию кэша.
-    setSeen(new Set(keys));
+    const next = await loadCoachMarkStates(userId);
+    // Новая Map, иначе React не увидит мутацию кэша.
+    setStates(new Map(next));
   }, [userId]);
 
   useEffect(() => {
@@ -99,7 +101,8 @@ export default function HowItWorksScreen() {
         </Text>
 
         {COACH_MARKS.map((mark) => {
-          const isSeen = seen.has(mark.key);
+          const state = states.get(mark.key) ?? { acknowledged: false, shows: 0 };
+          const suppressed = isSuppressed(state);
           return (
             <View key={mark.key} style={[styles.card, Shadows.sm]}>
               <View style={styles.cardRow}>
@@ -119,7 +122,7 @@ export default function HowItWorksScreen() {
                 </View>
               </View>
 
-              {isSeen ? (
+              {suppressed ? (
                 <TouchableOpacity
                   style={styles.cardAction}
                   onPress={() => handleReset(mark.key)}
@@ -130,7 +133,12 @@ export default function HowItWorksScreen() {
                 </TouchableOpacity>
               ) : (
                 <View style={styles.cardAction}>
-                  <Text style={styles.cardPending}>Ещё не показывалась</Text>
+                  {/* Три состояния, а не два: показанная, но не закрытая
+                      подсказка вернётся сама — и честнее об этом сказать,
+                      чем писать «ещё не показывалась». */}
+                  <Text style={styles.cardPending}>
+                    {state.shows > 0 ? 'Показывалась — вернётся ещё раз' : 'Ещё не показывалась'}
+                  </Text>
                 </View>
               )}
             </View>

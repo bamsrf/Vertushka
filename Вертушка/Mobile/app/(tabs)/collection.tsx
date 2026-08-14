@@ -797,6 +797,10 @@ export default function CollectionScreen() {
   // Кольцо на кнопке ₽ в липкой шапке — она за пределами карточки подсказки,
   // поэтому связь между ними держится через спотлайт-ключ, а не через вёрстку.
   const valueSpotlight = useCoachSpotlight('collection-value');
+  const foldersSpotlight = useCoachSpotlight('folders');
+  const multiSelectSpotlight = useCoachSpotlight('multi-select');
+  // Радару — 'glow', а не кольцо: у кнопки уже свой sonar. См. coachMarks.ts.
+  const radarSpotlight = useCoachSpotlight('radar');
   const multiSelectTip = useCoachMark('multi-select', soloRemovals >= 2);
   const radarTip = useCoachMark('radar', !isCollectionTab && wishlistItems.length > 0);
   const marketTip = useCoachMark('market', !isCollectionTab && wishlistItems.length >= 3);
@@ -881,13 +885,16 @@ export default function CollectionScreen() {
           </View>
         )}
 
+        {/* Подсказка про папки показывается ровно когда папок ещё нет, поэтому
+            подсвечиваем заглушку, а не блок «Папки» — тот в этот момент не
+            отрисован вовсе. */}
         {activeTab === 'collection' && folders.length === 0 && (
-          <View>
+          <CoachPulse active={foldersSpotlight} radius={BorderRadius.md} inset={4}>
             <TouchableOpacity style={styles.createFirstFolder} onPress={handleCreateFolder}>
               <Icon name="folder-outline" size={20} color={Colors.textMuted} />
               <Text style={styles.createFirstFolderText}>Создать папку</Text>
             </TouchableOpacity>
-          </View>
+          </CoachPulse>
         )}
 
         {activeTab === 'wishlist' && wishlistFolders.length > 0 && (
@@ -966,18 +973,20 @@ export default function CollectionScreen() {
               style={{ opacity: selectOpacity, transform: [{ scale: selectScale }] }}
               pointerEvents={isSelectionMode ? 'none' : 'auto'}
             >
-              <TouchableOpacity onPress={handleToggleSelectionMode} activeOpacity={0.7}>
-                <LinearGradient
-                  colors={Gradients.blue}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 0 }}
-                  style={styles.selectButtonGradientBorder}
-                >
-                  <View style={styles.selectButtonInner}>
-                    <GradientText style={styles.selectButtonText}>Выбрать</GradientText>
-                  </View>
-                </LinearGradient>
-              </TouchableOpacity>
+              <CoachPulse active={multiSelectSpotlight} radius={20}>
+                <TouchableOpacity onPress={handleToggleSelectionMode} activeOpacity={0.7}>
+                  <LinearGradient
+                    colors={Gradients.blue}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 0 }}
+                    style={styles.selectButtonGradientBorder}
+                  >
+                    <View style={styles.selectButtonInner}>
+                      <GradientText style={styles.selectButtonText}>Выбрать</GradientText>
+                    </View>
+                  </LinearGradient>
+                </TouchableOpacity>
+              </CoachPulse>
             </Animated.View>
           </View>
 
@@ -1061,9 +1070,14 @@ export default function CollectionScreen() {
                   ]}
                 />
               ))}
-              <TouchableOpacity style={styles.radarButton} onPress={() => router.push('/radar' as any)} activeOpacity={0.85}>
-                <RadarIcon size={20} color="#fff" variant="on" />
-              </TouchableOpacity>
+              {/* Ореол, а не кольцо: sonar выше уже пульсирует, и вторая
+                  пульсация слилась бы с ним — постоянную индикацию работы
+                  радара юзер начал бы читать как незакрытый шаг онбординга. */}
+              <CoachPulse active={radarSpotlight} variant="glow" radius={22} inset={4}>
+                <TouchableOpacity style={styles.radarButton} onPress={() => router.push('/radar' as any)} activeOpacity={0.85}>
+                  <RadarIcon size={20} color="#fff" variant="on" />
+                </TouchableOpacity>
+              </CoachPulse>
               {radarMatchCount > 0 && (
                 <View style={styles.radarBadge}>
                   <Text style={styles.radarBadgeTxt}>{radarMatchCount}</Text>
