@@ -331,7 +331,7 @@ def _egg(code, title, desc, tier, triggers, evaluator, flavor, slug):
 
 DEFINITIONS: list[AchievementDefinition] = [
     _egg(E_GLASS_EYE, "Глаз-алмаз",
-         "Камера не узнала обложку, а ты узнал.",
+         "Скан не распознал обложку, и ты добавил пластинку вручную.",
          AchievementTier.RARE, (SCAN_MISS_MANUAL_ADD,), _evaluate_glass_eye,
          "Машина сдалась. Ты — нет.", "e_glass_eye"),
     _egg(E_DIGITIZER, "Оцифровщик",
