@@ -9,6 +9,7 @@ import time
 import uuid
 from contextvars import ContextVar
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 import sentry_sdk
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
@@ -351,6 +352,13 @@ async def global_exception_handler(request: Request, exc: Exception):
     )
 
 # Статические файлы и шаблоны
+#
+# uploads/ лежит в .gitignore, а на проде это docker-волюм — в свежем чекауте
+# каталога нет. StaticFiles проверяет существование каталога в конструкторе, то
+# есть падает прямо на импорте app.main: не поднимается ни приложение, ни сбор
+# тестов. Создаём сами; на проде волюм уже примонтирован, exist_ok делает вызов
+# пустым. Путь относительный, как и у соседних mount — рабочий каталог Backend/.
+Path("uploads").mkdir(exist_ok=True)
 app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 app.mount("/static", StaticFiles(directory="app/web/static"), name="static")
 templates = Jinja2Templates(directory="app/web/templates")
