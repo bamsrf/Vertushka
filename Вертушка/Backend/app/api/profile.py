@@ -192,7 +192,8 @@ async def _get_new_releases(
 ) -> list[PublicProfileRecord]:
     """Глобальный пул новинок с Discogs (`/database/search`, sort=want).
 
-    Кэш — на стороне DiscogsService (Redis, 12ч). Здесь — апсерт в локальный Record
+    Кэш — на стороне DiscogsService (Redis, неделя; прогрев — недельным кроном
+    refresh_new_releases, сюда попадает уже готовый снимок). Здесь — апсерт в локальный Record
     (чтоб карточка имела стабильный UUID для модалки/экрана детали) и фильтрация
     по master_id из коллекции конкретного юзера.
     """

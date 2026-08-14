@@ -306,12 +306,16 @@ async def refresh_market_store_stats():
 
 
 async def refresh_new_releases():
-    """Месячный сброс витрины новинок (гибрид свежесть×want) — 1-го числа.
+    """Недельный сброс витрины новинок (гибрид свежесть×want) — по понедельникам.
 
-    Удаляет Redis-ключ namespace `new_releases` и сразу прогревает заново
-    (тяжёлый detail-enrich идёт здесь, в scheduler, а не у первого юзера).
+    Удаляет Redis-ключ namespace `new_releases` и сразу прогревает заново с
+    `warm=True`: глубокий want-пул и бюджет в сотни detail-вызовов. Это минуты
+    работы — ровно поэтому они идут здесь, в шедулере, а не у первого юзера.
     Ключ совпадает с DiscogsService.search_new_releases: `hybrid_w{window}_l{limit}`.
     Приложение зовёт limit=40 с дефолтным окном.
+
+    Раз в неделю, а не в месяц: 12 обновлений в год для рейла с подписью
+    «свежие релизы» — это не витрина, а фотография.
     """
     from app.services.cache import cache
     from app.services.discogs import DiscogsService
@@ -320,7 +324,7 @@ async def refresh_new_releases():
         discogs = DiscogsService()
         window = discogs.NEW_RELEASES_WINDOW_DAYS
         await cache.delete("new_releases", f"hybrid_w{window}_l40")
-        pool = await discogs.search_new_releases(limit=40)
+        pool = await discogs.search_new_releases(limit=40, warm=True)
         logger.info("refresh_new_releases: warmed %d items (window=%dd)", len(pool), window)
     except Exception:
         logger.exception("refresh_new_releases failed")

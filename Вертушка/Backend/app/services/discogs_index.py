@@ -319,7 +319,9 @@ async def upsert_release_into_index(db: AsyncSession, record_data: dict) -> None
     """Положить один Discogs-релиз в discogs_releases_index. Идемпотентно.
 
     record_data — dict из DiscogsService.get_release (ключи id/master_id/artist/
-    title/year/country/format/label/barcode/catalog_number/cover_image).
+    title/year/country/format/label/barcode/catalog_number/cover_image, плюс
+    artist_ids/artist_names — их отдаёт get_release, у прочих вызывающих их
+    может не быть).
     Ошибки глотаем (обогащение индекса не должно ронять основной флоу).
     """
     discogs_id = _to_int(record_data.get("id"))
@@ -330,11 +332,25 @@ async def upsert_release_into_index(db: AsyncSession, record_data: dict) -> None
     if not artist or not title:
         return  # artist/title NOT NULL в схеме
 
+    # artist_ids — не украшение: оба запроса дискографии фильтруют
+    # `artist_ids @> ARRAY[aid]`, и строка без них невидима на экране артиста
+    # навсегда (дампный загрузчик до 2026-08 шёл через ON CONFLICT DO NOTHING и
+    # починить её не мог). На 2026-08-14 таких строк было 2 496 из 6 641
+    # появившихся после майского дампа — 37% всего свежего.
+    raw_ids = record_data.get("artist_ids") or []
+    artist_ids = [i for i in (_to_int(x) for x in raw_ids) if i is not None]
+    if not artist_ids:
+        # Старые вызовы кладут только первый id — лучше он, чем ничего.
+        single = _to_int(record_data.get("artist_id"))
+        if single is not None:
+            artist_ids = [single]
+
     params = {
         "discogs_id": discogs_id,
         # 0 = «нет мастера» у Discogs → NULL (release-only семантика).
         "master_id": _to_int(record_data.get("master_id")) or None,
         "artist": artist,
+        "artist_ids": artist_ids or None,
         "title": title,
         "year": _to_int(record_data.get("year")),
         "country": record_data.get("country"),
@@ -349,24 +365,44 @@ async def upsert_release_into_index(db: AsyncSession, record_data: dict) -> None
         await db.execute(
             text(
                 "INSERT INTO discogs_releases_index "
-                "(discogs_id, master_id, artist, title, year, country, "
+                "(discogs_id, master_id, artist, artist_ids, title, year, country, "
                 " format_type, label, barcode_norm, catalog_norm, "
                 " cover_image_url, dump_version) "
-                "VALUES (:discogs_id, :master_id, :artist, :title, :year, "
+                # Явный CAST: без него asyncpg не выводит тип пустого/NULL
+                # массива и падает на bigint[].
+                "VALUES (:discogs_id, :master_id, :artist, "
+                " CAST(:artist_ids AS bigint[]), :title, :year, "
                 " :country, :format_type, :label, :barcode_norm, :catalog_norm, "
                 " :cover_image_url, :dump_version) "
-                "ON CONFLICT (discogs_id) DO NOTHING"
+                # Строка уже могла лечь сюда без artist_ids (этот же путь до
+                # 2026-08). Дозаписываем, раз уж они теперь есть, — иначе она
+                # так и останется невидимой на экране артиста.
+                "ON CONFLICT (discogs_id) DO UPDATE SET "
+                "  artist_ids = COALESCE(discogs_releases_index.artist_ids, EXCLUDED.artist_ids) "
+                "WHERE discogs_releases_index.artist_ids IS NULL "
+                "  AND EXCLUDED.artist_ids IS NOT NULL"
             ),
             params,
         )
         # Держим производную таблицу имён в синхроне, чтобы свежий live-артист
         # сразу проходил фильтр поиска (см. filter_artist_names_with_releases).
-        await db.execute(
-            text(
-                "INSERT INTO discogs_artist_names (name_norm) VALUES (:name) "
-                "ON CONFLICT (name_norm) DO NOTHING"
-            ),
-            {"name": artist.lower()},
-        )
+        #
+        # По одному имени на артиста, а НЕ склейку целиком: у релиза с двумя
+        # исполнителями `artist` — это "A, B", и такая строка засоряла таблицу
+        # именем, которого не существует (в проде осело, например,
+        # "boards of canada, boards of canada"), а настоящие A и B в неё не
+        # попадали и выпадали из поиска.
+        names = record_data.get("artist_names") or [artist]
+        for name in names:
+            name_norm = (name or "").strip().lower()
+            if not name_norm:
+                continue
+            await db.execute(
+                text(
+                    "INSERT INTO discogs_artist_names (name_norm) VALUES (:name) "
+                    "ON CONFLICT (name_norm) DO NOTHING"
+                ),
+                {"name": name_norm},
+            )
     except Exception as e:  # noqa: BLE001 — индекс-обогащение не критично
         logger.warning("upsert_release_into_index failed for %s: %s", discogs_id, e)

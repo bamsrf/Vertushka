@@ -689,8 +689,24 @@ class DiscogsService:
 
         # Извлекаем артистов
         artists = data.get("artists", [])
-        artist_name = ", ".join([a.get("name", "") for a in artists]) if artists else "Unknown"
         artist_id = str(artists[0].get("id")) if artists else None
+        # Полный список id и имён — для discogs_releases_index. Дедуп нужен:
+        # Discogs повторяет артиста ради алиаса (у BoC «Inferno» это латиница
+        # + японская запись под одним id 307), и без схлопывания в индекс
+        # уезжало «Boards Of Canada, Boards Of Canada» — такое имя роняет
+        # similarity в поиске и мусорит discogs_artist_names.
+        artist_ids: list[int] = []
+        artist_names: list[str] = []
+        for _a in artists:
+            _aid = _a.get("id")
+            if isinstance(_aid, (int, str)) and str(_aid).isdigit():
+                _aid = int(_aid)
+                if _aid not in artist_ids:
+                    artist_ids.append(_aid)
+            _nm = (_a.get("name") or "").strip()
+            if _nm and _nm not in artist_names:
+                artist_names.append(_nm)
+        artist_name = ", ".join(artist_names) if artist_names else "Unknown"
 
         # Получаем миниатюру артиста (price_stats уже идёт фоном)
         artist_thumb = None
@@ -783,6 +799,8 @@ class DiscogsService:
             "title": data.get("title"),
             "artist": artist_name,
             "artist_id": artist_id,
+            "artist_ids": artist_ids,
+            "artist_names": artist_names,
             "artist_thumb_image_url": artist_thumb,
             "label": label,
             "catalog_number": catalog_number,
@@ -1910,29 +1928,53 @@ class DiscogsService:
     # ------------------------------------------------------------------
 
     # Параметры гибрида витрины новинок (окно по дате × популярность).
-    NEW_RELEASES_WINDOW_DAYS = 90       # «свежесть»: релизы за последние N дней
-    NEW_RELEASES_POOL_PER_PAGE = 100    # размер want-пула на год (1 страница)
-    NEW_RELEASES_MAX_ENRICH = 60        # cap detail-вызовов на холодный кэш
-    NEW_RELEASES_TTL = 31 * 24 * 3600   # «снимок на месяц»
+    #
+    # Глубина пула — не украшение: want копится месяцами, поэтому в первой
+    # сотне want-ранга года сидят релизы января-февраля, а свежее в неё
+    # физически не успевает пробиться. Замер 2026-08 показал ровно ~8% свежих
+    # на ЛЮБОЙ глубине ранга (стр. 1, 2, 3, 5, 8 — одинаково), при want 58+
+    # даже на 700-й позиции. Значит, свежее берётся не сужением сортировки,
+    # а перебором вглубь: чтобы набрать 40 свежих, нужно просеять сотни.
+    NEW_RELEASES_WINDOW_DAYS = 90        # «свежесть»: релизы за последние N дней
+    NEW_RELEASES_POOL_PER_PAGE = 100     # размер want-пула на страницу
+    NEW_RELEASES_POOL_PAGES_WARM = 10    # глубина пула в шедулере (до 1000 на год)
+    NEW_RELEASES_POOL_PAGES_ONLINE = 3   # глубина на холодном кэше у юзера
+    NEW_RELEASES_ENRICH_WARM = 700       # бюджет detail-вызовов в шедулере
+    NEW_RELEASES_MAX_PER_ARTIST = 2      # потолок карточек одного артиста в рейле
+    NEW_RELEASES_ENRICH_ONLINE = 60      # бюджет на пользовательском запросе
+    NEW_RELEASES_FALLBACK_RATIO = 0.25   # доля добивки по want в готовом рейле
+    NEW_RELEASES_TTL = 8 * 24 * 3600     # «снимок на неделю» (крон — по понедельникам)
+    NEW_RELEASES_TTL_DEGRADED = 3600     # неполный прогон не занимает слот на неделю
 
     @staticmethod
     def _parse_release_date(raw: str | None) -> "date | None":
-        """Discogs `released`: 'YYYY-MM-DD' | 'YYYY-MM' | 'YYYY' | ''.
+        """Discogs `released`: 'YYYY-MM-DD' | 'YYYY-MM-00' | 'YYYY-MM' | 'YYYY' | ''.
 
-        Возвращает date только при ПОЛНОЙ дате (YYYY-MM-DD) — иначе нельзя
-        достоверно сказать, попадает ли релиз в 90-дневное окно.
+        Известен месяц, но не день → последний день месяца. Такие огрызки дат
+        составляют 13-20% пула (замер 2026-08) — сопоставимо с самим объёмом
+        свежего, так что выбрасывать их значило бы терять примерно половину
+        витрины. Конец месяца — самая оптимистичная интерпретация: релиз
+        скорее попадёт в окно, чем выпадет из него, и это осознанный перекос
+        в пользу непустого рейла.
+
+        Голый год отбрасываем: между январём и декабрём разница больше окна.
         """
+        from calendar import monthrange
         from datetime import date as _date
         if not raw:
             return None
         parts = raw.split("-")
-        if len(parts) != 3:
+        if len(parts) < 2:
             return None
         try:
-            y, m, d = int(parts[0]), int(parts[1]), int(parts[2])
-            if m == 0 or d == 0:
-                return None
-            return _date(y, m, d)
+            y, m = int(parts[0]), int(parts[1])
+            d = int(parts[2]) if len(parts) > 2 else 0
+        except (ValueError, TypeError):
+            return None
+        if not 1 <= m <= 12:
+            return None
+        try:
+            return _date(y, m, d or monthrange(y, m)[1])
         except (ValueError, TypeError):
             return None
 
@@ -1971,27 +2013,53 @@ class DiscogsService:
         self,
         limit: int = 40,
         window_days: int | None = None,
+        warm: bool = False,
     ) -> list[dict]:
         """Витрина новинок: гибрид «свежесть × популярность».
 
         Шаги:
-          1. Тянем want-пул текущего года (`sort=want desc`), при необходимости
-             добавляем прошлый год — если 90-дневное окно пересекает 1 января.
-          2. Идём по want-порядку, обогащаем release-detail (`released`) и берём
-             релизы, чья ПОЛНАЯ дата попадает в окно `[today - window, today]`.
-             Detail-вызовы кэшируются (TTL_RELEASE), всего ≤ NEW_RELEASES_MAX_ENRICH.
-          3. Fallback: если в окне набралось < limit — добиваем оставшимися по
-             want-порядку, чтобы рейл не пустел (свежесть приоритетна, но не ценой
-             пустой витрины).
+          1. Тянем want-пул (`sort=want desc`) вглубь на N страниц по текущему
+             году, при необходимости добавляем прошлый — если окно пересекает
+             1 января.
+          2. Дедуп по master_id ДО обогащения: один альбом приезжает пятью
+             прессами (Gorillaz в снапшоте 2026-08 занимал 5 позиций из 40),
+             и без этого треть бюджета detail-вызовов уходит на дубли, а
+             витрина после дедупа в profile.py оказывается короче limit.
+          3. Идём по want-порядку, обогащаем release-detail (`released`) и
+             берём релизы, чья дата попадает в окно `[today - window, today]`.
+             Detail-вызовы кэшируются (TTL_RELEASE), всего ≤ бюджета.
+          4. Fallback: если свежих не хватило — добиваем по want-порядку, но не
+             больше NEW_RELEASES_FALLBACK_RATIO готового рейла. Короткий рейл из
+             честно свежего лучше полного из прошлогоднего топ-want: до этой
+             границы витрина на 90% состояла из добивки и не менялась месяцами.
 
-        Want-порядок сохраняется внутри обеих групп. Кэш — namespace `new_releases`,
-        TTL 31 день; принудительный сброс делает scheduled-задача refresh_new_releases.
+        `warm=True` — прогон из шедулера: глубокий пул и большой бюджет
+        (минуты работы, зато у пользователя всё уже в кэше). `warm=False` —
+        аварийный путь на холодном кэше, режет и глубину, и бюджет, и кладёт
+        результат на час вместо недели, чтобы неполный снимок не занимал слот
+        до следующего крона.
+
+        Кэш — namespace `new_releases`; принудительный сброс делает
+        scheduled-задача refresh_new_releases.
         """
         from datetime import datetime as _dt, timedelta as _td
 
         window_days = window_days or self.NEW_RELEASES_WINDOW_DAYS
         today = _dt.utcnow().date()
         cutoff = today - _td(days=window_days)
+
+        pages = (
+            self.NEW_RELEASES_POOL_PAGES_WARM if warm
+            else self.NEW_RELEASES_POOL_PAGES_ONLINE
+        )
+        budget = (
+            self.NEW_RELEASES_ENRICH_WARM if warm
+            else self.NEW_RELEASES_ENRICH_ONLINE
+        )
+        # Фоновый прогон занимает лимит Discogs на минуты. С Priority.SEARCH он
+        # всё это время вытеснял бы живой пользовательский поиск из очереди —
+        # прогрев витрины никто не ждёт, ему место в хвосте.
+        prio = Priority.ENRICHMENT if warm else Priority.SEARCH
 
         cache_key = f"hybrid_w{window_days}_l{limit}"
         cached = await cache.get("new_releases", cache_key)
@@ -2001,45 +2069,64 @@ class DiscogsService:
         years = [today.year] if cutoff.year == today.year else [today.year, cutoff.year]
 
         candidates: list[dict] = []
+        seen_ids: set[str] = set()
         for yr in years:
-            params = {
-                "type": "release",
-                "year": str(yr),
-                "format": "Vinyl",
-                "sort": "want",
-                "sort_order": "desc",
-                "per_page": self.NEW_RELEASES_POOL_PER_PAGE,
-                "page": 1,
-            }
-            try:
-                data = await self._get(
-                    f"{self.BASE_URL}/database/search",
-                    params=params,
-                    headers=self._get_token_headers(),
-                    priority=Priority.SEARCH,
-                )
-            except Exception:
-                logger.exception("Failed to fetch new-releases pool for year %s", yr)
-                continue
-            for raw in data.get("results", []):
-                simple = self._simplify_search_item(raw, yr)
-                if simple:
-                    candidates.append(simple)
+            for page in range(1, pages + 1):
+                params = {
+                    "type": "release",
+                    "year": str(yr),
+                    "format": "Vinyl",
+                    "sort": "want",
+                    "sort_order": "desc",
+                    "per_page": self.NEW_RELEASES_POOL_PER_PAGE,
+                    "page": page,
+                }
+                try:
+                    data = await self._get(
+                        f"{self.BASE_URL}/database/search",
+                        params=params,
+                        headers=self._get_token_headers(),
+                        priority=prio,
+                    )
+                except Exception:
+                    logger.exception(
+                        "Failed to fetch new-releases pool for year %s page %s", yr, page
+                    )
+                    break
+                results = data.get("results") or []
+                for raw in results:
+                    simple = self._simplify_search_item(raw, yr)
+                    # Пагинация Discogs по want не строгая: одна и та же
+                    # позиция заезжает на соседних страницах.
+                    if simple and simple["discogs_id"] not in seen_ids:
+                        seen_ids.add(simple["discogs_id"])
+                        candidates.append(simple)
+                if len(results) < self.NEW_RELEASES_POOL_PER_PAGE:
+                    break
 
         if not candidates:
             return []
 
-        # Единый want-порядок по всему пулу (между годами).
+        # Единый want-порядок по всему пулу (между годами и страницами).
         candidates.sort(key=lambda x: x["want"], reverse=True)
+
+        # Дедуп по master_id — до detail-вызовов. Релизы без master_id
+        # (их в снапшоте было 7 из 40) схлопнуть не по чему, пропускаем как есть.
+        pool: list[dict] = []
+        seen_master: set[str] = set()
+        for cand in candidates:
+            mid = cand.get("discogs_master_id")
+            if mid:
+                if mid in seen_master:
+                    continue
+                seen_master.add(mid)
+            pool.append(cand)
 
         in_window: list[dict] = []
         leftovers: list[dict] = []
         checked = 0
-        for cand in candidates:
-            if len(in_window) >= limit:
-                leftovers.append(cand)
-                continue
-            if checked >= self.NEW_RELEASES_MAX_ENRICH:
+        for cand in pool:
+            if len(in_window) >= limit or checked >= budget:
                 leftovers.append(cand)
                 continue
             checked += 1
@@ -2047,7 +2134,7 @@ class DiscogsService:
                 detail = await self._get(
                     f"{self.BASE_URL}/releases/{cand['discogs_id']}",
                     headers=self._get_token_headers(),
-                    priority=Priority.SEARCH,
+                    priority=prio,
                 )
             except Exception:
                 logger.debug("new-releases: detail fetch failed for %s", cand["discogs_id"])
@@ -2060,14 +2147,48 @@ class DiscogsService:
             else:
                 leftovers.append(cand)
 
-        # Свежие (в окне) первыми, затем fallback по want — до limit.
-        out = in_window[:limit]
-        if len(out) < limit:
-            out += leftovers[: limit - len(out)]
+        # Разнообразие по артистам. Дедуп по master ловит разные прессы одного
+        # альбома, но не каталог одного исполнителя: в прогоне 2026-08 из 16
+        # свежих шесть были переизданиями Ariana Grande, причём один альбом
+        # приехал под двумя master_id. Сначала берём не больше
+        # NEW_RELEASES_MAX_PER_ARTIST на артиста, лишнее не выбрасываем, а
+        # держим в резерве — свежее сверх потолка всё равно лучше добивки
+        # прошлогодним топ-want.
+        primary: list[dict] = []
+        overflow: list[dict] = []
+        per_artist: dict[str, int] = {}
+        for cand in in_window:
+            key = (cand.get("artist") or "").strip().lower()
+            if key and per_artist.get(key, 0) >= self.NEW_RELEASES_MAX_PER_ARTIST:
+                overflow.append(cand)
+                continue
+            if key:
+                per_artist[key] = per_artist.get(key, 0) + 1
+            primary.append(cand)
+        fresh = primary + overflow
 
-        await cache.set("new_releases", cache_key, out, self.NEW_RELEASES_TTL)
+        # Свежие (в окне) первыми, затем добивка по want — но так, чтобы её доля
+        # в ГОТОВОМ рейле не превысила NEW_RELEASES_FALLBACK_RATIO.
+        out = fresh[:limit]
+        if out and len(out) < limit:
+            ratio = self.NEW_RELEASES_FALLBACK_RATIO
+            allowed = int(len(out) * ratio / (1 - ratio))
+            out += leftovers[: min(allowed, limit - len(out))]
+
+        # Снимок заведомо неполный: бюджет кончился раньше, чем набрался рейл,
+        # либо свежего не нашлось вовсе. Пустую витрину недельным TTL не
+        # запечатываем — такое состояние надо перепроверять через час.
+        degraded = len(in_window) < limit and (checked >= budget or not out)
+        await cache.set(
+            "new_releases",
+            cache_key,
+            out,
+            self.NEW_RELEASES_TTL_DEGRADED if degraded else self.NEW_RELEASES_TTL,
+        )
         logger.info(
-            "search_new_releases: %d in-window, %d total (window=%dd, checked=%d)",
-            len(in_window), len(out), window_days, checked,
+            "search_new_releases: %d in-window, %d total (window=%dd, pool=%d, "
+            "checked=%d/%d, warm=%s, degraded=%s)",
+            len(in_window), len(out), window_days, len(pool),
+            checked, budget, warm, degraded,
         )
         return out

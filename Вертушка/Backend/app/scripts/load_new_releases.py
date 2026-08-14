@@ -65,26 +65,50 @@ def _row_to_tuple(row: list[str], dump_date: date) -> tuple | None:
     )
 
 
-async def _flush(pg, rows: list[tuple]) -> int:
+async def _flush(pg, rows: list[tuple]) -> tuple[int, int]:
     """COPY батча через staging + вставка. Возвращает число вставленных строк.
 
     Staging чистится явным TRUNCATE, а НЕ через `ON COMMIT DELETE ROWS`:
     asyncpg в автокоммите, COPY коммитится сам, и `ON COMMIT` сносил бы staging
     ДО `INSERT ... SELECT` — загрузчик молча вставлял бы ноль (ровно это
     случилось с load_release_formats на первом прогоне).
+
+    `ON CONFLICT DO UPDATE`, а не `DO NOTHING`: релиз мог попасть в индекс
+    раньше живым путём (`upsert_release_into_index`), а тот не пишет
+    `artist_ids` и склеивает имена артистов через запятую. Такая строка
+    невидима на экране артиста (фильтр там по GIN `artist_ids`) и тонет в
+    поиске, а `DO NOTHING` закреплял её навсегда — дамп приносил правильные
+    данные и молча их выбрасывал. На 2026-08-14 таких строк было 2 496 из
+    6 641 появившихся после майского дампа.
+
+    Обновляем ТОЛЬКО пустые поля (`COALESCE` + условие в `WHERE`): дампные
+    строки трогать незачем, а лишний UPDATE на 13M строк стоит дорого.
     """
     if not rows:
-        return 0
+        return 0, 0
     await pg.execute("TRUNCATE _new_stage")
     await pg.copy_records_to_table("_new_stage", records=rows, columns=_COLUMNS)
-    inserted = await pg.fetchval(
+    # `xmax = 0` — единственный способ отличить вставку от обновления в
+    # `ON CONFLICT DO UPDATE`: у свежевставленной строки нет удаляющей
+    # транзакции, у обновлённой xmax несёт id конфликтующей.
+    row = await pg.fetchrow(
         "WITH ins AS ("
         " INSERT INTO discogs_releases_index "
         f" ({', '.join(_COLUMNS)}) SELECT {', '.join(_COLUMNS)} FROM _new_stage"
-        " ON CONFLICT (discogs_id) DO NOTHING RETURNING 1"
-        ") SELECT COUNT(*) FROM ins"
+        " ON CONFLICT (discogs_id) DO UPDATE SET"
+        "   artist_ids = COALESCE(discogs_releases_index.artist_ids, EXCLUDED.artist_ids),"
+        "   artist = CASE WHEN discogs_releases_index.artist_ids IS NULL"
+        "                 THEN EXCLUDED.artist ELSE discogs_releases_index.artist END,"
+        "   is_unofficial = CASE WHEN discogs_releases_index.artist_ids IS NULL"
+        "                        THEN EXCLUDED.is_unofficial"
+        "                        ELSE discogs_releases_index.is_unofficial END"
+        " WHERE discogs_releases_index.artist_ids IS NULL"
+        "   AND EXCLUDED.artist_ids IS NOT NULL"
+        " RETURNING (xmax = 0) AS is_insert"
+        ") SELECT COUNT(*) FILTER (WHERE is_insert) AS ins,"
+        "        COUNT(*) FILTER (WHERE NOT is_insert) AS upd FROM ins"
     )
-    return int(inserted or 0)
+    return int(row["ins"] or 0), int(row["upd"] or 0)
 
 
 async def _sync_artist_names(min_id: int) -> int:
@@ -115,12 +139,37 @@ async def _sync_artist_names(min_id: int) -> int:
         return int(status.rsplit(" ", 1)[-1]) if status else 0
 
 
+async def _record_watermark(dump_date: date, max_id: int, inserted: int) -> None:
+    """Записать отметку дампа в `discogs_dump_state`.
+
+    Отсюда `refresh_discogs_dump.sh` берёт `--since-id` для следующего прогона.
+    Раньше он брал `max(discogs_id)` по самому индексу, но туда пишет и живой
+    путь, так что одна открытая юзером новинка задирала отметку и следующая
+    дельта отрезала всё до неё (на 2026-08 так потерялось 721 515 id).
+
+    Максимум берётся из CSV, а не из индекса: нам нужна граница ДАМПА, а не
+    того, что успело просочиться в таблицу другими путями.
+    """
+    async with engine.connect() as conn:
+        raw = await conn.get_raw_connection()
+        pg = raw.driver_connection
+        await pg.execute(
+            "INSERT INTO discogs_dump_state (dump_date, max_release_id, rows_inserted) "
+            "VALUES ($1, $2, $3) "
+            "ON CONFLICT (dump_date) DO UPDATE SET "
+            "  max_release_id = GREATEST(discogs_dump_state.max_release_id, EXCLUDED.max_release_id), "
+            "  rows_inserted = discogs_dump_state.rows_inserted + EXCLUDED.rows_inserted",
+            dump_date, max_id, inserted,
+        )
+
+
 async def load(file_path: Path, dump_date: date) -> dict[str, int]:
-    counters = {"read": 0, "inserted": 0, "bad": 0}
+    counters = {"read": 0, "inserted": 0, "repaired": 0, "bad": 0}
     started = time.time()
     last_report = started
     batch: list[tuple] = []
     min_id: int | None = None
+    max_id: int | None = None
 
     async with engine.connect() as conn:
         raw = await conn.get_raw_connection()
@@ -139,27 +188,43 @@ async def load(file_path: Path, dump_date: date) -> dict[str, int]:
                 counters["read"] += 1
                 if min_id is None or parsed[0] < min_id:
                     min_id = parsed[0]
+                if max_id is None or parsed[0] > max_id:
+                    max_id = parsed[0]
                 if len(batch) >= _BATCH:
-                    counters["inserted"] += await _flush(pg, batch)
+                    ins, upd = await _flush(pg, batch)
+                    counters["inserted"] += ins
+                    counters["repaired"] += upd
                     batch = []
                     now = time.time()
                     if now - last_report >= 30:
                         logger.info(
-                            "read=%d inserted=%d bad=%d rate=%.0f/s",
-                            counters["read"], counters["inserted"], counters["bad"],
+                            "read=%d inserted=%d repaired=%d bad=%d rate=%.0f/s",
+                            counters["read"], counters["inserted"],
+                            counters["repaired"], counters["bad"],
                             counters["read"] / (now - started),
                         )
                         last_report = now
-        counters["inserted"] += await _flush(pg, batch)
+        ins, upd = await _flush(pg, batch)
+        counters["inserted"] += ins
+        counters["repaired"] += upd
 
     if counters["inserted"] and min_id is not None:
         names = await _sync_artist_names(min_id - 1)
         logger.info("новых имён артистов в поиске: %d", names)
 
+    # Отметку двигаем даже когда всё оказалось дублями: важно, докуда ДОШЁЛ
+    # дамп, а не сколько строк он принёс. Иначе повторный прогон того же файла
+    # оставил бы водяной знак в прошлом.
+    if max_id is not None:
+        await _record_watermark(dump_date, max_id, counters["inserted"])
+        logger.info("водяной знак дампа %s → id %d", dump_date, max_id)
+
     logger.info(
-        "ГОТОВО за %.1f мин: read=%d inserted=%d (дубли пропущены) bad=%d",
+        "ГОТОВО за %.1f мин: read=%d inserted=%d repaired=%d (живые строки без "
+        "artist_ids) bad=%d",
         (time.time() - started) / 60,
-        counters["read"], counters["inserted"], counters["bad"],
+        counters["read"], counters["inserted"], counters["repaired"],
+        counters["bad"],
     )
     return counters
 

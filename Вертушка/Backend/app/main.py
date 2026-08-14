@@ -149,7 +149,8 @@ async def lifespan(app: FastAPI):
             scheduler.add_job(report_cover_coverage, 'cron', hour=6, minute=15, id='cover_coverage_report', max_instances=1, coalesce=True)
             scheduler.add_job(enrich_market_covers, 'interval', hours=2, id='enrich_market_covers')
             scheduler.add_job(refresh_market_store_stats, 'interval', minutes=15, id='refresh_market_store_stats')
-            scheduler.add_job(refresh_new_releases, 'cron', day=1, hour=4, minute=45, id='refresh_new_releases')
+            # Понедельник 4:45. max_instances=1: глубокий прогон идёт минуты, наложение запрещено.
+            scheduler.add_job(refresh_new_releases, 'cron', day_of_week='mon', hour=4, minute=45, id='refresh_new_releases', max_instances=1, coalesce=True)
             scheduler.add_job(daily_tick_achievements, 'cron', hour=6, minute=0, id='achievements_daily_tick')
             scheduler.add_job(emit_wishlist_in_stock_notifications, 'interval', minutes=15, id='wishlist_in_stock_notifications')
             scheduler.add_job(emit_wishlist_price_drop_notifications, 'interval', minutes=15, id='wishlist_price_drop_notifications')

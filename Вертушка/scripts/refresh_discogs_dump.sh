@@ -9,7 +9,7 @@
 # Что делает:
 #   1. находит свежайший releases-дамп на data.discogs.com;
 #   2. качает (~10.4 ГБ, ~40 мин), если ещё не скачан;
-#   3. спрашивает у прода max(discogs_id) и вытаскивает две выгрузки:
+#   3. читает водяной знак прошлого дампа (discogs_dump_state) и вытаскивает две выгрузки:
 #      formats_*.csv.gz (полные описания формата) и new_*.csv.gz (релизы,
 #      которых в индексе нет);
 #   4. заливает обе на прод и грузит;
@@ -34,6 +34,13 @@ mkdir -p "$WORK_DIR"
 cd "$WORK_DIR"
 
 log() { printf '%s  %s\n' "$(date +%H:%M:%S)" "$*"; }
+
+# Имя API-контейнера спрашиваем у прода, а не зашиваем: деплой сине-зелёный, и
+# контейнер называется vertushka_api_blue или vertushka_api_green по очереди.
+# Захардкоженный vertushka_api ронял заливку на `docker cp` с «No such container».
+API_CONTAINER="${API_CONTAINER:-$(ssh "$PROD" 'docker ps --format "{{.Names}}" | grep -E "^vertushka_api(_(blue|green))?$" | head -1')}"
+[[ -n "$API_CONTAINER" ]] || { echo "не нашёл запущенный API-контейнер на проде" >&2; exit 1; }
+log "API-контейнер на проде: $API_CONTAINER"
 
 # --- 1. какой дамп берём -----------------------------------------------------
 YEAR="$(date +%Y)"
@@ -102,9 +109,15 @@ else
 fi
 
 # --- 3. извлекаем ------------------------------------------------------------
-SINCE_ID="$(ssh "$PROD" "$PSQL -c 'SELECT max(discogs_id) FROM discogs_releases_index;'" | tr -d '[:space:]')"
-[[ "$SINCE_ID" =~ ^[0-9]+$ ]] || { echo "не смог узнать max(discogs_id): '$SINCE_ID'" >&2; exit 1; }
-log "max(discogs_id) на проде: $SINCE_ID"
+# Отметка берётся из discogs_dump_state, а НЕ из max(discogs_id) по индексу.
+# В индекс пишет и живой путь (upsert_release_into_index): стоило юзеру открыть
+# в приложении свежую пластинку, и её id задирал отметку — следующая дельта
+# отрезала всё до неё. Так в августе 2026 потерялось 721 515 id: майский дамп
+# кончился на 37 220 946, отметку поставила живая строка 37 942 461, и в дыре
+# осело 298 строк вместо сотен тысяч.
+SINCE_ID="$(ssh "$PROD" "$PSQL -c 'SELECT max(max_release_id) FROM discogs_dump_state;'" | tr -d '[:space:]')"
+[[ "$SINCE_ID" =~ ^[0-9]+$ ]] || { echo "не смог прочитать водяной знак из discogs_dump_state: '$SINCE_ID' (миграция 20260814_dump_state применена?)" >&2; exit 1; }
+log "водяной знак прошлого дампа: $SINCE_ID"
 
 log "парсю дамп (~15 мин)..."
 (cd "$BACKEND" && python -m app.scripts.extract_release_formats \
@@ -117,22 +130,22 @@ for f in "formats_${STAMP}.csv.gz" "new_${STAMP}.csv.gz"; do
   # -O: macOS 15 гонит scp через sftp, и тот падает «no such directory» на
   # путях вида host:/tmp/ — старый протокол работает.
   scp -O "$f" "$PROD:/tmp/$f"
-  ssh "$PROD" "docker cp /tmp/$f vertushka_api:/tmp/ && rm /tmp/$f"
+  ssh "$PROD" "docker cp /tmp/$f $API_CONTAINER:/tmp/ && rm /tmp/$f"
 done
 
-if ssh "$PROD" "docker exec vertushka_api test -f /tmp/formats_${STAMP}.csv.gz"; then
+if ssh "$PROD" "docker exec $API_CONTAINER test -f /tmp/formats_${STAMP}.csv.gz"; then
   log "гружу описания форматов"
-  ssh "$PROD" "docker exec vertushka_api python -m app.scripts.load_release_formats \
+  ssh "$PROD" "docker exec $API_CONTAINER python -m app.scripts.load_release_formats \
     --file /tmp/formats_${STAMP}.csv.gz --dump-date $ISO"
 fi
-if ssh "$PROD" "docker exec vertushka_api test -f /tmp/new_${STAMP}.csv.gz"; then
+if ssh "$PROD" "docker exec $API_CONTAINER test -f /tmp/new_${STAMP}.csv.gz"; then
   log "гружу новые релизы"
-  ssh "$PROD" "docker exec vertushka_api python -m app.scripts.load_new_releases \
+  ssh "$PROD" "docker exec $API_CONTAINER python -m app.scripts.load_new_releases \
     --file /tmp/new_${STAMP}.csv.gz --dump-date $ISO"
 fi
 
 # --- 5. уборка ---------------------------------------------------------------
-ssh "$PROD" "docker exec vertushka_api sh -c 'rm -f /tmp/formats_*.csv.gz /tmp/new_*.csv.gz'"
+ssh "$PROD" "docker exec $API_CONTAINER sh -c 'rm -f /tmp/formats_*.csv.gz /tmp/new_*.csv.gz'"
 # Обложки/классификация кэшируются — иначе свежие данные всплывут только через сутки.
 ssh "$PROD" "docker exec vertushka_redis redis-cli --scan --pattern 'artist_masters:*' \
   | xargs -r docker exec -i vertushka_redis redis-cli del" >/dev/null || true
