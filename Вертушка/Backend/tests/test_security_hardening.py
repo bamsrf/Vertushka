@@ -595,7 +595,15 @@ def test_migration_chain_has_single_head():
     script = ScriptDirectory.from_config(Config("alembic.ini"))
     heads = list(script.get_heads())
 
-    assert heads == ["20260814_reset_jti"], f"голов должно быть одна, найдено: {heads}"
+    # Проверяем единственность головы, а не её имя: голова меняется с каждой
+    # новой миграцией, и сверка с конкретной ревизией ломала бы тест на любой
+    # чужой миграции — что и произошло, когда приехал 20260814_dump_state.
+    assert len(heads) == 1, f"голов должно быть одна, найдено: {heads}"
+
+    # А вот сама reset-jti миграция обязана остаться в цепочке: без неё
+    # одноразовость токена сброса не применяется на проде (§S12).
+    revisions = {rev.revision for rev in script.walk_revisions()}
+    assert "20260814_reset_jti" in revisions, "миграция reset_token_jti выпала из истории"
 
 
 def test_password_reset_log_has_no_email():
