@@ -60,6 +60,7 @@ import {
   ChatCircleIcon,
   CloudSlashIcon,
   CurrencyCircleDollarIcon,
+  CurrencyRubIcon,
   DownloadSimpleIcon,
   FolderIcon,
   GiftIcon,
@@ -234,6 +235,10 @@ const REGISTRY = {
   'map-pin':             MapPinIcon,
   'map-trifold':         MapTrifoldIcon,
   'currency-circle-dollar': CurrencyCircleDollarIcon,
+  // Стоимость коллекции считается и показывается в рублях, поэтому знак валюты
+  // в интерфейсе — рубль. Долларовый глиф оставлен на случай, если появятся
+  // места, где валюта действительно не рублёвая.
+  'currency-rub':        CurrencyRubIcon,
   'star':                StarIcon,
 
   // Decorative

@@ -567,7 +567,7 @@ export default function ProfileScreen() {
             style={styles.settingsItem}
             onPress={() => router.push('/collection/value')}
           >
-            <Icon name="cash-outline" size={24} color={Colors.royalBlue} />
+            <Icon name="currency-rub" size={24} color={Colors.royalBlue} />
             <Text style={styles.settingsItemText}>Стоимость коллекции</Text>
           </TouchableOpacity>
 

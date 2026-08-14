@@ -187,7 +187,12 @@ export default function OnboardingScreen() {
     analytics.onboardingStartChoice(option?.analyticsId ?? 'explore');
     // Всегда сначала табы: экран импорта Discogs — модалка поверх них, и без
     // этого «назад» из неё вело бы обратно в онбординг.
-    router.replace('/(tabs)');
+    //
+    // «Осмотреться самому» (option === null) высаживаем именно в коллекцию:
+    // там в шапке лежит чеклист «Первые шаги» — второй слой онбординга. По
+    // дефолту `/(tabs)` открывает сканер, и человек, выбравший осмотреться,
+    // до чеклиста просто не доходил.
+    router.replace(option ? '/(tabs)' : '/(tabs)/collection');
     if (option?.route && option.route !== '/(tabs)') {
       router.push(option.route as never);
     }

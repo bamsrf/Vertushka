@@ -1018,7 +1018,7 @@ export default function CollectionScreen() {
                 onPress={() => router.push('/collection/value')}
                 activeOpacity={0.7}
               >
-                <Icon name="cash-outline" size={18} color={Colors.royalBlue} />
+                <Icon name="currency-rub" size={18} color={Colors.royalBlue} />
               </TouchableOpacity>
             </CoachPulse>
           )}
