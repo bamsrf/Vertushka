@@ -17,10 +17,11 @@ import Animated, { FadeInUp } from 'react-native-reanimated';
 // (Маркет в (tabs)/search.tsx, см. MARKET_AND_PRICE_DRAWER.md §1.3).
 const AnimatedFlatList = Animated.createAnimatedComponent(FlatList);
 import { Icon } from '@/components/ui';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { RecordCard } from './RecordCard';
 import { RecordSearchResult, VinylRecord, CollectionItem, WishlistItem, MasterSearchResult, ReleaseSearchResult } from '../lib/types';
-import { Colors, Typography, Spacing, BorderRadius, Gradients, Shadows } from '../constants/theme';
+import { Colors, Typography, Spacing, BorderRadius, Gradients, Shadows, ComponentSizes } from '../constants/theme';
 import { RarityContext } from './RarityAura';
 
 export interface EmptyAction {
@@ -134,6 +135,7 @@ function RecordGridComponent<T extends RecordItem = RecordItem>({
   useOfferBadge = false,
   radarRecordIds,
 }: RecordGridProps<T>) {
+  const insets = useSafeAreaInsets();
   // Internal ref для scrollToOffset вызова (search.tsx, market navigation).
   // Populate переданного scrollToTopRef один раз на mount.
   const listRef = useRef<FlatList<T>>(null);
@@ -223,16 +225,22 @@ function RecordGridComponent<T extends RecordItem = RecordItem>({
 
     const hasRich = !!(emptyTitle || emptyIcon || (emptyActions && emptyActions.length > 0));
 
+    // Плавающий таб-бар лежит поверх контента, а пустое состояние центрируется
+    // внутри flex:1 — без этого отступа кнопки «Сканировать»/«Найти» уезжают
+    // под панель. Проявилось, когда карточка «Первые шаги» в шапке сдвинула
+    // блок вниз.
+    const emptyPad = { paddingBottom: ComponentSizes.tabBarHeight + insets.bottom };
+
     if (!hasRich) {
       return (
-        <View style={styles.emptyContainer}>
+        <View style={[styles.emptyContainer, emptyPad]}>
           <Text style={styles.emptyText}>{emptyMessage}</Text>
         </View>
       );
     }
 
     return (
-      <View style={styles.emptyContainer}>
+      <View style={[styles.emptyContainer, emptyPad]}>
         {emptyIcon && (
           <View style={styles.emptyIconRing}>
             <Icon name={emptyIcon} size={36} color={Colors.royalBlue} />

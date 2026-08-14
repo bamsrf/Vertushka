@@ -143,12 +143,25 @@ export const useOnboardingStore = create<OnboardingState>((set, get) => ({
       // Миграция: у аккаунта своего флага ещё нет, но на устройстве лежит
       // легаси-ключ — значит этот человек онбординг уже проходил. Переносим,
       // чтобы апдейт приложения не показал карусель повторно.
-      if (value === null && userId) {
-        const legacy = await AsyncStorage.getItem(ONBOARDING_KEY_LEGACY);
-        if (legacy === 'true') {
-          value = 'true';
-          await AsyncStorage.setItem(onboardingKey(userId), 'true');
+      //
+      // Ключ ПОТРЕБЛЯЕТСЯ: первый аккаунт его забирает, дальше он удаляется.
+      // Без этого условие срабатывало на любой аккаунт без своего флага —
+      // включая только что зарегистрированный. На устройстве, где онбординг
+      // когда-либо проходили, каждый новый пользователь наследовал «уже
+      // видел» и попадал сразу в сканер, минуя карусель целиком.
+      if (userId) {
+        if (value === null) {
+          const legacy = await AsyncStorage.getItem(ONBOARDING_KEY_LEGACY);
+          if (legacy === 'true') {
+            value = 'true';
+            await AsyncStorage.setItem(onboardingKey(userId), 'true');
+          }
         }
+        // Ключ убираем ВСЕГДА, а не только когда миграция сработала. Если у
+        // аккаунта уже есть свой флаг, ветка выше не выполняется — и легаси
+        // остаётся на устройстве навсегда, отдавая «уже видел» каждому
+        // следующему новому аккаунту. Ровно этот случай и наблюдался.
+        await AsyncStorage.removeItem(ONBOARDING_KEY_LEGACY);
       }
 
       set({ hasSeenWelcome: value === 'true', isReady: true, loadedForUserId: userId });

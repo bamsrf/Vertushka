@@ -24,6 +24,7 @@ import { useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { create } from 'zustand';
 import { useAuthStore, useCollectionStore } from './store';
+import type { SpotlightKey } from './coachSpotlight';
 import { api } from './api';
 import { analytics } from './analytics';
 import { toast } from './toast';
@@ -48,6 +49,8 @@ export interface FirstStep {
   why: string;
   /** Куда ведёт тап по невыполненному пункту. */
   route: string;
+  /** Что подсветить на целевом экране — если словами место не объяснить. */
+  spotlight?: SpotlightKey;
   done: boolean;
 }
 
@@ -253,8 +256,12 @@ function buildSteps(input: StepsInput): FirstStep[] {
       // Требуем оба поля намеренно: раньше шаг закрывался по «имя ИЛИ аватар
       // ИЛИ описание», и у входа через Google он был закрыт с нулевого дня —
       // человек не понимал, что вообще сделал.
-      why: 'Их видят те, кому ты покажешь коллекцию или вишлист.',
-      route: '/settings/edit-profile',
+      why: 'Аватар меняется карандашиком на самом профиле, имя — в «Редактировать профиль».',
+      // Не '/settings/edit-profile': там имя и юзернейм, но аватара нет вовсе —
+      // человек попадал на экран, где половину шага сделать физически нельзя.
+      // Профиль содержит и то, и другое, а карандашик подсвечиваем.
+      route: '/profile',
+      spotlight: 'profile-avatar',
       done: Boolean(user?.display_name && user?.avatar_url),
     },
     {

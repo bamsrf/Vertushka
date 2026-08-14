@@ -15,7 +15,8 @@ import { Animated, Easing, Pressable, StyleSheet, Text, View } from 'react-nativ
 import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { Icon } from '@/components/ui';
-import { useFirstSteps, type FirstStepKey } from '../../lib/onboardingProgress';
+import { useFirstSteps, type FirstStepKey, type FirstStep } from '../../lib/onboardingProgress';
+import { setCoachSpotlight } from '../../lib/coachSpotlight';
 import { analytics } from '../../lib/analytics';
 import { BorderRadius, Colors, Spacing, Typography } from '../../constants/theme';
 import { ms } from '../../lib/responsive';
@@ -82,15 +83,18 @@ export function FirstStepsCard({ overrides }: FirstStepsCardProps = {}) {
     );
   }
 
-  const handleStepPress = (key: FirstStepKey, route: string) => {
+  const handleStepPress = (step: FirstStep) => {
     Haptics.selectionAsync();
-    analytics.onboardingStepTap(key);
-    const override = overrides?.[key];
+    analytics.onboardingStepTap(step.key);
+    const override = overrides?.[step.key];
     if (override) {
       override();
       return;
     }
-    router.push(route as never);
+    // Подсветка на целевом экране гаснет по таймеру: там нет карточки с
+    // крестиком, закрывать её некому. Восьми секунд хватает, чтобы заметить.
+    if (step.spotlight) setCoachSpotlight(step.spotlight, { ttlMs: 8000 });
+    router.push(step.route as never);
   };
 
   return (
@@ -149,7 +153,7 @@ export function FirstStepsCard({ overrides }: FirstStepsCardProps = {}) {
                 <Pressable
                   key={step.key}
                   style={[styles.step, showWhy && styles.stepNext]}
-                  onPress={step.done ? undefined : () => handleStepPress(step.key, step.route)}
+                  onPress={step.done ? undefined : () => handleStepPress(step)}
                   disabled={step.done}
                   accessibilityRole={step.done ? 'text' : 'button'}
                   accessibilityLabel={showWhy ? `${step.label}. ${step.why}` : step.label}
