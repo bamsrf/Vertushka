@@ -5,6 +5,19 @@ from functools import lru_cache
 from pydantic_settings import BaseSettings
 from pydantic import Field
 
+# Значения, с которыми приложение не имеет права работать вне debug. Дефолты
+# полей + плейсхолдеры из .env.example: последние проходят проверку длины, но
+# секретом не являются — их копируют в прод чаще, чем хотелось бы.
+_FORBIDDEN_SECRETS = {
+    "change-me-in-production",
+    "your-super-secret-key-change-in-production",
+    "your-jwt-secret-key-change-in-production",
+    "test-secret",
+    "secret",
+    "changeme",
+}
+_MIN_SECRET_LEN = 32
+
 
 class Settings(BaseSettings):
     """Настройки приложения"""
@@ -200,6 +213,37 @@ class Settings(BaseSettings):
     health_p99_threshold_ms: float = Field(default=5000.0, alias="HEALTH_P99_THRESHOLD_MS")
     health_rate_limited_threshold: int = Field(default=50, alias="HEALTH_RATE_LIMITED_THRESHOLD")
 
+    def secret_problems(self) -> list[str]:
+        """Список претензий к секретам. Пустой — всё в порядке.
+
+        Чистая функция без исключения намеренно: поднимать ValueError внутри
+        pydantic-валидатора нельзя, потому что ValidationError печатает
+        `input_value` со значениями конфига, и обрезок этого дампа уехал бы в
+        docker-логи при каждом падении старта. Сообщение оператору собирает
+        assert_secrets_ok() ниже — там мы контролируем текст целиком.
+
+        Вне debug пустой или дефолтный JWT_SECRET_KEY недопустим: раньше его
+        пропажа (опечатка в .env, потерянная переменная при пересборке, новый
+        инстанс с чистым окружением) означала тихий старт с публично известным
+        «change-me-in-production», а дальше кто угодно подписывает себе токен
+        на любой sub и tv, включая is_staff. См. SECURITY_AUDIT_PRERELEASE §S5.
+        """
+        if self.debug:
+            return []
+
+        problems: list[str] = []
+        for field in ("jwt_secret_key", "secret_key"):
+            value = getattr(self, field) or ""
+            env_name = field.upper()
+            if value.strip().lower() in _FORBIDDEN_SECRETS:
+                problems.append(f"{env_name} оставлен дефолтным или плейсхолдерным")
+            elif len(value) < _MIN_SECRET_LEN:
+                # Длину назвать можно, значение — нет.
+                problems.append(
+                    f"{env_name} короче {_MIN_SECRET_LEN} символов (сейчас {len(value)})"
+                )
+        return problems
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
@@ -210,4 +254,27 @@ class Settings(BaseSettings):
 def get_settings() -> Settings:
     """Получение настроек приложения (с кэшированием)"""
     return Settings()
+
+
+class InsecureConfigError(RuntimeError):
+    """Конфигурация непригодна для прода. Текст безопасно печатать в логи."""
+
+
+def assert_secrets_ok(settings: Settings | None = None) -> None:
+    """Гейт старта: падаем шумно, вместо того чтобы работать дырявыми.
+
+    Зовётся из main.py до создания приложения. Падение чинится за минуту;
+    тихий старт с известным секретом не чинится никогда, потому что о нём
+    никто не узнаёт.
+    """
+    settings = settings or get_settings()
+    problems = settings.secret_problems()
+    if not problems:
+        return
+    raise InsecureConfigError(
+        "Небезопасная конфигурация, старт отменён:\n  - "
+        + "\n  - ".join(problems)
+        + "\n\nСгенерировать значение: openssl rand -hex 32"
+        + "\nЛокальная разработка и тесты: DEBUG=true"
+    )
 

@@ -16,9 +16,9 @@ from app.models.conversation import (
     ConversationParticipant,
     Message,
 )
-from app.models.user_block import UserBlock
 from app.models.follow import Follow
 from app.models.user import User
+from app.services.blocking import is_user_blocked as _is_user_blocked
 
 logger = logging.getLogger(__name__)
 
@@ -28,17 +28,10 @@ def _pair(u1: UUID, u2: UUID) -> tuple[UUID, UUID]:
     return (u1, u2) if str(u1) < str(u2) else (u2, u1)
 
 
-async def is_user_blocked(db: AsyncSession, a_id: UUID, b_id: UUID) -> bool:
-    """True если кто-то из пары заблокировал другого (в любую сторону)."""
-    row = await db.execute(
-        select(UserBlock.id).where(
-            or_(
-                and_(UserBlock.blocker_id == a_id, UserBlock.blocked_id == b_id),
-                and_(UserBlock.blocker_id == b_id, UserBlock.blocked_id == a_id),
-            )
-        ).limit(1)
-    )
-    return row.scalar_one_or_none() is not None
+# Переехала в services/blocking.py: блокировку проверяют не только личные
+# сообщения, но и подписки с уведомлениями. Реэкспорт — чтобы не трогать
+# существующие импорты из api/messages.py.
+is_user_blocked = _is_user_blocked
 
 
 async def is_following(db: AsyncSession, follower_id: UUID, following_id: UUID) -> bool:

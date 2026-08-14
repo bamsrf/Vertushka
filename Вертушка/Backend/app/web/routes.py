@@ -10,6 +10,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
+from markupsafe import Markup
 from sqlalchemy import select, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload, selectinload
@@ -533,46 +534,57 @@ async def public_profile_page(
         # === Сборка списка ===
         # Правило: stat показывается только если значение > 0 и проходит порог.
         # Все формы существительных/прилагательных склоняются по числу через _ru_plural.
+        #
+        # ВАЖНО про `html`: значение обязано быть Markup, собранным через
+        # Markup(...).format(...) — этот .format() экранирует КАЖДЫЙ аргумент.
+        # Обычная f-строка сюда класть нельзя: имя артиста и жанр приходят из
+        # Record и задаются пользователем (schemas/record.py: artist/genre —
+        # свободные строки), то есть попадали бы в разметку публичной страницы
+        # как есть. Шаблон больше не делает `|safe`, поэтому забытый Markup
+        # даст видимые теги, а не исполнение — ошибка станет заметной, но
+        # безопасной.
         if color_count > 0:
             phrase = _ru_plural(color_count, "цветная пластинка", "цветные пластинки", "цветных пластинок")
             fun_stats.append({
                 "icon": "🎨",
-                "html": f"<b>{color_count}</b> {phrase}",
+                "html": Markup("<b>{}</b> {}").format(color_count, phrase),
             })
         if top_genre and top_genre_count >= 2:
             fun_stats.append({
                 "icon": "🎧",
-                "html": f"<b>{top_genre_count}</b> {_genre_label(top_genre, top_genre_count)}",
+                "html": Markup("<b>{}</b> {}").format(
+                    top_genre_count, _genre_label(top_genre, top_genre_count),
+                ),
             })
         if top_decade and top_decade_count >= 2:
             word = _ru_plural(top_decade_count, "пластинка", "пластинки", "пластинок")
             fun_stats.append({
                 "icon": "📻",
-                "html": f"<b>{top_decade_count}</b> {word} из {top_decade}-х",
+                "html": Markup("<b>{}</b> {} из {}-х").format(top_decade_count, word, top_decade),
             })
         if fresh_count > 0:
             word = _ru_plural(fresh_count, "релиз", "релиза", "релизов")
             fun_stats.append({
                 "icon": "🚀",
-                "html": f"<b>{fresh_count}</b> {word} {current_year}-го",
+                "html": Markup("<b>{}</b> {} {}-го").format(fresh_count, word, current_year),
             })
         if countries_count >= 2:
             word = _ru_plural(countries_count, "страна", "страны", "стран")
             fun_stats.append({
                 "icon": "🌍",
-                "html": f"<b>{countries_count}</b> {word} в коллекции",
+                "html": Markup("<b>{}</b> {} в коллекции").format(countries_count, word),
             })
         if labels_count >= 3:
             phrase = _ru_plural(labels_count, "разный лейбл", "разных лейбла", "разных лейблов")
             fun_stats.append({
                 "icon": "🏷️",
-                "html": f"<b>{labels_count}</b> {phrase}",
+                "html": Markup("<b>{}</b> {}").format(labels_count, phrase),
             })
         if artists_count >= 5:
             phrase = _ru_plural(artists_count, "разный артист", "разных артиста", "разных артистов")
             fun_stats.append({
                 "icon": "🎙️",
-                "html": f"<b>{artists_count}</b> {phrase}",
+                "html": Markup("<b>{}</b> {}").format(artists_count, phrase),
             })
         if top_artist and top_artist[1] >= 2:
             artist_name = (top_artist[0] or "").strip()
@@ -580,7 +592,7 @@ async def public_profile_page(
                 artist_name = artist_name[:22] + "…"
             fun_stats.append({
                 "icon": "👑",
-                "html": f"Топ-артист: <b>{artist_name}</b>",
+                "html": Markup("Топ-артист: <b>{}</b>").format(artist_name),
             })
         if oldest and oldest[0]:
             artist_name = (oldest[1] or "").strip()
@@ -589,24 +601,24 @@ async def public_profile_page(
             suffix = f" · {artist_name}" if artist_name else ""
             fun_stats.append({
                 "icon": "🕰️",
-                "html": f"Самая старая: <b>{oldest[0]}</b>{suffix}",
+                "html": Markup("Самая старая: <b>{}</b>{}").format(oldest[0], suffix),
             })
         if newest and newest[0] and (not oldest or newest[0] != oldest[0]):
             fun_stats.append({
                 "icon": "🆕",
-                "html": f"Самая свежая: <b>{newest[0]}</b>",
+                "html": Markup("Самая свежая: <b>{}</b>").format(newest[0]),
             })
         if rare_count > 0:
             phrase = _ru_plural(rare_count, "редкое издание", "редких издания", "редких изданий")
             fun_stats.append({
                 "icon": "💎",
-                "html": f"<b>{rare_count}</b> {phrase}",
+                "html": Markup("<b>{}</b> {}").format(rare_count, phrase),
             })
         if priciest and priciest[2] and priciest[2] >= 1000:
             price_fmt = f"{int(priciest[2]):,}".replace(",", " ")
             fun_stats.append({
                 "icon": "💸",
-                "html": f"Самая дорогая: <b>{price_fmt} ₽</b>",
+                "html": Markup("Самая дорогая: <b>{} ₽</b>").format(price_fmt),
             })
         if first_added:
             fa = first_added.replace(tzinfo=None) if first_added.tzinfo else first_added
@@ -616,20 +628,20 @@ async def public_profile_page(
                 word = _ru_plural(years, "год", "года", "лет")
                 fun_stats.append({
                     "icon": "📅",
-                    "html": f"Собирает <b>{years}</b> {word}",
+                    "html": Markup("Собирает <b>{}</b> {}").format(years, word),
                 })
             elif days >= 90:
                 months = max(1, days // 30)
                 word = _ru_plural(months, "месяц", "месяца", "месяцев")
                 fun_stats.append({
                     "icon": "📅",
-                    "html": f"Собирает <b>{months}</b> {word}",
+                    "html": Markup("Собирает <b>{}</b> {}").format(months, word),
                 })
         if new_this_week >= 2:
             phrase = _ru_plural(new_this_week, "новая пластинка", "новые пластинки", "новых пластинок")
             fun_stats.append({
                 "icon": "⚡",
-                "html": f"<b>{new_this_week}</b> {phrase} за неделю",
+                "html": Markup("<b>{}</b> {} за неделю").format(new_this_week, phrase),
             })
     except Exception as e:
         logger.warning("fun_stats computation failed: %s", e)

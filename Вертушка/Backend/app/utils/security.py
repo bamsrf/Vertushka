@@ -5,7 +5,8 @@ import secrets
 from datetime import datetime, timedelta
 from uuid import UUID
 
-from jose import jwt, JWTError
+import jwt
+from jwt import PyJWTError
 from passlib.context import CryptContext
 
 from app.config import get_settings
@@ -62,7 +63,7 @@ def decode_token(token: str) -> dict | None:
             algorithms=[settings.jwt_algorithm]
         )
         return payload
-    except JWTError:
+    except PyJWTError:
         return None
 
 

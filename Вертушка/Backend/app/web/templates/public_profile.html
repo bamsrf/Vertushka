@@ -959,7 +959,13 @@
                         {% for stat in fun_stats %}
                         <div class="fun-stat {% if loop.first %}active{% endif %}" data-idx="{{ loop.index0 }}">
                             <span class="icon">{{ stat.icon }}</span>
-                            <span class="text">{{ stat.html|safe }}</span>
+                            {# Без |safe: stat.html — это Markup, собранный в
+                               routes.py через Markup(...).format(), который
+                               экранирует подстановки. Автоэкранирование Jinja
+                               пропускает Markup как есть, а случайную обычную
+                               строку — экранирует. Это защита от следующего
+                               стата, который забудут обернуть. #}
+                            <span class="text">{{ stat.html }}</span>
                         </div>
                         {% endfor %}
                     </div>

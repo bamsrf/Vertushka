@@ -33,6 +33,8 @@ from app.models.conversation import (
     ConversationParticipant,
     Message,
 )
+from app.models.follow import Follow
+from app.models.follow_request import FollowRequest
 from app.models.user import User
 from app.models.user_block import UserBlock
 from app.api.auth import get_current_user
@@ -1140,6 +1142,37 @@ async def block_user(
     )
     if existing.scalar_one_or_none() is None:
         db.add(UserBlock(blocker_id=current_user.id, blocked_id=user_id))
+
+    # Рвём подписки в обе стороны и гасим висящие заявки.
+    #
+    # Без этого блокировка оставляла заблокированного в списке подписчиков: он
+    # продолжал видеть активность, числился в счётчике и мешал в выдаче. Для
+    # человека «заблокировать» значит «он исчез», а не «перестал писать в
+    # личку». Уведомления от него теперь и так не проходят
+    # (notification_service), но сама связь без этого оставалась.
+    # См. SECURITY_AUDIT_PRERELEASE.md §S6.
+    await db.execute(
+        Follow.__table__.delete().where(
+            or_(
+                and_(Follow.follower_id == current_user.id, Follow.following_id == user_id),
+                and_(Follow.follower_id == user_id, Follow.following_id == current_user.id),
+            )
+        )
+    )
+    await db.execute(
+        FollowRequest.__table__.delete().where(
+            or_(
+                and_(
+                    FollowRequest.requester_id == current_user.id,
+                    FollowRequest.target_id == user_id,
+                ),
+                and_(
+                    FollowRequest.requester_id == user_id,
+                    FollowRequest.target_id == current_user.id,
+                ),
+            )
+        )
+    )
 
     # Архивируем существующий тред у блокирующего
     a, b = (

@@ -21,7 +21,7 @@ from slowapi.errors import RateLimitExceeded
 from app.utils.rate_limit import limiter
 from sqlalchemy import text
 
-from app.config import get_settings
+from app.config import assert_secrets_ok, get_settings
 from app.database import init_db, close_db, async_session_maker
 from app.services import alerts, health_metrics
 from app.services.cache import cache
@@ -50,6 +50,12 @@ logging.root.handlers = [_log_handler]
 logging.root.setLevel(logging.INFO)
 
 logger = logging.getLogger(__name__)
+
+# --- Гейт конфигурации ---
+# ДО Sentry и до создания приложения: если секреты дефолтные, поднимать процесс
+# нельзя вообще, а не «поднять и заодно отрапортовать». См. config.py и
+# docs/plans/SECURITY_AUDIT_PRERELEASE.md §S5.
+assert_secrets_ok()
 
 # --- Sentry ---
 _settings_early = get_settings()
@@ -149,6 +155,14 @@ async def lifespan(app: FastAPI):
             scheduler.add_job(emit_wishlist_absent_notifications, 'interval', minutes=15, id='wishlist_absent_notifications')
             scheduler.add_job(emit_weekly_wishlist_digest, 'cron', day_of_week='mon', hour=10, minute=0, id='weekly_wishlist_digest')
             scheduler.add_job(cleanup_price_history, 'cron', hour=3, minute=30, id='price_history_cleanup')
+            # Окончательное удаление аккаунтов, у которых истекло 30-дневное окно
+            # отмены. Джоба существовала давно, но нигде не была запущена — то
+            # есть данные удалённых аккаунтов не вычищались вообще, вопреки
+            # обещанию в UI и в политике (Guideline 5.1.1(v), 152-ФЗ).
+            # 04:30 — после ночных обходов, до утренних отчётов.
+            from app.scripts.purge_deleted_users import purge as purge_deleted_users
+            scheduler.add_job(purge_deleted_users, 'cron', hour=4, minute=30,
+                              id='purge_deleted_users', max_instances=1, coalesce=True)
             # Drip-прогрев обложек: каждую минуту, тратит только простой app-bucket'а
             scheduler.add_job(drip_covers_batch, 'interval', minutes=1, id='cover_drip', max_instances=1, coalesce=True)
 
