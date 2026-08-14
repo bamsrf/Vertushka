@@ -28,6 +28,24 @@ class CircuitOpenError(Exception):
     """Circuit OPEN для домена."""
 
 
+# Порог брейкера для доменов магазинов. Дефолтные 5 были рассчитаны на API, где
+# запрос = попытка. У обхода каталога арифметика другая: `fetch_page` делает две
+# ступени (основная серия ретраев + вторая попытка через 5 c), и каждая при
+# исчерпании ретраев отмечает брейкеру СВОЙ провал. То есть одна сбойная
+# страница стоит двух отметок.
+#
+# При пороге 5 брейкер открывался на второй-третьей флакующей странице и рвал
+# обход раньше, чем успевал сработать PageErrorBudget (он терпит 3 страницы
+# подряд, то есть до 6 отметок). Двух ночей подряд doctorhead хватило, чтобы это
+# увидеть: 13.08 — 145 позиций из 3572, 14.08 — 261, оба раза «circuit OPEN
+# after 5 failures», оба раза сайт через час отвечал за секунду.
+#
+# 12 = двойной запас к бюджету: решение «пора прекращать» принимает бюджет
+# страниц (он знает про долю пропусков и логирует их), а брейкер остаётся тем,
+# чем задумывался, — защитой от реально лежащего хоста.
+_CRAWL_FAILURE_THRESHOLD = 12
+
+
 class _CircuitBreaker:
     CLOSED = "closed"
     OPEN = "open"
@@ -188,12 +206,15 @@ class ScraperHttpClient:
                 await client.aclose()
         cls._clients.clear()
 
-    def configure_domain(self, domain: str, *, rate_per_sec: float, burst: int) -> None:
-        """Задать per-domain rate-limit. Идемпотентно."""
+    def configure_domain(
+        self, domain: str, *, rate_per_sec: float, burst: int,
+        failure_threshold: int = _CRAWL_FAILURE_THRESHOLD,
+    ) -> None:
+        """Задать per-domain rate-limit и порог брейкера. Идемпотентно."""
         if domain not in self._buckets:
             self._buckets[domain] = _DomainBucket(capacity=burst, refill_rate=rate_per_sec)
         if domain not in self._breakers:
-            self._breakers[domain] = _CircuitBreaker()
+            self._breakers[domain] = _CircuitBreaker(failure_threshold=failure_threshold)
 
     async def get_text(
         self,
@@ -212,7 +233,9 @@ class ScraperHttpClient:
 
         domain = urlparse(url).netloc
         bucket = self._buckets.get(domain) or _DomainBucket()
-        breaker = self._breakers.get(domain) or _CircuitBreaker()
+        breaker = self._breakers.get(domain) or _CircuitBreaker(
+            failure_threshold=_CRAWL_FAILURE_THRESHOLD
+        )
         # Регистрируем дефолтные если не было configure_domain
         self._buckets.setdefault(domain, bucket)
         self._breakers.setdefault(domain, breaker)
