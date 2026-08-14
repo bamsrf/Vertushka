@@ -14,7 +14,8 @@ import sentry_sdk
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from app.utils.rate_limit import limiter
-from jose import jwt as jose_jwt, JWTError, jwk
+import jwt as pyjwt
+from jwt import PyJWK, PyJWTError
 from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -68,7 +69,7 @@ async def _verify_apple_identity_token(identity_token: str) -> dict:
     Возвращает payload с sub, email и др."""
     settings = get_settings()
     try:
-        unverified_header = jose_jwt.get_unverified_header(identity_token)
+        unverified_header = pyjwt.get_unverified_header(identity_token)
         kid = unverified_header.get("kid")
         if not kid:
             raise ValueError("No kid in token header")
@@ -92,8 +93,9 @@ async def _verify_apple_identity_token(identity_token: str) -> dict:
         if not key_data:
             raise ValueError(f"Apple public key with kid={kid} not found")
 
-        public_key = jwk.construct(key_data)
-        payload = jose_jwt.decode(
+        # PyJWK строит ключ из JWKS-словаря (замена jose.jwk.construct).
+        public_key = PyJWK(key_data).key
+        payload = pyjwt.decode(
             identity_token,
             public_key,
             algorithms=["RS256"],
@@ -101,7 +103,7 @@ async def _verify_apple_identity_token(identity_token: str) -> dict:
             issuer="https://appleid.apple.com",
         )
         return payload
-    except (JWTError, ValueError, Exception) as e:
+    except (PyJWTError, ValueError, Exception) as e:
         logger.warning("Apple identity_token verification failed: %s", e)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -139,7 +141,7 @@ async def _verify_google_id_token(id_token: str) -> dict:
         )
 
     try:
-        unverified_header = jose_jwt.get_unverified_header(id_token)
+        unverified_header = pyjwt.get_unverified_header(id_token)
         kid = unverified_header.get("kid")
         if not kid:
             raise ValueError("No kid in token header")
@@ -156,7 +158,7 @@ async def _verify_google_id_token(id_token: str) -> dict:
         if not key_data:
             raise ValueError(f"Google public key with kid={kid} not found")
 
-        public_key = jwk.construct(key_data)
+        public_key = PyJWK(key_data).key
 
         # Возможные audience: web client id (GOOGLE_CLIENT_ID) и iOS client id
         # (GOOGLE_IOS_CLIENT_ID). iOS-SDK кладёт в aud iOS-client, web/Android — web.
@@ -169,20 +171,24 @@ async def _verify_google_id_token(id_token: str) -> dict:
         for audience in audiences:
             for issuer in GOOGLE_ISSUERS:
                 try:
-                    return jose_jwt.decode(
+                    return pyjwt.decode(
                         id_token,
                         public_key,
                         algorithms=["RS256"],
                         audience=audience,
                         issuer=issuer,
                     )
-                except JWTError as e:
+                except PyJWTError as e:
                     last_err = e
         raise last_err or ValueError("Google token verification failed")
-    except (JWTError, ValueError, Exception) as e:
+    except (PyJWTError, ValueError, Exception) as e:
         # Лог aud/iss из unverified payload — для диагностики мисматча audience
         try:
-            unverified = jose_jwt.get_unverified_claims(id_token)
+            # Замена jose.get_unverified_claims: у PyJWT это decode с
+            # выключенной проверкой подписи. Значения идут ТОЛЬКО в лог.
+            unverified = pyjwt.decode(
+                id_token, options={"verify_signature": False},
+            )
             ios_client_id = os.environ.get("GOOGLE_IOS_CLIENT_ID", "")
             logger.warning(
                 "Google id_token verification failed: %s; aud=%s iss=%s expected_aud=%s",
@@ -421,7 +427,7 @@ async def login(
     if not user.is_active and user.deleted_at is not None:
         if user.scheduled_purge_at and user.scheduled_purge_at > datetime.utcnow():
             settings = get_settings()
-            restore_token = jose_jwt.encode(
+            restore_token = pyjwt.encode(
                 {
                     "sub": str(user.id),
                     "type": "restore",
@@ -809,7 +815,7 @@ async def verify_reset_code(
     await db.commit()
 
     settings = get_settings()
-    reset_token = jose_jwt.encode(
+    reset_token = pyjwt.encode(
         {
             "sub": str(user.id),
             "type": "reset",

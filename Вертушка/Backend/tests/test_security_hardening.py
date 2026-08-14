@@ -217,6 +217,262 @@ def test_cover_download_goes_through_guard():
     assert src.count("safe_image_get(") >= 2
 
 
+# ── §S4: JWT после переезда python-jose → PyJWT ─────────────────────────────
+#
+# Библиотеку на критическом пути аутентификации меняли целиком, поэтому тут
+# проверяются свойства, а не вызовы: важно не «зовём ли мы PyJWT», а
+# «отвергается ли то, что должно отвергаться».
+
+
+def test_jose_is_gone():
+    """python-jose не должен остаться ни в коде, ни в зависимостях."""
+    # Только строки-зависимости: в комментариях jose упоминается намеренно,
+    # там объяснено, почему от него ушли.
+    requirements = [
+        line.strip()
+        for line in Path("requirements.txt").read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.strip().startswith("#")
+    ]
+    assert not [r for r in requirements if r.lower().startswith("python-jose")]
+    assert any(r.startswith("PyJWT") for r in requirements)
+
+    for path in ("app/utils/security.py", "app/api/auth.py"):
+        code = [
+            line
+            for line in Path(path).read_text(encoding="utf-8").splitlines()
+            if not line.strip().startswith("#")
+        ]
+        assert not [line for line in code if "from jose" in line or "import jose" in line]
+
+
+def test_token_round_trip():
+    import uuid
+
+    from app.utils.security import create_access_token, decode_token
+
+    uid = uuid.uuid4()
+    payload = decode_token(create_access_token(uid, token_version=7))
+
+    assert payload["sub"] == str(uid)
+    assert payload["type"] == "access"
+    assert payload["tv"] == 7
+
+
+def test_token_type_is_enforced():
+    """Access-токен не должен проходить там, где ждут refresh, и наоборот."""
+    import uuid
+
+    from app.utils.security import (
+        create_access_token,
+        create_refresh_token,
+        verify_token_type,
+    )
+
+    uid = uuid.uuid4()
+    access = create_access_token(uid)
+    refresh = create_refresh_token(uid)
+
+    assert verify_token_type(access, "access") is not None
+    assert verify_token_type(access, "refresh") is None
+    assert verify_token_type(refresh, "refresh") is not None
+    assert verify_token_type(refresh, "access") is None
+
+
+def test_token_signed_with_foreign_key_rejected():
+    import uuid
+    from datetime import datetime, timedelta
+
+    import jwt as pyjwt
+
+    from app.utils.security import decode_token
+
+    forged = pyjwt.encode(
+        {
+            "sub": str(uuid.uuid4()),
+            "type": "access",
+            "tv": 0,
+            "exp": datetime.utcnow() + timedelta(hours=1),
+        },
+        "attacker-key-" + "x" * 40,
+        algorithm="HS256",
+    )
+    assert decode_token(forged) is None
+
+
+def test_alg_none_token_rejected():
+    """Классический обход: подпись выброшена, alg=none."""
+    import uuid
+
+    import jwt as pyjwt
+
+    from app.utils.security import decode_token
+
+    unsigned = pyjwt.encode(
+        {"sub": str(uuid.uuid4()), "type": "access", "tv": 0}, key="", algorithm="none",
+    )
+    assert decode_token(unsigned) is None
+
+
+def test_expired_token_rejected():
+    import uuid
+    from datetime import datetime, timedelta
+
+    import jwt as pyjwt
+
+    from app.config import get_settings
+    from app.utils.security import decode_token
+
+    expired = pyjwt.encode(
+        {
+            "sub": str(uuid.uuid4()),
+            "type": "access",
+            "tv": 0,
+            "exp": datetime.utcnow() - timedelta(seconds=5),
+        },
+        get_settings().jwt_secret_key,
+        algorithm="HS256",
+    )
+    assert decode_token(expired) is None
+
+
+@pytest.mark.parametrize("garbage", ["", "not.a.token", "a.b.c", "....", "null"])
+def test_garbage_token_rejected(garbage):
+    from app.utils.security import decode_token
+
+    assert decode_token(garbage) is None
+
+
+@pytest.fixture(scope="module")
+def apple_jwks_setup():
+    """Настоящая RSA-пара + JWKS, как отдаёт Apple. Проверяет PyJWK —
+    самое крупное отличие API от jose.jwk.construct."""
+    import json
+
+    from cryptography.hazmat.primitives.asymmetric import rsa
+    from jwt.algorithms import RSAAlgorithm
+
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    pub = json.loads(RSAAlgorithm.to_jwk(key.public_key()))
+    pub.update({"kid": "test-kid-1", "alg": "RS256", "use": "sig"})
+    return key, pub
+
+
+def _apple_token(key, **overrides):
+    from datetime import datetime, timedelta, timezone
+
+    import jwt as pyjwt
+
+    claims = {
+        "iss": "https://appleid.apple.com",
+        "aud": "com.vertushka.app",
+        "sub": "apple-user-123",
+        "email": "u@privaterelay.appleid.com",
+        "exp": datetime.now(timezone.utc) + timedelta(hours=1),
+    }
+    claims.update(overrides)
+    return pyjwt.encode(claims, key, algorithm="RS256", headers={"kid": "test-kid-1"})
+
+
+@pytest.fixture
+def apple_auth(monkeypatch, apple_jwks_setup):
+    import app.api.auth as auth_mod
+
+    key, pub = apple_jwks_setup
+    monkeypatch.setenv("APPLE_CLIENT_ID", "com.vertushka.app")
+
+    async def _fake_jwks():
+        return {"keys": [pub]}
+
+    monkeypatch.setattr(auth_mod, "_get_apple_jwks", _fake_jwks)
+
+    from app.config import Settings
+
+    def _settings():
+        return Settings(DEBUG=True, APPLE_CLIENT_ID="com.vertushka.app")
+
+    monkeypatch.setattr(auth_mod, "get_settings", _settings)
+    return auth_mod, key
+
+
+def test_apple_valid_token_accepted(apple_auth):
+    auth_mod, key = apple_auth
+
+    payload = asyncio.run(auth_mod._verify_apple_identity_token(_apple_token(key)))
+
+    assert payload["sub"] == "apple-user-123"
+    assert payload["email"] == "u@privaterelay.appleid.com"
+
+
+def test_apple_rejects_foreign_audience(apple_auth):
+    from fastapi import HTTPException
+
+    auth_mod, key = apple_auth
+    with pytest.raises(HTTPException):
+        asyncio.run(
+            auth_mod._verify_apple_identity_token(_apple_token(key, aud="com.attacker.app"))
+        )
+
+
+def test_apple_rejects_foreign_issuer(apple_auth):
+    from fastapi import HTTPException
+
+    auth_mod, key = apple_auth
+    with pytest.raises(HTTPException):
+        asyncio.run(
+            auth_mod._verify_apple_identity_token(_apple_token(key, iss="https://evil.com"))
+        )
+
+
+def test_apple_rejects_expired(apple_auth):
+    from datetime import datetime, timedelta, timezone
+
+    from fastapi import HTTPException
+
+    auth_mod, key = apple_auth
+    stale = _apple_token(key, exp=datetime.now(timezone.utc) - timedelta(hours=1))
+    with pytest.raises(HTTPException):
+        asyncio.run(auth_mod._verify_apple_identity_token(stale))
+
+
+def test_apple_rejects_token_signed_by_other_key(apple_auth):
+    """Главное свойство JWKS-проверки: kid совпал, ключ — нет."""
+    from datetime import datetime, timedelta, timezone
+
+    import jwt as pyjwt
+    from cryptography.hazmat.primitives.asymmetric import rsa
+    from fastapi import HTTPException
+
+    auth_mod, _ = apple_auth
+    attacker = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    forged = pyjwt.encode(
+        {
+            "iss": "https://appleid.apple.com",
+            "aud": "com.vertushka.app",
+            "sub": "victim",
+            "exp": datetime.now(timezone.utc) + timedelta(hours=1),
+        },
+        attacker,
+        algorithm="RS256",
+        headers={"kid": "test-kid-1"},
+    )
+    with pytest.raises(HTTPException):
+        asyncio.run(auth_mod._verify_apple_identity_token(forged))
+
+
+def test_apple_rejects_alg_none(apple_auth):
+    import jwt as pyjwt
+    from fastapi import HTTPException
+
+    auth_mod, _ = apple_auth
+    unsigned = pyjwt.encode(
+        {"iss": "https://appleid.apple.com", "aud": "com.vertushka.app", "sub": "x"},
+        key="",
+        algorithm="none",
+    )
+    with pytest.raises(HTTPException):
+        asyncio.run(auth_mod._verify_apple_identity_token(unsigned))
+
+
 # ── §S5: гейт на секреты при старте ─────────────────────────────────────────
 
 
