@@ -11,3 +11,6 @@ os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://u:p@localhost/test")
 os.environ.setdefault("REDIS_URL", "redis://localhost:6379/0")
 os.environ.setdefault("SECRET_KEY", "test-secret")
 os.environ.setdefault("DISCOGS_TOKEN", "test-token")
+# Settings вне debug отказывается стартовать с дефолтным/коротким секретом
+# (config.py::_forbid_default_secrets). Тесты — это по определению не прод.
+os.environ.setdefault("DEBUG", "true")

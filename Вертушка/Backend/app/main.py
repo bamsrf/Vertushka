@@ -21,7 +21,7 @@ from slowapi.errors import RateLimitExceeded
 from app.utils.rate_limit import limiter
 from sqlalchemy import text
 
-from app.config import get_settings
+from app.config import assert_secrets_ok, get_settings
 from app.database import init_db, close_db, async_session_maker
 from app.services import alerts, health_metrics
 from app.services.cache import cache
@@ -50,6 +50,12 @@ logging.root.handlers = [_log_handler]
 logging.root.setLevel(logging.INFO)
 
 logger = logging.getLogger(__name__)
+
+# --- Гейт конфигурации ---
+# ДО Sentry и до создания приложения: если секреты дефолтные, поднимать процесс
+# нельзя вообще, а не «поднять и заодно отрапортовать». См. config.py и
+# docs/plans/SECURITY_AUDIT_PRERELEASE.md §S5.
+assert_secrets_ok()
 
 # --- Sentry ---
 _settings_early = get_settings()

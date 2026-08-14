@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.database import get_db
+from app.services.blocking import is_user_blocked
 from app.services.push import absolute_media_url
 from app.models.user import User
 from app.models.follow import Follow
@@ -839,6 +840,17 @@ async def follow_user(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Нельзя подписаться на себя"
+        )
+
+    # Блокировка режет подписку в обе стороны. Без этой проверки «заблокировать»
+    # означало только «не получать личные сообщения»: заблокированный спокойно
+    # подписывался и продолжал присылать пуши. См. SECURITY_AUDIT_PRERELEASE §S6.
+    # 404, а не 403: существование блокировки — не та вещь, которую стоит
+    # подтверждать тому, кого заблокировали.
+    if await is_user_blocked(db, current_user.id, user_id):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Пользователь не найден",
         )
 
     # Проверяем существование пользователя

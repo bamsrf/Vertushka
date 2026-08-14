@@ -29,6 +29,7 @@ from app.models.notification import (
     PRIORITY_PUSH,
     PRIORITY_QUIET,
 )
+from app.services.blocking import is_user_blocked
 from app.services.push import send_push
 
 logger = logging.getLogger(__name__)
@@ -113,6 +114,14 @@ async def upsert_notification(
     """
     if actor_id is not None and actor_id == user_id:
         return None, False  # не уведомляем самого себя
+
+    # Блокировка — здесь, а не в каждом call-site: это единственная воронка
+    # всех уведомлений, значит одна проверка закрывает follow, подарки, реакции
+    # и всё, что появится позже. Двусторонняя: заблокировавший не хочет видеть
+    # активность визави, заблокированный не должен пробиваться пушами.
+    # actor_id=None — системное уведомление (вишлист, ачивки), проверять нечего.
+    if actor_id is not None and await is_user_blocked(db, user_id, actor_id):
+        return None, False
 
     now = datetime.utcnow()
 

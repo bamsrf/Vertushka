@@ -217,6 +217,185 @@ def test_cover_download_goes_through_guard():
     assert src.count("safe_image_get(") >= 2
 
 
+# ── §S5: гейт на секреты при старте ─────────────────────────────────────────
+
+
+def _settings(**overrides):
+    """Settings с валидным прод-базисом, поверх которого кладём проверяемое."""
+    from app.config import Settings
+
+    base = {
+        "DEBUG": False,
+        "SECRET_KEY": "a" * 64,
+        "JWT_SECRET_KEY": "b" * 64,
+    }
+    base.update(overrides)
+    return Settings(**base)
+
+
+def test_secret_gate_passes_on_proper_secrets():
+    from app.config import assert_secrets_ok
+
+    assert_secrets_ok(_settings())  # не бросает
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "change-me-in-production",
+        "your-jwt-secret-key-change-in-production",
+        "test-secret",
+        "",
+        "short",
+    ],
+)
+def test_secret_gate_rejects_weak_jwt_secret(value):
+    from app.config import InsecureConfigError, assert_secrets_ok
+
+    with pytest.raises(InsecureConfigError):
+        assert_secrets_ok(_settings(JWT_SECRET_KEY=value))
+
+
+def test_secret_gate_rejects_weak_app_secret():
+    from app.config import InsecureConfigError, assert_secrets_ok
+
+    with pytest.raises(InsecureConfigError):
+        assert_secrets_ok(_settings(SECRET_KEY="change-me-in-production"))
+
+
+def test_secret_gate_is_off_in_debug():
+    """Локальная разработка и тесты не должны требовать настоящих секретов."""
+    from app.config import assert_secrets_ok
+
+    assert_secrets_ok(_settings(DEBUG=True, JWT_SECRET_KEY="x", SECRET_KEY="x"))
+
+
+def test_secret_gate_message_leaks_no_values():
+    """Сообщение уходит в docker-логи — значений конфига в нём быть не должно.
+
+    Ради этого проверка вынесена из pydantic-валидатора: ValidationError
+    печатает input_value со срезом конфига.
+    """
+    from app.config import InsecureConfigError, assert_secrets_ok
+
+    real = "REAL-SECRET-VALUE-must-not-appear-in-logs"
+    with pytest.raises(InsecureConfigError) as exc:
+        assert_secrets_ok(_settings(SECRET_KEY=real, JWT_SECRET_KEY="change-me-in-production"))
+
+    message = str(exc.value)
+    assert real not in message
+    assert "change-me-in-production" not in message
+    assert "SECRET_KEY" in message  # имя переменной назвать можно и нужно
+
+
+def test_main_calls_secret_gate_before_app_creation():
+    """Гейт должен стоять до FastAPI(...), иначе процесс успеет подняться."""
+    src = Path("app/main.py").read_text(encoding="utf-8")
+    assert "assert_secrets_ok()" in src
+    assert src.index("assert_secrets_ok()") < src.index("app = FastAPI(")
+
+
+# ── §S6: блокировка шире личных сообщений ───────────────────────────────────
+
+
+class _FakeResult:
+    def __init__(self, value):
+        self._value = value
+
+    def scalar_one_or_none(self):
+        return self._value
+
+
+class _FakeSession:
+    """Минимальная заглушка AsyncSession: отдаёт заранее заданный результат."""
+
+    def __init__(self, block_row=None):
+        self._block_row = block_row
+        self.executed = []
+
+    async def execute(self, stmt, *args, **kwargs):
+        self.executed.append(stmt)
+        return _FakeResult(self._block_row)
+
+
+def test_is_user_blocked_detects_block():
+    from app.services.blocking import is_user_blocked
+
+    uid_a = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+    uid_b = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+
+    assert asyncio.run(is_user_blocked(_FakeSession(block_row="found"), uid_a, uid_b)) is True
+    assert asyncio.run(is_user_blocked(_FakeSession(block_row=None), uid_a, uid_b)) is False
+
+
+def test_is_user_blocked_short_circuits_self():
+    """Сам себя не блокирует — и в БД за этим не ходим."""
+    from app.services.blocking import is_user_blocked
+
+    session = _FakeSession(block_row="found")
+    uid = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+
+    assert asyncio.run(is_user_blocked(session, uid, uid)) is False
+    assert session.executed == []
+
+
+def test_block_check_is_bidirectional():
+    """Неважно, кто кого заблокировал — в SQL должны быть обе комбинации."""
+    src = Path("app/services/blocking.py").read_text(encoding="utf-8")
+    assert "UserBlock.blocker_id == a_id" in src
+    assert "UserBlock.blocker_id == b_id" in src
+
+
+def test_notifications_suppressed_for_blocked_actor(monkeypatch):
+    """Воронка уведомлений обязана отсекать заблокированного актора."""
+    from app.services import notification_service as ns
+
+    async def _blocked(db, a, b):
+        return True
+
+    monkeypatch.setattr(ns, "is_user_blocked", _blocked)
+
+    notif, is_new = asyncio.run(
+        ns.upsert_notification(
+            _FakeSession(),
+            user_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            type="follow",
+            dedup_key="k",
+            actor_id="bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+        )
+    )
+
+    assert notif is None
+    assert is_new is False
+
+
+def test_notification_block_check_placed_in_funnel():
+    """Проверка должна стоять в upsert_notification, а не в отдельных call-site.
+
+    Иначе следующий тип уведомления добавят мимо неё.
+    """
+    src = Path("app/services/notification_service.py").read_text(encoding="utf-8")
+    funnel = src.index("async def upsert_notification")
+    check = src.index("is_user_blocked(db, user_id, actor_id)")
+    self_guard = src.index("actor_id == user_id")
+    assert funnel < check, "проверка блокировки вне воронки"
+    assert self_guard < check < self_guard + 900, "проверка уехала далеко от guard'а на self"
+
+
+def test_follow_endpoint_checks_block():
+    src = Path("app/api/users.py").read_text(encoding="utf-8")
+    follow_at = src.index("async def follow_user")
+    tail = src[follow_at : follow_at + 2000]
+    assert "is_user_blocked(db, current_user.id, user_id)" in tail
+
+
+def test_blocking_severs_existing_follows():
+    """Блокировка обязана рвать связь, а не только глушить уведомления."""
+    src = Path("app/api/messages.py").read_text(encoding="utf-8")
+    assert "Follow.__table__.delete()" in src
+    assert "FollowRequest.__table__.delete()" in src
+
+
 # ── §S3: вычистка удалённых аккаунтов ───────────────────────────────────────
 
 
