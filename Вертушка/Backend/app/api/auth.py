@@ -4,7 +4,7 @@ API для аутентификации
 import asyncio
 import logging
 import os
-import random
+import secrets
 import uuid as uuid_mod
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
@@ -734,6 +734,22 @@ async def google_sign_in(
 RESET_CODE_TTL_MINUTES = 15
 RESET_CODE_MAX_ATTEMPTS = 3
 
+# Хеш-«пустышка» для ветки «юзера нет»: bcrypt.verify по ней стоит столько же,
+# сколько по настоящей, поэтому время ответа не выдаёт наличие аккаунта.
+# Считается один раз при импорте, значение неважно — важна только стоимость.
+_DUMMY_RESET_HASH = hash_password("timing-equaliser-not-a-real-code")
+
+
+def _generate_reset_code() -> str:
+    """6-значный код сброса.
+
+    secrets, а не random: последний — Mersenne Twister, детерминированный и
+    восстановимый по наблюдаемым выходам. Для единственной вещи, которая стоит
+    между чужим почтовым ящиком и захватом аккаунта, нужен CSPRNG.
+    См. SECURITY_AUDIT_PRERELEASE.md §S7.
+    """
+    return f"{secrets.randbelow(1_000_000):06d}"
+
 
 @router.post("/forgot-password/")
 @limiter.limit("3/minute")
@@ -742,25 +758,42 @@ async def forgot_password(
     data: ForgotPasswordRequest,
     db: AsyncSession = Depends(get_db)
 ):
-    """Запрос кода сброса пароля — отправка на email"""
-    # Всегда возвращаем успех, чтобы не раскрывать существование email
+    """Запрос кода сброса пароля — отправка на email.
+
+    Ответ одинаков всегда, и это не только про текст. Раньше при существующем
+    аккаунте выполнялись bcrypt (~200мс) и ожидание сетевого вызова Resend, а
+    при несуществующем ответ возвращался мгновенно — разница на порядок,
+    измеряется без всякой статистики. Теперь bcrypt считается в обеих ветках,
+    а письмо уходит фоном. См. SECURITY_AUDIT_PRERELEASE.md §S8.
+    """
     result = await db.execute(select(User).where(User.email == data.email.lower()))
     user = result.scalar_one_or_none()
 
     if user and user.is_active:
-        # Генерируем 6-значный код
-        code = f"{random.randint(0, 999999):06d}"
-
-        # Сохраняем хеш кода в БД
+        code = _generate_reset_code()
         user.reset_code_hash = hash_password(code)
         user.reset_code_expires_at = datetime.utcnow() + timedelta(minutes=RESET_CODE_TTL_MINUTES)
         user.reset_code_attempts = 0
+        # Новый код обесценивает ранее выданный reset_token (§S12).
+        user.reset_token_jti = None
         await db.commit()
 
-        # Отправляем email
-        await send_reset_code_email(data.email, code)
+        # Фоном: ожидание Resend добавляло к ответу видимую задержку, по
+        # которой отличался существующий аккаунт от несуществующего.
+        asyncio.create_task(_send_reset_code_safely(data.email, code))
+    else:
+        # Уравниваем стоимость: та же операция bcrypt, что и в ветке выше.
+        verify_password("timing-equaliser-not-a-real-code", _DUMMY_RESET_HASH)
 
     return {"message": "Если аккаунт существует, код отправлен на email"}
+
+
+async def _send_reset_code_safely(email: str, code: str) -> None:
+    """Отправка письма фоном. Падение не должно ронять фоновую задачу."""
+    try:
+        await send_reset_code_email(email, code)
+    except Exception:
+        logger.warning("не удалось отправить код сброса", exc_info=True)
 
 
 @router.post("/verify-reset-code/")
@@ -770,14 +803,26 @@ async def verify_reset_code(
     data: VerifyResetCodeRequest,
     db: AsyncSession = Depends(get_db)
 ):
-    """Проверка кода сброса — возвращает reset_token"""
+    """Проверка кода сброса — возвращает reset_token.
+
+    Все неуспешные ветки отвечают одинаково. Раньше их было две с разным
+    текстом: «Неверный или просроченный код» при отсутствующем аккаунте и
+    «Неверный код. Осталось попыток: N» при существующем — то есть прямой
+    оракул на наличие email. Счётчик попыток по-прежнему ведётся, просто не
+    сообщается наружу. См. SECURITY_AUDIT_PRERELEASE.md §S8.
+    """
     result = await db.execute(select(User).where(User.email == data.email.lower()))
     user = result.scalar_one_or_none()
 
     error_msg = "Неверный или просроченный код"
 
+    def _reject() -> HTTPException:
+        return HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=error_msg)
+
     if not user or not user.reset_code_hash or not user.reset_code_expires_at:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=error_msg)
+        # Уравниваем стоимость с веткой, где код есть и считается bcrypt.
+        verify_password(data.code, _DUMMY_RESET_HASH)
+        raise _reject()
 
     # Проверка TTL
     if datetime.utcnow() > user.reset_code_expires_at:
@@ -785,33 +830,34 @@ async def verify_reset_code(
         user.reset_code_expires_at = None
         user.reset_code_attempts = 0
         await db.commit()
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=error_msg)
+        raise _reject()
 
-    # Проверка количества попыток
+    # Проверка количества попыток. Отвечаем тем же 400 с тем же текстом:
+    # отдельный 429 «Превышено количество попыток» тоже подтверждал, что
+    # аккаунт существует и по нему был запрошен код.
     if user.reset_code_attempts >= RESET_CODE_MAX_ATTEMPTS:
         user.reset_code_hash = None
         user.reset_code_expires_at = None
         user.reset_code_attempts = 0
         await db.commit()
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail="Превышено количество попыток. Запросите новый код"
-        )
+        raise _reject()
 
     # Проверка кода
     if not verify_password(data.code, user.reset_code_hash):
         user.reset_code_attempts += 1
         await db.commit()
-        remaining = RESET_CODE_MAX_ATTEMPTS - user.reset_code_attempts
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Неверный код. Осталось попыток: {remaining}"
-        )
+        raise _reject()
 
     # Код верный — очищаем и выдаём reset_token
     user.reset_code_hash = None
     user.reset_code_expires_at = None
     user.reset_code_attempts = 0
+
+    # jti делает токен одноразовым: копия лежит в users.reset_token_jti и
+    # зануляется при использовании (§S12). Коммит один на всё — и очистка кода,
+    # и привязка jti, иначе выданный токен мог бы остаться без пары в БД.
+    jti = secrets.token_urlsafe(24)
+    user.reset_token_jti = jti
     await db.commit()
 
     settings = get_settings()
@@ -819,6 +865,7 @@ async def verify_reset_code(
         {
             "sub": str(user.id),
             "type": "reset",
+            "jti": jti,
             "exp": datetime.now(timezone.utc) + timedelta(minutes=10),
         },
         settings.jwt_secret_key,
@@ -854,13 +901,29 @@ async def reset_password(
             detail="Пользователь не найден"
         )
 
+    # Одноразовость (§S12): jti из токена обязан совпасть с записанным. После
+    # успешного сброса поле зануляется, поэтому повторный вызов с тем же
+    # токеном не пройдёт, даже если 10 минут ещё не вышли. Токены, выпущенные
+    # до появления поля, отсекутся здесь же — jti в них нет.
+    jti = payload.get("jti")
+    if not jti or not user.reset_token_jti or not secrets.compare_digest(
+        str(jti), user.reset_token_jti
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Недействительный или просроченный токен сброса"
+        )
+
     user.password_hash = hash_password(data.new_password)
     user.last_login_at = datetime.utcnow()
+    user.reset_token_jti = None
     # Инвалидируем все ранее выданные сессии (украденный/старый токен умирает).
     user.token_version += 1
     await db.commit()
 
-    logger.info("password_reset", extra={"user_id": str(user.id), "email": user.email})
+    # user_id достаточно для расследования; email в структурированном логе —
+    # лишние PII, которые потом живут в ротации и в сборщике (§S14).
+    logger.info("password_reset", extra={"user_id": str(user.id)})
 
     # Сразу выдаём токены для автологина — уже с новым token_version.
     access_token = create_access_token(user.id, user.token_version)

@@ -473,6 +473,139 @@ def test_apple_rejects_alg_none(apple_auth):
         asyncio.run(auth_mod._verify_apple_identity_token(unsigned))
 
 
+# ── §S7/§S8/§S12: сброс пароля ──────────────────────────────────────────────
+
+
+def test_reset_code_uses_csprng():
+    """random (Mersenne Twister) предсказуем по наблюдаемым выходам."""
+    auth_src = Path("app/api/auth.py").read_text(encoding="utf-8")
+    code_lines = [
+        line for line in auth_src.splitlines() if not line.strip().startswith("#")
+    ]
+    assert not [line for line in code_lines if "random.randint" in line]
+    assert not [line for line in code_lines if "import random" in line]
+    assert "secrets.randbelow" in auth_src
+
+
+def test_reset_code_shape():
+    from app.api.auth import _generate_reset_code
+
+    codes = {_generate_reset_code() for _ in range(200)}
+    for code in codes:
+        assert len(code) == 6 and code.isdigit(), code
+    # 200 бросков из миллиона — совпадений быть практически не должно.
+    assert len(codes) > 190, "подозрительно мало уникальных кодов"
+
+
+def test_reset_code_covers_low_values():
+    """Ведущие нули не должны теряться: 42 → '000042', а не '42'."""
+    from app.api.auth import _generate_reset_code
+
+    assert all(len(_generate_reset_code()) == 6 for _ in range(500))
+
+
+def _code_only(source: str) -> str:
+    """Исполняемые строки без комментариев и докстрингов.
+
+    Нужно потому, что в докстрингах намеренно процитировано то, что удалено
+    («Осталось попыток: N») — иначе тест ловит собственное объяснение.
+    """
+    import ast
+
+    tree = ast.parse(source)
+    for node in ast.walk(tree):
+        # Докстринги — первый строковый Expr в модуле/классе/функции.
+        if isinstance(node, (ast.Module, ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            body = getattr(node, "body", [])
+            if body and isinstance(body[0], ast.Expr) and isinstance(body[0].value, ast.Constant):
+                if isinstance(body[0].value.value, str):
+                    body[0].value.value = ""
+    return ast.unparse(tree)
+
+
+def test_verify_reset_code_has_single_error_message():
+    """Разные тексты ошибок были прямым оракулом на существование email."""
+    import ast
+
+    src = Path("app/api/auth.py").read_text(encoding="utf-8")
+    tree = ast.parse(src)
+    func = next(
+        n for n in ast.walk(tree)
+        if isinstance(n, ast.AsyncFunctionDef) and n.name == "verify_reset_code"
+    )
+    body = _code_only(ast.unparse(func))
+
+    # «Осталось попыток: N» подтверждало, что аккаунт есть и код по нему запрошен.
+    assert "Осталось попыток" not in body
+    # Отдельный 429 подтверждал то же самое.
+    assert "HTTP_429_TOO_MANY_REQUESTS" not in body
+    # Все отказы идут через один хелпер с одним текстом.
+    assert body.count("raise _reject()") >= 4
+
+
+def test_forgot_password_equalises_timing():
+    """Ветка «юзера нет» обязана стоить столько же, сколько ветка «есть».
+
+    Иначе bcrypt (~200мс) и ожидание Resend в одной из веток выдают наличие
+    аккаунта разницей времени ответа на порядок.
+    """
+    src = Path("app/api/auth.py").read_text(encoding="utf-8")
+    start = src.index("async def forgot_password")
+    body = src[start : start + 2200]
+
+    assert "_DUMMY_RESET_HASH" in body, "нет выравнивания стоимости bcrypt"
+    assert "asyncio.create_task" in body, "письмо шлётся синхронно — задержка видна"
+
+
+def test_reset_token_carries_jti():
+    """Одноразовость держится на jti; без него токен переиспользуем."""
+    src = Path("app/api/auth.py").read_text(encoding="utf-8")
+    start = src.index("async def verify_reset_code")
+    body = src[start : src.index("@router.post(\"/reset-password/\")")]
+
+    assert '"jti": jti' in body
+    assert "user.reset_token_jti = jti" in body
+    assert "secrets.token_urlsafe" in body
+
+
+def test_reset_password_consumes_jti():
+    src = Path("app/api/auth.py").read_text(encoding="utf-8")
+    start = src.index("async def reset_password")
+    body = src[start : start + 2600]
+
+    assert "secrets.compare_digest" in body, "сравнение jti должно быть постоянного времени"
+    assert "user.reset_token_jti = None" in body, "токен не гасится после использования"
+
+
+def test_reset_token_jti_column_exists():
+    from app.models.user import User
+
+    assert hasattr(User, "reset_token_jti")
+
+
+def test_migration_chain_has_single_head():
+    """Новая миграция не должна расщепить историю на две головы.
+
+    Через ScriptDirectory, а не парсингом: в истории есть merge-ревизии, где
+    down_revision — кортеж, и наивный разбор строк насчитывает лишние головы.
+    """
+    from alembic.config import Config
+    from alembic.script import ScriptDirectory
+
+    script = ScriptDirectory.from_config(Config("alembic.ini"))
+    heads = list(script.get_heads())
+
+    assert heads == ["20260814_reset_jti"], f"голов должно быть одна, найдено: {heads}"
+
+
+def test_password_reset_log_has_no_email():
+    """PII в структурированном логе живут в ротации и в сборщике (§S14)."""
+    src = Path("app/api/auth.py").read_text(encoding="utf-8")
+    for line in src.splitlines():
+        if "password_reset" in line and "logger" in line:
+            assert "email" not in line, line
+
+
 # ── §S5: гейт на секреты при старте ─────────────────────────────────────────
 
 

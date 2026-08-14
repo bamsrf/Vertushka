@@ -129,6 +129,15 @@ class User(Base):
         nullable=False,
         server_default="0"
     )
+    # jti действующего reset-токена. Токен одноразовый: при использовании поле
+    # зануляется, и повторный вызов с тем же токеном уже не пройдёт, даже если
+    # он не истёк. Раньше выданный reset_token оставался рабочим все свои
+    # 10 минут — утёкший (скриншот, лог, прокси) позволял сменить пароль ещё
+    # раз после легитимной смены. См. SECURITY_AUDIT_PRERELEASE.md §S12.
+    reset_token_jti: Mapped[str | None] = mapped_column(
+        String(64),
+        nullable=True
+    )
 
     # Нотификации
     push_token: Mapped[str | None] = mapped_column(
