@@ -158,6 +158,12 @@ services:
       - nginx_cache:/var/cache/nginx
       - nginx_covers_cache:/var/cache/nginx_covers  # деривативы imgproxy (отдельно от api_cache)
       - uploads_data:/app/uploads:ro      # nginx раздаёт обложки как статику
+      # Финансовый дашборд (money.vinyl-vertushka.ru) — чужой проект
+      # hermes-finance-bot, здесь только раздача статики. Оба пути должны
+      # СУЩЕСТВОВАТЬ до `up -d`, иначе Docker создаст .htpasswd каталогом и
+      # nginx не стартует. См. README проекта бота.
+      - /home/deploy/dashboard/public:/srv/money:ro
+      - /home/deploy/dashboard/.htpasswd:/etc/nginx/money.htpasswd:ro
     # depends_on на api НЕТ намеренно: цвет резолвится в рантайме через Docker
     # DNS (resolver в nginx.conf), а хард-зависимость на конкретный цвет ломала
     # бы старт nginx, когда активен другой цвет.

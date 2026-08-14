@@ -44,6 +44,17 @@ export interface CoachMarkMeta {
   where: string;
   icon: string;
   /**
+   * Форма подсветки цели. Различается НЕ цветом, а повторяемостью — именно
+   * повтор читается как «непрочитанное уведомление»:
+   *   'pulse' — расходящееся кольцо. Для статичных целей;
+   *   'glow'  — ровный ореол, проявляется один раз и держится. Для целей,
+   *             которые уже сами анимируются, иначе две пульсации сливаются
+   *             в одну и юзер начинает читать собственную анимацию элемента
+   *             как непрочитанный шаг онбординга.
+   * По умолчанию 'pulse'.
+   */
+  spotlight?: 'pulse' | 'glow';
+  /**
    * Меньше — важнее. Разрешает конкуренцию, когда условия сошлись у нескольких
    * подсказок в один момент. Порядок задан ценностью для новичка: сначала то,
    * без чего интерфейс непонятен (жест зума), затем то, что он всё равно
@@ -99,8 +110,16 @@ export const COACH_MARKS: CoachMarkMeta[] = [
     title: 'Радар следит за ценой',
     body: 'Поставь порог — пришлём пуш, когда пластинка подешевеет или появится в наличии.',
     unlock: 'первая позиция в вишлисте',
+    // Кнопка радара уже пульсирует собственным sonar'ом (два кольца,
+    // opacity 0→0.55, scale до 2.6). Кольцо подсказки поверх него слилось бы
+    // с ним в одно впечатление, и sonar — постоянная индикация работы радара —
+    // начал бы читаться как «непрочитанный шаг онбординга». Поэтому ореол.
+    spotlight: 'glow',
     where: 'Вишлист → шапка списка → кнопка радара справа',
-    icon: 'options-outline',
+    // Не 'options-outline': это ровно тот же глиф, что у кнопки фильтра в
+    // соседней ячейке той же шапки. Подсказка, которая объясняет место, не
+    // должна иконкой указывать на чужую кнопку. Ценник ближе к сути.
+    icon: 'pricetag-outline',
   },
   {
     key: 'market',
@@ -134,10 +153,50 @@ const storageKey = (userId: string, key: CoachMarkKey) =>
   `@vertushka:hint:${userId}:${key}`;
 
 /**
- * Кэш прочитанных ключей в памяти: подсказки проверяются на каждом рендере
- * коллекции, дёргать AsyncStorage столько раз незачем.
+ * Сколько раз показывать подсказку, если её так и не подтвердили.
+ *
+ * Раньше факт показа записывался ТОЛЬКО при закрытии крестиком или переходе
+ * по действию. Кто уходил с экрана свайпом — не записывался никак, и подсказка
+ * возвращалась при каждом следующем запуске бесконечно. Два показа — предел:
+ * первый мог быть не замечен, третий уже назойлив.
  */
-let seenCache: { userId: string; keys: Set<CoachMarkKey> } | null = null;
+const MAX_SHOWS_WITHOUT_ACK = 2;
+
+export interface CoachMarkState {
+  /** Юзер подтвердил явно: закрыл крестиком или пошёл по действию. */
+  acknowledged: boolean;
+  /** Сколько раз показывали без подтверждения. */
+  shows: number;
+}
+
+const EMPTY_STATE: CoachMarkState = { acknowledged: false, shows: 0 };
+
+/** Больше не показываем: либо подтвердили, либо исчерпали лимит показов. */
+export const isSuppressed = (state: CoachMarkState | undefined): boolean =>
+  !!state && (state.acknowledged || state.shows >= MAX_SHOWS_WITHOUT_ACK);
+
+/**
+ * Формат значения в хранилище:
+ *   'done'  — подтверждено;
+ *   's<N>'  — показано N раз без подтверждения;
+ *   '1'     — легаси: старый код писал это при закрытии. Читаем как 'done',
+ *             поэтому у тех, кто уже закрывал подсказки, ничего не всплывёт.
+ */
+function parseState(raw: string | null): CoachMarkState {
+  if (!raw) return { ...EMPTY_STATE };
+  if (raw === 'done' || raw === '1') return { acknowledged: true, shows: 0 };
+  if (raw.startsWith('s')) {
+    const n = Number(raw.slice(1));
+    return { acknowledged: false, shows: Number.isFinite(n) ? n : 0 };
+  }
+  return { ...EMPTY_STATE };
+}
+
+/**
+ * Кэш состояний в памяти: подсказки проверяются на каждом рендере коллекции,
+ * дёргать AsyncStorage столько раз незачем.
+ */
+let stateCache: { userId: string; states: Map<CoachMarkKey, CoachMarkState> } | null = null;
 
 /** Лимит «одна подсказка за запуск». Сбрасывается только перезапуском приложения. */
 let shownThisSession = false;
@@ -216,33 +275,49 @@ function chain(a: (won: boolean) => void, b: (won: boolean) => void) {
   };
 }
 
-export async function loadSeenCoachMarks(userId: string): Promise<Set<CoachMarkKey>> {
-  if (seenCache?.userId === userId) return seenCache.keys;
-  const keys = new Set<CoachMarkKey>();
+export async function loadCoachMarkStates(
+  userId: string,
+): Promise<Map<CoachMarkKey, CoachMarkState>> {
+  if (stateCache?.userId === userId) return stateCache.states;
+  const states = new Map<CoachMarkKey, CoachMarkState>();
   try {
     const pairs = await AsyncStorage.multiGet(
       COACH_MARKS.map((m) => storageKey(userId, m.key)),
     );
     pairs.forEach(([storeKey, value]) => {
-      if (value !== '1') return;
       const key = storeKey.split(':').pop() as CoachMarkKey;
-      keys.add(key);
+      states.set(key, parseState(value));
     });
   } catch {
     // Не прочитали — считаем, что ничего не показывали. Лишняя подсказка
     // безобиднее молчания на пустом аккаунте.
   }
-  seenCache = { userId, keys };
-  return keys;
+  stateCache = { userId, states };
+  return states;
 }
 
-export async function markCoachMarkSeen(userId: string, key: CoachMarkKey) {
-  const cache = await loadSeenCoachMarks(userId);
-  cache.add(key);
+/** Показали, но подтверждения ещё нет. Увеличивает счётчик показов. */
+export async function markCoachMarkShown(userId: string, key: CoachMarkKey) {
+  const states = await loadCoachMarkStates(userId);
+  const prev = states.get(key) ?? { ...EMPTY_STATE };
+  if (prev.acknowledged) return;
+  const next: CoachMarkState = { acknowledged: false, shows: prev.shows + 1 };
+  states.set(key, next);
   try {
-    await AsyncStorage.setItem(storageKey(userId, key), '1');
+    await AsyncStorage.setItem(storageKey(userId, key), `s${next.shows}`);
   } catch {
-    // Молча: подсказка уже показана, повтор в этой сессии всё равно не случится.
+    // Молча: в этой сессии подсказка всё равно уже не повторится.
+  }
+}
+
+/** Подтвердили явно — закрыли крестиком или пошли по действию. */
+export async function markCoachMarkAcknowledged(userId: string, key: CoachMarkKey) {
+  const states = await loadCoachMarkStates(userId);
+  states.set(key, { acknowledged: true, shows: 0 });
+  try {
+    await AsyncStorage.setItem(storageKey(userId, key), 'done');
+  } catch {
+    // Молча.
   }
 }
 
@@ -254,8 +329,8 @@ export async function resetCoachMarks(userId: string, key?: CoachMarkKey) {
   } catch {
     // Молча.
   }
-  if (seenCache?.userId === userId) {
-    targets.forEach((k) => seenCache!.keys.delete(k));
+  if (stateCache?.userId === userId) {
+    targets.forEach((k) => stateCache!.states.delete(k));
   }
   // Сброс — это явный запрос увидеть подсказку снова, поэтому освобождаем и
   // слот сессии: иначе пришлось бы перезапускать приложение.
