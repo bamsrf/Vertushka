@@ -75,6 +75,15 @@
             font-size: 11px; letter-spacing: 0.14em;
             color: var(--slate); text-transform: uppercase;
         }
+        /* Правая группа шапки: плашка поддержки + «поделиться». */
+        .topbar-right { display: flex; align-items: center; gap: 10px; }
+        /* На телефонах в шапке трое: бренд, поддержка, шэр. Бренду хватит
+           одного слова — «· ПРОФИЛЬ» и так очевиден по содержимому. Режем
+           заранее (≤480), чтобы плашка поддержки сохранила оба слова. */
+        @media (max-width: 480px) {
+            .brand-tail { display: none; }
+            .topbar-right { gap: 8px; }
+        }
         .share-btn {
             width: 38px; height: 38px; border-radius: 50%;
             border: 1px solid var(--hairline);
@@ -913,12 +922,17 @@
 <body class="tab-{{ active_tab }}">
     <div class="container">
         <div class="topbar">
-            <span class="brand">ВЕРТУШКА · ПРОФИЛЬ</span>
-            <button class="share-btn" id="shareBtn" title="Поделиться">
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                    <path d="M8 1.5v9M8 1.5L4.5 5M8 1.5L11.5 5M3 9.5v3a1.5 1.5 0 0 0 1.5 1.5h7a1.5 1.5 0 0 0 1.5-1.5v-3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-                </svg>
-            </button>
+            <span class="brand">ВЕРТУШКА<span class="brand-tail"> · ПРОФИЛЬ</span></span>
+            <div class="topbar-right">
+                {# Вход в поддержку — только веб: в приложении такой ссылки быть
+                   не должно (App Store 3.1.1). См. docs/plans/PLAN_SUPPORT_PROJECT.md #}
+                {% include "_support_teaser.html" %}
+                <button class="share-btn" id="shareBtn" title="Поделиться">
+                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                        <path d="M8 1.5v9M8 1.5L4.5 5M8 1.5L11.5 5M3 9.5v3a1.5 1.5 0 0 0 1.5 1.5h7a1.5 1.5 0 0 0 1.5-1.5v-3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                </button>
+            </div>
         </div>
 
         <section class="hero">

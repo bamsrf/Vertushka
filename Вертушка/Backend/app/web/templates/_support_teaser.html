@@ -1,0 +1,79 @@
+{# Вход в раздел поддержки — компактная плашка в шапке публичной страницы.
+
+   Раньше это был широкий блок над футером: он перетягивал на себя внимание и
+   превращал чужую витрину коллекции в сбор средств. Теперь — пилюля рядом с
+   кнопкой «поделиться»: логотип, два слова и лёгкое «дыхание», чтобы её
+   замечали без давления.
+
+   Ведёт на /support, а не сразу на платёжку: по дороге человек читает, за что
+   платит. Полный блок с маскотом и кнопкой живёт там.
+   См. docs/plans/PLAN_SUPPORT_PROJECT.md §8.2.
+
+   Логотип, а не кадр маскота: на 26 px бегущий человечек превращается в кашу,
+   а знак с тонармом читается.
+
+   Требует в контексте: support_url (пусто → ничего не рендерим).
+#}
+{% if support_url %}
+<style>
+    .support-pill {
+        display: inline-flex; align-items: center; gap: 8px;
+        padding: 5px 14px 5px 5px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.62);
+        border: 1px solid var(--hairline, rgba(27, 29, 38, 0.08));
+        backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+        color: var(--ink, #1B1D26);
+        font-size: 12.5px; font-weight: 600; line-height: 1;
+        white-space: nowrap; text-decoration: none;
+        animation: support-breathe 3.4s ease-in-out infinite;
+        transition: transform 200ms ease, background 200ms ease;
+    }
+    .support-pill:hover {
+        animation: none;
+        background: rgba(255, 255, 255, 0.85);
+        transform: translateY(-1px);
+    }
+    .support-pill:active { transform: translateY(0); }
+
+    .sp-logo {
+        flex: 0 0 auto;
+        width: 26px; height: 26px; border-radius: 50%;
+        background: #fff; overflow: hidden;
+        display: grid; place-items: center;
+        box-shadow: 0 2px 8px -4px rgba(27, 29, 38, 0.5);
+    }
+    /* 18 px, а не 20: в круг диаметром 26 вписывается квадрат 18,4 — на 20 px
+       белые углы картинки вылезали бы за окружность. */
+    .sp-logo img { width: 18px; height: 18px; display: block; }
+
+    /* Дыхание: еле заметное увеличение плюс тёплое кобальтовое свечение.
+       Амплитуда специально маленькая — плашка должна ловить взгляд боковым
+       зрением, а не прыгать в шапке. */
+    @keyframes support-breathe {
+        0%, 100% { transform: scale(1);     box-shadow: 0 0 0 0 rgba(58, 75, 224, 0.0); }
+        50%      { transform: scale(1.035); box-shadow: 0 6px 18px -8px rgba(58, 75, 224, 0.55); }
+    }
+
+    /* Совсем узкие телефоны (320 px): в шапке уже есть бренд и «поделиться»,
+       на три полноценных элемента места нет — оставляем одно слово.
+       На 375 px «Поддержать проект» ещё помещается целиком. */
+    @media (max-width: 360px) {
+        .support-pill { font-size: 12px; padding: 4px 12px 4px 4px; gap: 7px; }
+        .sp-logo { width: 24px; height: 24px; }
+        .sp-logo img { width: 16px; height: 16px; }
+        .sp-word { display: none; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        .support-pill { animation: none; transition: none; }
+    }
+</style>
+
+<a class="support-pill" href="/support" title="Поддержать проект">
+    <span class="sp-logo">
+        <img src="/static/mascot/support-logo.png" alt="" aria-hidden="true">
+    </span>
+    <span>Поддержать<span class="sp-word"> проект</span></span>
+</a>
+{% endif %}
