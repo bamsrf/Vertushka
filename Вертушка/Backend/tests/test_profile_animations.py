@@ -98,6 +98,19 @@ def test_rails_are_larger_on_desktop():
     assert ".rail-meta-title" in joined and ".rail-meta-artist" in joined
 
 
+def test_booking_explainer_is_larger_on_desktop():
+    """«Как работает бронирование» на десктопе растянут на две колонки во всю
+    ширину контента, а кегль остался телефонным (12.5px) — строки длинные и
+    мелкие одновременно, читать неприятно."""
+    css = read("public_profile.html")
+    desktop = "\n".join(
+        re.findall(r"@media \(min-width: 721px\)\s*\{(.+?)\n        \}", css, re.S)
+    )
+    m = re.search(r"\.booking-explainer \.step\s*\{[^}]*font-size:\s*([\d.]+)px", desktop)
+    assert m, "на десктопе кегль блока бронирования не поднят"
+    assert float(m.group(1)) >= 14, "меньше 14px на большом экране — всё ещё петит"
+
+
 def test_rails_stop_while_page_scrolls():
     """Карусель не должна ехать, пока страница едет вертикально.
 
