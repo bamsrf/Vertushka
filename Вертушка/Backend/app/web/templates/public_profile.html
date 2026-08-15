@@ -413,6 +413,10 @@
             .rail-meta-artist { font-size: 11px; margin-top: 10px; }
             .rail-meta-title { font-size: 14px; }
             .rail-meta-year { font-size: 12px; }
+            /* .rail-slot внутри .rail-area — absolute, поэтому контент не
+               раздвигает контейнер: высоту под новый кегль задаём руками,
+               иначе overflow: hidden срезает названия. */
+            .rail-area { min-height: 238px; }
         }
 
         /* Auto-scroll infinite rail — нативный horizontal scroll, как в мобильном поиске.
@@ -1758,7 +1762,13 @@
                 });
 
                 function tick(ts) {
-                    if (visible && !paused) {
+                    // Пока страница едет вертикально — карусель стоит. Маска на
+                    // .rail заставляет перерисовывать полосу на каждом кадре, а
+                    // внутри неё два десятка обложек; вместе со скроллом это
+                    // выбивает из памяти уже декодированные картинки, и они
+                    // моргают. Пауза длится 180мс после последнего события.
+                    var pageScrolling = document.documentElement.classList.contains('is-scrolling');
+                    if (visible && !paused && !pageScrolling) {
                         if (last !== null) {
                             var dt = (ts - last) / 1000;
                             if (dt > 0.1) dt = 0.1;
