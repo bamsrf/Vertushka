@@ -263,6 +263,26 @@ async def terms_of_service(request: Request):
     return templates.TemplateResponse("terms.html", {"request": request})
 
 
+@router.get("/support", response_class=HTMLResponse)
+async def support_page(request: Request):
+    """Страница «Поддержать проект».
+
+    Пустой SUPPORT_URL = сборы выключены, страницы не существует. Отдаём 404, а
+    не пустой каркас: страница без единственного целевого действия бессмысленна,
+    и её не должно быть в индексе.
+    """
+    if not settings.support_url:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+
+    return templates.TemplateResponse("support.html", {
+        "request": request,
+        "base_url": BASE_URL,
+        "support_url": settings.support_url,
+        "support_plans_url": settings.support_plans_url,
+        "metrika_id": settings.yandex_metrika_counter_id,
+    })
+
+
 @router.get("/@{username}", response_class=HTMLResponse)
 async def public_profile_page(
     request: Request,
@@ -790,6 +810,9 @@ async def public_profile_page(
         "offers_for": offers_for,
         # Пусто по умолчанию → _metrika.html не рендерит ничего.
         "metrika_id": settings.yandex_metrika_counter_id,
+        # Пусто по умолчанию → _support.html не рендерит ничего.
+        "support_url": settings.support_url,
+        "support_plans_url": settings.support_plans_url,
     })
 
 

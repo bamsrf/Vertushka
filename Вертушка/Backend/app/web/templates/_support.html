@@ -1,0 +1,265 @@
+{# Блок «Поддержать проект» для публичных веб-страниц.
+
+   Почему именно веб, а не приложение: App Store Review Guideline 3.1.1 запрещает
+   во всех сторфронтах, кроме US, любые кнопки и внешние ссылки на способы оплаты
+   мимо IAP; российский External Purchase Link Entitlement стоит 27% комиссии.
+   Веб-страница профиля к сторам отношения не имеет — комиссии нет.
+   Подробности и тексты — docs/plans/PLAN_SUPPORT_PROJECT.md.
+
+   Партиал самодостаточный: стили и скрипт внутри, никаких зависимостей от
+   стилей страницы-хоста, кроме CSS-переменных палитры (--cobalt, --ink, ...)
+   и подключённых шрифтов. Так его можно включать в любой шаблон.
+
+   Требует в контексте: support_url (пусто → блок не рендерится),
+   support_plans_url (опционально — ссылка на публичный роадмап).
+#}
+{% if support_url %}
+<style>
+    .support {
+        margin: 34px 4px 4px;
+        padding: 26px 22px;
+        border-radius: 24px;
+        background: rgba(255, 255, 255, 0.62);
+        border: 1px solid var(--hairline, rgba(27, 29, 38, 0.08));
+        backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+        box-shadow: 0 20px 44px -32px rgba(27, 29, 38, 0.34);
+    }
+    .support-inner {
+        display: flex; flex-direction: column;
+        align-items: center; gap: 20px; text-align: center;
+    }
+    .support-body {
+        display: flex; flex-direction: column; align-items: center;
+        min-width: 0;
+    }
+
+    /* Маскот: белый диск, вокруг — вращающееся кольцо (пластинка крутится). */
+    .support-mascot {
+        position: relative; flex: 0 0 auto;
+        width: 132px; height: 132px;
+    }
+    .support-mascot::before {
+        content: ''; position: absolute; inset: -5px;
+        border-radius: 50%;
+        background: conic-gradient(from 0deg,
+            var(--periwinkle, #9AA8FF), var(--cobalt, #3A4BE0),
+            var(--lavender, #C9B8FF), var(--blush, #F6C7D0),
+            var(--periwinkle, #9AA8FF));
+        animation: support-spin 6s linear infinite;
+        z-index: 0;
+    }
+    .support-disc {
+        position: absolute; inset: 0; z-index: 1;
+        border-radius: 50%; overflow: hidden;
+        background: #fff;
+        box-shadow: 0 16px 32px -20px rgba(58, 75, 224, 0.6);
+    }
+    .support-disc video, .support-disc img {
+        display: block; width: 100%; height: 100%;
+        object-fit: cover; border-radius: 50%;
+        /* Маскот в исходнике занимает почти весь квадрат — круглая маска
+           срезала бы кроссовки и шайбу. Ужимаем: фон видео и диска белый,
+           поэтому поля не видно. */
+        transform: scale(0.86);
+    }
+    @keyframes support-spin { to { transform: rotate(360deg); } }
+
+    .support-label {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase;
+        color: var(--slate, #6B7080);
+    }
+    .support-title {
+        font-size: 19px; line-height: 1.3; font-weight: 600;
+        letter-spacing: -0.015em; color: var(--ink, #1B1D26);
+        margin-top: 10px;
+    }
+    .support-text {
+        font-size: 14px; line-height: 1.6;
+        color: var(--slate, #6B7080);
+        margin-top: 10px; max-width: 540px;
+    }
+    .support-text + .support-text { margin-top: 8px; }
+
+    .support-plans {
+        display: inline-flex; align-items: center; gap: 8px;
+        margin-top: 16px; padding: 9px 15px;
+        border-radius: 999px;
+        background: rgba(58, 75, 224, 0.08);
+        color: var(--cobalt, #3A4BE0);
+        font-size: 13px; font-weight: 500; line-height: 1.35;
+        text-decoration: none;
+        transition: background 200ms ease;
+    }
+    .support-plans:hover { background: rgba(58, 75, 224, 0.15); }
+    .support-plans svg { flex: 0 0 auto; }
+
+    .support-actions {
+        display: flex; flex-direction: column; align-items: center;
+        gap: 12px; margin-top: 20px;
+    }
+    .support-btn {
+        position: relative; overflow: hidden;
+        display: inline-flex; align-items: center; gap: 10px;
+        /* Не даём флексу сжимать кнопку: overflow:hidden нужен для блика, и
+           на узком контейнере (например, на /support) сжатие срезало иконку
+           и хвост слова прямо внутри кнопки. */
+        flex: 0 0 auto;
+        padding: 14px 26px; border-radius: 999px; border: none;
+        background: linear-gradient(180deg, var(--cobalt-bright, #4E5BFF), var(--cobalt, #3A4BE0));
+        color: #fff; font-family: inherit; font-size: 14px; font-weight: 600;
+        white-space: nowrap; text-decoration: none; cursor: pointer;
+        box-shadow: 0 12px 28px -14px rgba(58, 75, 224, 0.6);
+        transition: transform 240ms ease, box-shadow 240ms ease;
+    }
+    .support-btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 16px 32px -14px rgba(58, 75, 224, 0.7);
+    }
+    .support-btn:active { transform: translateY(0); }
+    /* Блик «катаны»: узкая скошенная полоса пролетает по кнопке на ховере.
+       Не крутится в цикле — только по наведению, иначе кнопка мельтешит. */
+    .support-btn::after {
+        content: ''; position: absolute;
+        top: -60%; bottom: -60%; left: -30%; width: 34px;
+        background: linear-gradient(90deg,
+            transparent, rgba(255, 255, 255, 0.15) 25%,
+            rgba(255, 255, 255, 0.85) 50%,
+            rgba(255, 255, 255, 0.15) 75%, transparent);
+        transform: skewX(-22deg);
+        opacity: 0; pointer-events: none;
+    }
+    .support-btn:hover::after { animation: support-glint 720ms cubic-bezier(.3, .55, .2, 1); }
+    @keyframes support-glint {
+        0%   { left: -30%; opacity: 0; }
+        10%  { opacity: 1; }
+        90%  { opacity: 1; }
+        100% { left: 115%; opacity: 0; }
+    }
+    /* Тач-устройства: ховера нет, блик не нужен — на них :hover «залипает». */
+    @media (hover: none) {
+        .support-btn:hover { transform: none; }
+        .support-btn:hover::after { animation: none; }
+    }
+    .support-note {
+        font-size: 12px; line-height: 1.5;
+        color: var(--mute, #9096A6); max-width: 340px;
+    }
+
+    /* Десктоп: маскот слева, текст справа. Брейкпоинт тот же, что у hero. */
+    @media (min-width: 721px) {
+        .support {
+            margin: 44px 4px 4px;
+            padding: 30px 34px;
+        }
+        .support-inner { flex-direction: row; align-items: center; gap: 34px; text-align: left; }
+        .support-body { flex: 1; align-items: flex-start; }
+        .support-mascot { width: 188px; height: 188px; }
+        .support-title { font-size: 23px; }
+        .support-text { font-size: 15px; }
+        .support-actions { flex-direction: row; align-items: center; gap: 18px; margin-top: 22px; }
+        .support-note { text-align: left; max-width: 260px; }
+    }
+
+    /* Узкие телефоны: диск меньше, чтобы блок не съедал экран. */
+    @media (max-width: 360px) {
+        .support { padding: 22px 16px; }
+        .support-mascot { width: 112px; height: 112px; }
+        .support-title { font-size: 17px; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        .support-mascot::before { animation: none; }
+        .support-btn, .support-plans { transition: none; }
+        .support-btn:hover::after { animation: none; }
+    }
+</style>
+
+<section class="support" id="support" aria-labelledby="supportTitle">
+    <div class="support-inner">
+        <div class="support-mascot" aria-hidden="true">
+            <div class="support-disc">
+                <video id="supportMascotVideo"
+                       poster="/static/mascot/support-mascot.png"
+                       autoplay muted loop playsinline preload="metadata"
+                       disablepictureinpicture>
+                    <source src="/static/mascot/support-mascot.mp4" type="video/mp4">
+                    <img src="/static/mascot/support-mascot.png" alt="">
+                </video>
+            </div>
+        </div>
+
+        <div class="support-body">
+            <span class="support-label">От автора Вертушки</span>
+            <h2 class="support-title" id="supportTitle">Вертушка — бесплатное приложение и таким останется</h2>
+            <p class="support-text">
+                Изначально я всегда делал приложение для себя: чтобы было удобно, весело
+                и полезно. Если среди вас есть те, кому оно откликнулось, буду рад
+                поддержке! Это помогает развивать продукт и покрывать ежемесячные
+                расходы на него.
+            </p>
+
+            {% if support_plans_url %}
+            <a class="support-plans" href="{{ support_plans_url }}" target="_blank" rel="noopener">
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+                    <rect x="1.5" y="2.5" width="11" height="10" rx="2" stroke="currentColor" stroke-width="1.3"/>
+                    <path d="M1.5 5.5h11M4.5 1.5v2M9.5 1.5v2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+                </svg>
+                Планы веду открыто — что уже сделано и что дальше
+            </a>
+            {% endif %}
+
+            <div class="support-actions">
+                <a class="support-btn" href="{{ support_url }}" target="_blank" rel="noopener nofollow">
+                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                        <circle cx="8" cy="8" r="6.6" stroke="#fff" stroke-opacity="0.5" stroke-width="1.3"/>
+                        <circle cx="8" cy="8" r="1.9" fill="#fff"/>
+                    </svg>
+                    Поддержать проект
+                </a>
+                {# Про «разовый» здесь важнее, чем про минимум: подписки нет и
+                   деньги не спишутся второй раз — это снимает главный страх
+                   перед чужой платёжной формой. Нижняя граница в 50 ₽ живёт в
+                   FAQ на /support. #}
+                <span class="support-note">
+                    Платёж разовый, каждый взнос помогает Вертушке!
+                </span>
+            </div>
+        </div>
+    </div>
+</section>
+
+<script>
+    // Видео маскота: уважаем prefers-reduced-motion и не крутим его за экраном.
+    // iOS может не стартовать autoplay в Low Power Mode — тогда остаётся постер,
+    // и это нормально: блок не ломается.
+    (function () {
+        var v = document.getElementById('supportMascotVideo');
+        if (!v) return;
+
+        try {
+            if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+                v.removeAttribute('autoplay');
+                v.pause();
+                return;
+            }
+        } catch (e) { /* matchMedia недоступен — просто играем */ }
+
+        var tryPlay = function () {
+            var p = v.play();
+            if (p && p.catch) p.catch(function () { /* автоплей заблокирован — остаётся постер */ });
+        };
+
+        if ('IntersectionObserver' in window) {
+            var io = new IntersectionObserver(function (entries) {
+                entries.forEach(function (e) {
+                    if (e.isIntersecting) { tryPlay(); } else { v.pause(); }
+                });
+            }, { threshold: 0.25 });
+            io.observe(v);
+        } else {
+            tryPlay();
+        }
+    })();
+</script>
+{% endif %}
