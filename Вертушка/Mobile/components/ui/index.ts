@@ -9,4 +9,5 @@ export { Toggle } from './Toggle';
 export { ActionSheet } from './ActionSheet';
 export type { ActionSheetAction } from './ActionSheet';
 export { Icon } from './Icon';
+export { RootOverlay } from './RootOverlay';
 export type { IconName, IconColor, IconSize, IconVariant, IconWeight, IconProps } from './Icon';

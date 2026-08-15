@@ -12,8 +12,14 @@
  *
  * Batch: если открылось 2+ ачивки за один emit_event, показываем стек —
  * сверху главная (самая редкая), снизу подписные пины с «+N ещё».
+ *
+ * Слой: на iOS overlay рисуется в `RootOverlay` (FullWindowOverlay), а не в
+ * RN `<Modal>`. RN-модалку нельзя презентовать поверх нативной модалки экрана
+ * (profile, notifications) — iOS её просто не открывает, и ачивка «иногда
+ * есть, иногда нет». FullWindowOverlay живёт в своём окне и показывается
+ * всегда, с какого бы экрана ни прилетел анлок.
  */
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   Animated,
   Dimensions,
@@ -34,6 +40,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { api } from '../lib/api';
 import { AchievementPin } from './AchievementPin';
 import { Confetti } from './Confetti';
+import { RootOverlay } from './ui/RootOverlay';
 import { TIER_AURA } from './achievement-scenes';
 import type { AchievementItem, AchievementTierKey } from '../lib/types';
 
@@ -42,15 +49,34 @@ import type { AchievementItem, AchievementTierKey } from '../lib/types';
 type Listener = (codes: string[]) => void;
 const _listeners: Set<Listener> = new Set();
 
+/** Что уже отпраздновали: code → timestamp. Одна и та же ачивка приходит из
+ *  двух источников — клиентский diff (`detectAchievementUnlocks`) и push
+ *  `achievement_unlocked`. Кто успел первым, тот и показывает; второй молчит,
+ *  иначе overlay открывается дважды подряд. */
+const _celebrated = new Map<string, number>();
+const CELEBRATE_TTL_MS = 5 * 60 * 1000;
+
 export function notifyAchievementUnlocked(codes: string[]) {
   if (!codes || codes.length === 0) return;
+  const now = Date.now();
+  for (const [code, at] of _celebrated) {
+    if (now - at > CELEBRATE_TTL_MS) _celebrated.delete(code);
+  }
+  const fresh = codes.filter((c) => !_celebrated.has(c));
+  if (fresh.length === 0) return;
+  for (const c of fresh) _celebrated.set(c, now);
   _listeners.forEach((cb) => {
     try {
-      cb(codes);
+      cb(fresh);
     } catch {
       // ignore
     }
   });
+}
+
+/** Сброс при выходе из аккаунта — у другого юзера свои ачивки. */
+export function resetCelebratedAchievements() {
+  _celebrated.clear();
 }
 
 function subscribe(cb: Listener): () => void {
@@ -88,31 +114,42 @@ interface BatchPayload {
   others: AchievementItem[];
 }
 
+/** Достать полные данные по кодам: серийные ачивки + рандомные (отдельный endpoint). */
+async function loadUnlockedItems(codes: string[]): Promise<AchievementItem[]> {
+  const my = await api.getMyAchievements();
+  const lookup = new Map<string, AchievementItem>();
+  for (const s of my.series) for (const it of s.items) lookup.set(it.code, it);
+  try {
+    const random = await api.getMyRandomUnlocked();
+    for (const it of random.items) lookup.set(it.code, it);
+  } catch {
+    // тихо
+  }
+  return codes
+    .map((c) => lookup.get(c))
+    .filter((x): x is AchievementItem => x !== undefined && x.is_unlocked);
+}
+
 export function AchievementUnlockHost() {
   const [queue, setQueue] = useState<BatchPayload[]>([]);
   const [current, setCurrent] = useState<BatchPayload | null>(null);
 
   useEffect(() => {
     return subscribe(async (codes) => {
-      try {
-        const my = await api.getMyAchievements();
-        const lookup = new Map<string, AchievementItem>();
-        for (const s of my.series) for (const it of s.items) lookup.set(it.code, it);
+      // Пуш про ачивку может обогнать коммит на бэке — список ещё не знает
+      // про анлок, и празднование терялось. Пробуем ещё раз через секунду.
+      for (let attempt = 0; attempt < 2; attempt++) {
         try {
-          const random = await api.getMyRandomUnlocked();
-          for (const it of random.items) lookup.set(it.code, it);
+          const items = await loadUnlockedItems(codes);
+          if (items.length > 0) {
+            const [main, ...others] = pickBatchOrder(items);
+            setQueue((prev) => [...prev, { main, others }]);
+            return;
+          }
         } catch {
           // тихо
         }
-        const items = codes
-          .map((c) => lookup.get(c))
-          .filter((x): x is AchievementItem => Boolean(x) && x!.is_unlocked);
-        if (items.length === 0) return;
-        const ordered = pickBatchOrder(items);
-        const [main, ...others] = ordered;
-        setQueue((prev) => [...prev, { main, others }]);
-      } catch {
-        // тихо
+        await new Promise((r) => setTimeout(r, 1000));
       }
     });
   }, []);
@@ -128,6 +165,9 @@ export function AchievementUnlockHost() {
 
   return (
     <UnlockModal
+      // key по коду: следующая ачивка в очереди должна получить свежий
+      // инстанс, иначе анимации и конфетти стартуют с уже доигранных значений.
+      key={current.main.code}
       payload={current}
       onDismiss={() => setCurrent(null)}
     />
@@ -258,7 +298,7 @@ function UnlockModal({
   });
 
   return (
-    <Modal transparent visible animationType="none" onRequestClose={handleDismiss} statusBarTranslucent>
+    <UnlockLayer onRequestClose={handleDismiss}>
       <Animated.View
         style={[
           styles.backdrop,
@@ -390,6 +430,34 @@ function UnlockModal({
           </LinearGradient>
         </View>
       </View>
+    </UnlockLayer>
+  );
+}
+
+/**
+ * Слой показа: iOS — FullWindowOverlay (перебивает нативные модалки экранов),
+ * Android — обычная RN-модалка (там это Dialog, он и так поверх всего и ловит
+ * системную кнопку «назад»).
+ */
+function UnlockLayer({
+  children,
+  onRequestClose,
+}: {
+  children: ReactNode;
+  onRequestClose: () => void;
+}) {
+  if (Platform.OS === 'ios') {
+    return <RootOverlay>{children}</RootOverlay>;
+  }
+  return (
+    <Modal
+      transparent
+      visible
+      animationType="none"
+      onRequestClose={onRequestClose}
+      statusBarTranslucent
+    >
+      {children}
     </Modal>
   );
 }

@@ -14,7 +14,10 @@
  * холодном старте).
  */
 import { api } from './api';
-import { notifyAchievementUnlocked } from '../components/AchievementUnlockOverlay';
+import {
+  notifyAchievementUnlocked,
+  resetCelebratedAchievements,
+} from '../components/AchievementUnlockOverlay';
 import type { MyAchievementsResponse } from './types';
 
 let _knownUnlocked: Set<string> | null = null;
@@ -58,6 +61,7 @@ export async function initAchievementsCache(): Promise<void> {
 /** Сбросить кэш — например, при выходе из аккаунта. */
 export function resetAchievementsCache(): void {
   _knownUnlocked = null;
+  resetCelebratedAchievements();
 }
 
 /** Проверить новые анлоки и показать overlay. Безопасно вызывать после любого

@@ -165,9 +165,9 @@ export default function ProfileScreen() {
       const { avatar_url } = await api.uploadAvatar(result.assets[0].uri);
       setUser({ ...user!, avatar_url: `${avatar_url}?t=${Date.now()}` });
       // Возможный анлок A3 «Аватар».
-      // Ждём, пока нативный ImagePicker полностью закроется, иначе overlay-Modal
-      // встаёт ПОЗАДИ пикера/профиля (iOS modal-on-modal) — экран залипает,
-      // а анимация ачивки прячется за контентом.
+      // Ждём, пока нативный ImagePicker полностью закроется: слой ачивки теперь
+      // рисуется поверх всего (RootOverlay), и без задержки конфетти взлетело бы
+      // прямо на закрывающемся пикере.
       InteractionManager.runAfterInteractions(() => {
         setTimeout(() => detectAchievementUnlocks(), 400);
       });

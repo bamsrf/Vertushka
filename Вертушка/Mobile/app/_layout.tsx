@@ -51,7 +51,10 @@ try {
 }
 import { Colors } from '../constants/theme';
 import { OfflineBanner } from '../components/OfflineBanner';
-import { AchievementUnlockHost } from '../components/AchievementUnlockOverlay';
+import {
+  AchievementUnlockHost,
+  notifyAchievementUnlocked,
+} from '../components/AchievementUnlockOverlay';
 import { GiftMatchModal } from '../components/GiftMatchModal';
 import { MascotIntro } from '../components/MascotIntro';
 import { initFirstStepsWatcher } from '../lib/onboardingProgress';
@@ -258,12 +261,25 @@ function RootLayout() {
       }
 
       if (AppState.currentState === 'active') {
-        inAppToast.show({
-          id: event.request.identifier,
-          title: content.title || 'Уведомление',
-          body: content.body || '',
-          data,
-        });
+        // Ачивка празднуется одинаково, откуда бы ни пришла: пуш открывает тот
+        // же overlay с конфетти, что и локальный diff. Раньше пуш давал только
+        // тост — и эффект «то есть, то нет» в зависимости от источника.
+        const achievementCode = data.code as string | undefined;
+        const isAchievement =
+          type === 'achievement_unlocked' || type === 'milestone_unlocked';
+
+        if (isAchievement && achievementCode) {
+          // notifyAchievementUnlocked дедуплицирует: если diff уже показал эту
+          // ачивку, повтора не будет — и тост тоже не нужен.
+          notifyAchievementUnlocked([achievementCode]);
+        } else {
+          inAppToast.show({
+            id: event.request.identifier,
+            title: content.title || 'Уведомление',
+            body: content.body || '',
+            data,
+          });
+        }
       }
     });
 
