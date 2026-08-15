@@ -65,10 +65,26 @@
             padding: 18px 24px 120px;
         }
 
-        /* HEADER */
+        /* HEADER — липкая: бренд, поддержка и «поделиться» остаются доступны
+           на любой глубине скролла. Отрицательные margin'ы гасят паддинги
+           .container, чтобы подложка шла от края до края экрана. */
         .topbar {
+            position: sticky; top: 0; z-index: 60;
             display: flex; justify-content: space-between; align-items: center;
-            padding: 4px 4px 18px;
+            margin: -18px -24px 0;
+            padding: 14px 28px 12px;
+            background: rgba(245, 240, 234, 0);
+            border-bottom: 1px solid transparent;
+            transition: background 220ms ease, border-color 220ms ease,
+                        backdrop-filter 220ms ease;
+        }
+        /* Подложка появляется только когда под шапку что-то заехало: на самом
+           верху страницы она была бы лишней плашкой поверх градиента. */
+        .topbar.stuck {
+            background: rgba(245, 240, 234, 0.82);
+            border-bottom-color: var(--hairline);
+            backdrop-filter: saturate(160%) blur(14px);
+            -webkit-backdrop-filter: saturate(160%) blur(14px);
         }
         .brand {
             font-family: 'JetBrains Mono', monospace;
@@ -912,6 +928,9 @@
 
         @media (max-width: 768px) {
             .container { padding: 12px 16px 100px; }
+            /* Паддинги контейнера здесь другие — пересчитываем компенсацию,
+               иначе подложка шапки не дотянется до краёв. */
+            .topbar { margin: -12px -16px 0; padding: 10px 20px 10px; }
             .hero { gap: 14px; }
             .stat-value { font-size: 32px; }
             .username { font-size: 16px; }
@@ -2257,6 +2276,40 @@
                     if (anyListBtn) anyListBtn.click();
                 }
             } catch (e) {}
+        })();
+    </script>
+
+    <script>
+        // Липкая шапка: подложка появляется, только когда под неё что-то заехало.
+        // Плюс класс is-scrolling на <html> — по нему замирает дыхание плашки
+        // поддержки (анимация в липкой шапке поверх едущего контента читается
+        // как «страница дёргается»).
+        (function () {
+            var topbar = document.querySelector('.topbar');
+            if (!topbar) return;
+
+            var root = document.documentElement;
+            var ticking = false;
+            var idleTimer = null;
+
+            function apply() {
+                ticking = false;
+                topbar.classList.toggle('stuck', window.scrollY > 6);
+            }
+
+            window.addEventListener('scroll', function () {
+                if (!ticking) {
+                    ticking = true;
+                    requestAnimationFrame(apply);
+                }
+                root.classList.add('is-scrolling');
+                clearTimeout(idleTimer);
+                idleTimer = setTimeout(function () {
+                    root.classList.remove('is-scrolling');
+                }, 180);
+            }, { passive: true });
+
+            apply();
         })();
     </script>
 </body>
