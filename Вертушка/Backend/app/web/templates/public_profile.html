@@ -75,16 +75,17 @@
             padding: 14px 28px 12px;
             background: rgba(245, 240, 234, 0);
             border-bottom: 1px solid transparent;
-            transition: background 220ms ease, border-color 220ms ease,
-                        backdrop-filter 220ms ease;
+            transition: background 220ms ease, border-color 220ms ease;
         }
         /* Подложка появляется только когда под шапку что-то заехало: на самом
            верху страницы она была бы лишней плашкой поверх градиента. */
         .topbar.stuck {
-            background: rgba(245, 240, 234, 0.82);
+            /* Плотная подложка вместо backdrop-filter. Блюр выглядел чуть
+               богаче, но заставлял браузер пересобирать картинку под полосой
+               на каждом кадре скролла — на десктопе это полоса во всю ширину
+               окна, и цена заметная. */
+            background: rgba(246, 242, 236, 0.97);
             border-bottom-color: var(--hairline);
-            backdrop-filter: saturate(160%) blur(14px);
-            -webkit-backdrop-filter: saturate(160%) blur(14px);
         }
         .brand {
             font-family: 'JetBrains Mono', monospace;
@@ -403,6 +404,17 @@
             font-size: 11px; color: var(--periwinkle); margin-top: 2px; font-variant-numeric: tabular-nums;
         }
 
+        /* Десктоп: подписи под обложками в каруселях набраны под ширину телефона
+           и на большом экране читаются как петит. Размеры карточек не трогаем —
+           растёт только типографика, поэтому раскладка рейла не едет. */
+        @media (min-width: 721px) {
+            .rail-title { font-size: 12px; }
+            .rail-sub { font-size: 13px; }
+            .rail-meta-artist { font-size: 11px; margin-top: 10px; }
+            .rail-meta-title { font-size: 14px; }
+            .rail-meta-year { font-size: 12px; }
+        }
+
         /* Auto-scroll infinite rail — нативный horizontal scroll, как в мобильном поиске.
            Авто-двигает scrollLeft через rAF; при касании паузится на 2.5с,
            юзер свободно драгает / тапает, после grace-периода авто-движение
@@ -562,11 +574,19 @@
             border: 1px solid rgba(154, 168, 255, 0.55);
             font-size: 10.5px; color: var(--cobalt); font-weight: 600;
             letter-spacing: 0.04em;
+            position: relative;
+        }
+        /* Свечение — отдельным слоем с анимацией opacity: анимировать box-shadow
+           значит перерисовывать бейдж каждый кадр, а их в вишлисте много. */
+        .reserved-badge::after {
+            content: ''; position: absolute; inset: 0; border-radius: inherit;
+            box-shadow: 0 0 0 6px rgba(154, 168, 255, 0.18);
+            opacity: 0; pointer-events: none;
             animation: pulseGlow 2.6s ease-in-out infinite;
         }
         @keyframes pulseGlow {
-            0%, 100% { box-shadow: 0 0 0 0 rgba(154, 168, 255, 0.0); }
-            50% { box-shadow: 0 0 0 6px rgba(154, 168, 255, 0.18); }
+            0%, 100% { opacity: 0; }
+            50% { opacity: 1; }
         }
         .reserved-dot {
             width: 6px; height: 6px; border-radius: 50%; background: var(--cobalt);
@@ -838,13 +858,20 @@
         }
         .cta:hover { transform: translateY(-2px); }
         .cta::after {
-            content: ''; position: absolute; top: 0; left: -40%;
+            content: ''; position: absolute; top: 0; left: 0;
             width: 30%; height: 100%;
             background: linear-gradient(110deg, transparent, rgba(255, 255, 255, 0.35), transparent);
+            /* transform, а не left: left — свойство раскладки, браузер пересчитывал
+               геометрию и перерисовывал КАЖДЫЙ кадр бесконечно. Кнопка живёт ещё и
+               в position:fixed поверх скролла, так что этот блик молотил всё время,
+               пока человек листает страницу с сотней обложек. */
+            transform: translateX(-133%);
             animation: sweep 3.8s linear infinite;
+            will-change: transform;
         }
         @keyframes sweep {
-            0% { left: -40%; } 60% { left: 110%; } 100% { left: 110%; }
+            0% { transform: translateX(-133%); }
+            60%, 100% { transform: translateX(367%); }
         }
 
         .footer-line {
