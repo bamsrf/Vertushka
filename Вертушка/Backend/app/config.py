@@ -89,6 +89,19 @@ class Settings(BaseSettings):
         alias="SUPPORT_PLANS_URL",
     )
 
+    # Подтверждение владения сайтом для Google Search Console. Токен публичный
+    # по своей природе — он и должен отдаваться любому, кто откроет файл; его
+    # единственный смысл в том, что положить его в корень чужого домена нельзя.
+    #
+    # Нужен, чтобы видеть вердикт Safe Browsing: 2026-08-15 Chrome начал метить
+    # /support как «опасный сайт» (сертификат при этом валиден — это репутация
+    # URL, не TLS). Без подтверждённого домена причина и статус заявки на
+    # пересмотр не видны вообще, чинишь вслепую.
+    google_site_verification: str = Field(
+        default="google7610363abc027b52.html",
+        alias="GOOGLE_SITE_VERIFICATION",
+    )
+
     # OpenAI API (распознавание обложки)
     openai_api_key: str = Field(default="", alias="OPENAI_API_KEY")
 

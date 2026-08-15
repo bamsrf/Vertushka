@@ -293,6 +293,23 @@ def cover_url(record, width: int | None = None) -> str:
     return url
 
 
+_GSC_FILE = settings.google_site_verification
+
+if _GSC_FILE:
+    # Search Console проверяет файл ровно по адресу подтверждаемого префикса.
+    # Свойство заведено на /support/, но отдаём и из корня: как только домен
+    # подтвердят целиком, тот же файл понадобится там, а второй выкатки за
+    # этим не хочется.
+    #
+    # Google требует, чтобы файл оставался на месте и после подтверждения —
+    # он перепроверяет владение периодически и молча снимает права, если файл
+    # пропал. Поэтому это маршрут в коде, а не разовая подкладка на сервер.
+    @router.get(f"/{_GSC_FILE}", response_class=HTMLResponse, include_in_schema=False)
+    @router.get(f"/support/{_GSC_FILE}", response_class=HTMLResponse, include_in_schema=False)
+    async def google_site_verification():
+        return HTMLResponse(f"google-site-verification: {_GSC_FILE}")
+
+
 @router.get("/privacy", response_class=HTMLResponse)
 async def privacy_policy(request: Request):
     """Политика конфиденциальности"""
