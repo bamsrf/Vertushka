@@ -164,6 +164,9 @@ services:
       # nginx не стартует. См. README проекта бота.
       - /home/deploy/dashboard/public:/srv/money:ro
       - /home/deploy/dashboard/.htpasswd:/etc/nginx/money.htpasswd:ro
+      # Секрет куки «помни меня 30 дней». Отдельным файлом вне гита: в
+      # nginx.conf уезжает только include, сам секрет остаётся на сервере.
+      - /home/deploy/dashboard/auth.conf:/etc/nginx/money_auth.conf:ro
     # depends_on на api НЕТ намеренно: цвет резолвится в рантайме через Docker
     # DNS (resolver в nginx.conf), а хард-зависимость на конкретный цвет ломала
     # бы старт nginx, когда активен другой цвет.
