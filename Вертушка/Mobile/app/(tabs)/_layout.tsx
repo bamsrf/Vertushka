@@ -7,11 +7,24 @@ import { GlassTabBar } from '../../components/GlassTabBar';
 import { ErrorBoundary } from '../../components/ErrorBoundary';
 
 export default function TabLayout() {
-  const { isAuthenticated } = useAuthStore();
-  const { hasSeenWelcome } = useOnboardingStore();
+  const { isAuthenticated, user } = useAuthStore();
+  const { hasSeenWelcome, loadedForUserId } = useOnboardingStore();
 
   if (!isAuthenticated) {
     return <Redirect href="/(auth)/login" />;
+  }
+
+  // Флаг лежит в AsyncStorage и читается асинхронно, а `hasSeenWelcome`
+  // стартует как false. Без этой проверки первый же рендер после логина
+  // редиректил в карусель, не дождавшись чтения, — и человек, прошедший
+  // онбординг полгода назад, видел его снова при каждом холодном старте.
+  // Возврата назад нет: чтение доезжает уже на экране онбординга.
+  //
+  // Сравниваем именно `loadedForUserId`, а не `isReady`: на старте флаг
+  // успевает прочитаться для userId = null (аккаунт ещё не восстановлен),
+  // и одного `isReady` хватило бы, чтобы пропустить чужой ответ.
+  if (loadedForUserId !== (user?.id ?? null)) {
+    return null;
   }
 
   if (!hasSeenWelcome) {

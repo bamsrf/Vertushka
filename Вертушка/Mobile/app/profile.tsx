@@ -36,6 +36,8 @@ import { api, resolveMediaUrl } from '../lib/api';
 import { cleanArtistName } from '../lib/format';
 import { detectAchievementUnlocks } from '../lib/achievementsBus';
 import { markProfileShared } from '../lib/onboardingProgress';
+import { CoachPulse } from '../components/onboarding/CoachPulse';
+import { useCoachSpotlight } from '../lib/coachSpotlight';
 import { toast } from '../lib/toast';
 import Toast from 'react-native-toast-message';
 import { toastConfig } from '../components/CustomToast';
@@ -91,6 +93,8 @@ export default function ProfileScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { user, logout, setUser } = useAuthStore();
+  // Подсветка карандашика после тапа по шагу «Добавить имя и аватар».
+  const avatarSpotlight = useCoachSpotlight('profile-avatar');
   const { collectionItems, wishlistItems, stats, setActiveTab, fetchCollectionItems, fetchWishlistItems, fetchStats } = useCollectionStore();
   const { followers, following, fetchFollowers, fetchFollowing } = useFollowStore();
   const { given: givenGifts, isLoaded: giftsLoaded, loadAll: loadGifts } = useGiftStore();
@@ -372,7 +376,11 @@ export default function ProfileScreen() {
       >
         {/* Аватар и имя */}
         <View style={styles.profileSection}>
-          <TouchableOpacity style={styles.avatarContainer} onPress={handleAvatarPress} activeOpacity={0.7}>
+          {/* Шаг чеклиста «Добавить имя и аватар» ведёт сюда и зажигает
+              карандашик: словами «поменяй аватар» место не объяснить, а
+              экран редактирования профиля аватара вообще не содержит. */}
+          <CoachPulse active={avatarSpotlight} radius={54} inset={4}>
+            <TouchableOpacity style={styles.avatarContainer} onPress={handleAvatarPress} activeOpacity={0.7}>
             {user?.avatar_url ? (
               <Image source={resolveMediaUrl(user.avatar_url)} style={styles.avatar} cachePolicy="disk" />
             ) : (
@@ -392,7 +400,8 @@ export default function ProfileScreen() {
                 <Icon name="pencil" size={14} color={Colors.background} />
               </View>
             )}
-          </TouchableOpacity>
+            </TouchableOpacity>
+          </CoachPulse>
 
           <Text style={styles.username}>@{user?.username ?? 'username'}</Text>
           {user?.display_name ? (
@@ -558,7 +567,7 @@ export default function ProfileScreen() {
             style={styles.settingsItem}
             onPress={() => router.push('/collection/value')}
           >
-            <Icon name="cash-outline" size={24} color={Colors.royalBlue} />
+            <Icon name="currency-rub" size={24} color={Colors.royalBlue} />
             <Text style={styles.settingsItemText}>Стоимость коллекции</Text>
           </TouchableOpacity>
 
