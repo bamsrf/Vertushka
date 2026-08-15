@@ -8,6 +8,7 @@
 Живой БД и HTTP-клиент не нужны: шаблоны рендерим напрямую через Jinja,
 маршрут проверяем по таблице роутов.
 """
+import re
 from pathlib import Path
 
 import pytest
@@ -96,6 +97,21 @@ class TestTeaser:
         html = jinja_env.get_template("_support_teaser.html").render(**ctx)
         assert 'href="/support"' in html
         assert PAY_HOST not in html
+
+    def test_metrika_selector_matches_pill_class(self, jinja_env, ctx):
+        """Селектор цели должен совпадать с классом плашки.
+
+        Прод-инцидент 2026-08-15: плашку переименовали из `.support-teaser` в
+        `.support-pill`, а слушатель в _metrika.html остался на старом классе —
+        цель `support_teaser` не сработала бы ни разу, и сломанной аналитике
+        никто бы не удивился (нулей ждёшь и так).
+        """
+        html = jinja_env.get_template("_support_teaser.html").render(**ctx)
+        metrika = Path("app/web/templates/_metrika.html").read_text(encoding="utf-8")
+
+        selector = re.search(r'closest\("a\.(support-[\w-]+)"\)[^}]*?support_teaser', metrika, re.S)
+        assert selector, "в _metrika.html нет слушателя цели support_teaser"
+        assert f'class="{selector.group(1)}"' in html
 
     def test_uses_logo_not_mascot_frame(self, jinja_env, ctx):
         """В шапке плашка крошечная: кадр с бегущим маскотом там нечитаем."""
