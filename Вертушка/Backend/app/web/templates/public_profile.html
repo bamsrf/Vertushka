@@ -388,6 +388,10 @@
                 0 8px 18px -12px rgba(27, 29, 38, 0.28),
                 0 2px 4px -2px rgba(27, 29, 38, 0.08);
             background: linear-gradient(135deg, var(--lavender), var(--periwinkle));
+            /* Трек карусели длиннее экрана вдвое (клоны для бесшовной петли),
+               и всё это лежит под mask-image. Размер жёстко 116×116, так что
+               пропуск отрисовки за экраном ничего не двигает. */
+            content-visibility: auto;
         }
         .rail-cover img { width: 100%; height: 100%; object-fit: cover; display: block; }
         .rail-meta-artist {
@@ -413,6 +417,10 @@
             .rail-meta-artist { font-size: 11px; margin-top: 10px; }
             .rail-meta-title { font-size: 14px; }
             .rail-meta-year { font-size: 12px; }
+            /* .rail-slot внутри .rail-area — absolute, поэтому контент не
+               раздвигает контейнер: высоту под новый кегль задаём руками,
+               иначе overflow: hidden срезает названия. */
+            .rail-area { min-height: 238px; }
         }
 
         /* Auto-scroll infinite rail — нативный horizontal scroll, как в мобильном поиске.
@@ -543,6 +551,13 @@
         .card-cover {
             width: 100%; aspect-ratio: 1 / 1; border-radius: 16px; overflow: hidden;
             position: relative;
+            /* Обложек в профиле под сотню, и каждая — растр 400×400. Держать их
+               все отрисованными браузер не может: на быстром скролле он
+               выбрасывает готовые тайлы и не успевает нарисовать заново — кадр
+               уходит белым. content-visibility говорит пропускать отрисовку
+               содержимого за экраном; размер коробки от этого не плывёт, он
+               задан width + aspect-ratio, а фон и тень рисует сам блок. */
+            content-visibility: auto;
             background: linear-gradient(135deg, var(--lavender), var(--sky));
             box-shadow:
                 0 1px 0 rgba(255, 255, 255, 0.8) inset,
@@ -1735,9 +1750,13 @@
                 rail.addEventListener('touchcancel', endTouch, { passive: true });
 
                 // Wheel — desktop колёсико. Двигаем offset на deltaX (или deltaY если горизонталь = 0).
+                // Только горизонтальное намерение. Трекпад шлёт обе оси всегда,
+                // и `deltaX || deltaY` подхватывал вертикаль: стоило курсору
+                // оказаться над каруселью во время скролла страницы — она
+                // начинала ехать вбок сама по себе.
                 rail.addEventListener('wheel', function(e) {
-                    var d = e.deltaX || e.deltaY || 0;
-                    offset = wrap(offset + d);
+                    if (Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return;
+                    offset = wrap(offset + e.deltaX);
                     applyTransform();
                     pauseAndResume();
                 }, { passive: true });
@@ -1758,7 +1777,13 @@
                 });
 
                 function tick(ts) {
-                    if (visible && !paused) {
+                    // Пока страница едет вертикально — карусель стоит. Маска на
+                    // .rail заставляет перерисовывать полосу на каждом кадре, а
+                    // внутри неё два десятка обложек; вместе со скроллом это
+                    // выбивает из памяти уже декодированные картинки, и они
+                    // моргают. Пауза длится 180мс после последнего события.
+                    var pageScrolling = document.documentElement.classList.contains('is-scrolling');
+                    if (visible && !paused && !pageScrolling) {
                         if (last !== null) {
                             var dt = (ts - last) / 1000;
                             if (dt > 0.1) dt = 0.1;

@@ -96,3 +96,33 @@ def test_rails_are_larger_on_desktop():
     desktop = re.findall(r"@media \(min-width: 721px\)\s*\{(.+?)\n        \}", css, re.S)
     joined = "\n".join(desktop)
     assert ".rail-meta-title" in joined and ".rail-meta-artist" in joined
+
+
+def test_rails_stop_while_page_scrolls():
+    """Карусель не должна ехать, пока страница едет вертикально.
+
+    На .rail висит mask-image, внутри — два десятка обложек, и трек двигается
+    каждый кадр. Вместе с вертикальным скроллом это перерисовка маскированной
+    полосы поверх декодирования картинок в сетке; именно в этот момент обложки
+    и моргали.
+    """
+    js = read("public_profile.html")
+    assert "is-scrolling" in js, "нет флага активного скролла"
+    assert re.search(
+        r"if \(visible && !paused && !pageScrolling\)", js
+    ), "tick рейла не проверяет вертикальный скролл страницы"
+
+
+def test_desktop_rail_area_fits_larger_type():
+    """.rail-slot внутри .rail-area — absolute, контент не раздвигает контейнер.
+
+    Замер на живой странице при 1000px: самая высокая карусель (в маркете есть
+    ещё строка с ценой) заканчивается на 229px. С прежними 198px увеличенный
+    кегль срезало по нижней кромке.
+    """
+    css = read("public_profile.html")
+    # таких блоков на странице несколько — правило может быть в любом
+    desktop = "\n".join(re.findall(r"@media \(min-width: 721px\)\s*\{(.+?)\n        \}", css, re.S))
+    m = re.search(r"\.rail-area\s*\{[^}]*min-height:\s*(\d+)px", desktop)
+    assert m, "на десктопе не задана высота .rail-area под новый кегль"
+    assert int(m.group(1)) >= 232, "высоты не хватит самой длинной карточке (229px)"
