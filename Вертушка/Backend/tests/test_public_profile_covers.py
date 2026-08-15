@@ -82,6 +82,50 @@ class TestTemplate:
         assert tpl.count('decoding="async"') >= 2
 
 
+class TestRails:
+    """Рейлы «Витрина» и «Маркет» строятся не из ORM-объектов, а через
+    _record_to_public с явными kwargs. Забыть там поле легко, а заметно это
+    только по тому, что карусели грузят оригиналы мимо зеркала."""
+
+    def test_public_record_gets_mirror_path(self):
+        from app.api.profile import _record_to_public
+
+        record = SimpleNamespace(
+            id="11111111-1111-1111-1111-111111111111",
+            title="T", artist="A", year=None, label=None, format_type=None,
+            cover_image_url="https://i.discogs.com/x.jpeg",
+            thumb_image_url=None,
+            cover_local_path="covers/42.jpg",
+            cover_cached_at=datetime(2026, 8, 15, 10, 0, 0),
+            estimated_price_median=None, estimated_price_min=None,
+            price_currency="USD", discogs_id="42", discogs_master_id=None,
+            is_first_press=False, is_canon=False, is_collectible=False,
+            is_limited=False, is_hot=False,
+        )
+        pub = _record_to_public(record)
+        assert pub.cover_local_path == "covers/42.jpg"
+        assert pub.cover_cached_at is not None
+        # и веб соберёт из этого нарезку
+        assert "/covers/w/300/42.jpg" in cover_url(pub, 300)
+
+    def test_mirror_path_never_leaks_to_json(self):
+        from app.api.profile import _record_to_public
+
+        record = SimpleNamespace(
+            id="11111111-1111-1111-1111-111111111111",
+            title="T", artist="A", year=None, label=None, format_type=None,
+            cover_image_url=None, thumb_image_url=None,
+            cover_local_path="covers/user_secret.jpg", cover_cached_at=None,
+            estimated_price_median=None, estimated_price_min=None,
+            price_currency="USD", discogs_id=None, discogs_master_id=None,
+            is_first_press=False, is_canon=False, is_collectible=False,
+            is_limited=False, is_hot=False,
+        )
+        dumped = _record_to_public(record).model_dump()
+        assert "cover_local_path" not in dumped
+        assert "cover_cached_at" not in dumped
+
+
 class TestSchema:
     def test_public_record_carries_local_path_but_hides_it(self):
         """Рейлам поле нужно, наружу отдавать внутренние пути не нужно."""
