@@ -466,6 +466,17 @@
         }
         .booking-explainer .step .icon { font-size: 15px; flex-shrink: 0; line-height: 1.2; }
 
+        /* Десктоп: блок набран под ширину телефона, а на большом экране
+           растянут на две колонки — 12.5px в такой строке читается как петит.
+           Высота блока определяется содержимым, ничего подпирать не нужно. */
+        @media (min-width: 721px) {
+            .booking-explainer { padding: 22px 24px; }
+            .booking-explainer h3 { font-size: 16px; margin-bottom: 16px; }
+            .booking-explainer .steps { gap: 14px 22px; }
+            .booking-explainer .step { font-size: 14.5px; gap: 12px; }
+            .booking-explainer .step .icon { font-size: 17px; }
+        }
+
         /* TOOLBAR — format chips + view toggle (только над коллекцией) */
         .toolbar { padding: 6px 0 4px; margin-top: 4px; }
         .format-chips {
