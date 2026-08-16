@@ -19,6 +19,7 @@ from app.models.gift_booking import GiftBooking, GiftStatus
 from app.api.auth import get_current_user, get_current_user_optional
 from app.services.cover_storage import ensure_cover_cached
 from app.services.alt_media_match import alt_media_ok
+from app.services.radar_threshold import baseline_prices, effective_threshold
 from app.schemas.wishlist import (
     WishlistResponse,
     WishlistItemCreate,
@@ -251,6 +252,12 @@ async def get_radar(
         for r in rows:
             alt_records[r.id] = r
 
+    # База для режима «дешевле обычного» — одним запросом на все записи радара.
+    pct_record_ids = [
+        i.record.id for i in items if i.threshold_pct is not None and i.record
+    ]
+    baselines = await baseline_prices(db, pct_record_ids)
+
     out: list[RadarItem] = []
     match_count = 0
     for wi in items:
@@ -258,7 +265,9 @@ async def get_radar(
         if not rec:
             continue
         accepted = wi.conditions
-        threshold = float(wi.price_threshold_rub) if wi.price_threshold_rub is not None else None
+        threshold = effective_threshold(
+            wi.price_threshold_rub, wi.threshold_pct, baselines.get(rec.id)
+        )
 
         exact = [
             l for l in exact_by_record.get(str(rec.id), [])
@@ -326,7 +335,12 @@ async def get_radar(
                 record=RecordBrief.model_validate(rec),
                 status=status_v,
                 lowest_price_rub=(lowest if status_v in ("match", "available") else None),
-                threshold_rub=wi.price_threshold_rub,
+                # Отдаём ПОСЧИТАННЫЙ порог, а не сырое поле: в относительном
+                # режиме сумма в price_threshold_rub устарела, и показать её
+                # значило бы врать про условие срабатывания.
+                threshold_rub=threshold,
+                threshold_pct=wi.threshold_pct,
+                baseline_rub=baselines.get(rec.id),
                 conditions=accepted,
                 accept_alt=wi.accept_alt,
                 radius=_radar_radius(status_v, lowest, threshold),
@@ -595,6 +609,11 @@ async def update_wishlist_item(
     # producer сам применяет порог лишь для subscribed-item'ов.
     if "price_threshold_rub" in data.model_fields_set:
         item.price_threshold_rub = data.price_threshold_rub
+    # Режимы взаимоисключающие по смыслу, но храним оба поля: переключение
+    # «дешевле обычного» → «фиксированная сумма» не должно терять введённое
+    # число. Решает threshold_pct: задан — относительный, None — абсолютный.
+    if "threshold_pct" in data.model_fields_set:
+        item.threshold_pct = data.threshold_pct
     if "conditions" in data.model_fields_set:
         item.conditions = data.conditions
     if "accept_alt" in data.model_fields_set and data.accept_alt is not None:

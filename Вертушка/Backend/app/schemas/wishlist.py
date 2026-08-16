@@ -31,6 +31,10 @@ class WishlistItemUpdate(BaseModel):
     notify_mode: NotifyMode | None = None
     # Порог «уведомить, когда дешевле X ₽». None = любое появление/падение.
     price_threshold_rub: Decimal | None = Field(None, ge=0)
+    # Режим «дешевле обычного»: скидка в % от медианы за 90 дней. Задан → решает
+    # он, price_threshold_rub остаётся лежать как память о фиксированном режиме.
+    # Границы: ниже 5% шум колебаний, выше 90% порог недостижим.
+    threshold_pct: int | None = Field(None, ge=5, le=90)
     # Принятые грейды состояния (['sealed','mint','vg_plus','vg']). None = любое.
     conditions: list[WishlistCondition] | None = None
     # Принять альт-прессинг как подходящий (радар: статус «в продаже», не «альтернатива»).
@@ -234,7 +238,13 @@ class RadarItem(BaseModel):
     record: RecordBrief
     status: RadarStatus
     lowest_price_rub: Decimal | None = None
+    # Порог, по которому реально считался статус. В относительном режиме это
+    # база × (1 − pct/100), а не сохранённая когда-то сумма.
     threshold_rub: Decimal | None = None
+    # Заданы вместе → режим «дешевле обычного». baseline_rub = медиана дневных
+    # минимумов за 90 дней; None — истории не хватило, работал абсолютный порог.
+    threshold_pct: int | None = None
+    baseline_rub: Decimal | None = None
     conditions: list[WishlistCondition] | None = None
     accept_alt: bool = False
     radius: float  # 0..1: 0 = у центра (зона покупки), 1 = внешний край

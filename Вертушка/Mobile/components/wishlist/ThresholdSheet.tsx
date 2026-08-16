@@ -47,6 +47,8 @@ export interface ThresholdSheetData {
   recordId: string;
   currentPrice?: number | null;
   threshold?: number | null;
+  /** Задан → открываемся в режиме «дешевле обычного» с этой скидкой. */
+  thresholdPct?: number | null;
   conditions?: WishlistCondition[] | null;
   subscribed?: boolean; // уже на радаре → показываем «Убрать радар»
 }
@@ -77,6 +79,24 @@ const MIN_THRESHOLD = 100;
 // Цвета засечек-ориентиров на треке (текущая цена / исторический минимум).
 const TICK_CURRENT = '#9A9EBF';
 const TICK_LOW = '#30A46C';
+
+// Режим «дешевле обычного»: скидка от медианы дневных минимумов за 90 дней.
+// Абсолютный порог протухает — рынок дорожает, число остаётся, радар молчит.
+const PCT_PRESETS = [10, 15, 20, 25, 30, 40];
+const DEFAULT_PCT = 20;
+// Паритет с MIN_BASELINE_DAYS на бэке: на двух точках «обычная цена» — это
+// просто последняя цена, обещать по ней «дешевле обычного» нельзя.
+const MIN_BASELINE_POINTS = 5;
+
+type ThresholdMode = 'fixed' | 'relative';
+
+/** Медиана — как percentile_cont(0.5) на бэке (чётная длина → среднее середин). */
+function median(xs: number[]): number | null {
+  if (!xs.length) return null;
+  const s = [...xs].sort((a, b) => a - b);
+  const m = Math.floor(s.length / 2);
+  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+}
 
 const fmt = (n: number) => (Number.isFinite(n) ? Math.round(n) : 0).toLocaleString('ru-RU');
 const roundTo = (n: number, step: number) => Math.max(0, Math.round(n / step) * step);
@@ -111,6 +131,13 @@ export const ThresholdSheet = forwardRef<ThresholdSheetRef, Props>(({ onSaved, o
   const [low, setLow] = useState<number | null>(null);
   const [conds, setConds] = useState<WishlistCondition[]>(DEFAULT_CONDITIONS);
   const [trackW, setTrackW] = useState(260);
+  const [mode, setMode] = useState<ThresholdMode>('fixed');
+  const [pct, setPct] = useState(DEFAULT_PCT);
+  const [baseline, setBaseline] = useState<number | null>(null);
+
+  // Во что превратится «на N% дешевле обычного» прямо сейчас. Без базы (мало
+  // истории) бэкенд откатывается на абсолютный порог — так и пишем.
+  const relativeTarget = baseline != null ? Math.round(baseline * (1 - pct / 100)) : null;
 
   // Границы: MIN_THRESHOLD … выше текущей (порог можно и выше цены).
   const bounds = useMemo(() => {
@@ -189,6 +216,9 @@ export const ThresholdSheet = forwardRef<ThresholdSheetRef, Props>(({ onSaved, o
     setAmount(amt0);
     setCurrent(cp);
     setLow(null);
+    setBaseline(null);
+    setMode(d.thresholdPct ? 'relative' : 'fixed');
+    setPct(d.thresholdPct ?? DEFAULT_PCT);
     setConds(d.conditions && d.conditions.length ? d.conditions : DEFAULT_CONDITIONS);
     // Синхронно засеваем sharedValue'ы границ/позиции ДО показа листа — иначе первый
     // кадр считает по дефолтам (sLo=0/sHi=1) и мелькают «единичные цифры» до useEffect.
@@ -206,6 +236,11 @@ export const ThresholdSheet = forwardRef<ThresholdSheetRef, Props>(({ onSaved, o
         const latest = pts.length ? finite(pts[pts.length - 1].min_price_rub) : cp;
         setCurrent((prev) => prev ?? latest);
         setLow(finite(res.historical_low_rub));
+        // База для «дешевле обычного». points — уже дневные минимумы, ровно то,
+        // по чему бэкенд считает медиану: превью не должно расходиться с тем,
+        // что реально сработает.
+        const daily = pts.map((p) => finite(p.min_price_rub)!).filter((v) => v > 0);
+        setBaseline(daily.length >= MIN_BASELINE_POINTS ? median(daily) : null);
         if (th == null && latest != null) {
           setAmount(Math.max(MIN_THRESHOLD, roundTo(latest * 0.9, STEP)));
         }
@@ -229,11 +264,21 @@ export const ThresholdSheet = forwardRef<ThresholdSheetRef, Props>(({ onSaved, o
     if (!data) return;
     sheetRef.current?.dismiss();
     try {
+      // Сумму отправляем и в относительном режиме: она остаётся запасным
+      // порогом, если истории по записи не хватит на базу, и не теряется при
+      // возврате к фиксированному режиму.
       await saveRadar(data.itemId, {
         threshold: amount > 0 ? amount : null,
+        thresholdPct: mode === 'relative' ? pct : null,
         conditions: conds.length ? conds : null,
       });
-      toast.success(amount > 0 ? `Радар: дешевле ${fmt(amount)} ₽` : 'На радаре');
+      toast.success(
+        mode === 'relative'
+          ? `Радар: на ${pct}% дешевле обычного`
+          : amount > 0
+            ? `Радар: дешевле ${fmt(amount)} ₽`
+            : 'На радаре',
+      );
       onSaved?.();
     } catch (e: any) {
       const detail = e?.response?.data?.detail;
@@ -325,6 +370,58 @@ export const ThresholdSheet = forwardRef<ThresholdSheetRef, Props>(({ onSaved, o
         <Text style={styles.title}>Порог цены</Text>
         <Text style={styles.subtitle}>Пуш, когда цена опустится ниже</Text>
 
+        <View style={styles.modeRow}>
+          {([
+            ['fixed', 'Сумма'],
+            ['relative', 'Дешевле обычного'],
+          ] as [ThresholdMode, string][]).map(([key, label]) => (
+            <TouchableOpacity
+              key={key}
+              style={[styles.modeBtn, mode === key && styles.modeBtnOn]}
+              onPress={() => {
+                Haptics.selectionAsync().catch(() => {});
+                setMode(key);
+              }}
+              activeOpacity={0.8}
+            >
+              <Text style={[styles.modeTxt, mode === key && styles.modeTxtOn]}>{label}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        {mode === 'relative' ? (
+          <>
+            <View style={styles.amountRow}>
+              <Text style={styles.amount}>−{pct}</Text>
+              <Text style={styles.rub}> %</Text>
+            </View>
+            <Text style={styles.relHint}>
+              {relativeTarget != null
+                ? `обычно ${fmt(baseline!)} ₽ → сработает ниже ${fmt(relativeTarget)} ₽`
+                : 'истории цен пока мало — пока следим по фиксированной сумме'}
+            </Text>
+            <View style={styles.pctRow}>
+              {PCT_PRESETS.map((p) => (
+                <TouchableOpacity
+                  key={p}
+                  style={[styles.pctChip, pct === p && styles.pctChipOn]}
+                  onPress={() => {
+                    Haptics.selectionAsync().catch(() => {});
+                    setPct(p);
+                  }}
+                  activeOpacity={0.8}
+                >
+                  <Text style={[styles.pctTxt, pct === p && styles.pctTxtOn]}>−{p}%</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            <Text style={styles.relNote}>
+              База — медиана цены за 90 дней, пересчитывается на каждой проверке. Рынок дорожает —
+              порог едет за ним, и радар не протухает.
+            </Text>
+          </>
+        ) : (
+          <>
         <View style={styles.amountRow}>
           <AnimatedTextInput
             style={styles.amount}
@@ -394,6 +491,8 @@ export const ThresholdSheet = forwardRef<ThresholdSheetRef, Props>(({ onSaved, o
             </Text>
           </View>
         ) : null}
+          </>
+        )}
 
         <View style={styles.condCard}>
           <Text style={styles.condTitle}>Состояние релиза</Text>
@@ -445,6 +544,18 @@ const styles = StyleSheet.create({
   title: { ...Typography.h2, color: Colors.text, textAlign: 'center' },
   radarBtn: { position: 'absolute', top: 2, right: 24, zIndex: 10, width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.royalBlue },
   subtitle: { ...Typography.bodySmall, color: Colors.textSecondary, textAlign: 'center', marginTop: 5 },
+  modeRow: { flexDirection: 'row', gap: 6, padding: 4, marginTop: 16, borderRadius: 14, backgroundColor: '#E8EBFA' },
+  modeBtn: { flex: 1, paddingVertical: 10, borderRadius: 11, alignItems: 'center' },
+  modeBtnOn: { backgroundColor: '#fff' },
+  modeTxt: { fontSize: 14, fontFamily: 'Inter_600SemiBold', color: Colors.textSecondary },
+  modeTxtOn: { color: Colors.royalBlue },
+  relHint: { ...Typography.caption, color: Colors.textSecondary, textAlign: 'center', marginTop: 6, fontVariant: ['tabular-nums'] },
+  pctRow: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 8, marginTop: 20 },
+  pctChip: { paddingVertical: 10, paddingHorizontal: 16, borderRadius: 9999, backgroundColor: '#fff', borderWidth: 1, borderColor: Colors.border },
+  pctChipOn: { backgroundColor: Colors.royalBlue, borderColor: Colors.royalBlue },
+  pctTxt: { fontSize: 15, fontFamily: 'Inter_700Bold', color: Colors.royalBlue, fontVariant: ['tabular-nums'] },
+  pctTxtOn: { color: '#fff' },
+  relNote: { ...Typography.caption, color: Colors.textMuted, lineHeight: 16, marginTop: 14, textAlign: 'center' },
   amountRow: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'center', marginTop: 20 },
   amount: { fontFamily: 'Inter_800ExtraBold', fontSize: 52, color: Colors.royalBlue, fontVariant: ['tabular-nums'], letterSpacing: -1, padding: 0, textAlign: 'center', minWidth: 120 },
   rub: { fontFamily: 'Inter_800ExtraBold', fontSize: 40, color: Colors.periwinkle },

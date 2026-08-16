@@ -43,6 +43,7 @@ from app.services import push_copy
 from app.services.affiliate import wrap_url
 from app.services.alt_media_match import alt_media_ok
 from app.services.radar_status import condition_ok, record_radar_event
+from app.services.radar_threshold import baseline_prices, effective_threshold
 
 logger = logging.getLogger(__name__)
 
@@ -157,6 +158,11 @@ async def _run(db: AsyncSession) -> None:
     # Что эмитили в этот прогон — для последующей конвертации в digest.
     emitted_per_user: dict[UUID, list[Notification]] = defaultdict(list)
 
+    # База для айтемов в режиме «дешевле обычного» — одним запросом на прогон.
+    baselines = await baseline_prices(
+        db, [wi.record_id for wi in wishlist_items if wi.threshold_pct is not None]
+    )
+
     for wi in wishlist_items:
         owner_id = wi.wishlist.user_id
         record = wi.record
@@ -187,10 +193,8 @@ async def _run(db: AsyncSession) -> None:
         # даёт независимый часовой слот на каждую пластинку (иначе первый push
         # съест общий часовой cap типа для остальных subscribed-пластинок).
         subscribed = wi.notify_mode == "subscribed"
-        threshold = (
-            float(wi.price_threshold_rub)
-            if wi.price_threshold_rub is not None
-            else None
+        threshold = effective_threshold(
+            wi.price_threshold_rub, wi.threshold_pct, baselines.get(wi.record_id)
         )
         within_threshold = (
             threshold is None
@@ -310,6 +314,12 @@ async def _emit_alt_versions(
         )
     ).scalars().all()
 
+    # База относительного порога — по ЖЕЛАЕМОЙ записи, а не по аналогу: юзер
+    # задавал «дешевле обычного» для своей версии, её история и есть ориентир.
+    baselines = await baseline_prices(
+        db, [wi.record_id for wi in alt_items if wi.threshold_pct is not None]
+    )
+
     for wi in alt_items:
         wanted = wi.record
         if not wanted:
@@ -345,10 +355,8 @@ async def _emit_alt_versions(
         store_payload = _build_store_payload(cheapest)
 
         subscribed = wi.notify_mode == "subscribed"
-        threshold = (
-            float(wi.price_threshold_rub)
-            if wi.price_threshold_rub is not None
-            else None
+        threshold = effective_threshold(
+            wi.price_threshold_rub, wi.threshold_pct, baselines.get(wi.record_id)
         )
         within_threshold = (
             threshold is None
@@ -608,6 +616,10 @@ async def _run_price_drop(db: AsyncSession) -> None:
     if not wishlist_items:
         return
 
+    baselines = await baseline_prices(
+        db, [wi.record_id for wi in wishlist_items if wi.threshold_pct is not None]
+    )
+
     emitted = 0
     for wi in wishlist_items:
         record = wi.record
@@ -617,10 +629,8 @@ async def _run_price_drop(db: AsyncSession) -> None:
         drop_pct = round((old - new) / old * 100) if old else 0
 
         subscribed = wi.notify_mode == "subscribed"
-        threshold = (
-            float(wi.price_threshold_rub)
-            if wi.price_threshold_rub is not None
-            else None
+        threshold = effective_threshold(
+            wi.price_threshold_rub, wi.threshold_pct, baselines.get(wi.record_id)
         )
         within_threshold = threshold is None or new <= threshold
         # HIGH-сигнал: новый исторический минимум цены. Пробивает push даже для

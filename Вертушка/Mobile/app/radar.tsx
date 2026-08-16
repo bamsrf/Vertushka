@@ -251,6 +251,7 @@ export default function RadarScreen() {
       coverUrl: getCoverUrl(item.record),
       currentPrice: item.lowest_price_rub,
       threshold: item.threshold_rub,
+      thresholdPct: item.threshold_pct ?? null,
       status: item.status,
       buyUrl: item.buy_url ?? null,
       buyListingId: item.buy_listing_id ?? null,
@@ -265,6 +266,7 @@ export default function RadarScreen() {
       recordId: d.recordId,
       currentPrice: d.currentPrice,
       threshold: d.threshold,
+      thresholdPct: d.thresholdPct ?? null,
       subscribed: true,
     });
   };

@@ -1211,7 +1211,7 @@ class ApiClient {
 
   async updateWishlistItem(
     itemId: string,
-    patch: Partial<Pick<WishlistItem, 'notify_mode' | 'price_threshold_rub' | 'conditions' | 'accept_alt' | 'priority' | 'notes'>> & {
+    patch: Partial<Pick<WishlistItem, 'notify_mode' | 'price_threshold_rub' | 'threshold_pct' | 'conditions' | 'accept_alt' | 'priority' | 'notes'>> & {
       // «Нет» на аналоге: этот прессинг больше не предлагать.
       reject_alt_record_id?: string;
     },

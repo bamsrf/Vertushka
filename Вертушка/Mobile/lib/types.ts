@@ -571,6 +571,10 @@ export interface RadarItem {
   alt: RadarAlt | null;
   /** ISO-дата ухода в absent. null — статус не absent либо хронологии ещё нет. */
   absent_since?: string | null;
+  /** Задан → режим «дешевле обычного», threshold_rub посчитан от базы. */
+  threshold_pct?: number | null;
+  /** Медиана дневных минимумов за 90 дней. null — истории не хватило. */
+  baseline_rub?: number | null;
 }
 
 export interface RadarResponse {
@@ -622,6 +626,11 @@ export interface WishlistItem {
   conditions?: WishlistCondition[] | null;
   // Юзер принял альт-прессинг как подходящий.
   accept_alt?: boolean;
+  /**
+   * Режим «дешевле обычного»: скидка в % от медианы за 90 дней. Задан →
+   * решает он, а price_threshold_rub лежит как память о фиксированном режиме.
+   */
+  threshold_pct?: number | null;
 }
 
 export interface WishlistFolder {

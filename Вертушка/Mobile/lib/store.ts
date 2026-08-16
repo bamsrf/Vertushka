@@ -634,7 +634,12 @@ interface CollectionState {
   // Единый PUT: подписать на радар + порог + состояние (для лимит-проверки бэка).
   saveWishlistRadar: (
     itemId: string,
-    opts: { threshold: number | null; conditions: WishlistCondition[] | null },
+    opts: {
+      threshold: number | null;
+      /** Задан → режим «дешевле обычного»; null → фиксированная сумма. */
+      thresholdPct?: number | null;
+      conditions: WishlistCondition[] | null;
+    },
   ) => Promise<void>;
   // Убрать с радара: notify_mode='watched' + сброс порога одним PUT.
   removeWishlistRadar: (itemId: string) => Promise<void>;
@@ -857,12 +862,18 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
     }
   },
 
-  saveWishlistRadar: async (itemId, { threshold, conditions }) => {
+  saveWishlistRadar: async (itemId, { threshold, thresholdPct = null, conditions }) => {
     const prev = get().wishlistItems;
     set({
       wishlistItems: prev.map((wi) =>
         wi.id === itemId
-          ? { ...wi, notify_mode: 'subscribed', price_threshold_rub: threshold, conditions }
+          ? {
+              ...wi,
+              notify_mode: 'subscribed',
+              price_threshold_rub: threshold,
+              threshold_pct: thresholdPct,
+              conditions,
+            }
           : wi,
       ),
     });
@@ -870,6 +881,9 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
       await api.updateWishlistItem(itemId, {
         notify_mode: 'subscribed',
         price_threshold_rub: threshold,
+        // Шлём всегда, в т.ч. null: только так бэк узнаёт о возврате к
+        // фиксированной сумме — без поля в теле он сохранит прежний pct.
+        threshold_pct: thresholdPct,
         conditions,
       });
     } catch (error) {
@@ -882,11 +896,17 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
     const prev = get().wishlistItems;
     set({
       wishlistItems: prev.map((wi) =>
-        wi.id === itemId ? { ...wi, notify_mode: 'watched', price_threshold_rub: null } : wi,
+        wi.id === itemId
+          ? { ...wi, notify_mode: 'watched', price_threshold_rub: null, threshold_pct: null }
+          : wi,
       ),
     });
     try {
-      await api.updateWishlistItem(itemId, { notify_mode: 'watched', price_threshold_rub: null });
+      await api.updateWishlistItem(itemId, {
+        notify_mode: 'watched',
+        price_threshold_rub: null,
+        threshold_pct: null,
+      });
     } catch (error) {
       set({ wishlistItems: prev });
       throw error;
