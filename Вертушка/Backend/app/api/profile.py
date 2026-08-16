@@ -67,6 +67,12 @@ def _record_to_public(
         format_type=record.format_type,
         cover_image_url=_cover_url(record),
         thumb_image_url=record.thumb_image_url or _cover_url(record),
+        # Путь к зеркалу — чтобы веб-страница собрала из него лёгкую нарезку
+        # (web/routes.py::cover_url). Без него рейлы «Витрина» и «Маркет»
+        # тянули оригиналы 600×600 с i.discogs.com, даже когда копия лежала
+        # у нас на диске. Наружу в JSON поля не уходят (exclude в схеме).
+        cover_local_path=record.cover_local_path,
+        cover_cached_at=record.cover_cached_at,
         estimated_price_median=float(record.estimated_price_median or record.estimated_price_min) if (record.estimated_price_median or record.estimated_price_min) else None,
         price_currency=record.price_currency,
         is_booked=is_booked,
@@ -192,7 +198,8 @@ async def _get_new_releases(
 ) -> list[PublicProfileRecord]:
     """Глобальный пул новинок с Discogs (`/database/search`, sort=want).
 
-    Кэш — на стороне DiscogsService (Redis, 12ч). Здесь — апсерт в локальный Record
+    Кэш — на стороне DiscogsService (Redis, неделя; прогрев — недельным кроном
+    refresh_new_releases, сюда попадает уже готовый снимок). Здесь — апсерт в локальный Record
     (чтоб карточка имела стабильный UUID для модалки/экрана детали) и фильтрация
     по master_id из коллекции конкретного юзера.
     """

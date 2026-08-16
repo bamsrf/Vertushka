@@ -54,6 +54,12 @@ class PublicProfileRecord(BaseModel):
     format_type: str | None = None
     cover_image_url: str | None = None
     thumb_image_url: str | None = None
+    # Локальное зеркало обложки. В JSON не отдаём (exclude) — это внутренний
+    # путь на диске; веб-шаблоны собирают из него URL сами (web/routes.py::
+    # _cover_url). Без этих полей ручные релизы оставались без картинки:
+    # у них фото лежит только на диске, а cover_image_url пустой.
+    cover_local_path: str | None = Field(default=None, exclude=True)
+    cover_cached_at: datetime | None = Field(default=None, exclude=True)
     estimated_price_median: float | None = None
     price_currency: str = "USD"
     is_booked: bool = False

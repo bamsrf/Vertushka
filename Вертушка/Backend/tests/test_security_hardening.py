@@ -595,7 +595,15 @@ def test_migration_chain_has_single_head():
     script = ScriptDirectory.from_config(Config("alembic.ini"))
     heads = list(script.get_heads())
 
-    assert heads == ["20260814_reset_jti"], f"голов должно быть одна, найдено: {heads}"
+    # Проверяем единственность головы, а не её имя: голова меняется с каждой
+    # новой миграцией, и сверка с конкретной ревизией ломала бы тест на любой
+    # чужой миграции — что и произошло, когда приехал 20260814_dump_state.
+    assert len(heads) == 1, f"голов должно быть одна, найдено: {heads}"
+
+    # А вот сама reset-jti миграция обязана остаться в цепочке: без неё
+    # одноразовость токена сброса не применяется на проде (§S12).
+    revisions = {rev.revision for rev in script.walk_revisions()}
+    assert "20260814_reset_jti" in revisions, "миграция reset_token_jti выпала из истории"
 
 
 def test_password_reset_log_has_no_email():
@@ -604,6 +612,223 @@ def test_password_reset_log_has_no_email():
     for line in src.splitlines():
         if "password_reset" in line and "logger" in line:
             assert "email" not in line, line
+
+
+# ── §S10: загрузка фотографий ───────────────────────────────────────────────
+
+
+def _png_bytes(width: int, height: int) -> bytes:
+    """Одноцветный PNG: сжимается в килобайты при любом разрешении."""
+    from io import BytesIO
+
+    from PIL import Image
+
+    buf = BytesIO()
+    Image.new("L", (width, height), 0).save(buf, "PNG", compress_level=9)
+    return buf.getvalue()
+
+
+def test_decompression_bomb_rejected():
+    """900 Мп в файле на ~850 КБ: лимит размера файла тут бессилен."""
+    from fastapi import HTTPException
+
+    from app.api.user_photos import decode_user_photo
+
+    bomb = _png_bytes(30000, 30000)
+    assert len(bomb) < 10 * 1024 * 1024, "бомба должна проходить лимит размера файла"
+
+    with pytest.raises(HTTPException) as exc:
+        decode_user_photo(bomb)
+    assert exc.value.status_code == 422
+
+
+def test_bomb_between_limit_and_double_limit_rejected():
+    """Промежуток, который Pillow пропускает с одним лишь предупреждением.
+
+    DecompressionBombError срабатывает только на удвоенном MAX_IMAGE_PIXELS,
+    поэтому при лимите 40 Мп картинка на 56 Мп (файл ~50 КБ) проходила бы
+    молча. Её ловит явная проверка по заголовку.
+    """
+    from fastapi import HTTPException
+
+    from app.api.user_photos import _MAX_PIXELS, decode_user_photo
+
+    width = height = 7500
+    assert _MAX_PIXELS < width * height < _MAX_PIXELS * 2, "тест потерял смысл"
+
+    with pytest.raises(HTTPException) as exc:
+        decode_user_photo(_png_bytes(width, height))
+    assert exc.value.status_code == 422
+
+
+@pytest.mark.parametrize("size", [(1200, 1200), (4000, 3000), (800, 600)])
+def test_normal_photos_still_accepted(size):
+    from app.api.user_photos import decode_user_photo
+
+    img = decode_user_photo(_png_bytes(*size))
+    assert img.size == size
+    assert img.mode == "RGB"
+
+
+def test_global_pillow_limit_is_restored():
+    """MAX_IMAGE_PIXELS — настройка модуля; менять её насовсем нельзя."""
+    from PIL import Image
+    from fastapi import HTTPException
+
+    from app.api.user_photos import decode_user_photo
+
+    before = Image.MAX_IMAGE_PIXELS
+    decode_user_photo(_png_bytes(100, 100))
+    assert Image.MAX_IMAGE_PIXELS == before
+
+    with pytest.raises(HTTPException):
+        decode_user_photo(_png_bytes(30000, 30000))
+    assert Image.MAX_IMAGE_PIXELS == before, "лимит не восстановлен после ошибки"
+
+
+def test_garbage_upload_rejected():
+    from fastapi import HTTPException
+
+    from app.api.user_photos import decode_user_photo
+
+    with pytest.raises(HTTPException) as exc:
+        decode_user_photo(b"this is definitely not an image")
+    assert exc.value.status_code == 422
+
+
+def test_upload_reads_with_ceiling_not_after():
+    """`await file.read()` без аргумента тянет тело целиком в память."""
+    src = Path("app/api/user_photos.py").read_text(encoding="utf-8")
+    assert "await file.read(limit + 1)" in src
+    assert "raw = await file.read()" not in src
+
+
+def test_upload_has_per_user_quota():
+    src = Path("app/api/user_photos.py").read_text(encoding="utf-8")
+    assert "_MAX_PHOTOS_PER_USER" in src
+    quota_at = src.index("_MAX_PHOTOS_PER_USER:")
+    write_at = src.index("img.save(tmp_path")
+    assert quota_at < write_at, "квота должна проверяться до записи файла"
+
+
+# ── §S9/§S11/§S13/§S15/§S16: конфиг nginx ───────────────────────────────────
+#
+# Проверки текстовые: nginx в CI нет. Синтаксис и реальные заголовки
+# проверялись throwaway-контейнером (`docker run --rm nginx:alpine nginx -t`
+# плюс curl по каждому location) — эти тесты стерегут, чтобы правки не уехали.
+
+
+@pytest.fixture(scope="module")
+def nginx_conf():
+    return Path("nginx/nginx.conf").read_text(encoding="utf-8")
+
+
+def _location_blocks(conf: str) -> list[tuple[int, str, str, str]]:
+    """Нарезка на location-блоки: (номер строки, server_name, заголовок, тело).
+
+    Список, а не словарь: `location / {` встречается в конфиге восемь раз, и
+    словарь схлопывал бы их в одну запись — тест молча перестал бы проверять
+    все, кроме последней. Ровно на этом он и попался в первой версии.
+
+    server_name нужен, чтобы отличать наши домены от посторонних блоков в том
+    же файле (на 443 этого сервера живут и чужие проекты).
+    """
+    blocks: list[tuple[int, str, str, str]] = []
+    current: list[str] = []
+    name, start, server = None, 0, "?"
+    for lineno, line in enumerate(conf.splitlines(), 1):
+        stripped = line.strip()
+        if stripped.startswith("server_name "):
+            server = stripped[len("server_name ") :].rstrip(";")
+        if stripped.startswith("location ") and stripped.endswith("{"):
+            name, start, current = stripped, lineno, []
+        elif name is not None:
+            if stripped == "}":
+                blocks.append((start, server, name, "\n".join(current)))
+                name = None
+            else:
+                current.append(stripped)
+    return blocks
+
+
+# Домены Вертушки. Всё прочее в этом nginx.conf — соседние проекты на том же
+# сервере, их конфиг живёт своей жизнью и правится вне этой работы.
+_OUR_SERVERS = {"vinyl-vertushka.ru", "api.vinyl-vertushka.ru"}
+
+
+def test_covers_locations_keep_security_headers(nginx_conf):
+    """add_header в location ОТМЕНЯЕТ унаследованные из server.
+
+    Проверено вживую: до фикса `/covers/1.jpg` с существующим файлом отдавался
+    только с Cache-Control — без HSTS и nosniff.
+    """
+    checked = 0
+    for lineno, server, name, body in _location_blocks(nginx_conf):
+        if server not in _OUR_SERVERS or "add_header" not in body:
+            continue  # чужой домен либо ничего не переопределяет
+        where = f"строка {lineno}, {server}, {name}"
+        assert "X-Content-Type-Options" in body, f"{where}: потерян nosniff"
+        assert "Strict-Transport-Security" in body, f"{where}: потерян HSTS"
+        checked += 1
+
+    # Страховка от «тест позеленел, потому что ничего не нашёл».
+    assert checked >= 7, f"проверено всего {checked} блоков — парсер что-то не увидел"
+
+
+def test_csp_present_and_blocks_known_payloads(nginx_conf):
+    """CSP должна гасить ровно те нагрузки, которыми эксплуатировался §S1."""
+    assert "Content-Security-Policy" in nginx_conf
+    csp = next(l for l in nginx_conf.splitlines() if "Content-Security-Policy" in l)
+
+    assert "base-uri 'self'" in csp, "<base href=//x.ru> не заблокирован"
+    assert "object-src 'none'" in csp
+    assert "form-action 'self'" in csp
+    assert "frame-ancestors 'none'" in csp
+    # script-src без wildcard — иначе <script src=//evil.ru> пройдёт.
+    assert "script-src" in csp and "script-src *" not in csp
+
+
+def test_deprecated_xss_header_removed(nginx_conf):
+    """X-XSS-Protection устарел и в ряде браузеров сам был вектором (§S15)."""
+    active = [
+        line for line in nginx_conf.splitlines()
+        if "X-XSS-Protection" in line and not line.strip().startswith("#")
+    ]
+    assert not active
+
+
+def test_connection_upgrade_is_conditional(nginx_conf):
+    """Безусловный Connection: upgrade на каждый запрос ломает keep-alive (§S16)."""
+    assert "map $http_upgrade $connection_upgrade" in nginx_conf
+    active = [
+        line for line in nginx_conf.splitlines()
+        if 'Connection "upgrade"' in line and not line.strip().startswith("#")
+    ]
+    assert not active, "остался литеральный Connection: upgrade"
+
+
+def test_rate_limiting_configured(nginx_conf):
+    """slowapi живёт в памяти процесса и обнуляется деплоем — нужен потолок на эдже."""
+    assert "limit_req_zone" in nginx_conf
+    assert "limit_req zone=api_general" in nginx_conf
+    assert "limit_req zone=api_write" in nginx_conf
+    assert "limit_conn api_conn" in nginx_conf
+
+
+def test_ws_access_log_hides_query_string(nginx_conf):
+    """Токен едет в query, дефолтный combined писал бы его на диск (§S9)."""
+    assert "log_format ws_safe" in nginx_conf
+    ws_format = next(l for l in nginx_conf.splitlines() if "log_format ws_safe" in l)
+    # $request содержит query-строку целиком, $uri — нет.
+    assert "$request " not in ws_format and "$request'" not in ws_format
+    assert "$uri" in nginx_conf[nginx_conf.index("log_format ws_safe") :][:400]
+
+    ws = next(
+        (body for _, _, name, body in _location_blocks(nginx_conf) if "/api/messages/ws" in name),
+        None,
+    )
+    assert ws is not None, "нет отдельного location для WS"
+    assert "access_log" in ws and "ws_safe" in ws
 
 
 # ── §S5: гейт на секреты при старте ─────────────────────────────────────────
@@ -783,6 +1008,163 @@ def test_blocking_severs_existing_follows():
     src = Path("app/api/messages.py").read_text(encoding="utf-8")
     assert "Follow.__table__.delete()" in src
     assert "FollowRequest.__table__.delete()" in src
+
+
+# ── §S14: PII в телеметрии ──────────────────────────────────────────────────
+
+
+def test_sentry_scope_has_no_email():
+    """send_default_pii=False рядом, а email клали руками — обходили сами себя."""
+    src = Path("app/api/auth.py").read_text(encoding="utf-8")
+    start = src.index("sentry_sdk.set_user(")
+    block = src[start : src.index("})", start)]
+    assert '"id"' in block
+    assert "email" not in block, "email вернулся в Sentry-скоуп"
+
+
+def test_500_alert_carries_no_exception_text():
+    """`str(exc)` регулярно содержит пользовательский ввод.
+
+    IntegrityError печатает конфликтующие значения (email, username),
+    ValidationError — сам ввод. В Telegram уходят только тип и request_id.
+    """
+    src = Path("app/main.py").read_text(encoding="utf-8")
+    start = src.index("async def global_exception_handler")
+    body = src[start : start + 1400]
+
+    assert 'f"{type(exc).__name__}: {exc}"' not in body
+    assert "request_id=" in body, "потеряли корреляцию с логами"
+
+
+# ── §S17: служебные ручки ───────────────────────────────────────────────────
+
+
+class _StubSession:
+    """Сессия-заглушка: /health делает ровно SELECT 1 и больше ничего."""
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc):
+        return False
+
+    async def execute(self, *args, **kwargs):
+        return None
+
+
+def test_public_health_exposes_no_infrastructure(monkeypatch):
+    """Наружу — только статус; состояние БД и Redis переехало под токен.
+
+    БД подменена намеренно. Живое соединение здесь оставляло в пуле движка
+    коннект, привязанный к уже закрытому event loop, и следующий за ним
+    интеграционный тест падал на teardown — тесты в этом наборе не должны
+    трогать реальную инфраструктуру.
+    """
+    from fastapi.testclient import TestClient
+
+    import app.main as main_mod
+
+    monkeypatch.setattr(main_mod, "async_session_maker", lambda: _StubSession())
+
+    body = TestClient(main_mod.app).get("/health").json()
+    assert set(body) <= {"status"}, f"публичный /health отдаёт лишнее: {body}"
+    assert body["status"] == "healthy"
+
+
+def test_public_health_stays_quiet_when_db_is_down(monkeypatch):
+    """И в аварийной ветке наружу не должно уезжать ничего лишнего."""
+    from fastapi.testclient import TestClient
+
+    import app.main as main_mod
+
+    class _Broken(_StubSession):
+        async def execute(self, *args, **kwargs):
+            raise RuntimeError("db is down")
+
+    monkeypatch.setattr(main_mod, "async_session_maker", lambda: _Broken())
+
+    response = TestClient(main_mod.app).get("/health")
+    assert response.status_code == 503
+    assert set(response.json()) <= {"status"}
+
+
+@pytest.mark.parametrize("path", ["/health/detailed", "/health/covers"])
+@pytest.mark.parametrize("headers", [{}, {"X-Internal-Token": "wrong-token"}])
+def test_internal_health_endpoints_require_token(path, headers):
+    from fastapi.testclient import TestClient
+
+    from app.main import app
+
+    assert TestClient(app).get(path, headers=headers).status_code == 403
+
+
+def test_internal_token_compared_in_constant_time():
+    src = Path("app/main.py").read_text(encoding="utf-8")
+    assert "secrets.compare_digest" in src
+
+
+def test_deploy_gate_only_checks_status_code():
+    """/health урезан в расчёте на то, что deploy.sh не парсит тело."""
+    script = Path("scripts/deploy.sh").read_text(encoding="utf-8")
+    assert "curl -fsS --max-time 3 \"$HEALTH_URL\" > /dev/null" in script
+
+
+# ── §S19: предел bcrypt в 72 байта ──────────────────────────────────────────
+
+
+def test_bcrypt_truncation_is_real():
+    """Фиксируем поведение, ради которого введён лимит.
+
+    Без валидации hash_password('A'*100) успешно проверяется паролем
+    'A'*72 + произвольный мусор — то есть хвост не участвует вообще.
+    """
+    from app.utils.security import hash_password, verify_password
+
+    stored = hash_password("A" * 100)
+    assert verify_password("A" * 72 + "совершенно другой хвост", stored)
+
+
+@pytest.mark.parametrize(
+    "password,ok",
+    [
+        ("A" * 72, True),
+        ("A" * 73, False),
+        ("П" * 36, True),   # 72 байта
+        ("П" * 37, False),  # 74 байта
+        ("П" * 40, False),  # 80 байт — раньше молча резался до 36 символов
+        ("нормальный-пароль-2026", True),
+        ("8симвбез", True),
+    ],
+)
+def test_new_password_length_validated_in_bytes(password, ok):
+    from pydantic import ValidationError
+
+    from app.schemas.user import UserCreate
+
+    def build():
+        return UserCreate(email="a@b.co", username="user", password=password)
+
+    if ok:
+        assert build().password == password
+    else:
+        with pytest.raises(ValidationError):
+            build()
+
+
+def test_reset_password_uses_same_limit():
+    from pydantic import ValidationError
+
+    from app.schemas.auth import ResetPasswordRequest
+
+    with pytest.raises(ValidationError):
+        ResetPasswordRequest(reset_token="t", new_password="П" * 40)
+
+
+def test_login_has_no_password_length_limit():
+    """Лимит на входе запер бы снаружи всех, кто зарегистрировался раньше."""
+    from app.schemas.user import UserLogin
+
+    assert UserLogin(login="a@b.co", password="П" * 100).password
 
 
 # ── §S3: вычистка удалённых аккаунтов ───────────────────────────────────────

@@ -1,0 +1,209 @@
+{# Страница «Поддержать проект» — vinyl-vertushka.ru/support
+
+   Живёт в вебе намеренно: в приложении такой страницы и ссылки на неё быть не
+   должно (App Store Guideline 3.1.1). Ссылку даём в Telegram, в подписи писем,
+   на QR — везде, где нет посредника-стора.
+
+   Никаких «Попробовать приложение» здесь нет: на этой странице ровно одно
+   целевое действие. См. docs/plans/PLAN_SUPPORT_PROJECT.md §8.
+#}
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Поддержать Вертушку</title>
+    <meta name="description" content="Вертушка — бесплатное приложение для коллекционеров винила. Поддержать проект можно любой суммой.">
+
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="Поддержать Вертушку">
+    <meta property="og:description" content="Бесплатное приложение для коллекционеров винила. Поддержка помогает развивать продукт и покрывать расходы.">
+    <meta property="og:url" content="{{ base_url }}/support">
+    <meta property="og:site_name" content="Вертушка">
+    <meta property="og:image" content="{{ base_url }}/static/mascot/support-mascot.png">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Поддержать Вертушку">
+    <meta name="twitter:image" content="{{ base_url }}/static/mascot/support-mascot.png">
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --pearl: #F7F4EE;
+            --cobalt: #3A4BE0;
+            --cobalt-bright: #4E5BFF;
+            --periwinkle: #9AA8FF;
+            --lavender: #C9B8FF;
+            --blush: #F6C7D0;
+            --ink: #1B1D26;
+            --slate: #6B7080;
+            --mute: #9096A6;
+            --hairline: rgba(27, 29, 38, 0.08);
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        html {
+            overflow-x: hidden;
+            background:
+                radial-gradient(900px 640px at 92% -4%, rgba(154,168,255,0.82), transparent 62%),
+                radial-gradient(680px 520px at 4% 2%, rgba(189,212,255,0.60), transparent 66%),
+                #F5F0EA;
+        }
+        body {
+            font-family: 'Inter Tight', system-ui, -apple-system, sans-serif;
+            background: transparent;
+            color: var(--ink);
+            min-height: 100vh;
+            line-height: 1.55;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        .container {
+            max-width: 780px;
+            margin: 0 auto;
+            padding: 18px 24px 60px;
+        }
+
+        .topbar {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 4px 4px 10px;
+        }
+        .brand {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 11px; letter-spacing: 0.14em;
+            color: var(--slate); text-transform: uppercase;
+            text-decoration: none;
+        }
+        .brand:hover { color: var(--ink); }
+
+        /* FAQ */
+        .faq { margin-top: 34px; }
+        .faq-title {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase;
+            color: var(--slate); padding-left: 4px;
+        }
+        .faq-item {
+            margin-top: 12px; padding: 18px 20px;
+            border-radius: 18px;
+            background: rgba(255, 255, 255, 0.55);
+            border: 1px solid var(--hairline);
+        }
+        .faq-q {
+            font-size: 15px; font-weight: 600; color: var(--ink);
+            letter-spacing: -0.01em;
+        }
+        .faq-a {
+            font-size: 14px; line-height: 1.6; color: var(--slate);
+            margin-top: 7px;
+        }
+        .faq-a a { color: var(--cobalt); text-decoration: none; }
+        .faq-a a:hover { text-decoration: underline; }
+        .faq-list {
+            margin: 8px 0 0 18px; font-size: 14px; line-height: 1.7; color: var(--slate);
+        }
+
+        .foot {
+            margin-top: 34px; text-align: center;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 10px; letter-spacing: 0.1em; color: var(--mute);
+        }
+        .foot a { color: var(--mute); text-decoration: none; }
+        .foot a:hover { color: var(--slate); }
+        .foot .sep { opacity: 0.5; margin: 0 6px; }
+
+        @media (min-width: 721px) {
+            .container { padding: 22px 24px 80px; }
+            .faq-item { padding: 20px 24px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="topbar">
+            <a class="brand" href="/">ВЕРТУШКА · ПОДДЕРЖКА</a>
+        </div>
+
+        {% include "_support.html" %}
+
+        <section class="faq">
+            <div class="faq-title">Частые вопросы</div>
+
+            <div class="faq-item">
+                <div class="faq-q">Что даёт поддержка?</div>
+                <div class="faq-a">
+                    Ничего из того, чего нет у остальных. Все функции приложения открыты всем
+                    и всегда — поддержка просто помогает проекту жить дальше. Если появятся
+                    какие-то приятные мелочи для тех, кто поддержал, они точно не будут
+                    функциями приложения.
+                </div>
+            </div>
+
+            <div class="faq-item">
+                <div class="faq-q">Появится ли платная подписка?</div>
+                <div class="faq-a">
+                    Нет. Ни премиум-тарифа, ни платного каталога, ни лимитов на размер
+                    коллекции, ни рекламы в ленте. Это не «бесплатно на старте» — это то,
+                    ради чего приложение вообще делалось.
+                </div>
+            </div>
+
+            <div class="faq-item">
+                <div class="faq-q">На что идут деньги?</div>
+                <div class="faq-a">
+                    На то, что приходит счётом каждый месяц: сервер, база данных, хранилище
+                    и раздача обложек, домен, push-уведомления. Всё это пока оплачивается
+                    из своего кармана.
+                </div>
+            </div>
+
+            <div class="faq-item">
+                <div class="faq-q">Что уже работает в приложении</div>
+                <div class="faq-a">
+                    <ul class="faq-list">
+                        <li>коллекция и вишлист с оценкой стоимости</li>
+                        <li>импорт коллекции из Discogs в один клик</li>
+                        <li>публичный профиль, которым можно поделиться ссылкой</li>
+                        <li>вишлист с бронированием подарков — чтобы не подарили дубль</li>
+                        <li>маркет: наличие пластинок в российских магазинах</li>
+                        <li>достижения, личные сообщения, уведомления</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="faq-item">
+                <div class="faq-q">Как понять, что будет дальше?</div>
+                <div class="faq-a">
+                    Планы веду открыто — <a href="{{ support_plans_url }}" target="_blank" rel="noopener">публичный роадмап</a>
+                    можно читать в любой момент: что в работе, что дальше, что отложено.
+                </div>
+            </div>
+
+            <div class="faq-item">
+                <div class="faq-q">Как проходит платёж?</div>
+                <div class="faq-a">
+                    Через CloudTips — сервис приёма платежей на базе Т-Банка. Картой, СБП
+                    или T-Pay. Минимальная сумма — 50 ₽, это ограничение сервиса.
+                    На странице оплаты будет переключатель «компенсировать комиссию
+                    сервиса»: если оставить его включённым, к сумме добавится несколько
+                    рублей и до проекта дойдёт ровно столько, сколько вы отправили.
+                    Выключить его тоже можно. Данные карты обрабатывает платёжный
+                    сервис, в «Вертушку» они не попадают.
+                </div>
+            </div>
+        </section>
+
+        <div class="foot">
+            <a href="/">VINYL-VERTUSHKA.RU</a>
+            <span class="sep">·</span>
+            <a href="/privacy">Конфиденциальность</a>
+            <span class="sep">·</span>
+            <a href="/terms">Условия</a>
+        </div>
+    </div>
+
+    {% include "_metrika.html" %}
+</body>
+</html>

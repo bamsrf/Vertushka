@@ -41,6 +41,26 @@
            // и клик попадёт в offer_clicks. Ломать навигацию из-за аналитики нельзя.
        }
    }, true);
+
+   // Воронка поддержки: профиль → /support → платёжка.
+   //   support_teaser — клик по компактному входу в профиле;
+   //   support_click  — уход на платёжный сервис (дальше нас там нет, поэтому
+   //                    это последняя точка, которую мы вообще видим).
+   document.addEventListener("click", function (ev) {
+       if (!ev.target || !ev.target.closest) return;
+       var goal = null;
+       if (ev.target.closest("a.support-btn")) {
+           goal = "support_click";
+       } else if (ev.target.closest("a.support-pill")) {
+           goal = "support_teaser";
+       }
+       if (!goal) return;
+       try {
+           ym({{ metrika_id }}, "reachGoal", goal);
+       } catch (_) {
+           // Аналитика не должна мешать переходу.
+       }
+   }, true);
 </script>
 <noscript><div><img src="https://mc.yandex.ru/watch/{{ metrika_id }}" style="position:absolute; left:-9999px;" alt=""></div></noscript>
 {% endif %}

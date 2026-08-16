@@ -2,8 +2,19 @@
 Схемы для пользователей
 """
 from datetime import datetime
+from typing import Annotated
 from uuid import UUID
-from pydantic import BaseModel, EmailStr, Field, ConfigDict, model_validator
+from pydantic import AfterValidator, BaseModel, EmailStr, Field, ConfigDict, model_validator
+
+from app.utils.security import validate_password_length
+
+# Пароль, который УСТАНАВЛИВАЕТСЯ. max_length оставлен в символах для быстрой
+# отсечки, реальный предел — 72 байта, его считает валидатор (§S19).
+NewPassword = Annotated[
+    str,
+    Field(min_length=8, max_length=100),
+    AfterValidator(validate_password_length),
+]
 
 
 class UserBase(BaseModel):
@@ -14,7 +25,7 @@ class UserBase(BaseModel):
 
 class UserCreate(UserBase):
     """Схема для создания пользователя"""
-    password: str = Field(..., min_length=8, max_length=100)
+    password: NewPassword
     display_name: str | None = Field(None, max_length=100)
 
 

@@ -3,14 +3,16 @@
 """
 import asyncio
 import logging
+import secrets
 import sys
 import time
 import uuid
 from contextvars import ContextVar
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 import sentry_sdk
-from fastapi import Depends, FastAPI, Request
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -148,7 +150,8 @@ async def lifespan(app: FastAPI):
             scheduler.add_job(report_cover_coverage, 'cron', hour=6, minute=15, id='cover_coverage_report', max_instances=1, coalesce=True)
             scheduler.add_job(enrich_market_covers, 'interval', hours=2, id='enrich_market_covers')
             scheduler.add_job(refresh_market_store_stats, 'interval', minutes=15, id='refresh_market_store_stats')
-            scheduler.add_job(refresh_new_releases, 'cron', day=1, hour=4, minute=45, id='refresh_new_releases')
+            # Понедельник 4:45. max_instances=1: глубокий прогон идёт минуты, наложение запрещено.
+            scheduler.add_job(refresh_new_releases, 'cron', day_of_week='mon', hour=4, minute=45, id='refresh_new_releases', max_instances=1, coalesce=True)
             scheduler.add_job(daily_tick_achievements, 'cron', hour=6, minute=0, id='achievements_daily_tick')
             scheduler.add_job(emit_wishlist_in_stock_notifications, 'interval', minutes=15, id='wishlist_in_stock_notifications')
             scheduler.add_job(emit_wishlist_price_drop_notifications, 'interval', minutes=15, id='wishlist_price_drop_notifications')
@@ -329,10 +332,19 @@ async def health_metrics_middleware(request: Request, call_next):
 async def global_exception_handler(request: Request, exc: Exception):
     logger.exception("Unhandled exception on %s %s", request.method, request.url.path)
     # Аларм в Telegram: троттлится по пути, не блокирует ответ клиенту.
+    #
+    # В тело идут ТОЛЬКО тип исключения и request_id. Раньше уходил `str(exc)`,
+    # а текст исключения регулярно содержит пользовательские данные:
+    # IntegrityError печатает конфликтующие значения (email, username),
+    # ValidationError — сам ввод. Telegram-чат для этого не место, тем более
+    # что рядом стоит send_default_pii=False.
+    #
+    # На диагностике это не сказывается: по request_id полный трейс находится
+    # в логах и в Sentry за пару секунд, а раньше его в аларме и не было.
     alerts.fire_and_forget(
         key=f"http_500:{request.url.path}",
         title=f"500 на {request.method} {request.url.path}",
-        body=f"{type(exc).__name__}: {exc}",
+        body=f"{type(exc).__name__} · request_id={_request_id_ctx.get()}",
     )
     return JSONResponse(
         status_code=500,
@@ -340,6 +352,13 @@ async def global_exception_handler(request: Request, exc: Exception):
     )
 
 # Статические файлы и шаблоны
+#
+# uploads/ лежит в .gitignore, а на проде это docker-волюм — в свежем чекауте
+# каталога нет. StaticFiles проверяет существование каталога в конструкторе, то
+# есть падает прямо на импорте app.main: не поднимается ни приложение, ни сбор
+# тестов. Создаём сами; на проде волюм уже примонтирован, exist_ok делает вызов
+# пустым. Путь относительный, как и у соседних mount — рабочий каталог Backend/.
+Path("uploads").mkdir(exist_ok=True)
 app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 app.mount("/static", StaticFiles(directory="app/web/static"), name="static")
 templates = Jinja2Templates(directory="app/web/templates")
@@ -388,9 +407,48 @@ async def root():
     }
 
 
+def _require_internal_token(x_internal_token: str | None) -> None:
+    """Гейт для служебных ручек. Тот же токен, что у /covers/{id}/refresh."""
+    expected = settings.internal_api_token
+    if not expected or not x_internal_token or not secrets.compare_digest(
+        x_internal_token, expected
+    ):
+        raise HTTPException(status_code=403, detail="Invalid token")
+
+
 @app.get("/health", tags=["Health"])
 async def health_check():
-    """Проверка здоровья API с проверкой БД и Redis"""
+    """Живость для деплой-гейта и docker healthcheck.
+
+    Наружу отдаём ТОЛЬКО код ответа и `status`. Раньше здесь публично лежало
+    состояние БД и Redis — не секрет, но бесплатная разведка для того, кто
+    решает, стоит ли ковырять дальше (§S17). Подробности переехали в
+    /health/detailed под internal-токен.
+
+    Тело не урезаем до пустого: docker healthcheck и `curl -fsS` в deploy.sh
+    смотрят статус-код, но человеку, открывшему URL руками, полезно увидеть
+    осмысленный ответ.
+    """
+    try:
+        async with async_session_maker() as session:
+            await session.execute(text("SELECT 1"))
+    except Exception:
+        logger.exception("Health check: DB unreachable")
+        return JSONResponse(status_code=503, content={"status": "unhealthy"})
+
+    return {"status": "healthy"}
+
+
+@app.get("/health/detailed", tags=["Health"])
+async def health_check_detailed(
+    x_internal_token: str | None = Header(default=None, alias="X-Internal-Token"),
+):
+    """Состояние зависимостей. Под internal-токеном.
+
+        curl -H "X-Internal-Token: $INTERNAL_API_TOKEN" https://api.../health/detailed
+    """
+    _require_internal_token(x_internal_token)
+
     try:
         async with async_session_maker() as session:
             await session.execute(text("SELECT 1"))
@@ -402,21 +460,26 @@ async def health_check():
             content={"status": "unhealthy", "db": "disconnected"},
         )
 
-    redis_health = await cache.health()
-
     return {
         "status": "healthy",
         "db": db_status,
-        "redis": redis_health,
+        "redis": await cache.health(),
     }
 
 
 @app.get("/health/covers", tags=["Health"])
-async def cover_coverage_snapshot():
-    """Последний снапшот покрытия обложек — чтобы смотреть из браузера без SSH.
+async def cover_coverage_snapshot(
+    x_internal_token: str | None = Header(default=None, alias="X-Internal-Token"),
+):
+    """Последний снапшот покрытия обложек. Под internal-токеном (§S17).
 
-    Считается задачей cover_coverage_tasks (ежедневно 6:15). Read-only, не
-    сенситивно (только доли/счётчики). status=no_data до первого прогона."""
+    Считается задачей cover_coverage_tasks (ежедневно 6:15). Сами цифры не
+    сенситивны, но публично отдавать внутреннюю метрику незачем — из браузера
+    ручка всё равно открывалась редко, а из терминала это один curl с
+    заголовком. status=no_data до первого прогона.
+    """
+    _require_internal_token(x_internal_token)
+
     snapshot = await cache.get("metrics", "cover_coverage")
     if snapshot is None:
         return {"status": "no_data", "hint": "cover_coverage job ещё не отработала"}

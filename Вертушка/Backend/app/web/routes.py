@@ -251,6 +251,65 @@ async def _load_offers_by_record(
     return grouped
 
 
+def cover_url(record, width: int | None = None) -> str:
+    """URL обложки для веб-страницы.
+
+    Две задачи разом.
+
+    1. **Ручные релизы.** У записи, добавленной руками с фото, картинка
+       лежит только на диске (`cover_local_path`), а `cover_image_url`
+       пустой — в API это разворачивает схема RecordResponse, а веб читал
+       поле напрямую и показывал заглушку.
+    2. **Вес страницы.** В профиле под сотню обложек, и раньше все шли
+       прямыми ссылками на i.discogs.com в 600×600 при ячейке ~200 px.
+       600×600 — это 1,4 МБ распакованных пикселей на штуку; на сотне
+       обложек браузер начинает выбрасывать декодированное за экраном и
+       декодировать заново при возврате, отчего обложки мерцают на
+       скролле. `/covers/w/{width}/` режет мастер под ячейку (≈6 КБ WebP
+       вместо 49 КБ JPEG).
+
+    Нарезка возможна только для файлов в корне `covers/` — регекс в nginx
+    не пускает слэши в имени. Вложенные (`covers/store/…`) отдаём как есть.
+    Зеркала нет — остаётся прежний внешний URL, ничего не ломается.
+    """
+    if not record:
+        return ""
+
+    local = getattr(record, "cover_local_path", None)
+    if not local:
+        return getattr(record, "cover_image_url", None) or ""
+
+    base = settings.public_api_base
+    name = local[len("covers/"):] if local.startswith("covers/") else ""
+    if width and name and "/" not in name:
+        url = f"{base}/covers/w/{width}/{name}"
+    else:
+        url = f"{base}/uploads/{local}"
+
+    # Cache-bust как в API: перезалив фото меняет метку → новый URL.
+    cached_at = getattr(record, "cover_cached_at", None)
+    if cached_at:
+        url = f"{url}?v={int(cached_at.timestamp())}"
+    return url
+
+
+_GSC_FILE = settings.google_site_verification
+
+if _GSC_FILE:
+    # Search Console проверяет файл ровно по адресу подтверждаемого префикса.
+    # Свойство заведено на /support/, но отдаём и из корня: как только домен
+    # подтвердят целиком, тот же файл понадобится там, а второй выкатки за
+    # этим не хочется.
+    #
+    # Google требует, чтобы файл оставался на месте и после подтверждения —
+    # он перепроверяет владение периодически и молча снимает права, если файл
+    # пропал. Поэтому это маршрут в коде, а не разовая подкладка на сервер.
+    @router.get(f"/{_GSC_FILE}", response_class=HTMLResponse, include_in_schema=False)
+    @router.get(f"/support/{_GSC_FILE}", response_class=HTMLResponse, include_in_schema=False)
+    async def google_site_verification():
+        return HTMLResponse(f"google-site-verification: {_GSC_FILE}")
+
+
 @router.get("/privacy", response_class=HTMLResponse)
 async def privacy_policy(request: Request):
     """Политика конфиденциальности"""
@@ -261,6 +320,26 @@ async def privacy_policy(request: Request):
 async def terms_of_service(request: Request):
     """Условия использования"""
     return templates.TemplateResponse("terms.html", {"request": request})
+
+
+@router.get("/support", response_class=HTMLResponse)
+async def support_page(request: Request):
+    """Страница «Поддержать проект».
+
+    Пустой SUPPORT_URL = сборы выключены, страницы не существует. Отдаём 404, а
+    не пустой каркас: страница без единственного целевого действия бессмысленна,
+    и её не должно быть в индексе.
+    """
+    if not settings.support_url:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+
+    return templates.TemplateResponse("support.html", {
+        "request": request,
+        "base_url": BASE_URL,
+        "support_url": settings.support_url,
+        "support_plans_url": settings.support_plans_url,
+        "metrika_id": settings.yandex_metrika_counter_id,
+    })
 
 
 @router.get("/@{username}", response_class=HTMLResponse)
@@ -787,9 +866,13 @@ async def public_profile_page(
         "base_url": BASE_URL,
         "usd_rub_rate": float(usd_rub_rate),
         "compute_rub": compute_rub,
+        "cover_url": cover_url,
         "offers_for": offers_for,
         # Пусто по умолчанию → _metrika.html не рендерит ничего.
         "metrika_id": settings.yandex_metrika_counter_id,
+        # Пусто по умолчанию → _support.html не рендерит ничего.
+        "support_url": settings.support_url,
+        "support_plans_url": settings.support_plans_url,
     })
 
 

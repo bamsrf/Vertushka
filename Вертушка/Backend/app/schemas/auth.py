@@ -4,6 +4,8 @@
 from uuid import UUID
 from pydantic import BaseModel, EmailStr, Field
 
+from app.schemas.user import NewPassword
+
 
 class Token(BaseModel):
     """Токен доступа"""
@@ -52,7 +54,8 @@ class VerifyResetCodeRequest(BaseModel):
 class ResetPasswordRequest(BaseModel):
     """Установка нового пароля"""
     reset_token: str
-    new_password: str = Field(..., min_length=8, max_length=100)
+    # Тот же тип, что при регистрации: предел bcrypt в 72 байта (§S19).
+    new_password: NewPassword
 
 
 class RestoreAccountRequest(BaseModel):

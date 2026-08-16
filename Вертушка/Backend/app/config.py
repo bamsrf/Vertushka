@@ -67,6 +67,41 @@ class Settings(BaseSettings):
     # offer_clicks. См. docs/plans/CLICK_REDIRECTOR_AND_METRIKA.md §4.
     yandex_metrika_counter_id: str = Field(default="", alias="YANDEX_METRIKA_COUNTER_ID")
 
+    # Блок «Поддержать проект» на публичных веб-страницах и страница /support.
+    # Пусто = блок не рендерится, /support отдаёт 404.
+    #
+    # Дефолт — боевая ссылка CloudTips (она публичная, не секрет), чтобы прод
+    # работал без правки .env. Переопределяется переменной окружения, если
+    # понадобится вторая ссылка под другой источник трафика.
+    #
+    # ВАЖНО: ссылка живёт ТОЛЬКО в вебе. В мобильном приложении её быть не
+    # должно — App Store Guideline 3.1.1 запрещает во всех сторфронтах, кроме
+    # US, кнопки и внешние ссылки на оплату мимо IAP, а российский
+    # External Purchase Link Entitlement стоит 27%. Веб-страница профиля к
+    # сторам отношения не имеет. См. docs/plans/PLAN_SUPPORT_PROJECT.md.
+    support_url: str = Field(
+        default="https://pay.cloudtips.ru/p/f1fd0e22",
+        alias="SUPPORT_URL",
+    )
+    # Публичный роадмап — открытые планы по приложению.
+    support_plans_url: str = Field(
+        default="https://timestripe.com/boards/sX8B5Keg/",
+        alias="SUPPORT_PLANS_URL",
+    )
+
+    # Подтверждение владения сайтом для Google Search Console. Токен публичный
+    # по своей природе — он и должен отдаваться любому, кто откроет файл; его
+    # единственный смысл в том, что положить его в корень чужого домена нельзя.
+    #
+    # Нужен, чтобы видеть вердикт Safe Browsing: 2026-08-15 Chrome начал метить
+    # /support как «опасный сайт» (сертификат при этом валиден — это репутация
+    # URL, не TLS). Без подтверждённого домена причина и статус заявки на
+    # пересмотр не видны вообще, чинишь вслепую.
+    google_site_verification: str = Field(
+        default="google7610363abc027b52.html",
+        alias="GOOGLE_SITE_VERIFICATION",
+    )
+
     # OpenAI API (распознавание обложки)
     openai_api_key: str = Field(default="", alias="OPENAI_API_KEY")
 
