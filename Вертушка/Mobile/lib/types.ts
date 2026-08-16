@@ -569,6 +569,8 @@ export interface RadarItem {
   /** id листинга под buy_url — нужен для POST /offers/{id}/click. */
   buy_listing_id?: string | null;
   alt: RadarAlt | null;
+  /** ISO-дата ухода в absent. null — статус не absent либо хронологии ещё нет. */
+  absent_since?: string | null;
 }
 
 export interface RadarResponse {

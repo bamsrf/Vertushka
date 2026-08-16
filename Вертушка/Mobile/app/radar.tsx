@@ -67,6 +67,20 @@ const fmt = (n: number) => {
   return compact(n / 1_000_000, 'млн');
 };
 
+// «Пропала N дней назад» — при заполненных 5 слотах экран не помогал решить,
+// кого выселить. Бэкенд отдаёт absent_since (начало текущей серии absent);
+// в первые сутки давность не пишем — «пропала сегодня» ничего не решает.
+function absentAge(iso?: string | null): string | null {
+  if (!iso) return null;
+  const ts = Date.parse(iso.endsWith('Z') ? iso : `${iso}Z`);
+  if (!Number.isFinite(ts)) return null;
+  const days = Math.floor((Date.now() - ts) / 86_400_000);
+  if (days < 1) return null;
+  if (days < 30) return `${days} дн.`;
+  const months = Math.floor(days / 30);
+  return months < 12 ? `${months} мес.` : '> года';
+}
+
 interface Placed {
   item: RadarItem;
   x: number;
@@ -115,6 +129,7 @@ function RadarCover({
   const color = STATUS_COLOR[item.status];
   const absent = item.status === 'absent';
   const price = item.status === 'alt' ? item.alt?.price_rub : item.lowest_price_rub;
+  const age = absent ? absentAge(item.absent_since) : null;
   const cover = getCoverUrl(item.record);
 
   // Луч (передняя кромка + центр клина ~+27°) в экранных градусах.
@@ -150,6 +165,11 @@ function RadarCover({
       {price != null ? (
         <View style={[styles.priceChip, { borderColor: color }]} pointerEvents="none">
           <Text style={[styles.priceTxt, { color }]} numberOfLines={1}>{fmt(price)} ₽</Text>
+        </View>
+      ) : age ? (
+        // У absent цены нет, слот чипа свободен — занимаем его давностью.
+        <View style={[styles.priceChip, { borderColor: color }]} pointerEvents="none">
+          <Text style={[styles.priceTxt, { color }]} numberOfLines={1}>{age}</Text>
         </View>
       ) : null}
     </TouchableOpacity>

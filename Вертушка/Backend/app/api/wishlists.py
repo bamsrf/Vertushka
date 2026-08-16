@@ -339,6 +339,36 @@ async def get_radar(
             )
         )
 
+    # Давность absent — по хронологии radar_status_events. record_radar_event
+    # дедупит подряд идущие события с тем же статусом и ценой, а у absent цена
+    # всегда None, значит серия схлопывается в одну строку: её created_at и есть
+    # начало текущего «пропала». Сравнение с последним НЕ-absent событием нужно
+    # на случай absent → available → absent: без него взяли бы старую серию.
+    absent_ids = [i.wishlist_item_id for i in out if i.status == "absent"]
+    if absent_ids:
+        since_rows = (
+            await db.execute(
+                select(
+                    RadarStatusEvent.wishlist_item_id,
+                    func.max(RadarStatusEvent.created_at)
+                    .filter(RadarStatusEvent.status == "absent")
+                    .label("absent_at"),
+                    func.max(RadarStatusEvent.created_at)
+                    .filter(RadarStatusEvent.status != "absent")
+                    .label("other_at"),
+                )
+                .where(RadarStatusEvent.wishlist_item_id.in_(absent_ids))
+                .group_by(RadarStatusEvent.wishlist_item_id)
+            )
+        ).all()
+        since_by_item = {
+            item_id: absent_at
+            for item_id, absent_at, other_at in since_rows
+            if absent_at is not None and (other_at is None or absent_at > other_at)
+        }
+        for item in out:
+            item.absent_since = since_by_item.get(item.wishlist_item_id)
+
     return RadarResponse(items=out, count=len(out), match_count=match_count, limit=RADAR_MAX)
 
 

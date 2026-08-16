@@ -245,6 +245,10 @@ class RadarItem(BaseModel):
     # уходит мимо трекинга — комиссия теряется, ачивки не считаются.
     buy_listing_id: UUID | None = None
     alt: RadarAlt | None = None
+    # Когда пластинка ушла в absent (начало текущей серии по radar_status_events).
+    # Нужно, чтобы при заполненном радаре было видно, кого не жалко выселить.
+    # None — событий нет (айтем подписан недавно) либо статус не absent.
+    absent_since: datetime | None = None
 
 
 class RadarResponse(BaseModel):
