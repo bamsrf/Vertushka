@@ -29,6 +29,7 @@ from app.config import get_settings
 from app.database import async_session_maker
 from app.services import alerts
 from app.services.cache import cache
+from app.services.cover_demand import demand_snapshot
 from app.services.cover_quality import MASTER_MIN_SIDE
 
 logger = logging.getLogger(__name__)
@@ -125,12 +126,31 @@ async def report_cover_coverage() -> dict:
     free = sources["caa"] + sources["deezer"] + sources["itunes"]
     sources["free_pct"] = _pct(free, free + sources["discogs"] + sources["other"])
 
+    # Спрос: холодные просмотры и добыча по триггерам, плюс DAU за те же сутки.
+    # Отношение cold_unique/DAU — единственное, что превращает планирование
+    # ёмкости из спора в арифметику: сколько НОВЫХ обложек приносит один активный
+    # пользователь за день. Всё остальное (диск, троттлы, лимиты) считается из
+    # него умножением.
+    demand = await demand_snapshot(days=7)
+    async with async_session_maker() as db:
+        for day in demand["days"]:
+            dau = (await db.execute(
+                text(
+                    "SELECT count(*) FROM users "
+                    "WHERE last_seen_at >= :d::date AND last_seen_at < :d::date + 1"
+                ),
+                {"d": day["date"]},
+            )).scalar() or 0
+            day["dau"] = int(dau)
+            day["cold_per_dau"] = round(day["cold_unique"] / dau, 1) if dau else None
+
     snapshot = {
         "computed_at": datetime.now(timezone.utc).isoformat(),
         "dump_index": dump,
         "market_in_stock": market,
         "master_tier": tier,
         "cover_sources": sources,
+        "demand": demand,
     }
 
     await cache.set(_SNAPSHOT_NS, _SNAPSHOT_KEY, snapshot, ttl=_SNAPSHOT_TTL)

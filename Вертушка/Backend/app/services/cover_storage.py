@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import get_settings
 from app.utils.url_guard import UnsafeUrlError, safe_image_get
 from app.services.cache import cache
+from app.services.cover_demand import TRIGGER_STORE, TRIGGER_USER
 from app.services.cover_quality import (
     MASTER_MIN_SIDE,
     is_thumb_grade,
@@ -148,11 +149,19 @@ class CoverStorageService:
         discogs_id: str,
         image_url: str,
         db: AsyncSession,
+        *,
+        trigger: str = "backfill",
     ) -> str | None:
         """
         Скачивает обложку из Discogs и сохраняет на диск.
 
         Возвращает относительный путь 'covers/{discogs_id}.jpg' или None при ошибке.
+
+        `trigger` — кто инициировал добычу (см. cover_demand). Нужен, чтобы
+        отделить рост зеркала от людей от роста от фоновых джоб: без этого
+        разделения по одной лишь `cover_cached_at` нагрузку не спрогнозировать.
+        Дефолт «backfill» намеренно консервативный — неразмеченный вызов не
+        припишется пользователям и не завысит прогноз.
         """
         from app.models.record import Record  # отложенный импорт — нет циклов
 
@@ -265,6 +274,8 @@ class CoverStorageService:
                 )
             )
             await db.commit()
+            from app.services.cover_demand import record_acquisition
+            await record_acquisition(trigger)
             if min_side < MASTER_MIN_SIDE:
                 logger.warning(
                     "cover_storage: %s stored below master threshold (min_side=%d) from %s",
@@ -513,6 +524,8 @@ async def _download_store_native_cover_background(
                 )
             )
             await db.commit()
+        from app.services.cover_demand import record_acquisition
+        await record_acquisition(TRIGGER_STORE)
         logger.info("cover_storage: saved store-native cover for %s", record_id)
     except Exception as exc:
         logger.warning(
@@ -559,7 +572,11 @@ async def _download_cover_background(discogs_id: str, image_url: str) -> None:
         async with _download_semaphore:
             async with async_session_maker() as db:
                 service = CoverStorageService()
-                await service.download_and_store(discogs_id, image_url, db)
+                # Единственный путь, запускаемый живым действием пользователя
+                # (ensure_cover_cached зовётся из добавления в коллекцию/вишлист).
+                await service.download_and_store(
+                    discogs_id, image_url, db, trigger=TRIGGER_USER,
+                )
     except Exception as exc:
         logger.warning("cover_storage: background download failed for %s: %s", discogs_id, exc)
 

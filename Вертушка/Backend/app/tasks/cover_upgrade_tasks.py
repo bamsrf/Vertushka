@@ -32,6 +32,7 @@ from sqlalchemy import text
 from app.config import get_settings
 from app.database import async_session_maker
 from app.services.cache import cache
+from app.services.cover_demand import TRIGGER_SWEEP
 from app.services.cover_quality import MASTER_MIN_SIDE, is_thumb_grade
 
 logger = logging.getLogger(__name__)
@@ -148,7 +149,9 @@ async def upgrade_low_res_covers(
                 continue
 
             try:
-                await service.download_and_store(did, cover, session)
+                await service.download_and_store(
+                    did, cover, session, trigger=TRIGGER_SWEEP,
+                )
             except Exception:
                 logger.debug("cover upgrade: download failed for %s", did, exc_info=True)
                 continue
