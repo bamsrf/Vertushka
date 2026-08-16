@@ -5,6 +5,8 @@
  * - Auto-dismiss через 3.5с.
  * - Swipe-up — скрыть, tap — открыть соответствующий контент.
  * - OS-баннер в foreground подавляется в _layout.tsx, мы показываем свой.
+ * - Рисуется через RootOverlay: иначе на iOS уезжает ЗА нативные модалки
+ *   (profile, notifications, messages/new) и уведомление невозможно увидеть.
  */
 import React, { useCallback, useEffect, useRef } from 'react';
 import {
@@ -20,7 +22,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Image } from 'expo-image';
 import { Colors, Spacing, Typography, BorderRadius } from '@/constants/theme';
-import { Icon } from '@/components/ui';
+import { Icon, RootOverlay } from '@/components/ui';
 import { resolveMediaUrl } from '@/lib/api';
 import { useNotificationsStore } from '@/lib/notificationsStore';
 import { DESIGN_PNGS } from '@/assets/achievements/designs';
@@ -140,39 +142,41 @@ export const InAppNotificationToastHost: React.FC = () => {
       : undefined;
 
   return (
-    <Animated.View
-      pointerEvents="box-none"
-      style={[
-        styles.host,
-        {
-          paddingTop: insets.top + 8,
-          transform: [{ translateY }],
-        },
-      ]}
-      {...panResponder.panHandlers}
-    >
-      <TouchableWithoutFeedback onPress={handleTap}>
-        <View style={styles.card}>
-          <View style={[styles.iconWrap, pin ? styles.iconWrapPin : null]}>
-            {pin ? (
-              <Image source={pin} style={styles.pin} contentFit="contain" />
-            ) : avatarUrl ? (
-              <Image source={avatarUrl} style={styles.avatar} cachePolicy="disk" />
-            ) : (
-              <Icon name="notifications" size={22} color={Colors.background} />
-            )}
+    <RootOverlay>
+      <Animated.View
+        pointerEvents="box-none"
+        style={[
+          styles.host,
+          {
+            paddingTop: insets.top + 8,
+            transform: [{ translateY }],
+          },
+        ]}
+        {...panResponder.panHandlers}
+      >
+        <TouchableWithoutFeedback onPress={handleTap}>
+          <View style={styles.card}>
+            <View style={[styles.iconWrap, pin ? styles.iconWrapPin : null]}>
+              {pin ? (
+                <Image source={pin} style={styles.pin} contentFit="contain" />
+              ) : avatarUrl ? (
+                <Image source={avatarUrl} style={styles.avatar} cachePolicy="disk" />
+              ) : (
+                <Icon name="notifications" size={22} color={Colors.background} />
+              )}
+            </View>
+            <View style={styles.body}>
+              <Text style={styles.title} numberOfLines={1}>
+                {current.title}
+              </Text>
+              <Text style={styles.bodyText} numberOfLines={2}>
+                {current.body}
+              </Text>
+            </View>
           </View>
-          <View style={styles.body}>
-            <Text style={styles.title} numberOfLines={1}>
-              {current.title}
-            </Text>
-            <Text style={styles.bodyText} numberOfLines={2}>
-              {current.body}
-            </Text>
-          </View>
-        </View>
-      </TouchableWithoutFeedback>
-    </Animated.View>
+        </TouchableWithoutFeedback>
+      </Animated.View>
+    </RootOverlay>
   );
 };
 

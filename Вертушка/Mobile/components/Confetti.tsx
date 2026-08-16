@@ -26,6 +26,8 @@ interface ParticleSpec {
   color: string;
   delay: number;
   rotateDir: 1 | -1;
+  /** Итоговый угол поворота в градусах — фиксируем в спеке, а не в render */
+  spin: number;
   shape: 'square' | 'rect' | 'circle';
 }
 
@@ -40,6 +42,7 @@ export function Confetti({ colors, count = 32, duration = 2200, triggerKey }: Pr
         color: colors[i % colors.length],
         delay: Math.random() * 400,
         rotateDir: Math.random() > 0.5 ? 1 : -1,
+        spin: 360 + Math.floor(Math.random() * 360),
         shape: (['square', 'rect', 'circle'] as const)[Math.floor(Math.random() * 3)],
       });
     }
@@ -50,7 +53,7 @@ export function Confetti({ colors, count = 32, duration = 2200, triggerKey }: Pr
   return (
     <View pointerEvents="none" style={StyleSheet.absoluteFill}>
       {specs.map((s, idx) => (
-        <Particle key={idx} spec={s} duration={duration} />
+        <Particle key={`${triggerKey ?? ''}-${idx}`} spec={s} duration={duration} />
       ))}
     </View>
   );
@@ -60,6 +63,10 @@ function Particle({ spec, duration }: { spec: ParticleSpec; duration: number }) 
   const t = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
+    // Явный сброс: без него повторный запуск (следующая ачивка в очереди,
+    // когда хост переиспользует смонтированные частицы) стартует с t=1 —
+    // анимировать некуда, и конфетти просто не появляется.
+    t.setValue(0);
     Animated.sequence([
       Animated.delay(spec.delay),
       Animated.timing(t, {
@@ -81,7 +88,7 @@ function Particle({ spec, duration }: { spec: ParticleSpec; duration: number }) 
   });
   const rotate = t.interpolate({
     inputRange: [0, 1],
-    outputRange: ['0deg', `${spec.rotateDir * (360 + Math.floor(Math.random() * 360))}deg`],
+    outputRange: ['0deg', `${spec.rotateDir * spec.spin}deg`],
   });
   const opacity = t.interpolate({
     inputRange: [0, 0.1, 0.85, 1],

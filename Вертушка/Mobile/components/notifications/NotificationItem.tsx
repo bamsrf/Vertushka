@@ -111,6 +111,13 @@ function formatPrice(p: unknown): string {
   return `${Math.round(p)}₽`;
 }
 
+// «Почти дошло до порога» — бэкенд кладёт зазор в data тихой нити. Без этого
+// строка «подешевела · 5 200 ₽» ничем не отличалась от цены вдвое выше порога.
+function nearThresholdTail(data: Record<string, unknown>): string {
+  if (!data.near_threshold || typeof data.to_threshold_rub !== 'number') return '';
+  return ` · до порога ${formatPrice(data.to_threshold_rub)}`;
+}
+
 function buildText(item: NotificationItemType): string {
   const actorName =
     (item.actor?.display_name as string | undefined) ||
@@ -150,7 +157,7 @@ function buildText(item: NotificationItemType): string {
       if ((item.occurrences ?? 1) > 1 && storeCount > 1) {
         return `«${title}» в ${storeCount} ${pluralStores(storeCount)}${priceTail ? ` · от ${priceTail}` : ''}`;
       }
-      return `«${title}» снова в продаже${priceTail ? ` · ${priceTail}` : ''}`;
+      return `«${title}» снова в продаже${priceTail ? ` · ${priceTail}` : ''}${nearThresholdTail(data)}`;
     }
     case 'wishlist_in_stock_alt': {
       const title = (data.record_title as string | undefined) ?? 'пластинка';
@@ -159,7 +166,7 @@ function buildText(item: NotificationItemType): string {
     case 'wishlist_price_drop': {
       const title = (data.record_title as string | undefined) ?? 'пластинка';
       const priceTail = formatPrice(data.min_price_rub ?? data.price_rub);
-      return `«${title}» подешевела${priceTail ? ` · ${priceTail}` : ''}`;
+      return `«${title}» подешевела${priceTail ? ` · ${priceTail}` : ''}${nearThresholdTail(data)}`;
     }
     case 'digest_wishlist_in_stock': {
       const count = (data.count as number | undefined) ?? 0;

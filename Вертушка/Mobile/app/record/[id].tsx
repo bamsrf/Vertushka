@@ -225,6 +225,7 @@ export default function RecordDetailScreen() {
     wishlistItemId: string | null;
     wishlistNotifyMode?: import('@/lib/types').WishlistNotifyMode;
     wishlistPriceThreshold?: number | null;
+    wishlistThresholdPct?: number | null;
     wishlistConditions?: import('@/lib/types').WishlistCondition[] | null;
   } => {
     if (!record) {
@@ -279,6 +280,7 @@ export default function RecordDetailScreen() {
         wishlistItemId: wishlistItem.id,
         wishlistNotifyMode: wishlistItem.notify_mode ?? 'watched',
         wishlistPriceThreshold: wishlistItem.price_threshold_rub ?? null,
+        wishlistThresholdPct: wishlistItem.threshold_pct ?? null,
         wishlistConditions: wishlistItem.conditions ?? null,
       };
     }
@@ -450,6 +452,7 @@ export default function RecordDetailScreen() {
       recordId: record.id,
       currentPrice: priceHint,
       threshold: status.wishlistPriceThreshold ?? null,
+      thresholdPct: status.wishlistThresholdPct ?? null,
       conditions: status.wishlistConditions ?? null,
       subscribed,
     });

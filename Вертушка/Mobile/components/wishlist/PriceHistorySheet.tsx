@@ -36,6 +36,8 @@ export interface PriceHistorySheetData {
   coverUrl?: string | null;
   currentPrice?: number | null;
   threshold?: number | null;
+  /** Задан → порог относительный («дешевле обычного»), threshold уже посчитан. */
+  thresholdPct?: number | null;
   status: RadarStatus;
   buyUrl?: string | null;
   /** id листинга под buyUrl — родитель шлёт по нему POST /offers/{id}/click. */
@@ -179,7 +181,11 @@ export const PriceHistorySheet = forwardRef<PriceHistorySheetRef, Props>(
             {data?.threshold != null ? (
               <View style={styles.thChip}>
                 <RadarIcon size={14} color={Colors.royalBlue} />
-                <Text style={styles.thChipTxt}>дешевле {fmt(data.threshold)} ₽</Text>
+                <Text style={styles.thChipTxt}>
+                  {data.thresholdPct
+                    ? `на ${data.thresholdPct}% дешевле обычного · ${fmt(data.threshold)} ₽`
+                    : `дешевле ${fmt(data.threshold)} ₽`}
+                </Text>
               </View>
             ) : null}
             <View style={[styles.pill, { backgroundColor: pill.bg }]}>
