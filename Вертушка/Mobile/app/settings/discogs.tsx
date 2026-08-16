@@ -30,6 +30,7 @@ import { analytics } from '../../lib/analytics';
 import { useCollectionStore } from '../../lib/store';
 import { setDiscogsConnected } from '../../lib/onboardingProgress';
 import { Colors, Spacing, BorderRadius, Typography } from '../../constants/theme';
+import type { DiscogsPriceJobStatus } from '../../lib/types';
 
 const REDIRECT = 'vertushka://discogs-callback';
 
@@ -394,6 +395,36 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: Spacing.sm,
     lineHeight: 20,
+  },
+  priceCard: {
+    backgroundColor: Colors.surface,
+    borderRadius: BorderRadius.lg,
+    padding: Spacing.md,
+    marginBottom: Spacing.lg,
+  },
+  priceHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+  },
+  priceTitle: { ...Typography.bodySmall, color: Colors.text, fontWeight: '600' },
+  priceHint: {
+    ...Typography.caption,
+    color: Colors.textSecondary,
+    marginTop: Spacing.sm,
+    lineHeight: 18,
+  },
+  progressTrack: {
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: Colors.divider,
+    marginTop: Spacing.md,
+    overflow: 'hidden',
+  },
+  progressFill: {
+    height: '100%',
+    borderRadius: 2,
+    backgroundColor: Colors.royalBlue,
   },
   button: {
     backgroundColor: Colors.royalBlue,

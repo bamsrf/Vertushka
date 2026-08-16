@@ -388,8 +388,16 @@ async def run_price_backfill_jobs():
             .where(
                 or_(
                     DiscogsPriceJob.status == STATUS_PENDING,
+                    # heartbeat_at IS NULL обязателен отдельным условием:
+                    # в SQL `NULL < timestamp` даёт NULL, то есть строка не
+                    # прошла бы фильтр и висела в running вечно. Сейчас running
+                    # без heartbeat не создаётся, но цена ошибки — навсегда
+                    # застрявшая задача, а стоимость страховки — одна строка.
                     (DiscogsPriceJob.status == STATUS_RUNNING)
-                    & (DiscogsPriceJob.heartbeat_at < stale_cutoff),
+                    & (
+                        DiscogsPriceJob.heartbeat_at.is_(None)
+                        | (DiscogsPriceJob.heartbeat_at < stale_cutoff)
+                    ),
                 )
             )
             .order_by(DiscogsPriceJob.created_at)
