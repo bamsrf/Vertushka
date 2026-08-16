@@ -656,10 +656,12 @@ async def profile_og_image(
                 select(Record.cover_image_url).where(Record.id == record_id)
             )
             url = rec_result.scalar_one_or_none()
-            if url:
+            if url and url not in cover_urls:
                 cover_urls.append(url)
 
-    # Если нет highlights — берём последние из коллекции
+    # Добираем последними из коллекции. Дедуп по URL обязателен: пластинка из
+    # highlights почти всегда лежит и в коллекции, а без него коллаж показывал
+    # одну и ту же обложку дважды. Берём с запасом — часть строк отсеется.
     if len(cover_urls) < 4:
         result = await db.execute(
             select(Record.cover_image_url)
@@ -667,10 +669,13 @@ async def profile_og_image(
             .join(Collection)
             .where(Collection.user_id == user.id, Record.cover_image_url.isnot(None))
             .order_by(CollectionItem.added_at.desc())
-            .limit(4 - len(cover_urls))
+            .limit(16)
         )
         for row in result.scalars().all():
-            cover_urls.append(row)
+            if len(cover_urls) >= 4:
+                break
+            if row not in cover_urls:
+                cover_urls.append(row)
 
     try:
         from app.services.og_image import generate_profile_og_image
