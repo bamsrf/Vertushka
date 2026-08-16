@@ -406,3 +406,54 @@ async def upsert_release_into_index(db: AsyncSession, record_data: dict) -> None
             )
     except Exception as e:  # noqa: BLE001 — индекс-обогащение не критично
         logger.warning("upsert_release_into_index failed for %s: %s", discogs_id, e)
+
+
+# Те же поля, что чинит app/scripts/backfill_records_from_dump.py, но по узкому
+# списку id вместо всей таблицы. Дамп цен не содержит (в discogs_releases_index
+# нет ценовых колонок — marketplace-статистика живёт только в API), поэтому
+# здесь только каталожные поля. Из них важнее всего country: он идёт в
+# estimate_rub() как страновая наценка, и без него рублёвая оценка считается по
+# дефолтной ветке.
+_ENRICH_FROM_DUMP_SQL = text(
+    """
+    UPDATE records r
+    SET
+      year              = COALESCE(r.year, idx.year),
+      country           = COALESCE(NULLIF(r.country, ''),     idx.country),
+      format_type       = COALESCE(NULLIF(r.format_type, ''), idx.format_type),
+      label             = COALESCE(NULLIF(r.label, ''),       idx.label),
+      discogs_master_id = COALESCE(NULLIF(r.discogs_master_id, ''), NULLIF(idx.master_id, 0)::text),
+      cover_image_url   = COALESCE(NULLIF(r.cover_image_url, ''),   idx.cover_image_url),
+      updated_at        = NOW()
+    FROM discogs_releases_index idx
+    WHERE r.discogs_id ~ '^[0-9]+$'
+      AND r.source = 'discogs'
+      AND r.merged_into_id IS NULL
+      AND r.discogs_id::bigint = idx.discogs_id
+      AND idx.discogs_id = ANY(:ids)
+    """
+)
+
+
+async def enrich_records_from_dump(
+    db: AsyncSession, discogs_ids: "list[str]"
+) -> int:
+    """Дозаполняет каталожные поля Record из локального дамп-индекса.
+
+    Нужно после массового импорта коллекции: Discogs отдаёт в списке коллекции
+    только `basic_information` (без country и без discogs_data), и записи
+    оседают в базе «тонкими». Дамп эти поля знает, джойн идёт по indexed PK —
+    сеть не трогаем.
+
+    COALESCE, а не перезапись: живые данные из API всегда свежее дампа.
+    Возвращает количество обновлённых строк. Fail-soft: при ошибке 0.
+    """
+    numeric_ids = [int(d) for d in discogs_ids if d and d.isdigit()]
+    if not numeric_ids:
+        return 0
+    try:
+        result = await db.execute(_ENRICH_FROM_DUMP_SQL, {"ids": numeric_ids})
+        return int(result.rowcount or 0)
+    except Exception as e:  # noqa: BLE001 — обогащение не критично для импорта
+        logger.warning("enrich_records_from_dump failed for %d ids: %s", len(numeric_ids), e)
+        return 0

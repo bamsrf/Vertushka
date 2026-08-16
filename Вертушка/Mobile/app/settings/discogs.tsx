@@ -10,7 +10,7 @@
  * шифрует, сохраняет и редиректит обратно в приложение по deep-link
  * vertushka://discogs-callback?status=connected|expired|error.
  */
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -41,6 +41,48 @@ export default function DiscogsSettings() {
   const [importing, setImporting] = useState(false);
   const [connected, setConnected] = useState(false);
   const [username, setUsername] = useState<string | null>(null);
+  // Прогресс фоновой дозагрузки цен. null — показывать нечего.
+  const [priceJob, setPriceJob] = useState<DiscogsPriceJobStatus | null>(null);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const stopPolling = useCallback(() => {
+    if (pollRef.current) {
+      clearInterval(pollRef.current);
+      pollRef.current = null;
+    }
+  }, []);
+
+  /**
+   * Поллинг прогресса цен.
+   *
+   * Раз в 5 секунд: воркер на бэкенде просыпается раз в минуту и берёт по 50
+   * записей, так что чаще спрашивать бессмысленно, а реже — прогресс-бар
+   * выглядит замершим.
+   *
+   * Экран можно закрыть и вернуться: статус живёт в БД, а не в стейте, поэтому
+   * поллинг поднимается заново на маунте, если задача ещё в работе.
+   */
+  const startPolling = useCallback(() => {
+    stopPolling();
+    pollRef.current = setInterval(async () => {
+      try {
+        const s = await api.getDiscogsImportStatus();
+        setPriceJob(s);
+        if (s.status === 'done' || s.status === 'failed' || s.status === 'idle') {
+          stopPolling();
+          // Цены приехали — полка их ещё не знает: экран коллекции
+          // смонтирован и сам о фоновой задаче не узнает.
+          if (s.updated > 0) {
+            await useCollectionStore.getState().fetchCollectionItems();
+          }
+        }
+      } catch {
+        // Сеть моргнула — не срываем поллинг, следующий тик попробует снова.
+      }
+    }, 5000);
+  }, [stopPolling]);
+
+  useEffect(() => stopPolling, [stopPolling]);
 
   const loadStatus = useCallback(async () => {
     try {
@@ -50,12 +92,26 @@ export default function DiscogsSettings() {
       // Чеклист «Первые шаги» держит статус у себя — иначе узнал бы о
       // подключении только в следующую сессию.
       setDiscogsConnected(s.connected);
+
+      // Дозагрузка могла остаться с прошлого захода: юзер импортнул, вышел из
+      // экрана и вернулся. Задача живёт в БД, поэтому подхватываем прогресс.
+      if (s.connected) {
+        try {
+          const job = await api.getDiscogsImportStatus();
+          if (job.status === 'pending' || job.status === 'running') {
+            setPriceJob(job);
+            startPolling();
+          }
+        } catch {
+          // Статус цен — не повод ронять весь экран.
+        }
+      }
     } catch {
       Alert.alert('Discogs', 'Не удалось загрузить статус Discogs');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [startPolling]);
 
   useEffect(() => {
     loadStatus();
@@ -113,12 +169,29 @@ export default function DiscogsSettings() {
               // сломанным сразу после главного действия онбординга.
               await useCollectionStore.getState().fetchCollections();
               await useCollectionStore.getState().fetchCollectionItems();
+
+              // Цены приезжают отдельно и минутами позже — без этой строчки
+              // юзер видел бы полку с прочерками вместо стоимости и считал бы
+              // это поломкой импорта.
+              if (r.prices_pending > 0) {
+                setPriceJob({
+                  status: 'pending',
+                  total: r.prices_pending,
+                  processed: 0,
+                  updated: 0,
+                });
+                startPolling();
+              }
+
               // Alert, не toast: этот экран — нативный stack-screen и рендерится
               // поверх корневого <Toast>, поэтому toast тут не виден. Alert
               // нативный и всегда поверх.
               Alert.alert(
                 'Импорт завершён',
-                `Добавлено: ${r.imported}, пропущено: ${r.skipped} из ${r.total}`
+                `Добавлено: ${r.imported}, пропущено: ${r.skipped} из ${r.total}` +
+                  (r.prices_pending > 0
+                    ? `.\n\nЦены подтягиваются в фоне — это займёт несколько минут.`
+                    : '')
               );
             } catch (e: any) {
               Alert.alert('Не удалось импортировать', e?.response?.data?.detail || 'Попробуйте позже');
@@ -129,7 +202,7 @@ export default function DiscogsSettings() {
         },
       ]
     );
-  }, []);
+  }, [startPolling]);
 
   const handleDisconnect = useCallback(() => {
     Alert.alert(
@@ -193,6 +266,58 @@ export default function DiscogsSettings() {
                 : 'Подключите Discogs — и перенесите всю свою коллекцию в Вертушку за пару секунд. Заодно запросы пойдут под вашим личным токеном, без общих лимитов. Подключение необязательно: без него всё работает как раньше.'}
             </Text>
           </View>
+
+          {priceJob && priceJob.status !== 'idle' ? (
+            <View style={styles.priceCard}>
+              <View style={styles.priceHeader}>
+                <Icon
+                  name={priceJob.status === 'failed' ? 'alert-circle' : 'pricetag-outline'}
+                  size={18}
+                  color={priceJob.status === 'failed' ? Colors.warning : Colors.royalBlue}
+                />
+                <Text style={styles.priceTitle}>
+                  {priceJob.status === 'done'
+                    ? 'Цены обновлены'
+                    : priceJob.status === 'failed'
+                      ? 'Цены обновятся позже'
+                      : 'Подтягиваем цены'}
+                </Text>
+              </View>
+
+              {priceJob.status === 'failed' ? (
+                <Text style={styles.priceHint}>
+                  {priceJob.error || 'Попробуем ещё раз при следующем обновлении.'}
+                </Text>
+              ) : (
+                <>
+                  {/* Ширина от processed, а не от updated: у части пластинок
+                      на Discogs просто нет лотов, и цены у них не будет
+                      никогда — прогресс по updated замирал бы, не доходя
+                      до конца. */}
+                  <View style={styles.progressTrack}>
+                    <View
+                      style={[
+                        styles.progressFill,
+                        {
+                          width: `${Math.min(
+                            100,
+                            priceJob.total > 0
+                              ? Math.round((priceJob.processed / priceJob.total) * 100)
+                              : 0
+                          )}%`,
+                        },
+                      ]}
+                    />
+                  </View>
+                  <Text style={styles.priceHint}>
+                    {priceJob.status === 'done'
+                      ? `Цена появилась у ${priceJob.updated} из ${priceJob.total} пластинок.`
+                      : `${priceJob.processed} из ${priceJob.total}. Можно закрыть экран — дозагрузка продолжится.`}
+                  </Text>
+                </>
+              )}
+            </View>
+          ) : null}
 
           {connected ? (
             <>

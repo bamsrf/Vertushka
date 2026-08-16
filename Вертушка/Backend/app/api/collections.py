@@ -20,6 +20,8 @@ from app.api.auth import get_current_user
 from app.config import get_settings
 from app.services.exchange import get_usd_rub_rate
 from app.services.cover_storage import ensure_cover_cached
+from app.services.discogs_index import enrich_records_from_dump
+from app.services.price_backfill import enqueue_price_job, get_price_job
 from app.services.pricing import PricingParams, estimate_rub
 
 
@@ -943,6 +945,7 @@ async def import_discogs_collection(
 
     imported = 0
     skipped = 0
+    created_discogs_ids: list[str] = []
     for basic in releases:
         discogs_id = str(basic.get("id"))
         if not discogs_id or discogs_id == "None":
@@ -955,6 +958,7 @@ async def import_discogs_collection(
         if record is None:
             record = _record_from_basic_information(basic)
             db.add(record)
+            created_discogs_ids.append(discogs_id)
             try:
                 await db.flush()
             except IntegrityError:
@@ -984,7 +988,65 @@ async def import_discogs_collection(
         existing_record_ids.add(record.id)
         imported += 1
 
+    # Достраиваем «тонкие» записи из локального дампа. basic_information не
+    # содержит country, а он идёт в estimate_rub() страновой наценкой — без
+    # него рублёвая оценка считается по дефолтной ветке. Плюс year/label/
+    # format/master_id, на которых стоят ачивки по эпохам и география.
+    # Локальный джойн по indexed PK, сеть не трогаем.
+    if created_discogs_ids:
+        enriched = await enrich_records_from_dump(db, created_discogs_ids)
+        if enriched:
+            logger.info(
+                "discogs import: enriched %d/%d new records from dump",
+                enriched, len(created_discogs_ids),
+            )
+
     await db.commit()
-    return {"imported": imported, "skipped": skipped, "total": len(releases)}
+
+    # Импорт был единственным путём добавления пластинок, который не эмитил
+    # событие: коллекция появлялась, а система ачивок об этом не узнавала.
+    # Часть серий (A1, эпохи, дискографии) слушает только это событие и без
+    # него не открылась бы никогда — ночной daily_tick их не перепроверяет.
+    if imported:
+        from app.services.achievements import emit_event
+        from app.services.achievements.events import COLLECTION_ITEM_ADDED
+
+        await emit_event(db, current_user.id, COLLECTION_ITEM_ADDED, {"bulk": True})
+
+    # Цены Discogs отдаёт только поштучно, через marketplace-API — в списке
+    # коллекции их нет, в локальном дампе тоже (там только каталожные поля).
+    # Ставим фоновую задачу: она пройдёт по записям без цены под личным
+    # токеном юзера. Прогресс мобилка забирает через /import/discogs/status.
+    price_job = await enqueue_price_job(db, current_user.id)
+    await db.commit()
+
+    return {
+        "imported": imported,
+        "skipped": skipped,
+        "total": len(releases),
+        "prices_pending": price_job.total if price_job else 0,
+    }
+
+
+@router.get("/import/discogs/status")
+async def import_discogs_status(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Прогресс дозагрузки цен после импорта — для поллинга из мобилки.
+
+    Отдельный эндпоинт, а не поле в ответе импорта: сама дозагрузка идёт
+    минутами после того, как импорт уже ответил.
+    """
+    job = await get_price_job(db, current_user.id)
+    if job is None:
+        return {"status": "idle", "total": 0, "processed": 0, "updated": 0}
+    return {
+        "status": job.status,
+        "total": job.total,
+        "processed": job.processed,
+        "updated": job.updated,
+        "error": job.error,
+    }
 
 

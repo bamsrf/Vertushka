@@ -17,8 +17,21 @@ from app.config import get_settings
 
 logger = logging.getLogger(__name__)
 
-BATCH_SIZE = 50
 BATCH_PAUSE_SECONDS = 60
+
+# Раньше все задачи этого модуля делили одну константу BATCH_SIZE = 50. Ценам
+# этого мало (см. _price_batch_size), а обложкам и артистам — ровно столько,
+# сколько нужно: у них свой профиль нагрузки (детальные вызовы + скачивание
+# картинок), и разгонять их заодно с ценами нечего.
+ARTIST_ENRICH_BATCH = 50
+MARKET_COVER_BATCH = 50
+
+
+def _price_batch_size() -> int:
+    """Потолок записей за один проход ценовой задачи. Читается на каждом
+    прогоне, а не при импорте модуля: PRICE_BATCH_SIZE меняется через env без
+    пересборки образа."""
+    return get_settings().price_batch_size
 
 
 async def cleanup_search_cache():
@@ -46,7 +59,7 @@ async def enrich_records_artist_data():
                     Record.discogs_id.isnot(None),
                 )
                 .distinct()
-                .limit(BATCH_SIZE)
+                .limit(ARTIST_ENRICH_BATCH)
             )
             records = result.scalars().all()
 
@@ -93,7 +106,11 @@ async def enrich_records_artist_data():
 async def update_prices_batch():
     """Фоновое обновление цен для записей в активных коллекциях.
     Приоритет: записи без цен -> записи с ценами старше 7 дней.
-    Обрабатывает батч из 50 записей за запуск.
+    Размер батча — PRICE_BATCH_SIZE (по умолчанию 200), запуск раз в 30 минут.
+
+    Это «широкая» задача под общим app-токеном: она держит в тонусе всю базу.
+    Свежеимпортированную коллекцию конкретного юзера разгребает не она, а
+    run_price_backfill_jobs — под личным токеном и сразу.
     """
     from app.services.discogs import DiscogsService
     from app.services.exchange import get_usd_rub_rate
@@ -125,7 +142,7 @@ async def update_prices_batch():
                 )
                 .distinct()
                 .order_by(Record.estimated_price_min.asc().nullsfirst())  # без цен первыми
-                .limit(BATCH_SIZE)
+                .limit(_price_batch_size())
             )
             records = result.scalars().all()
 
@@ -182,7 +199,7 @@ async def update_prices_batch():
                     CollectionItem.estimated_price_rub.is_(None),
                     Record.estimated_price_min.isnot(None)
                 )
-                .limit(BATCH_SIZE)
+                .limit(_price_batch_size())
             )
             backfill_items = backfill_result.scalars().all()
             if backfill_items:
@@ -246,7 +263,7 @@ async def enrich_market_covers():
                     Record.discogs_master_id.isnot(None),
                     active_in_stock,
                 )
-                .limit(BATCH_SIZE)
+                .limit(MARKET_COVER_BATCH)
             )
             records = result.scalars().all()
 
@@ -328,3 +345,209 @@ async def refresh_new_releases():
         logger.info("refresh_new_releases: warmed %d items (window=%dd)", len(pool), window)
     except Exception:
         logger.exception("refresh_new_releases failed")
+
+
+# ----------------------------------------------------------------------
+# Дозагрузка цен после импорта коллекции (discogs_price_jobs)
+# ----------------------------------------------------------------------
+
+
+async def run_price_backfill_jobs():
+    """Разгребает очередь `discogs_price_jobs` — по одной задаче за прогон.
+
+    Отличие от update_prices_batch: запросы идут под OAuth-токеном самого
+    юзера, то есть в его личный бакет rate-limiter'а (60 req/min). Импортнувший
+    коллекцию получает цены за минуты, а не за недели, и не соревнуется за
+    общий лимит приложения с остальной базой.
+
+    По одной задаче за прогон намеренно: две параллельные и так уткнулись бы в
+    общий пул httpx-соединений, а последовательность даёт предсказуемый расход
+    лимита и внятный лог.
+    """
+    from sqlalchemy import or_
+
+    from app.models.discogs_price_job import (
+        STATUS_FAILED,
+        STATUS_PENDING,
+        STATUS_RUNNING,
+        DiscogsPriceJob,
+    )
+    from app.models.user import User
+    from app.services.discogs_oauth import user_creds
+    from app.services.price_backfill import STALE_RUNNING_AFTER
+
+    now = datetime.utcnow()
+    stale_cutoff = now - STALE_RUNNING_AFTER
+
+    async with async_session_maker() as session:
+        # pending — либо running, брошенный упавшим контейнером. Второе условие
+        # обязательно: без него единственный неудачный деплой посреди прогона
+        # оставлял бы задачу в running навсегда, а юзера — без цен и без ошибки.
+        job = await session.scalar(
+            select(DiscogsPriceJob)
+            .where(
+                or_(
+                    DiscogsPriceJob.status == STATUS_PENDING,
+                    (DiscogsPriceJob.status == STATUS_RUNNING)
+                    & (DiscogsPriceJob.heartbeat_at < stale_cutoff),
+                )
+            )
+            .order_by(DiscogsPriceJob.created_at)
+            .limit(1)
+            .with_for_update(skip_locked=True)
+        )
+        if job is None:
+            return
+
+        job_id = job.id
+        user_id = job.user_id
+
+        # Креды достаём здесь же, пока сессия жива: после commit атрибуты
+        # инстанса истекают (expire_on_commit), а за пределами блока сессия
+        # закрыта и ленивая подгрузка упала бы DetachedInstanceError.
+        user = await session.get(User, job.user_id)
+        creds = user_creds(user) if user is not None else None
+
+        job.status = STATUS_RUNNING
+        job.heartbeat_at = now
+        if job.started_at is None:
+            job.started_at = now
+        await session.commit()
+
+    if creds is None:
+        # Токен отозван или протух между импортом и прогоном. Задачу закрываем
+        # с ошибкой, а не оставляем висеть: цены доедут ночным update_prices_batch,
+        # просто медленнее, и мобилка перестанет крутить прогресс.
+        async with async_session_maker() as session:
+            job = await session.get(DiscogsPriceJob, job_id)
+            if job is not None:
+                job.status = STATUS_FAILED
+                job.error = "Discogs отключён — цены обновятся в общем порядке"
+                job.finished_at = datetime.utcnow()
+                await session.commit()
+        logger.info("price_backfill: no creds for user %s, job failed", user_id)
+        return
+
+    try:
+        processed, updated, remaining = await _process_price_backfill_batch(
+            job_id, user_id, creds
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("price_backfill: batch failed for user %s", user_id)
+        async with async_session_maker() as session:
+            job = await session.get(DiscogsPriceJob, job_id)
+            if job is not None:
+                job.status = STATUS_FAILED
+                job.error = str(exc)[:500]
+                job.finished_at = datetime.utcnow()
+                await session.commit()
+        return
+
+    logger.info(
+        "price_backfill: user=%s processed=%d updated=%d remaining=%d",
+        user_id, processed, updated, remaining,
+    )
+
+
+async def _process_price_backfill_batch(
+    job_id, user_id, creds: tuple[str, str]
+) -> tuple[int, int, int]:
+    """Один батч задачи. Возвращает (обработано, с ценой, осталось).
+
+    Задача не закрывается, пока остались записи без цены: следующий прогон
+    шедулера возьмёт её снова. Это и есть механика «долгой» работы без долгого
+    HTTP-запроса.
+    """
+    from app.models.discogs_price_job import STATUS_DONE, DiscogsPriceJob
+    from app.services.discogs import DiscogsService
+    from app.services.exchange import get_usd_rub_rate
+    from app.services.price_backfill import (
+        count_records_without_price,
+        records_without_price_query,
+    )
+    from app.services.pricing import PricingParams, estimate_rub
+
+    settings = get_settings()
+    params = PricingParams.from_settings(settings)
+    usd_rub = await get_usd_rub_rate()
+    discogs = DiscogsService()
+    limit = settings.price_backfill_batch_size
+
+    processed = 0
+    updated = 0
+
+    async with async_session_maker() as session:
+        result = await session.execute(records_without_price_query(user_id).limit(limit))
+        records = result.scalars().all()
+
+        for record in records:
+            processed += 1
+            try:
+                stats = await discogs._get_price_stats(record.discogs_id, creds=creds)
+            except Exception:
+                logger.exception(
+                    "price_backfill: stats failed for %s", record.discogs_id
+                )
+                continue
+            if not stats:
+                continue
+
+            lowest = _price_value(stats.get("lowest_price"))
+            median = _price_value(stats.get("median_price"))
+            highest = _price_value(stats.get("highest_price"))
+            if not (lowest or median):
+                continue
+
+            record.estimated_price_min = lowest
+            record.estimated_price_median = median
+            record.estimated_price_max = highest
+            record.price_currency = "USD"
+            updated += 1
+
+        # Рубли по свежим ценам — в той же транзакции: иначе полка показывала бы
+        # «цена есть, рубли пустые» до ближайшего ночного backfill'а.
+        if updated:
+            priced_ids = [r.id for r in records if r.estimated_price_min]
+            items_result = await session.execute(
+                select(CollectionItem)
+                .options(selectinload(CollectionItem.record))
+                .where(CollectionItem.record_id.in_(priced_ids))
+            )
+            for item in items_result.scalars().all():
+                rec = item.record
+                if rec and rec.estimated_price_min:
+                    item.estimated_price_rub = estimate_rub(
+                        float(rec.estimated_price_min),
+                        rec.country,
+                        usd_rub,
+                        params,
+                        format_type=rec.format_type,
+                        format_description=rec.format_description,
+                        discogs_data=rec.discogs_data,
+                    )
+
+        await session.commit()
+
+        remaining = await count_records_without_price(session, user_id)
+
+        job = await session.get(DiscogsPriceJob, job_id)
+        if job is not None:
+            job.processed += processed
+            job.updated += updated
+            job.heartbeat_at = datetime.utcnow()
+            # Пустой батч при ненулевом remaining означает, что оставшиеся
+            # записи Discogs ценой не снабжает (нет лотов). Крутить их вечно
+            # незачем — закрываем.
+            if remaining == 0 or processed == 0:
+                job.status = STATUS_DONE
+                job.finished_at = datetime.utcnow()
+            await session.commit()
+
+    return processed, updated, remaining
+
+
+def _price_value(raw) -> float | None:
+    """Discogs отдаёт цену то объектом {value, currency}, то голым числом."""
+    if isinstance(raw, dict):
+        return raw.get("value")
+    return raw

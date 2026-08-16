@@ -164,6 +164,18 @@ class Settings(BaseSettings):
     cover_coverage_min_ratio: float = Field(default=0.60, alias="COVER_COVERAGE_MIN_RATIO")
     # Просадка market-покрытия к прошлому снапшоту (в п.п.), выше которой алерт.
     cover_coverage_alert_drop_pp: float = Field(default=5.0, alias="COVER_COVERAGE_ALERT_DROP_PP")
+    # Ночное обновление цен (update_prices_batch). 50 записей в сутки на всю
+    # базу — это де-факто «цен нет»: одна импортированная коллекция в 400
+    # пластинок занимала бы очередь на восемь суток, а их несколько. Разово
+    # поднимать батч бессмысленно без второго рычага — частоты, поэтому джоба
+    # теперь ходит каждые 30 минут (см. main.py), а батч задаёт её потолок за
+    # проход. 200 × 48 прогонов ≈ 9600 записей в сутки при лимите app-токена
+    # 60 req/min (то есть 86 400/сутки) — запас в девять раз.
+    price_batch_size: int = Field(default=200, alias="PRICE_BATCH_SIZE")
+    # Потолок записей за один проход воркера дозагрузки (price_backfill).
+    # Идёт под личным токеном юзера: 60 req/min, прогон раз в минуту, поэтому
+    # 50 за проход держится заведомо ниже лимита даже с ретраями.
+    price_backfill_batch_size: int = Field(default=50, alias="PRICE_BACKFILL_BATCH_SIZE")
     internal_api_token: str = Field(default="", alias="INTERNAL_API_TOKEN")
 
     @property
