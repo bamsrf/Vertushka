@@ -41,11 +41,14 @@ export function useCoachMark(key: CoachMarkKey, enabled: boolean): UseCoachMarkR
    * размонтирование одного гасило бы подсветку, зажжённую другим.
    */
   const ownsSpotlight = useRef(false);
+  const group = getCoachMark(key).group ?? 'app';
 
   useEffect(() => {
     if (!enabled || !userId || visible) return;
-    // Слот уже занят другой подсказкой — эта дождётся следующего запуска.
-    if (isSessionSlotTaken()) return;
+    // Слот СВОЕЙ группы уже занят — эта подсказка дождётся следующего запуска.
+    // Группы независимы: подсказка карточки релиза не конкурирует с подсказкой
+    // коллекции, иначе первая не показалась бы почти никогда.
+    if (isSessionSlotTaken(group)) return;
 
     let cancelled = false;
     (async () => {
@@ -57,7 +60,7 @@ export function useCoachMark(key: CoachMarkKey, enabled: boolean): UseCoachMarkR
       if (cancelled) {
         // Экран ушёл, пока шёл арбитраж. Слот выигран, но показать некому —
         // возвращаем его, иначе сессия останется вообще без подсказки.
-        releaseSessionSlot();
+        releaseSessionSlot(group);
         return;
       }
 
@@ -76,7 +79,7 @@ export function useCoachMark(key: CoachMarkKey, enabled: boolean): UseCoachMarkR
     return () => {
       cancelled = true;
     };
-  }, [enabled, userId, key, visible]);
+  }, [enabled, userId, key, visible, group]);
 
   // Экран ушёл, а подсказка была видима — гасим цель, иначе подсветка осталась
   // бы висеть при следующем возврате на экран.

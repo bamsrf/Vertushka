@@ -189,11 +189,42 @@ export default function RecordDetailScreen() {
   // и обе читаются хуже.
   const marketTip = useCoachMark('market', hasOffers && !tour.active);
 
+  // Подсказки про свойства самой пластинки. Условие у каждой — факт отрисовки
+  // соответствующего блока, поэтому они срабатывают на первом релизе, где это
+  // свойство вообще встретилось, а не «через N пластинок в коллекции».
+  //
+  // Все глушатся на время тура: он объясняет ту же страницу, и две карточки
+  // одновременно спорят друг с другом.
+  const hasVinylColor = Boolean(record?.display_vinyl_color ?? record?.vinyl_color_raw);
+  const rarityTiers = record ? allRarityTiers(record) : [];
+  const vinylColorTip = useCoachMark('vinyl-color', hasVinylColor && !tour.active);
+  const rarityTip = useCoachMark('rarity-tiers', rarityTiers.length > 0 && !tour.active);
+  const offerPriceTip = useCoachMark('offer-price', hasOffers && !tour.active);
+  const versionsTip = useCoachMark('other-versions', hasVersions && !tour.active);
+
   /**
    * Подсказка тура встаёт вплотную НАД блоком, который объясняет, поэтому
    * маршрута «где искать» у неё нет. Крестик здесь — «пропустить весь тур»:
    * человек, которому объяснения не нужны, не должен закрывать их по одному.
    */
+  /**
+   * Подсказка про свойство этой пластинки. Маршрут не показываем: объясняемый
+   * блок стоит в паре строк отсюда и подсвечен — плашка «Карточка релиза →
+   * плашка с цветом» повторяла бы то, что и так перед глазами.
+   */
+  const renderRecordTip = (
+    tip: ReturnType<typeof useCoachMark>,
+    action?: { label: string; onPress: () => void },
+  ) =>
+    tip.visible ? (
+      <CoachTip
+        meta={{ ...tip.meta, where: undefined }}
+        analyticsKey={tip.meta.key}
+        onDismiss={tip.dismiss}
+        action={action}
+      />
+    ) : null;
+
   const renderTourTip = (key: RecordTourKey) =>
     tour.isAt(key) && tour.step ? (
       <CoachTip
@@ -867,9 +898,24 @@ export default function RecordDetailScreen() {
                 <Text style={styles.metaText}>{record.country}</Text>
               </View>
             ) : null}
-            <VinylColorTag vinylColorRaw={record.display_vinyl_color ?? record.vinyl_color_raw} />
+            {/* Ореол, а не кольцо: кольцо расходится до 1.9× от цели, и у
+                плашки цвета — она стоит у самого левого края — половина
+                подсветки уезжала за экран. */}
+            <CoachPulse
+              active={vinylColorTip.visible}
+              variant="glow"
+              radius={BorderRadius.full}
+              inset={3}
+            >
+              <VinylColorTag vinylColorRaw={record.display_vinyl_color ?? record.vinyl_color_raw} />
+            </CoachPulse>
           </View>
         </View>
+
+        {/* Подсказка про цвет винила идёт СРАЗУ под шапкой, а не над ней:
+            плашка цвета живёт в строке меты вместе с форматом и страной,
+            вклиниться туда карточкой нельзя. Место показывает подсветка. */}
+        {renderRecordTip(vinylColorTip)}
 
         {/* Лейбл и каталог */}
         {(record.label || record.catalog_number) && (
@@ -920,21 +966,26 @@ export default function RecordDetailScreen() {
           </Card>
         )}
 
+        {renderRecordTip(rarityTip)}
+
         {/* Особенности (rarity) */}
-        {(() => {
-          const tiers = allRarityTiers(record);
-          if (tiers.length === 0) return null;
-          return (
+        {rarityTiers.length > 0 ? (
+          <CoachPulse
+            active={rarityTip.visible}
+            variant="glow"
+            radius={BorderRadius.lg}
+            inset={6}
+          >
             <View style={styles.featuresSection}>
               <Text style={styles.featuresTitle}>Особенности</Text>
               <View style={styles.featuresList}>
-                {tiers.map((tier) => (
+                {rarityTiers.map((tier) => (
                   <TierFeatureBlock key={tier} tier={tier} />
                 ))}
               </View>
             </View>
-          );
-        })()}
+          </CoachPulse>
+        ) : null}
 
         {/* Цена */}
         {(() => {
@@ -1034,12 +1085,14 @@ export default function RecordDetailScreen() {
 
         {renderTourTip('offers')}
 
+        {renderRecordTip(offerPriceTip)}
+
         {/* Где купить — живые предложения магазинов. Обёртка ореола учитывает
             marginVertical самого блока (Spacing.sm), иначе подсветка обводила
             бы блок вместе с его отступами. */}
         {offersRequested ? (
           <CoachPulse
-            active={tour.isAt('offers')}
+            active={tour.isAt('offers') || offerPriceTip.visible}
             variant="glow"
             radius={BorderRadius.lg}
             inset={4}
@@ -1079,11 +1132,16 @@ export default function RecordDetailScreen() {
 
         {renderTourTip('versions')}
 
+        {renderRecordTip(versionsTip, {
+          label: 'Посмотреть',
+          onPress: () => router.push(`/master/${record.discogs_master_id}/versions` as never),
+        })}
+
         {/* Другие версии релиза. '0' — легаси-артефакт Discogs (master_id=0
             у релизов без мастера), по нему некуда переходить. */}
         {hasVersions ? (
           <CoachPulse
-            active={tour.isAt('versions')}
+            active={tour.isAt('versions') || versionsTip.visible}
             variant="glow"
             radius={BorderRadius.lg}
             inset={4}

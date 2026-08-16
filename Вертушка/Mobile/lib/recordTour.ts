@@ -22,6 +22,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { create } from 'zustand';
 import { useAuthStore } from './store';
 import { analytics } from './analytics';
+import { markCoachMarkAcknowledged, type CoachMarkKey } from './coachMarks';
 
 /**
  * Радара здесь нет намеренно: его кнопка живёт в фиксированной нижней панели,
@@ -70,6 +71,19 @@ export const RECORD_TOUR_STEPS: RecordTourStep[] = [
 ];
 
 const STEP_BY_KEY = new Map(RECORD_TOUR_STEPS.map((s) => [s.key, s]));
+
+/**
+ * Шаги тура, у которых есть двойник в каталоге контекстных подсказок.
+ *
+ * Двойники нужны сами по себе: тур одноразовый, и если первый открытый релиз
+ * был без переизданий, про «другие версии» человек не узнал бы никогда. Но
+ * когда тур блок УЖЕ объяснил, повторять то же самое отдельной подсказкой
+ * незачем — поэтому на старте тура двойники помечаются подтверждёнными.
+ */
+const TOUR_TWINS: Partial<Record<RecordTourKey, CoachMarkKey>> = {
+  offers: 'offer-price',
+  versions: 'other-versions',
+};
 
 const storageKey = (userId: string) => `@vertushka:record_tour:${userId}`;
 
@@ -125,6 +139,16 @@ const useRecordTourStore = create<RecordTourState>((set, get) => ({
     if (queue.length < MIN_STEPS) return;
     set({ queue, index: 0 });
     analytics.recordTourStarted(queue.length);
+
+    // Блоки, которые объяснит тур, не должны потом объясняться повторно
+    // отдельными подсказками из каталога.
+    const userId = useAuthStore.getState().user?.id;
+    if (userId) {
+      for (const key of queue) {
+        const twin = TOUR_TWINS[key];
+        if (twin) void markCoachMarkAcknowledged(userId, twin);
+      }
+    }
   },
 
   advance: () => {
