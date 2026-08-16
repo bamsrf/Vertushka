@@ -409,6 +409,16 @@ export const ThresholdSheet = forwardRef<ThresholdSheetRef, Props>(({ onSaved, o
               </TouchableOpacity>
             );
           })}
+          {/* Две вещи, о которых UI молчал. Пустой набор уходит на бэк как
+              conditions=null, то есть «любое состояние» — выглядело же это как
+              «я ничего не выбрал». А _condition_ok пропускает лот с
+              нераспознанным состоянием при любом фильтре (чтобы не прятать
+              реальные предложения) — про это стоит предупредить заранее. */}
+          <Text style={styles.condFootnote}>
+            {conds.length === 0
+              ? 'Ничего не отмечено — считаем копии в любом состоянии.'
+              : 'Состояние берём из описания лота. Если магазин его не указал, лот всё равно учитываем.'}
+          </Text>
         </View>
 
         <TouchableOpacity style={styles.saveBtn} onPress={onSave} activeOpacity={0.9}>
@@ -462,6 +472,7 @@ const styles = StyleSheet.create({
   checkbox: { width: 24, height: 24, borderRadius: 7, borderWidth: 2, borderColor: '#D3D7E6', backgroundColor: Colors.surface, alignItems: 'center', justifyContent: 'center' },
   checkboxOn: { backgroundColor: Colors.royalBlue, borderColor: Colors.royalBlue },
   checkMark: { color: '#fff', fontSize: 14, fontWeight: '900', marginTop: -1 },
+  condFootnote: { ...Typography.caption, color: Colors.textMuted, lineHeight: 16, marginTop: 10 },
   condLabel: { fontSize: 15, color: Colors.text },
   condLabelOff: { color: Colors.textSecondary },
   saveBtn: { marginTop: 22, paddingVertical: 18, borderRadius: 16, backgroundColor: Colors.royalBlue, alignItems: 'center' },
