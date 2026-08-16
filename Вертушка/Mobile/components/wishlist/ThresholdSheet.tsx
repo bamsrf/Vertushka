@@ -69,6 +69,11 @@ const CONDITION_OPTIONS: { key: WishlistCondition; label: string }[] = [
 
 const DEFAULT_CONDITIONS: WishlistCondition[] = ['sealed', 'mint'];
 const STEP = 100;
+// Нижняя граница порога. Раньше низ считался от текущей цены (40% / −500), и на
+// дорогих релизах ползунок упирался в 4—5 тысяч: ставку «жду до 100 ₽» выставить
+// было нечем. Плюс кнопка [−] клампилась по 0, а дисплей — по lo, поэтому ниже lo
+// цифра замирала, а в сохранение уходило другое число.
+const MIN_THRESHOLD = 100;
 
 const fmt = (n: number) => (Number.isFinite(n) ? Math.round(n) : 0).toLocaleString('ru-RU');
 const roundTo = (n: number, step: number) => Math.max(0, Math.round(n / step) * step);
@@ -104,15 +109,13 @@ export const ThresholdSheet = forwardRef<ThresholdSheetRef, Props>(({ onSaved, o
   const [conds, setConds] = useState<WishlistCondition[]>(DEFAULT_CONDITIONS);
   const [trackW, setTrackW] = useState(260);
 
-  // Границы: мин.90д … выше текущей (порог можно и выше цены).
+  // Границы: MIN_THRESHOLD … выше текущей (порог можно и выше цены).
   const bounds = useMemo(() => {
     const amt = Number.isFinite(amount) ? amount : 0;
     const base = current ?? (amt > 0 ? amt : 5000);
-    const hi = Math.max(base * 1.6, base + 3000, amt + 100);
-    const lo = low ?? Math.min(base * 0.4, base - 500);
-    const loF = Math.max(0, Math.floor(lo));
-    return { lo: loF, hi: Math.max(Math.ceil(hi), loF + 500) };
-  }, [current, low, amount]);
+    const hi = Math.max(base * 1.6, base + 3000, amt + STEP);
+    return { lo: MIN_THRESHOLD, hi: Math.max(Math.ceil(hi), MIN_THRESHOLD + 500) };
+  }, [current, amount]);
 
   // UI-поток: позиция thumb (px) + зеркала границ/ширины для worklet'ов.
   const thumbX = useSharedValue(0);
@@ -140,8 +143,8 @@ export const ThresholdSheet = forwardRef<ThresholdSheetRef, Props>(({ onSaved, o
   const setDragging = useCallback((v: boolean) => {
     dragging.current = v;
   }, []);
-  const commitAmount = useCallback((v: number) => {
-    setAmount(roundTo(Number.isFinite(v) ? v : 0, 50));
+  const commitAmount = useCallback((v: number, hi: number) => {
+    setAmount(clamp(roundTo(Number.isFinite(v) ? v : 0, 50), MIN_THRESHOLD, hi));
   }, []);
   const pan = useMemo(
     () =>
@@ -158,7 +161,7 @@ export const ThresholdSheet = forwardRef<ThresholdSheetRef, Props>(({ onSaved, o
         .onEnd(() => {
           const w = sW.value || 1;
           const v = sLo.value + (thumbX.value / w) * (sHi.value - sLo.value);
-          runOnJS(commitAmount)(v);
+          runOnJS(commitAmount)(v, sHi.value);
         })
         .onFinalize(() => {
           runOnJS(setDragging)(false);
@@ -179,7 +182,7 @@ export const ThresholdSheet = forwardRef<ThresholdSheetRef, Props>(({ onSaved, o
     setData(d);
     const cp = finite(d.currentPrice);
     const th = finite(d.threshold);
-    const amt0 = th ?? (cp ? roundTo(cp * 0.9, 100) : 0);
+    const amt0 = Math.max(MIN_THRESHOLD, th ?? (cp ? roundTo(cp * 0.9, STEP) : 0));
     setAmount(amt0);
     setCurrent(cp);
     setLow(null);
@@ -187,8 +190,8 @@ export const ThresholdSheet = forwardRef<ThresholdSheetRef, Props>(({ onSaved, o
     // Синхронно засеваем sharedValue'ы границ/позиции ДО показа листа — иначе первый
     // кадр считает по дефолтам (sLo=0/sHi=1) и мелькают «единичные цифры» до useEffect.
     const base0 = cp ?? (amt0 > 0 ? amt0 : 5000);
-    const lo0 = Math.max(0, Math.floor(Math.min(base0 * 0.4, base0 - 500)));
-    const hi0 = Math.max(Math.ceil(Math.max(base0 * 1.6, base0 + 3000, amt0 + 100)), lo0 + 500);
+    const lo0 = MIN_THRESHOLD;
+    const hi0 = Math.max(Math.ceil(Math.max(base0 * 1.6, base0 + 3000, amt0 + STEP)), lo0 + 500);
     sLo.value = lo0;
     sHi.value = hi0;
     thumbX.value = clamp(hi0 > lo0 ? ((amt0 - lo0) / (hi0 - lo0)) * sW.value : sW.value / 2, 0, sW.value);
@@ -200,7 +203,9 @@ export const ThresholdSheet = forwardRef<ThresholdSheetRef, Props>(({ onSaved, o
         const latest = pts.length ? finite(pts[pts.length - 1].min_price_rub) : cp;
         setCurrent((prev) => prev ?? latest);
         setLow(finite(res.historical_low_rub));
-        if (th == null && latest != null) setAmount(roundTo(latest * 0.9, 100));
+        if (th == null && latest != null) {
+          setAmount(Math.max(MIN_THRESHOLD, roundTo(latest * 0.9, STEP)));
+        }
       })
       .catch(() => {});
   }, []);
@@ -209,7 +214,7 @@ export const ThresholdSheet = forwardRef<ThresholdSheetRef, Props>(({ onSaved, o
 
   const nudge = (delta: number) => {
     Haptics.selectionAsync().catch(() => {});
-    setAmount((a) => clamp(roundTo(a + delta, STEP), 0, bounds.hi));
+    setAmount((a) => clamp(roundTo(a + delta, STEP), MIN_THRESHOLD, bounds.hi));
   };
 
   const toggleCond = (key: WishlistCondition) => {
@@ -332,9 +337,11 @@ export const ThresholdSheet = forwardRef<ThresholdSheetRef, Props>(({ onSaved, o
                 />
               </GestureDetector>
             </View>
+            {/* Подписи = концы шкалы. Раньше слева стоял «мин. за 90 дней», который
+                после снижения нижней границы перестал совпадать с началом трека. */}
             <View style={styles.sliderLabels}>
-              <Text style={styles.sliderLabel}>{low ? `мин. ${fmt(low)} ₽` : ''}</Text>
-              <Text style={styles.sliderLabel} />
+              <Text style={styles.sliderLabel}>{fmt(bounds.lo)} ₽</Text>
+              <Text style={styles.sliderLabel}>{fmt(bounds.hi)} ₽</Text>
             </View>
           </View>
 
