@@ -281,6 +281,11 @@ export const ThresholdSheet = forwardRef<ThresholdSheetRef, Props>(({ onSaved, o
   const curX = tickX(current);
   const lowX = tickX(low);
 
+  // Порог ≥ текущей цены бэкенд сразу отдаёт как status="match" и шлёт пуш
+  // «подошла под порог» на пластинку, которая и так дешевле. Раньше это
+  // сохранялось молча — предупреждаем до нажатия «Сохранить».
+  const firesImmediately = current != null && amount >= current;
+
   const onTrackLayout = (e: LayoutChangeEvent) => {
     const w = e.nativeEvent.layout.width;
     if (w > 0) setTrackW(w);
@@ -382,6 +387,14 @@ export const ThresholdSheet = forwardRef<ThresholdSheetRef, Props>(({ onSaved, o
           </TouchableOpacity>
         </View>
 
+        {firesImmediately ? (
+          <View style={styles.warnBox}>
+            <Text style={styles.warnTxt}>
+              Порог выше текущей цены — радар сработает сразу, пуш придёт на первой же проверке.
+            </Text>
+          </View>
+        ) : null}
+
         <View style={styles.condCard}>
           <Text style={styles.condTitle}>Состояние релиза</Text>
           <Text style={styles.condSub}>Какие копии считать</Text>
@@ -440,6 +453,8 @@ const styles = StyleSheet.create({
   thumb: { position: 'absolute', left: 0, width: 26, height: 26, borderRadius: 13, backgroundColor: '#fff', borderWidth: 3, borderColor: Colors.royalBlue, shadowColor: Colors.royalBlue, shadowOpacity: 0.35, shadowRadius: 6, shadowOffset: { width: 0, height: 2 }, elevation: 3 },
   sliderLabels: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 6 },
   sliderLabel: { ...Typography.caption, color: Colors.textMuted, fontVariant: ['tabular-nums'] },
+  warnBox: { marginTop: 16, paddingVertical: 12, paddingHorizontal: 14, borderRadius: 14, backgroundColor: 'rgba(244,160,106,0.16)' },
+  warnTxt: { fontSize: 13, lineHeight: 18, color: '#8A5326', fontFamily: 'Inter_500Medium' },
   condCard: { backgroundColor: '#fff', borderRadius: 16, padding: 18, marginTop: 22 },
   condTitle: { ...Typography.bodyBold, color: Colors.text },
   condSub: { ...Typography.caption, color: Colors.textSecondary, marginTop: 2, marginBottom: 12 },
