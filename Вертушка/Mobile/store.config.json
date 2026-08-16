@@ -1,0 +1,63 @@
+{
+  "configVersion": 0,
+  "apple": {
+    "version": "1.0.0",
+    "copyright": "2026 Вертушка",
+    "categories": [
+      "MUSIC",
+      "LIFESTYLE"
+    ],
+    "info": {
+      "ru": {
+        "title": "Вертушка: коллекция винила",
+        "subtitle": "Сканер, цена и учёт пластинок",
+        "description": "Вертушка — приложение для коллекционеров винила. Наведи камеру на штрихкод — пластинка встанет в коллекцию с годом, лейблом и ценой в рублях. И ты больше не купишь второй раз то, что уже стоит на полке.\n\nКОЛЛЕКЦИЯ\n• Сканер штрихкода и распознавание обложки по фото\n• Состояние пластинки и конверта, заметки, своё фото, место на полке\n• Папки, фильтры по формату и году, сетка или список\n• Редкие пластинки подсвечиваются: канон, коллекционка, лимитка, популярное\n\nСКОЛЬКО ЭТО СТОИТ\n• Цена каждой пластинки в рублях — с доставкой, комиссией и пошлиной\n• Стоимость всей коллекции и как она изменилась за месяц\n\nГДЕ КУПИТЬ\n• Наличие и цены в российских магазинах винила\n• Раздел «в наличии сейчас» — что появилось на полках\n\nВИШЛИСТ И ПОДАРКИ\n• Вишлист с приоритетами и папками\n• Ссылка для друзей: можно забронировать пластинку в подарок, не регистрируясь. Двое не подарят одно и то же\n\nЛЮДИ\n• Публичный профиль — покажи полку\n• Подписки на коллекционеров и лента их пополнений\n• Личные сообщения: обсудить пресс, договориться об обмене\n• Достижения за то, каким коллекционером ты становишься, а не за то, сколько дней подряд заходил\n\nДанные о релизах — Discogs. Приложение бесплатное, без рекламы.",
+        "keywords": [
+          "винил",
+          "стоимость",
+          "оценка",
+          "вишлист",
+          "штрихкод",
+          "LP",
+          "альбом",
+          "лейбл",
+          "обложка",
+          "редкий",
+          "винтаж",
+          "фонотека",
+          "тираж"
+        ],
+        "promoText": "Сканируй штрихкод — пластинка в коллекции за секунду. Цены в рублях, наличие в магазинах и вишлист, по которому друзья забронируют подарок.",
+        "releaseNotes": "Первая версия Вертушки.\n\nСканируй штрихкод, собирай коллекцию, смотри, сколько она стоит в рублях, и делись полкой с друзьями.\n\nЧто-то работает не так или не хватает функции — напиши нам: support@vinyl-vertushka.store. Отвечаем всем.",
+        "marketingUrl": "https://vinyl-vertushka.ru",
+        "supportUrl": "https://vinyl-vertushka.ru",
+        "privacyPolicyUrl": "https://vinyl-vertushka.ru/privacy"
+      },
+      "en-GB": {
+        "title": "Vertushka: Vinyl Collection",
+        "subtitle": "Scan, catalog & track value",
+        "description": "Vertushka is an app for vinyl record collectors. Point your camera at a barcode and the record lands in your collection — year, label, pressing and price included. No more buying a second copy of something already on your shelf.\n\nYOUR COLLECTION\n• Barcode scanner and cover recognition from a photo\n• Media and sleeve condition, notes, your own photos, shelf position\n• Folders, filters by format and year, grid or list\n• Rare records are highlighted: canon, collectible, limited, hot\n\nWHAT IT IS WORTH\n• A price for every record, shipping and fees included\n• Total collection value and how it moved over the past month\n\nWHERE TO BUY\n• Availability and prices from record shops\n• \"In stock now\" — what just landed on the shelves\n\nWISHLIST AND GIFTS\n• Wishlist with priorities and folders\n• A link for friends: they can reserve a record as a gift without signing up, so nobody gifts you the same record twice\n\nPEOPLE\n• Public profile — show off your shelf\n• Follow other collectors and watch their shelves grow\n• Direct messages: discuss pressings, arrange a trade\n• Achievements for the kind of collector you are becoming, not for how many days in a row you opened the app\n\nRelease data by Discogs. Free, no ads.",
+        "keywords": [
+          "record",
+          "records",
+          "lp",
+          "album",
+          "music",
+          "shelf",
+          "wantlist",
+          "barcode",
+          "crate",
+          "discography",
+          "price",
+          "gift",
+          "collector"
+        ],
+        "promoText": "Scan a barcode and the record is in your collection. Track what your shelf is worth and share a wishlist your friends can actually use.",
+        "releaseNotes": "The first release of Vertushka.\n\nScan a barcode, build your collection, see what it is worth and share your shelf.\n\nSomething broken or missing? Write to support@vinyl-vertushka.store — we answer every message.",
+        "marketingUrl": "https://vinyl-vertushka.ru",
+        "supportUrl": "https://vinyl-vertushka.ru",
+        "privacyPolicyUrl": "https://vinyl-vertushka.ru/privacy"
+      }
+    }
+  }
+}
