@@ -307,7 +307,10 @@ export default function ScannerScreen() {
         {scanWaysTip.visible && (
           <View style={styles.tipWrap}>
             <CoachTip
-              meta={scanWaysTip.meta}
+              // Маршрут не показываем: подсказка и так стоит на самом экране,
+              // переключатель прямо над ней, а кружок подсвечен. Плашка
+              // повторяла бы текст слово в слово.
+              meta={{ ...scanWaysTip.meta, where: undefined }}
               analyticsKey={scanWaysTip.meta.key}
               onDismiss={scanWaysTip.dismiss}
             />

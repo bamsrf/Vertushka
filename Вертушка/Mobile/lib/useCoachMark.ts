@@ -53,7 +53,15 @@ export function useCoachMark(key: CoachMarkKey, enabled: boolean): UseCoachMarkR
     let cancelled = false;
     (async () => {
       const states = await loadCoachMarkStates(userId);
-      if (cancelled || isSuppressed(states.get(key))) return;
+      if (cancelled || isSuppressed(states.get(key), key)) return;
+
+      // Пауза перед заявкой, а не перед показом: пока идёт задержка, слот
+      // остаётся свободным, и подсказка соседнего экрана не блокируется зря.
+      const delay = getCoachMark(key).delayMs;
+      if (delay) {
+        await new Promise((resolve) => setTimeout(resolve, delay));
+        if (cancelled) return;
+      }
 
       const won = await requestCoachMark(key);
       if (!won) return;
