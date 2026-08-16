@@ -53,6 +53,9 @@ RECENT_WINDOW_MINUTES = 20
 # не шлём. Раньше было 5%, подняли: 5-9% редко меняет решение о покупке.
 MIN_DROP_PCT = 0.10
 
+# Доля порога, внутри которой цену считаем «почти дошла» (порог 5000 → 5500).
+NEAR_THRESHOLD_RATIO = 0.10
+
 # Горизонт истории, в котором ищем «прошлую цену» для LAG (снапшоты редкие —
 # пишутся лишь при смене, так что окно широкое, но скан ограничен).
 PRICE_DROP_HISTORY_DAYS = 90
@@ -82,6 +85,22 @@ def _resurface_on_price_improvement(old_data: dict, new_data: dict) -> bool:
         return float(new_min) < float(old_min)
     except (TypeError, ValueError):
         return True
+
+
+def _threshold_gap(price: float | None, threshold: float | None) -> tuple[float | None, bool]:
+    """(сколько ₽ осталось до порога, попадает ли цена в «почти дошла»).
+
+    Радар знал только бинарное match/не-match: цена 5 200 при пороге 5 000 не
+    отличалась от 11 000, и пользователь не видел, что почти дошло. Зазор едет
+    в data существующей тихой нити (PRIORITY_QUIET) — отдельного пуша тут нет
+    и быть не должно, иначе каждое колебание цены станет уведомлением.
+
+    Цена ≤ порога → (None, False): это уже match, зазор бессмысленен.
+    """
+    if price is None or threshold is None or threshold <= 0 or price <= threshold:
+        return None, False
+    gap = round(price - threshold, 2)
+    return gap, gap <= threshold * NEAR_THRESHOLD_RATIO
 
 
 async def emit_wishlist_in_stock_notifications() -> None:
@@ -179,6 +198,7 @@ async def _run(db: AsyncSession) -> None:
         )
         push_now = subscribed and within_threshold
         radar_status = "match" if (subscribed and within_threshold and min_price is not None) else "available"
+        gap_rub, near_threshold = _threshold_gap(min_price, threshold if subscribed else None)
 
         if push_now:
             push_title, push_body = push_copy.wishlist_in_stock(
@@ -211,6 +231,8 @@ async def _run(db: AsyncSession) -> None:
                     "on_radar": subscribed,
                     "radar_status": radar_status if subscribed else None,
                     "threshold_rub": (float(threshold) if threshold is not None else None),
+                    "to_threshold_rub": gap_rub,
+                    "near_threshold": near_threshold,
                 },
                 push_title=push_title,
                 push_body=push_body,
@@ -610,6 +632,7 @@ async def _run_price_drop(db: AsyncSession) -> None:
         is_all_time_low = prev_low is not None and new <= prev_low
         push_now = (subscribed and within_threshold) or is_all_time_low
         radar_status = "match" if (subscribed and within_threshold) else "price_drop"
+        gap_rub, near_threshold = _threshold_gap(new, threshold if subscribed else None)
 
         if is_all_time_low:
             push_title, push_body = push_copy.wishlist_all_time_low(
@@ -650,6 +673,8 @@ async def _run_price_drop(db: AsyncSession) -> None:
                     "on_radar": subscribed,
                     "radar_status": radar_status if subscribed else None,
                     "threshold_rub": (threshold if threshold is not None else None),
+                    "to_threshold_rub": gap_rub,
+                    "near_threshold": near_threshold,
                 },
                 push_title=push_title,
                 push_body=push_body,
