@@ -39,9 +39,18 @@ interface OffersBlockProps {
   discogsId?: string;
   /** Record UUID — для store-native (нет discogs_id), берёт офферы по record_id, без alt-version'ов. */
   recordId?: string;
+  /**
+   * Сколько офферов нашлось. Ноль означает, что блок не отрисуется вовсе.
+   *
+   * Родителю это знать обязательно: наличие discogs_id ещё не значит, что
+   * магазины что-то предлагают, а тур по карточке релиза не должен объяснять
+   * блок, которого на экране нет — подсказка встала бы над пустотой, а ореол
+   * лёг бы на соседний блок.
+   */
+  onOffersResolved?: (count: number) => void;
 }
 
-export function OffersBlock({ discogsId, recordId }: OffersBlockProps) {
+export function OffersBlock({ discogsId, recordId, onOffersResolved }: OffersBlockProps) {
   const router = useRouter();
   const [offers, setOffers] = useState<Offer[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -66,14 +75,21 @@ export function OffersBlock({ discogsId, recordId }: OffersBlockProps) {
         const list = data?.offers ?? [];
         setOffers(list);
         analytics.viewOffers(analyticsId, list.length);
+        onOffersResolved?.(list.length);
       })
       .catch((e) => {
         if (!alive) return;
         setError(String(e?.message ?? 'Не удалось загрузить предложения'));
+        // Плашка ошибки — тоже блок на экране, но объяснять «живые предложения
+        // магазинов» на ней нечего. Для родителя это то же самое, что пусто.
+        onOffersResolved?.(0);
       });
     return () => {
       alive = false;
     };
+    // onOffersResolved намеренно вне зависимостей: коллбэк родителя
+    // пересоздаётся на каждом рендере, и в deps он перезапускал бы запрос.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [discogsId, recordId, analyticsId]);
 
   // Album-level = другой пресс мастера (is_alt_version) ИЛИ неуверенный матч

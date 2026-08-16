@@ -823,6 +823,7 @@ export default function CollectionScreen() {
         {isCollectionTab && foldersTip.visible && (
           <CoachTip
             meta={foldersTip.meta}
+            analyticsKey={foldersTip.meta.key}
             onDismiss={foldersTip.dismiss}
             action={{ label: 'Создать папку', onPress: handleCreateFolder }}
           />
@@ -830,6 +831,7 @@ export default function CollectionScreen() {
         {isCollectionTab && valueTip.visible && (
           <CoachTip
             meta={valueTip.meta}
+            analyticsKey={valueTip.meta.key}
             onDismiss={valueTip.dismiss}
             action={{ label: 'Посчитать', onPress: () => router.push('/collection/value') }}
           />
@@ -837,6 +839,7 @@ export default function CollectionScreen() {
         {!isCollectionTab && radarTip.visible && (
           <CoachTip
             meta={radarTip.meta}
+            analyticsKey={radarTip.meta.key}
             onDismiss={radarTip.dismiss}
             action={{ label: 'Открыть Радар', onPress: () => router.push('/radar' as any) }}
           />
@@ -844,6 +847,7 @@ export default function CollectionScreen() {
         {!isCollectionTab && marketTip.visible && (
           <CoachTip
             meta={marketTip.meta}
+            analyticsKey={marketTip.meta.key}
             onDismiss={marketTip.dismiss}
             action={{ label: 'Открыть Маркет', onPress: () => router.push('/market') }}
           />
@@ -851,12 +855,14 @@ export default function CollectionScreen() {
         {!isCollectionTab && giftsTip.visible && (
           <CoachTip
             meta={giftsTip.meta}
+            analyticsKey={giftsTip.meta.key}
             onDismiss={giftsTip.dismiss}
             action={{ label: 'Поделиться профилем', onPress: () => router.push('/profile') }}
           />
         )}
         {multiSelectTip.visible && (
-          <CoachTip meta={multiSelectTip.meta} onDismiss={multiSelectTip.dismiss} />
+          <CoachTip meta={multiSelectTip.meta}
+            analyticsKey={multiSelectTip.meta.key} onDismiss={multiSelectTip.dismiss} />
         )}
 
         {/* Folders section (scrolls away) */}

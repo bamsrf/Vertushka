@@ -95,6 +95,7 @@ export default function ProfileScreen() {
   const { user, logout, setUser } = useAuthStore();
   // Подсветка карандашика после тапа по шагу «Добавить имя и аватар».
   const avatarSpotlight = useCoachSpotlight('profile-avatar');
+  const shareSpotlight = useCoachSpotlight('profile-share');
   const { collectionItems, wishlistItems, stats, setActiveTab, fetchCollectionItems, fetchWishlistItems, fetchStats } = useCollectionStore();
   const { followers, following, fetchFollowers, fetchFollowing } = useFollowStore();
   const { given: givenGifts, isLoaded: giftsLoaded, loadAll: loadGifts } = useGiftStore();
@@ -434,21 +435,33 @@ export default function ProfileScreen() {
           <ActivityCard />
         </View>
 
-        {/* Ссылка на профиль */}
-        <View style={[styles.linkCard, Shadows.sm]}>
-          <Text style={styles.linkLabel}>Ваш профиль</Text>
-          <Text style={styles.linkUrl} numberOfLines={1} ellipsizeMode="tail">{profileUrl}</Text>
-          <View style={styles.linkActions}>
-            <TouchableOpacity style={styles.linkButton} onPress={handleCopyLink}>
-              <Icon name={copied ? "checkmark-outline" : "copy-outline"} size={18} color={Colors.royalBlue} />
-              <Text style={styles.linkButtonText}>{copied ? 'Скопировано' : 'Копировать'}</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.linkButton} onPress={handleShareProfile}>
-              <Icon name="share-outline" size={18} color={Colors.royalBlue} />
-              <Text style={styles.linkButtonText}>Поделиться</Text>
-            </TouchableOpacity>
+        {/* Ссылка на профиль. Подсвечиваем всю карточку, а не одну кнопку:
+            шаг чеклиста «Поделиться профилем» закрывают оба действия — и
+            «Копировать», и «Поделиться», — а ссылка над ними объясняет, чем
+            именно делятся. Без подсветки тап по шагу просто выбрасывал в
+            профиль, и что тут делать дальше, человек искал сам. */}
+        <CoachPulse
+          active={shareSpotlight}
+          variant="glow"
+          radius={BorderRadius.lg}
+          inset={4}
+          style={styles.linkCardWrap}
+        >
+          <View style={[styles.linkCard, Shadows.sm]}>
+            <Text style={styles.linkLabel}>Ваш профиль</Text>
+            <Text style={styles.linkUrl} numberOfLines={1} ellipsizeMode="tail">{profileUrl}</Text>
+            <View style={styles.linkActions}>
+              <TouchableOpacity style={styles.linkButton} onPress={handleCopyLink}>
+                <Icon name={copied ? "checkmark-outline" : "copy-outline"} size={18} color={Colors.royalBlue} />
+                <Text style={styles.linkButtonText}>{copied ? 'Скопировано' : 'Копировать'}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.linkButton} onPress={handleShareProfile}>
+                <Icon name="share-outline" size={18} color={Colors.royalBlue} />
+                <Text style={styles.linkButtonText}>Поделиться</Text>
+              </TouchableOpacity>
+            </View>
           </View>
-        </View>
+        </CoachPulse>
 
         {/* Вход в Маркет. Живёт прямо под шапкой профиля, а не в «Настройках»:
             Маркет — это витрина, а не настройка. Тёмный market-градиент —
@@ -827,11 +840,15 @@ const styles = StyleSheet.create({
   activityWrap: {
     marginBottom: Spacing.md,
   },
+  // Отступ снизу держит обёртка, а не сама карточка: ореол рисуется по границам
+  // обёртки, и внутренний marginBottom растянул бы его на 32 px ниже карточки.
+  linkCardWrap: {
+    marginBottom: Spacing.xl,
+  },
   linkCard: {
     backgroundColor: Colors.surface,
     borderRadius: BorderRadius.lg,
     padding: Spacing.lg,
-    marginBottom: Spacing.xl,
     borderWidth: 1,
     borderColor: Colors.border,
   },
