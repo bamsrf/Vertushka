@@ -7,6 +7,10 @@
     "gbrain": {
       "command": "/Users/vladislavrumancev/.bun/bin/gbrain",
       "args": ["serve"]
+    },
+    "amplitude": {
+      "type": "http",
+      "url": "https://mcp.eu.amplitude.com/mcp"
     }
   }
 }
