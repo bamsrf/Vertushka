@@ -975,6 +975,10 @@ export default function RecordDetailScreen() {
             variant="glow"
             radius={BorderRadius.lg}
             inset={6}
+            // У блока свои marginHorizontal и marginBottom по Spacing.md.
+            // Без поправки ореол обводил их вместе с блоком: по бокам вылезал
+            // за карточку, а снизу ложился на «Примерную стоимость».
+            edges={{ left: -Spacing.md, right: -Spacing.md, bottom: -Spacing.md }}
           >
             <View style={styles.featuresSection}>
               <Text style={styles.featuresTitle}>Особенности</Text>
@@ -1145,6 +1149,9 @@ export default function RecordDetailScreen() {
             variant="glow"
             radius={BorderRadius.lg}
             inset={4}
+            // Своя marginBottom у кнопки — втягиваем, иначе ореол свисает на
+            // «Треклист» под ней.
+            edges={{ bottom: -Spacing.md }}
           >
             <OtherVersionsButton
               onPress={() => router.push(`/master/${record.discogs_master_id}/versions`)}
