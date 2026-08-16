@@ -24,6 +24,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
 import { VinylSpinner } from './VinylSpinner';
+import { CoachPulse } from './onboarding/CoachPulse';
 import type { VinylColorConfig } from '../lib/vinylColor';
 
 const KNOB = 56;
@@ -70,9 +71,15 @@ interface Props {
   onOpen: () => void;
   /** Низ-якорь. По умолчанию '14%' — одна линия с кнопкой затвора. */
   bottom?: number | string;
+  /**
+   * Подсветить кноб — для контекстной подсказки про способы добавления.
+   * Ореол рисуется ВНУТРИ компонента: root позиционирован абсолютно, и обёртка
+   * снаружи сломала бы привязку к правому нижнему углу.
+   */
+  highlighted?: boolean;
 }
 
-export function ManualAddVinylToggle({ onOpen, bottom = '14%' }: Props) {
+export function ManualAddVinylToggle({ onOpen, bottom = '14%', highlighted = false }: Props) {
   const [phase, setPhase] = useState<Phase>('collapsed');
   const [famHex, setFamHex] = useState(() => nextFamily());
 
@@ -161,6 +168,7 @@ export function ManualAddVinylToggle({ onOpen, bottom = '14%' }: Props) {
 
   return (
     <View style={[styles.root, { bottom: bottom as any }]} pointerEvents="box-none">
+      <CoachPulse active={highlighted} variant="glow" radius={PILL_H / 2} inset={5}>
       <Pressable onPress={onPress}>
         <Animated.View style={[styles.pill, pillStyle]}>
           <Animated.Text style={[styles.text, textStyle]} numberOfLines={2}>
@@ -174,6 +182,7 @@ export function ManualAddVinylToggle({ onOpen, bottom = '14%' }: Props) {
           </GestureDetector>
         </Animated.View>
       </Pressable>
+      </CoachPulse>
     </View>
   );
 }
