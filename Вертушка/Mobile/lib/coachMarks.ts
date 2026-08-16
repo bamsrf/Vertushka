@@ -69,6 +69,30 @@ export interface CoachMarkMeta {
    */
   group?: CoachMarkGroup;
   /**
+   * Сколько раз показывать без подтверждения. По умолчанию MAX_SHOWS_DEFAULT.
+   * Единица — для подсказок, которые и так попадаются на глаза сразу: второй
+   * показ там читается не как напоминание, а как навязчивость.
+   */
+  maxShows?: number;
+  /**
+   * Пауза перед показом. Нужна там, где подсказка иначе появляется
+   * одновременно с самим экраном и накрывает его прежде, чем человек успел
+   * посмотреть, куда попал.
+   */
+  delayMs?: number;
+  /**
+   * Куда идти из «Как это работает», когда подсказку возвращают вручную.
+   * Без этого «Показать снова» оставляло человека в настройках гадать, где
+   * теперь искать обещанное.
+   */
+  goTo?: {
+    route: string;
+    /** Вкладка внутри коллекции, если фича живёт на вишлисте. */
+    tab?: 'collection' | 'wishlist';
+    /** Что сказать, если точное место открыть нельзя (карточка любого релиза). */
+    note?: string;
+  };
+  /**
    * Меньше — важнее. Разрешает конкуренцию, когда условия сошлись у нескольких
    * подсказок в один момент. Порядок задан ценностью для новичка: сначала то,
    * без чего интерфейс непонятен (жест зума), затем то, что он всё равно
@@ -88,14 +112,23 @@ export const COACH_MARKS: CoachMarkMeta[] = [
     // человек делает первое действие в приложении. Остальные подсказки к этому
     // моменту всё равно заблокированы — коллекция пустая.
     priority: 5,
-    title: 'Три способа добавить пластинку',
-    body: 'Штрихкод — наведи камеру на код с обложки. Обложка — просто сфотографируй её. А если пластинки нет ни в Discogs, ни в Маркете, добавь её вручную.',
+    // Один показ, а не два: подсказка появляется на стартовом экране сразу
+    // после регистрации, и повторить её на следующем запуске — значит встретить
+    // человека тем же текстом дважды подряд.
+    maxShows: 1,
+    // Пауза, чтобы экран сканера успел показаться первым. Без неё карточка
+    // выезжала одновременно с камерой и читалась как перехват управления.
+    delayMs: 1400,
+    title: 'Как добавить пластинку',
+    body: 'Сверху выбираешь: сканировать штрихкод или сфотографировать обложку. Если пластинки нет ни в Discogs, ни в Маркете — добавь вручную, кружком справа внизу.',
     unlock: 'первый заход на экран сканирования',
     where: 'Сканер → переключатель сверху, ручной ввод — кружок справа внизу',
+    goTo: { route: '/(tabs)' },
     icon: 'plus',
   },
   {
     key: 'pinch-zoom',
+    goTo: { route: '/(tabs)/collection', tab: 'collection' },
     priority: 10,
     title: 'Вся полка на одном экране',
     body: 'Сожми сетку двумя пальцами — останутся одни обложки, влезет вся полка. Разожми, чтобы вернуть подписи.',
@@ -105,6 +138,7 @@ export const COACH_MARKS: CoachMarkMeta[] = [
   },
   {
     key: 'collection-value',
+    goTo: { route: '/(tabs)/collection', tab: 'collection' },
     priority: 60,
     title: 'Сколько стоит коллекция',
     body: 'Смотрим, почём такие же пластинки продают на Discogs, и переводим в рубли по курсу ЦБ.',
@@ -114,6 +148,7 @@ export const COACH_MARKS: CoachMarkMeta[] = [
   },
   {
     key: 'folders',
+    goTo: { route: '/(tabs)/collection', tab: 'collection' },
     priority: 50,
     title: 'Пора разложить по папкам',
     body: 'Жанры, эпохи, «на продажу» — раскладывай как удобно тебе. Пластинка может лежать в нескольких папках.',
@@ -123,6 +158,7 @@ export const COACH_MARKS: CoachMarkMeta[] = [
   },
   {
     key: 'multi-select',
+    goTo: { route: '/(tabs)/collection', tab: 'collection' },
     priority: 70,
     title: 'Можно выбирать пачкой',
     body: 'Задержи палец на обложке — включится выбор. Дальше папки, удаление и подарки сразу для нескольких.',
@@ -132,6 +168,7 @@ export const COACH_MARKS: CoachMarkMeta[] = [
   },
   {
     key: 'radar',
+    goTo: { route: '/(tabs)/collection', tab: 'wishlist' },
     priority: 20,
     title: 'Радар следит за ценой',
     body: 'Назови цену, за которую готов купить. Пришлём пуш, когда пластинка до неё подешевеет или просто появится в продаже.',
@@ -149,6 +186,7 @@ export const COACH_MARKS: CoachMarkMeta[] = [
   },
   {
     key: 'market',
+    goTo: { route: '/(tabs)/collection', tab: 'wishlist' },
     priority: 30,
     title: 'Маркет знает, где купить',
     body: 'Собираем магазины, где твои пластинки есть в наличии прямо сейчас, и показываем цены рядом.',
@@ -164,6 +202,7 @@ export const COACH_MARKS: CoachMarkMeta[] = [
   // а «другие версии» хотя бы честно подписаны кнопкой.
   {
     key: 'rarity-tiers',
+    goTo: { route: '/(tabs)/collection', tab: 'collection', note: 'Открой любую пластинку с ярлыком' },
     group: 'record',
     priority: 22,
     title: 'Что значат ярлыки',
@@ -174,6 +213,7 @@ export const COACH_MARKS: CoachMarkMeta[] = [
   },
   {
     key: 'vinyl-color',
+    goTo: { route: '/(tabs)/collection', tab: 'collection', note: 'Открой любую пластинку с цветным винилом' },
     group: 'record',
     priority: 26,
     title: 'Цвет винила',
@@ -184,6 +224,7 @@ export const COACH_MARKS: CoachMarkMeta[] = [
   },
   {
     key: 'offer-price',
+    goTo: { route: '/(tabs)/collection', tab: 'wishlist', note: 'Открой пластинку, которая есть в магазине' },
     group: 'record',
     priority: 38,
     title: 'Цена магазина',
@@ -194,6 +235,7 @@ export const COACH_MARKS: CoachMarkMeta[] = [
   },
   {
     key: 'other-versions',
+    goTo: { route: '/(tabs)/collection', tab: 'collection', note: 'Открой любую пластинку с переизданиями' },
     group: 'record',
     priority: 44,
     title: 'Другие версии',
@@ -204,6 +246,7 @@ export const COACH_MARKS: CoachMarkMeta[] = [
   },
   {
     key: 'gifts-incoming',
+    goTo: { route: '/profile' },
     priority: 40,
     title: 'Из вишлиста можно дарить',
     body: 'Скинь друзьям ссылку на профиль — они забронируют пластинку из вишлиста. Что именно выбрали, ты не узнаешь: сюрприз остаётся сюрпризом.',
@@ -232,7 +275,7 @@ const storageKey = (userId: string, key: CoachMarkKey) =>
  * возвращалась при каждом следующем запуске бесконечно. Два показа — предел:
  * первый мог быть не замечен, третий уже назойлив.
  */
-const MAX_SHOWS_WITHOUT_ACK = 2;
+const MAX_SHOWS_DEFAULT = 2;
 
 export interface CoachMarkState {
   /** Юзер подтвердил явно: закрыл крестиком или пошёл по действию. */
@@ -244,8 +287,15 @@ export interface CoachMarkState {
 const EMPTY_STATE: CoachMarkState = { acknowledged: false, shows: 0 };
 
 /** Больше не показываем: либо подтвердили, либо исчерпали лимит показов. */
-export const isSuppressed = (state: CoachMarkState | undefined): boolean =>
-  !!state && (state.acknowledged || state.shows >= MAX_SHOWS_WITHOUT_ACK);
+export const isSuppressed = (
+  state: CoachMarkState | undefined,
+  key?: CoachMarkKey,
+): boolean => {
+  if (!state) return false;
+  if (state.acknowledged) return true;
+  const limit = (key && META_BY_KEY.get(key)?.maxShows) ?? MAX_SHOWS_DEFAULT;
+  return state.shows >= limit;
+};
 
 /**
  * Формат значения в хранилище:
