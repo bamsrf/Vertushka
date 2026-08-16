@@ -3,7 +3,7 @@ Web-маршруты для публичных страниц (HTML, не API)
 """
 import hashlib
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
 
@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from markupsafe import Markup
-from sqlalchemy import select, func, or_
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload, selectinload
 
@@ -34,6 +34,7 @@ from app.utils.bot_ua import is_bot_ua
 from app.utils.rate_limit import limiter
 from app.utils.request_ip import get_client_ip
 from app.services.pricing import PricingParams, estimate_rub
+from app.services.profile_stats import compute_fun_stats, pick_for_og
 from app.services.valuation import get_monthly_delta
 
 logger = logging.getLogger(__name__)
@@ -44,56 +45,33 @@ settings = get_settings()
 
 BASE_URL = settings.public_base_url.rstrip("/")
 
-
-_GENRE_RU = {
-    # {rel} → склоняется на «релиз / релиза / релизов» по числу.
-    # Жанры без дефиса (электроника, классика, джаз) идут как прилагательное в род. падеже.
-    "rock": "рок-{rel}",
-    "pop": "поп-{rel}",
-    "electronic": "электронных {rel}",
-    "hip hop": "хип-хоп {rel}",
-    "hip-hop": "хип-хоп {rel}",
-    "jazz": "джазовых {rel}",
-    "classical": "классических {rel}",
-    "funk / soul": "фанк- и соул-{rel}",
-    "funk": "фанк-{rel}",
-    "soul": "соул-{rel}",
-    "reggae": "регги-{rel}",
-    "blues": "блюзовых {rel}",
-    "folk, world, & country": "фолк- и кантри-{rel}",
-    "folk": "фолк-{rel}",
-    "country": "кантри-{rel}",
-    "latin": "латинских {rel}",
-    "stage & screen": "саундтрек-{rel}",
-    "non-music": "non-music {rel}",
-    "children's": "детских {rel}",
-    "brass & military": "бравурных {rel}",
-}
+# Ревизия дизайна OG-картинки. Мессенджеры (Telegram, VK, WhatsApp) кэшируют
+# превью по URL и сами его не перепроверяют — старая картинка живёт у них
+# неделями. Поэтому версия едет в query: бампнули число → для краулеров это
+# новый адрес, и они перекачивают. Второй компонент — profile.updated_at, чтобы
+# превью обновлялось и когда владелец сам поменял настройки профиля.
+OG_IMAGE_REVISION = 2
 
 
-def _ru_plural(n: int, one: str, few: str, many: str) -> str:
-    """Русское склонение существительного по числу.
-    one — для 1, 21, 31… (last digit 1, кроме 11–14)
-    few — для 2–4, 22–24… (last digit 2–4, кроме 12–14)
-    many — для 0, 5–20, 25–30…
+def _og_image_url(username: str, profile: ProfileShare) -> str:
+    stamp = int(profile.updated_at.timestamp()) if profile.updated_at else 0
+    return f"{BASE_URL}/@{username}/og-image.png?v={OG_IMAGE_REVISION}-{stamp}"
+
+
+def _fun_stat_markup(stat: dict) -> Markup:
+    """Собирает разметку факта из кусков `{"text", "bold"}`.
+
+    Каждый кусок экранируется отдельно: имя артиста и жанр приходят из Record
+    и задаются пользователем (schemas/record.py: artist/genre — свободные
+    строки), то есть попадали бы в разметку публичной страницы как есть.
+    Шаблон не делает `|safe`, поэтому забытый Markup даст видимые теги, а не
+    исполнение — ошибка станет заметной, но безопасной.
     """
-    n_abs = abs(int(n))
-    if 11 <= n_abs % 100 <= 14:
-        return many
-    last = n_abs % 10
-    if last == 1:
-        return one
-    if 2 <= last <= 4:
-        return few
-    return many
-
-
-def _genre_label(genre: str, count: int) -> str:
-    """Возвращает русскую форму жанра + склонённое 'релиз/-а/-ов' по числу."""
-    rel = _ru_plural(count, "релиз", "релиза", "релизов")
-    key = (genre or "").strip().lower()
-    template = _GENRE_RU.get(key) or f"{genre}-{{rel}}"
-    return template.replace("{rel}", rel)
+    out = Markup("")
+    for part in stat["parts"]:
+        tpl = Markup("<b>{}</b>") if part["bold"] else Markup("{}")
+        out += tpl.format(part["text"])
+    return out
 
 
 # Локальные логотипы (есть в /static/store-logos/{slug}.png). Если slug не в списке —
@@ -449,282 +427,13 @@ async def public_profile_page(
     market_releases = await _get_market_storefront(db, limit=24, user_id=user.id)
 
     # === Fun stats — ротирующие фишки коллекции ===
-    # Все агрегации идут поверх DISTINCT record_id, чтобы один и тот же релиз
-    # из разных папок не задваивал статистику.
+    # Считаются в services/profile_stats.py — тот же список идёт в OG-картинку.
     fun_stats: list[dict] = []
-    try:
-      if profile.show_collection and collection_count > 0:
-        # Подзапрос с уникальными record_id юзера
-        user_records_subq = (
-            select(CollectionItem.record_id.distinct().label("rid"))
-            .join(Collection, Collection.id == CollectionItem.collection_id)
-            .where(Collection.user_id == user.id)
-            .subquery()
-        )
-        ur_join = user_records_subq.join(Record, Record.id == user_records_subq.c.rid)
-
-        # Цветные пластинки (по format_description: Coloured / Translucent / Picture / Splatter)
-        color_keywords = ["Coloured", "Color", "Translucent", "Picture Disc", "Splatter", "Marbled", "Glow"]
-        color_filter = func.coalesce(Record.format_description, "")
-        color_clauses = [color_filter.ilike(f"%{kw}%") for kw in color_keywords]
-        color_count = await db.scalar(
-            select(func.count(Record.id))
-            .select_from(ur_join)
-            .where(or_(*color_clauses))
-        ) or 0
-
-        # Топ-жанр (Discogs хранит несколько через запятую — расщепляем в Python)
-        genre_rows = await db.execute(
-            select(Record.genre)
-            .select_from(ur_join)
-            .where(Record.genre.isnot(None), Record.genre != "")
-        )
-        genre_counter: dict[str, int] = {}
-        for (genre_str,) in genre_rows:
-            for g in (genre_str or "").split(","):
-                g_clean = g.strip()
-                if g_clean:
-                    genre_counter[g_clean] = genre_counter.get(g_clean, 0) + 1
-        top_genre, top_genre_count = (None, 0)
-        if genre_counter:
-            top_genre, top_genre_count = max(genre_counter.items(), key=lambda kv: kv[1])
-
-        # Декада с наибольшим количеством
-        year_rows = await db.execute(
-            select(Record.year)
-            .select_from(ur_join)
-            .where(Record.year.isnot(None), Record.year > 1900)
-        )
-        decade_counter: dict[int, int] = {}
-        for (yr,) in year_rows:
-            if yr is None:
-                continue
-            d = (int(yr) // 10) * 10
-            decade_counter[d] = decade_counter.get(d, 0) + 1
-        top_decade, top_decade_count = (None, 0)
-        if decade_counter:
-            top_decade, top_decade_count = max(decade_counter.items(), key=lambda kv: kv[1])
-
-        # Стран и лейблов (distinct по уникальным записям)
-        countries_count = await db.scalar(
-            select(func.count(func.distinct(Record.country)))
-            .select_from(ur_join)
-            .where(Record.country.isnot(None), Record.country != "")
-        ) or 0
-
-        labels_count = await db.scalar(
-            select(func.count(func.distinct(Record.label)))
-            .select_from(ur_join)
-            .where(Record.label.isnot(None), Record.label != "")
-        ) or 0
-
-        # Самая старая пластинка
-        oldest_row = await db.execute(
-            select(Record.year, Record.artist, Record.title)
-            .select_from(ur_join)
-            .where(Record.year.isnot(None), Record.year > 1900)
-            .order_by(Record.year.asc())
-            .limit(1)
-        )
-        oldest = oldest_row.first()
-
-        # Самая свежая пластинка
-        newest_row = await db.execute(
-            select(Record.year)
-            .select_from(ur_join)
-            .where(Record.year.isnot(None), Record.year > 1900)
-            .order_by(Record.year.desc())
-            .limit(1)
-        )
-        newest = newest_row.first()
-
-        # Релизы текущего года.
-        # added_at в БД хранится без таймзоны — работаем с naive UTC,
-        # чтобы asyncpg не падал на сравнении offset-aware с naive.
-        now_utc_naive = datetime.utcnow()
-        current_year = now_utc_naive.year
-        fresh_count = await db.scalar(
-            select(func.count(Record.id))
-            .select_from(ur_join)
-            .where(Record.year == current_year)
-        ) or 0
-
-        # Distinct artists
-        artists_count = await db.scalar(
-            select(func.count(func.distinct(Record.artist)))
-            .select_from(ur_join)
-            .where(Record.artist.isnot(None), Record.artist != "")
-        ) or 0
-
-        # Топ-артист (count distinct records по artist)
-        top_artist_row = await db.execute(
-            select(Record.artist, func.count(Record.id).label("cnt"))
-            .select_from(ur_join)
-            .where(Record.artist.isnot(None), Record.artist != "")
-            .group_by(Record.artist)
-            .order_by(func.count(Record.id).desc())
-            .limit(1)
-        )
-        top_artist = top_artist_row.first()
-
-        # Первые прессы / Каноничные / Коллекционка
-        rare_count = await db.scalar(
-            select(func.count(Record.id))
-            .select_from(ur_join)
-            .where(or_(Record.is_first_press == True, Record.is_canon == True, Record.is_collectible == True))
-        ) or 0
-
-        # Самая дорогая (по estimated_price_rub в коллекции юзера).
-        # select_from(CollectionItem) — иначе SQLA вывел бы FROM из Record и
-        # JOIN-цепочка не сошлась бы.
-        priciest_row = await db.execute(
-            select(Record.artist, Record.title, CollectionItem.estimated_price_rub)
-            .select_from(CollectionItem)
-            .join(Collection, CollectionItem.collection_id == Collection.id)
-            .join(Record, CollectionItem.record_id == Record.id)
-            .where(
-                Collection.user_id == user.id,
-                CollectionItem.estimated_price_rub.isnot(None),
-                CollectionItem.estimated_price_rub > 0,
-            )
-            .order_by(CollectionItem.estimated_price_rub.desc())
-            .limit(1)
-        )
-        priciest = priciest_row.first()
-
-        # Возраст коллекции (дни от первой добавленной записи)
-        first_added = await db.scalar(
-            select(func.min(CollectionItem.added_at))
-            .join(Collection, Collection.id == CollectionItem.collection_id)
-            .where(Collection.user_id == user.id)
-        )
-
-        # Новых за последние 7 дней
-        week_ago = now_utc_naive - timedelta(days=7)
-        new_this_week = await db.scalar(
-            select(func.count(CollectionItem.id))
-            .join(Collection, Collection.id == CollectionItem.collection_id)
-            .where(
-                Collection.user_id == user.id,
-                CollectionItem.added_at >= week_ago,
-            )
-        ) or 0
-
-        # === Сборка списка ===
-        # Правило: stat показывается только если значение > 0 и проходит порог.
-        # Все формы существительных/прилагательных склоняются по числу через _ru_plural.
-        #
-        # ВАЖНО про `html`: значение обязано быть Markup, собранным через
-        # Markup(...).format(...) — этот .format() экранирует КАЖДЫЙ аргумент.
-        # Обычная f-строка сюда класть нельзя: имя артиста и жанр приходят из
-        # Record и задаются пользователем (schemas/record.py: artist/genre —
-        # свободные строки), то есть попадали бы в разметку публичной страницы
-        # как есть. Шаблон больше не делает `|safe`, поэтому забытый Markup
-        # даст видимые теги, а не исполнение — ошибка станет заметной, но
-        # безопасной.
-        if color_count > 0:
-            phrase = _ru_plural(color_count, "цветная пластинка", "цветные пластинки", "цветных пластинок")
-            fun_stats.append({
-                "icon": "🎨",
-                "html": Markup("<b>{}</b> {}").format(color_count, phrase),
-            })
-        if top_genre and top_genre_count >= 2:
-            fun_stats.append({
-                "icon": "🎧",
-                "html": Markup("<b>{}</b> {}").format(
-                    top_genre_count, _genre_label(top_genre, top_genre_count),
-                ),
-            })
-        if top_decade and top_decade_count >= 2:
-            word = _ru_plural(top_decade_count, "пластинка", "пластинки", "пластинок")
-            fun_stats.append({
-                "icon": "📻",
-                "html": Markup("<b>{}</b> {} из {}-х").format(top_decade_count, word, top_decade),
-            })
-        if fresh_count > 0:
-            word = _ru_plural(fresh_count, "релиз", "релиза", "релизов")
-            fun_stats.append({
-                "icon": "🚀",
-                "html": Markup("<b>{}</b> {} {}-го").format(fresh_count, word, current_year),
-            })
-        if countries_count >= 2:
-            word = _ru_plural(countries_count, "страна", "страны", "стран")
-            fun_stats.append({
-                "icon": "🌍",
-                "html": Markup("<b>{}</b> {} в коллекции").format(countries_count, word),
-            })
-        if labels_count >= 3:
-            phrase = _ru_plural(labels_count, "разный лейбл", "разных лейбла", "разных лейблов")
-            fun_stats.append({
-                "icon": "🏷️",
-                "html": Markup("<b>{}</b> {}").format(labels_count, phrase),
-            })
-        if artists_count >= 5:
-            phrase = _ru_plural(artists_count, "разный артист", "разных артиста", "разных артистов")
-            fun_stats.append({
-                "icon": "🎙️",
-                "html": Markup("<b>{}</b> {}").format(artists_count, phrase),
-            })
-        if top_artist and top_artist[1] >= 2:
-            artist_name = (top_artist[0] or "").strip()
-            if len(artist_name) > 22:
-                artist_name = artist_name[:22] + "…"
-            fun_stats.append({
-                "icon": "👑",
-                "html": Markup("Топ-артист: <b>{}</b>").format(artist_name),
-            })
-        if oldest and oldest[0]:
-            artist_name = (oldest[1] or "").strip()
-            if len(artist_name) > 18:
-                artist_name = artist_name[:18] + "…"
-            suffix = f" · {artist_name}" if artist_name else ""
-            fun_stats.append({
-                "icon": "🕰️",
-                "html": Markup("Самая старая: <b>{}</b>{}").format(oldest[0], suffix),
-            })
-        if newest and newest[0] and (not oldest or newest[0] != oldest[0]):
-            fun_stats.append({
-                "icon": "🆕",
-                "html": Markup("Самая свежая: <b>{}</b>").format(newest[0]),
-            })
-        if rare_count > 0:
-            phrase = _ru_plural(rare_count, "редкое издание", "редких издания", "редких изданий")
-            fun_stats.append({
-                "icon": "💎",
-                "html": Markup("<b>{}</b> {}").format(rare_count, phrase),
-            })
-        if priciest and priciest[2] and priciest[2] >= 1000:
-            price_fmt = f"{int(priciest[2]):,}".replace(",", " ")
-            fun_stats.append({
-                "icon": "💸",
-                "html": Markup("Самая дорогая: <b>{} ₽</b>").format(price_fmt),
-            })
-        if first_added:
-            fa = first_added.replace(tzinfo=None) if first_added.tzinfo else first_added
-            days = (now_utc_naive - fa).days
-            if days >= 365:
-                years = days // 365
-                word = _ru_plural(years, "год", "года", "лет")
-                fun_stats.append({
-                    "icon": "📅",
-                    "html": Markup("Собирает <b>{}</b> {}").format(years, word),
-                })
-            elif days >= 90:
-                months = max(1, days // 30)
-                word = _ru_plural(months, "месяц", "месяца", "месяцев")
-                fun_stats.append({
-                    "icon": "📅",
-                    "html": Markup("Собирает <b>{}</b> {}").format(months, word),
-                })
-        if new_this_week >= 2:
-            phrase = _ru_plural(new_this_week, "новая пластинка", "новые пластинки", "новых пластинок")
-            fun_stats.append({
-                "icon": "⚡",
-                "html": Markup("<b>{}</b> {} за неделю").format(new_this_week, phrase),
-            })
-    except Exception as e:
-        logger.warning("fun_stats computation failed: %s", e)
-        fun_stats = []
+    if profile.show_collection and collection_count > 0:
+        fun_stats = [
+            {"icon": s["icon"], "html": _fun_stat_markup(s)}
+            for s in await compute_fun_stats(user.id, db)
+        ]
 
     # === Избранные пластинки ===
     highlights = []
@@ -863,6 +572,7 @@ async def public_profile_page(
         "wishlist_items": wishlist_items,
         "active_tab": tab if tab in ("collection", "wishlist") else "collection",
         "og_description": og_description,
+        "og_image_url": _og_image_url(user.username, profile),
         "base_url": BASE_URL,
         "usd_rub_rate": float(usd_rub_rate),
         "compute_rub": compute_rub,
@@ -894,21 +604,49 @@ async def profile_og_image(
 
     profile = user.profile_share
 
+    # Счётчики считаем ровно так же, как страница: distinct record_id (одна и та
+    # же пластинка из разных папок — одна пластинка), иначе превью показывало бы
+    # число больше, чем сам профиль.
     collection_count = await db.scalar(
-        select(func.count(CollectionItem.id))
+        select(func.count(func.distinct(CollectionItem.record_id)))
         .join(Collection)
         .where(Collection.user_id == user.id)
     ) or 0
 
-    collection_value = None
+    wishlist_count = 0
+    if profile.show_wishlist:
+        wishlist_count = await db.scalar(
+            select(func.count(WishlistItem.id))
+            .join(Wishlist)
+            .where(Wishlist.user_id == user.id, WishlistItem.is_purchased == False)
+        ) or 0
+
+    # Стоимость — в рублях и по кэшу CollectionItem.estimated_price_rub, как в
+    # hero-карточке. Раньше тут суммировались USD-медианы по всем строкам, и
+    # превью расходилось со страницей и по валюте, и по дублям.
+    collection_value_rub = None
+    monthly_delta = None
     if profile.show_collection_value:
-        value_result = await db.scalar(
-            select(func.sum(Record.estimated_price_median))
-            .join(CollectionItem, CollectionItem.record_id == Record.id)
-            .join(Collection)
+        rub_subq = (
+            select(
+                CollectionItem.record_id.label("rid"),
+                func.max(CollectionItem.estimated_price_rub).label("rub"),
+            )
+            .join(Collection, Collection.id == CollectionItem.collection_id)
             .where(Collection.user_id == user.id)
+            .group_by(CollectionItem.record_id)
+            .subquery()
         )
-        collection_value = round(float(value_result), 2) if value_result else None
+        value_rub_result = await db.scalar(select(func.sum(rub_subq.c.rub)))
+        collection_value_rub = round(float(value_rub_result), 2) if value_rub_result else None
+        delta = await get_monthly_delta(user.id, db)
+        monthly_delta = float(delta) if delta is not None else None
+
+    # Фишки коллекции — тот же расчёт, что на странице; для картинки берём три
+    # самых цепляющих.
+    fun_stats = []
+    if profile.show_collection and collection_count > 0:
+        fun_stats = pick_for_og(await compute_fun_stats(user.id, db), limit=3)
 
     # Обложки избранных пластинок
     cover_urls = []
@@ -941,8 +679,13 @@ async def profile_og_image(
             username=user.username,
             display_name=user.display_name,
             collection_count=collection_count,
-            collection_value=collection_value,
             cover_urls=cover_urls,
+            custom_title=profile.custom_title,
+            wishlist_count=wishlist_count,
+            collection_value_rub=collection_value_rub,
+            monthly_delta=monthly_delta,
+            fun_stats=fun_stats,
+            avatar_url=user.avatar_url,
         )
 
         return StreamingResponse(
