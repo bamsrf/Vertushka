@@ -141,7 +141,8 @@ class GiftBookingOwnerResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
-    wishlist_item_id: UUID
+    # None у вручённых и отвязанных броней: при завершении связь с пунктом рвётся
+    wishlist_item_id: UUID | None
     gifter_name: str
     gifter_email: str
     gifter_phone: str | None
