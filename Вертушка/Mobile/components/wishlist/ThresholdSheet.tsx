@@ -74,6 +74,9 @@ const STEP = 100;
 // было нечем. Плюс кнопка [−] клампилась по 0, а дисплей — по lo, поэтому ниже lo
 // цифра замирала, а в сохранение уходило другое число.
 const MIN_THRESHOLD = 100;
+// Цвета засечек-ориентиров на треке (текущая цена / исторический минимум).
+const TICK_CURRENT = '#9A9EBF';
+const TICK_LOW = '#30A46C';
 
 const fmt = (n: number) => (Number.isFinite(n) ? Math.round(n) : 0).toLocaleString('ru-RU');
 const roundTo = (n: number, step: number) => Math.max(0, Math.round(n / step) * step);
@@ -268,6 +271,16 @@ export const ThresholdSheet = forwardRef<ThresholdSheetRef, Props>(({ onSaved, o
     }
   };
 
+  // Засечки-ориентиры на треке. Без них порог задавался вслепую: шкала 100…1.6×
+  // цены линейная, и «дорого/дёшево» на глаз не читалось. Позиции статичные
+  // (от bounds, не от thumbX), поэтому считаем на JS — воркеты тут не нужны.
+  const tickX = (v: number | null) =>
+    v == null || bounds.hi <= bounds.lo
+      ? null
+      : clamp(((v - bounds.lo) / (bounds.hi - bounds.lo)) * trackW, 0, trackW);
+  const curX = tickX(current);
+  const lowX = tickX(low);
+
   const onTrackLayout = (e: LayoutChangeEvent) => {
     const w = e.nativeEvent.layout.width;
     if (w > 0) setTrackW(w);
@@ -317,8 +330,21 @@ export const ThresholdSheet = forwardRef<ThresholdSheetRef, Props>(({ onSaved, o
           />
           <Text style={styles.rub}> ₽</Text>
         </View>
-        {low ? (
-          <Text style={styles.context}>мин. за 90 дней: {fmt(low)} ₽</Text>
+        {current != null || low != null ? (
+          <View style={styles.ticksLegend}>
+            {current != null ? (
+              <View style={styles.ticksLegendItem}>
+                <View style={[styles.legendDash, { backgroundColor: TICK_CURRENT }]} />
+                <Text style={styles.context}>сейчас {fmt(current)} ₽</Text>
+              </View>
+            ) : null}
+            {low != null ? (
+              <View style={styles.ticksLegendItem}>
+                <View style={[styles.legendDash, { backgroundColor: TICK_LOW }]} />
+                <Text style={styles.context}>мин. за 90 дней {fmt(low)} ₽</Text>
+              </View>
+            ) : null}
+          </View>
         ) : null}
 
         <View style={styles.sliderRow}>
@@ -330,6 +356,12 @@ export const ThresholdSheet = forwardRef<ThresholdSheetRef, Props>(({ onSaved, o
             <View style={styles.track} onLayout={onTrackLayout}>
               <View style={styles.trackBg} />
               <Animated.View style={[styles.fill, fillStyle]} />
+              {lowX != null ? (
+                <View style={[styles.tick, { left: lowX - 1, backgroundColor: TICK_LOW }]} pointerEvents="none" />
+              ) : null}
+              {curX != null ? (
+                <View style={[styles.tick, { left: curX - 1, backgroundColor: TICK_CURRENT }]} pointerEvents="none" />
+              ) : null}
               <GestureDetector gesture={pan}>
                 <Animated.View
                   style={[styles.thumb, thumbStyle]}
@@ -393,7 +425,11 @@ const styles = StyleSheet.create({
   amountRow: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'center', marginTop: 20 },
   amount: { fontFamily: 'Inter_800ExtraBold', fontSize: 52, color: Colors.royalBlue, fontVariant: ['tabular-nums'], letterSpacing: -1, padding: 0, textAlign: 'center', minWidth: 120 },
   rub: { fontFamily: 'Inter_800ExtraBold', fontSize: 40, color: Colors.periwinkle },
-  context: { ...Typography.caption, color: Colors.textSecondary, textAlign: 'center', marginTop: 4, fontVariant: ['tabular-nums'] },
+  context: { ...Typography.caption, color: Colors.textSecondary, fontVariant: ['tabular-nums'] },
+  ticksLegend: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 14, marginTop: 6 },
+  ticksLegendItem: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  legendDash: { width: 9, height: 3, borderRadius: 2 },
+  tick: { position: 'absolute', width: 2, height: 16, borderRadius: 1, top: 14 },
   sliderRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 14, marginTop: 24 },
   sideBtn: { width: 44, height: 44, borderRadius: 14, backgroundColor: '#fff', borderWidth: 1, borderColor: Colors.border, alignItems: 'center', justifyContent: 'center' },
   sideTxt: { fontFamily: 'Inter_700Bold', fontSize: 24, color: Colors.royalBlue, marginTop: -2 },
