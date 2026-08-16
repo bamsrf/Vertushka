@@ -26,7 +26,15 @@ export type CoachMarkKey =
   | 'multi-select'
   | 'radar'
   | 'market'
-  | 'gifts-incoming';
+  | 'gifts-incoming'
+  | 'scan-ways'
+  // Подсказки карточки релиза. Их условие — свойство КОНКРЕТНОЙ пластинки
+  // (цветной винил, ярлык редкости, живая цена магазина), а не состояние
+  // аккаунта, поэтому срабатывают на первом релизе, где такое встретилось.
+  | 'vinyl-color'
+  | 'rarity-tiers'
+  | 'offer-price'
+  | 'other-versions';
 
 export interface CoachMarkMeta {
   key: CoachMarkKey;
@@ -55,6 +63,12 @@ export interface CoachMarkMeta {
    */
   spotlight?: 'pulse' | 'glow';
   /**
+   * Группа лимита «одна за запуск». По умолчанию 'app'. Подсказки карточки
+   * релиза живут в своей группе — иначе слот всегда забирала бы коллекция,
+   * стартовый экран. См. CoachMarkGroup.
+   */
+  group?: CoachMarkGroup;
+  /**
    * Меньше — важнее. Разрешает конкуренцию, когда условия сошлись у нескольких
    * подсказок в один момент. Порядок задан ценностью для новичка: сначала то,
    * без чего интерфейс непонятен (жест зума), затем то, что он всё равно
@@ -68,6 +82,18 @@ export interface CoachMarkMeta {
  * «Как это работает» читают отсюда, поэтому тексты не разъезжаются.
  */
 export const COACH_MARKS: CoachMarkMeta[] = [
+  {
+    key: 'scan-ways',
+    // Самый высокий приоритет: это первый экран после регистрации, и на нём
+    // человек делает первое действие в приложении. Остальные подсказки к этому
+    // моменту всё равно заблокированы — коллекция пустая.
+    priority: 5,
+    title: 'Три способа добавить пластинку',
+    body: 'Штрихкод — наведи камеру на код с обложки. Обложка — просто сфотографируй её. А если пластинки нет ни в Discogs, ни в Маркете, добавь её вручную.',
+    unlock: 'первый заход на экран сканирования',
+    where: 'Сканер → переключатель сверху, ручной ввод — кружок справа внизу',
+    icon: 'plus',
+  },
   {
     key: 'pinch-zoom',
     priority: 10,
@@ -129,6 +155,52 @@ export const COACH_MARKS: CoachMarkMeta[] = [
     unlock: 'открыл карточку релиза с офферами или собрал 3 позиции в вишлисте',
     where: 'Поиск → вниз до плашки «Маркет»',
     icon: 'business-outline',
+  },
+  // --- Подсказки карточки релиза ---------------------------------------
+  //
+  // Приоритеты подобраны по «насколько непонятно без объяснения»: ярлык
+  // редкости человек видит как цветную плашку без единого слова, цвет винила
+  // читается как опечатка в названии, цена магазина спорит с оценкой Discogs,
+  // а «другие версии» хотя бы честно подписаны кнопкой.
+  {
+    key: 'rarity-tiers',
+    group: 'record',
+    priority: 22,
+    title: 'Что значат ярлыки',
+    body: 'Коллекционка — дороже $100 и почти не появляется в продаже. Лимитка — специальное издание. Популярно — на неё высокий спрос на Discogs прямо сейчас.',
+    unlock: 'открыл релиз с ярлыком редкости',
+    where: 'Карточка релиза → блок «Особенности»',
+    icon: 'sparkle',
+  },
+  {
+    key: 'vinyl-color',
+    group: 'record',
+    priority: 26,
+    title: 'Цвет винила',
+    body: 'Один и тот же альбом печатают на чёрном, цветном и прозрачном виниле. Цвет — часть конкретного издания и заметно влияет на цену.',
+    unlock: 'открыл релиз с цветным винилом',
+    where: 'Карточка релиза → плашка с цветом под обложкой',
+    icon: 'disc-outline',
+  },
+  {
+    key: 'offer-price',
+    group: 'record',
+    priority: 38,
+    title: 'Цена магазина',
+    body: 'Это реальный ценник конкретного магазина сейчас, а не оценка Discogs выше. Поэтому числа отличаются: одно — сколько просят, другое — сколько такие пластинки обычно стоят.',
+    unlock: 'открыл релиз, который есть в наличии в магазине',
+    where: 'Карточка релиза → блок «Где купить»',
+    icon: 'currency-rub',
+  },
+  {
+    key: 'other-versions',
+    group: 'record',
+    priority: 44,
+    title: 'Другие версии',
+    body: 'Один альбом переиздают десятки раз: разные годы, страны, цвет винила. Здесь все издания этого релиза — сравни и добавь именно своё.',
+    unlock: 'открыл релиз, у которого есть переиздания',
+    where: 'Карточка релиза → «Смотреть другие версии релиза»',
+    icon: 'grid-outline',
   },
   {
     key: 'gifts-incoming',
@@ -198,10 +270,24 @@ function parseState(raw: string | null): CoachMarkState {
  */
 let stateCache: { userId: string; states: Map<CoachMarkKey, CoachMarkState> } | null = null;
 
-/** Лимит «одна подсказка за запуск». Сбрасывается только перезапуском приложения. */
-let shownThisSession = false;
+/**
+ * Группа подсказки — у каждой свой лимит «одна за запуск».
+ *
+ * Зачем группы. Пока слот был общий, подсказки коллекции забирали его первыми:
+ * коллекция — стартовый экран, её условия сходятся раньше, чем человек вообще
+ * откроет карточку релиза. В итоге подсказки самой карточки (цвет винила,
+ * ярлыки, цена магазина) почти никогда не доходили до очереди — а объясняют они
+ * то, что видно прямо сейчас и больше нигде не объясняется.
+ *
+ * Группы независимы, поэтому за запуск можно увидеть максимум две подсказки:
+ * одну «про приложение» и одну «про эту пластинку». Это всё ещё не залп.
+ */
+export type CoachMarkGroup = 'app' | 'record';
 
-export const isSessionSlotTaken = () => shownThisSession;
+/** Лимит «одна подсказка за запуск» — свой на каждую группу. */
+const shownThisSession: Record<CoachMarkGroup, boolean> = { app: false, record: false };
+
+export const isSessionSlotTaken = (group: CoachMarkGroup = 'app') => shownThisSession[group];
 
 /**
  * Окно арбитража. Хуки разных подсказок монтируются в одном рендере, но их
@@ -213,6 +299,7 @@ const ARBITRATION_MS = 150;
 
 interface PendingRequest {
   priority: number;
+  group: CoachMarkGroup;
   resolve: (won: boolean) => void;
 }
 
@@ -225,19 +312,28 @@ function settleArbitration() {
   pending.clear();
   if (entries.length === 0) return;
 
-  entries.sort((a, b) => a[1].priority - b[1].priority);
-  const [, winner] = entries[0];
-
-  // Слот мог уйти, пока шло окно (например, подсказку сбросили из настроек и
-  // тут же показали) — тогда не выигрывает никто.
-  if (shownThisSession) {
-    entries.forEach(([, req]) => req.resolve(false));
-    return;
+  // Арбитраж идёт внутри группы: заявки из разных групп не конкурируют, у
+  // каждой свой слот.
+  const byGroup = new Map<CoachMarkGroup, typeof entries>();
+  for (const entry of entries) {
+    const group = entry[1].group;
+    const bucket = byGroup.get(group);
+    if (bucket) bucket.push(entry);
+    else byGroup.set(group, [entry]);
   }
 
-  shownThisSession = true;
-  winner.resolve(true);
-  entries.slice(1).forEach(([, req]) => req.resolve(false));
+  for (const [group, groupEntries] of byGroup) {
+    // Слот мог уйти, пока шло окно (например, подсказку сбросили из настроек и
+    // тут же показали) — тогда не выигрывает никто.
+    if (shownThisSession[group]) {
+      groupEntries.forEach(([, req]) => req.resolve(false));
+      continue;
+    }
+    groupEntries.sort((a, b) => a[1].priority - b[1].priority);
+    shownThisSession[group] = true;
+    groupEntries[0][1].resolve(true);
+    groupEntries.slice(1).forEach(([, req]) => req.resolve(false));
+  }
 }
 
 /**
@@ -245,14 +341,16 @@ function settleArbitration() {
  * той, у которой меньше `priority` среди заявившихся в окне арбитража.
  */
 export function requestCoachMark(key: CoachMarkKey): Promise<boolean> {
-  if (shownThisSession) return Promise.resolve(false);
+  const meta = getCoachMark(key);
+  const group = meta.group ?? 'app';
+  if (shownThisSession[group]) return Promise.resolve(false);
 
   const existing = pending.get(key);
   // Повторная заявка тем же ключом (перерендер) — не плодим промисы.
   if (existing) return new Promise((resolve) => existing.resolve = chain(existing.resolve, resolve));
 
   return new Promise<boolean>((resolve) => {
-    pending.set(key, { priority: getCoachMark(key).priority, resolve });
+    pending.set(key, { priority: meta.priority, group, resolve });
     if (!arbitrationTimer) {
       arbitrationTimer = setTimeout(settleArbitration, ARBITRATION_MS);
     }
@@ -263,8 +361,8 @@ export function requestCoachMark(key: CoachMarkKey): Promise<boolean> {
  * Вернуть слот, если победитель не смог показаться (компонент размонтировался,
  * пока шёл арбитраж). Без этого сессия осталась бы вовсе без подсказки.
  */
-export function releaseSessionSlot() {
-  shownThisSession = false;
+export function releaseSessionSlot(group: CoachMarkGroup = 'app') {
+  shownThisSession[group] = false;
 }
 
 /** Разрешить обе заявки одним результатом. */
@@ -333,8 +431,9 @@ export async function resetCoachMarks(userId: string, key?: CoachMarkKey) {
     targets.forEach((k) => stateCache!.states.delete(k));
   }
   // Сброс — это явный запрос увидеть подсказку снова, поэтому освобождаем и
-  // слот сессии: иначе пришлось бы перезапускать приложение.
-  shownThisSession = false;
+  // слоты сессии: иначе пришлось бы перезапускать приложение.
+  shownThisSession.app = false;
+  shownThisSession.record = false;
   if (arbitrationTimer) {
     clearTimeout(arbitrationTimer);
     arbitrationTimer = null;

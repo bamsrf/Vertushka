@@ -51,6 +51,15 @@ export interface FirstStep {
   route: string;
   /** Что подсветить на целевом экране — если словами место не объяснить. */
   spotlight?: SpotlightKey;
+  /**
+   * Предложение, а не задание. Такой пункт не входит в счётчик и в прогресс-бар,
+   * не может стать «следующим шагом» и не мешает чеклисту закрыться целиком.
+   *
+   * Нужно ровно для Discogs: аккаунт там есть далеко не у всех, и пункт в общем
+   * знаменателе превращал «подключи чужой сервис» в условие, без которого
+   * онбординг не считается пройденным.
+   */
+  optional?: boolean;
   done: boolean;
 }
 
@@ -245,6 +254,7 @@ function buildSteps(input: StepsInput): FirstStep[] {
       label: 'Перенести коллекцию из Discogs',
       why: 'Если ведёшь коллекцию там — заберём всё разом, вручную добавлять не придётся.',
       route: '/settings/discogs',
+      optional: true,
       done: discogsConnected === true,
     });
   }
@@ -283,6 +293,7 @@ function buildSteps(input: StepsInput): FirstStep[] {
       label: 'Поделиться профилем',
       why: 'Скопируй ссылку или отправь её — друзья забронируют подарок из вишлиста.',
       route: '/profile',
+      spotlight: 'profile-share',
       done: shared,
     },
   );
@@ -416,17 +427,21 @@ export function useFirstSteps(): FirstStepsState {
     discogsConnected,
   });
 
-  const doneCount = steps.filter((s) => s.done).length;
+  // Счётчик, прогресс-бар и «следующий шаг» считаются только по обязательным
+  // пунктам: необязательные — предложение, а не долг, и держать чеклист
+  // незакрытым они не должны.
+  const required = steps.filter((s) => !s.optional);
+  const doneCount = required.filter((s) => s.done).length;
 
   return {
     steps,
     doneCount,
-    total: steps.length,
+    total: required.length,
     // Пока не прочитали хранилище — не показываем: мигание карточки на старте
     // выглядит как баг рендера.
     visible: loaded && !dismissed,
-    allDone: doneCount === steps.length,
-    nextStepKey: steps.find((s) => !s.done)?.key ?? null,
+    allDone: doneCount === required.length,
+    nextStepKey: required.find((s) => !s.done)?.key ?? null,
     expanded,
     toggleExpanded,
     dismiss: () => {

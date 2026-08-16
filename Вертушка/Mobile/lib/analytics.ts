@@ -250,6 +250,19 @@ export const analytics = {
   /** Тап по невыполненному пункту чеклиста «Первые шаги». */
   onboardingStepTap: (key: string) => track('onboarding_step_tap', { key }),
   /**
+   * Тур по карточке релиза. Состав шагов зависит от релиза (у одного нет
+   * истории цен, у другого — других версий), поэтому длина пишется явно:
+   * без неё «дошёл до 3-го» ничего не значит.
+   */
+  recordTourStarted: (steps: number) => track('record_tour_started', { steps }),
+  /**
+   * Чем кончился тур. reason='done' — долистал до конца, 'skip' — закрыл
+   * крестиком или ушёл с экрана. Пара (reached, steps) показывает, на каком
+   * именно блоке люди перестают читать.
+   */
+  recordTourFinished: (reason: 'done' | 'skip', reached: number, steps: number) =>
+    track('record_tour_finished', { reason, reached, steps }),
+  /**
    * Пункт чеклиста закрылся. Отличается от step_tap: тап — это намерение,
    * а done — факт. Их разница по каждому шагу и показывает, где человек
    * пошёл делать и не дошёл.

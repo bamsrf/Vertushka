@@ -176,6 +176,12 @@ export function FirstStepsCard({ overrides }: FirstStepsCardProps = {}) {
                       ]}
                     >
                       {step.label}
+                      {/* Метка прямо в строке пункта: без неё необязательный
+                          пункт выглядит как невыполненное задание — он ведь
+                          с таким же пустым кружком, как остальные. */}
+                      {step.optional && !step.done && (
+                        <Text style={styles.stepOptional}>  · по желанию</Text>
+                      )}
                     </Text>
                     {showWhy && <Text style={styles.stepWhy}>{step.why}</Text>}
                   </View>
@@ -195,7 +201,9 @@ export function FirstStepsCard({ overrides }: FirstStepsCardProps = {}) {
 
 const styles = StyleSheet.create({
   card: {
-    marginHorizontal: Spacing.md,
+    // Без собственного горизонтального отступа: шапка коллекции уже задаёт
+    // свой, и лишние 16 px сдвигали карточку вправо относительно «Выбрать»,
+    // «Папок» и сетки — она одна стояла не по общей левой линии.
     marginBottom: Spacing.md,
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.sm + 2,
@@ -291,6 +299,11 @@ const styles = StyleSheet.create({
     ...Typography.caption,
     color: Colors.textSecondary,
     marginTop: 3,
+  },
+  stepOptional: {
+    ...Typography.caption,
+    fontSize: ms(12),
+    color: Colors.textMuted,
   },
   stepLabelDone: {
     color: Colors.textMuted,

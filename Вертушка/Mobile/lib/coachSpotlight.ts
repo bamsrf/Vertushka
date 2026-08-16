@@ -19,7 +19,7 @@
 import { useSyncExternalStore } from 'react';
 import type { CoachMarkKey } from './coachMarks';
 
-export type SpotlightKey = CoachMarkKey | 'profile-avatar';
+export type SpotlightKey = CoachMarkKey | 'profile-avatar' | 'profile-share';
 
 let activeKey: SpotlightKey | null = null;
 let ttlTimer: ReturnType<typeof setTimeout> | null = null;

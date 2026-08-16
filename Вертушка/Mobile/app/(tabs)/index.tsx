@@ -29,6 +29,8 @@ import { RecordSearchResult, ScanMode } from '../../lib/types';
 import { recordPreviewParams } from '../../lib/api';
 import { reportScanAdd, reportScanMiss } from '../../lib/eggTracker';
 import { Colors, Typography, Spacing, BorderRadius, Shadows } from '../../constants/theme';
+import { CoachTip } from '../../components/onboarding/CoachTip';
+import { useCoachMark } from '../../lib/useCoachMark';
 
 function getFormatDisplayInfo(format?: string): { label: string; verb: string } {
   if (!format) return { label: 'Винил', verb: 'добавлен' };
@@ -51,6 +53,9 @@ export default function ScannerScreen() {
   // Гасим ТОЛЬКО по фокусу таба, не по showResults: модалка результатов —
   // pageSheet, она не закрывает экран целиком, и превью видно за её краями.
   const isFocused = useIsFocused();
+  // Подсказка про способы добавления. Условие — только фокус экрана: объяснять
+  // тут нечего разблокировать, это первое, что человек видит после регистрации.
+  const scanWaysTip = useCoachMark('scan-ways', isFocused);
   const [isScanning, setIsScanning] = useState(true);
   const [showResults, setShowResults] = useState(false);
 
@@ -294,6 +299,21 @@ export default function ScannerScreen() {
           </Text>
         </View>
 
+        {/* Три способа добавить пластинку. Переключатель сверху подписан, а
+            ручной ввод — безымянный кружок в правом нижнем углу: развернуть
+            его в пилюлю «Добавить вручную» можно только тапом, то есть узнать
+            о нём заранее нельзя. Подсказка называет все три и подсвечивает
+            именно кружок. */}
+        {scanWaysTip.visible && (
+          <View style={styles.tipWrap}>
+            <CoachTip
+              meta={scanWaysTip.meta}
+              analyticsKey={scanWaysTip.meta.key}
+              onDismiss={scanWaysTip.dismiss}
+            />
+          </View>
+        )}
+
         {/* Рамка сканера */}
         <View style={[
           styles.scannerFrame,
@@ -336,6 +356,7 @@ export default function ScannerScreen() {
           <ManualAddVinylToggle
             onOpen={() => router.push('/record/manual')}
             bottom="14%"
+            highlighted={scanWaysTip.visible}
           />
         )}
       </View>
@@ -460,6 +481,15 @@ const styles = StyleSheet.create({
     marginTop: Spacing.sm,
     marginHorizontal: Spacing.md,
     alignSelf: 'stretch',
+  },
+  // Карточка подсказки поверх камеры: свой фон у неё светлый, поэтому нужен
+  // только горизонтальный отступ — вертикальные держит сама карточка.
+  //
+  // zIndex обязателен: рамка сканера позиционирована абсолютно и в дереве идёт
+  // следом, поэтому без него её углы прочерчивались прямо по тексту подсказки.
+  tipWrap: {
+    paddingHorizontal: Spacing.md,
+    zIndex: 10,
   },
   headerSubtitle: {
     ...Typography.body,

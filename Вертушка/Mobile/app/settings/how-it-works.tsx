@@ -30,6 +30,7 @@ import {
   resetCoachMarks,
 } from '../../lib/coachMarks';
 import { restoreFirstSteps, useFirstStepsDismissed } from '../../lib/onboardingProgress';
+import { resetRecordTour, useRecordTourDone } from '../../lib/recordTour';
 import { BorderRadius, Colors, Shadows, Spacing, Typography } from '../../constants/theme';
 
 export default function HowItWorksScreen() {
@@ -39,6 +40,7 @@ export default function HowItWorksScreen() {
   const resetOnboarding = useOnboardingStore((s) => s.resetOnboarding);
 
   const stepsDismissed = useFirstStepsDismissed();
+  const tourDone = useRecordTourDone();
 
   const [states, setStates] = useState<Map<CoachMarkKey, CoachMarkState>>(new Map());
 
@@ -74,6 +76,15 @@ export default function HowItWorksScreen() {
     }
     await restoreFirstSteps();
     toast.success('Вернули', 'Чеклист снова в шапке коллекции');
+  };
+
+  const handleReplayTour = async () => {
+    if (!tourDone) {
+      toast.info('Разбор и так включён', 'Открой любую карточку релиза');
+      return;
+    }
+    await resetRecordTour();
+    toast.success('Вернули', 'Покажем при следующем открытии карточки');
   };
 
   const handleReplayWelcome = async () => {
@@ -155,6 +166,13 @@ export default function HowItWorksScreen() {
         <TouchableOpacity style={styles.secondary} onPress={handleResetAll}>
           <Icon name="refresh-outline" size={20} color={Colors.royalBlue} />
           <Text style={styles.secondaryText}>Сбросить все подсказки</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.secondary} onPress={handleReplayTour}>
+          <Icon name="refresh-outline" size={20} color={Colors.royalBlue} />
+          <Text style={styles.secondaryText}>
+            {tourDone ? 'Повторить разбор карточки релиза' : 'Разбор карточки релиза включён'}
+          </Text>
         </TouchableOpacity>
 
         <TouchableOpacity style={styles.secondary} onPress={handleReplayWelcome}>

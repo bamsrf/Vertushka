@@ -39,6 +39,15 @@ interface CoachPulseProps {
   radius?: number;
   /** Насколько подсветка выходит за границы цели. */
   inset?: number;
+  /**
+   * Поправка по сторонам, поверх `inset`. Нужна, когда обёрнутый элемент несёт
+   * собственные внешние отступы: обёртка их учитывает, и ореол без поправки
+   * обводил бы не сам блок, а блок вместе с его margin'ами.
+   *
+   * Положительное значение раздвигает ореол наружу, отрицательное — втягивает
+   * внутрь ровно на величину чужого отступа.
+   */
+  edges?: { top?: number; right?: number; bottom?: number; left?: number };
   /** См. шапку файла. По умолчанию 'pulse'. */
   variant?: 'pulse' | 'glow';
   style?: StyleProp<ViewStyle>;
@@ -49,6 +58,7 @@ export function CoachPulse({
   children,
   radius = 18,
   inset = 0,
+  edges,
   variant = 'pulse',
   style,
 }: CoachPulseProps) {
@@ -94,7 +104,13 @@ export function CoachPulse({
           style={[
             styles.ring,
             variant === 'glow' && styles.glow,
-            { borderRadius: radius, top: -inset, left: -inset, right: -inset, bottom: -inset },
+            {
+              borderRadius: radius,
+              top: -(inset + (edges?.top ?? 0)),
+              left: -(inset + (edges?.left ?? 0)),
+              right: -(inset + (edges?.right ?? 0)),
+              bottom: -(inset + (edges?.bottom ?? 0)),
+            },
             ringStyle,
           ]}
         />
