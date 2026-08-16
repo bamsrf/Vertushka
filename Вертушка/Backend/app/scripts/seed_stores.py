@@ -105,6 +105,19 @@ STORES: list[dict] = [
         "avg_shipping_rub": Decimal("400.00"),
         "affiliate_program": None,
     },
+    {
+        "slug": "long_play",
+        "name": "Long Play",
+        "domain": "long-play.ru",
+        "base_url": "https://long-play.ru",
+        "parser_class": "long_play",
+        "logo_url": None,  # Mobile рендерит локальный assets/long_play.png по slug
+        "rating": Decimal("4.5"),  # б/у винил, ~2.6k позиций, грейды по Discogs
+        "is_active": True,
+        "requires_browser": False,
+        "avg_shipping_rub": Decimal("400.00"),
+        "affiliate_program": None,
+    },
 ]
 
 
