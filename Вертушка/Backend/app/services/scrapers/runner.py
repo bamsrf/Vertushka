@@ -81,6 +81,7 @@ async def crawl_store(slug: str, *, mode: CrawlMode = "full", limit: int | None 
         # уходит в ленивую перечитку → синхронный IO в async-контексте →
         # MissingGreenlet на КАЖДОМ листинге: 8 956 позиций, 0 записанных.
         store_id = store.id
+        store_slug = store.slug
         consecutive_errors = 0
         started = time.monotonic()
         deadline = started + parser.max_crawl_seconds
@@ -129,16 +130,16 @@ async def crawl_store(slug: str, *, mode: CrawlMode = "full", limit: int | None 
                     break
 
             await db.commit()
-            smoke_msg = await _smoke_check(db, store, counters, mode, limit)
+            smoke_msg = await _smoke_check(db, store_id, counters, mode, limit)
             if smoke_msg:
                 logger.error("[%s] smoke check failed: %s", slug, smoke_msg)
                 await _mark_error(db, store_id, smoke_msg)
                 counters["status"] = "failed"
             else:
-                await _mark_success(db, store)
+                await _mark_success(db, store_id)
                 counters["status"] = "ok"
         except ParserNeedsBrowser as e:
-            await _mark_needs_browser(db, store, str(e))
+            await _mark_needs_browser(db, store_id, store_slug, str(e))
             counters["errors"] += 1
             counters["status"] = "needs_browser"
         except ParserBlocked as e:
@@ -357,7 +358,7 @@ def _serialize_raw(dto: ListingDTO) -> dict:
 
 
 async def _smoke_check(
-    db, store: Store, counters: dict, mode: CrawlMode, limit: int | None = None
+    db, store_id, counters: dict, mode: CrawlMode, limit: int | None = None
 ) -> str | None:
     """None = crawl выглядит здоровым. Иначе текст проблемы.
 
@@ -365,9 +366,15 @@ async def _smoke_check(
     результат прохода с историей листингов в БД. Для incremental пустой
     результат — норма (новинок нет), деградацию там не детектим. Прогон с
     limit искусственно обрезан — объёмные проверки для него тоже пропускаем.
+
+    Принимает `store_id` скаляром, а НЕ ORM-объект: вызывается сразу после
+    цикла обхода, где любая сбойная запись делает `db.rollback()` и протухляет
+    `store`. Читать с него `store.id` = ленивая перечитка = синхронный IO в
+    async-контексте (ночь 08-17, doctorhead: 3 358 позиций записаны, но обход
+    помечен провалившимся из-за MissingGreenlet в этой строке).
     """
     existing = await db.scalar(
-        select(func.count()).select_from(StoreListing).where(StoreListing.store_id == store.id)
+        select(func.count()).select_from(StoreListing).where(StoreListing.store_id == store_id)
     )
     if not existing:
         return None
@@ -388,16 +395,34 @@ async def _smoke_check(
     return None
 
 
-async def _mark_success(db, store: Store) -> None:
-    store.last_successful_scrape_at = datetime.utcnow()
-    store.last_error = None
+async def _mark_success(db, store_id) -> None:
+    """UPDATE по id, а не мутация ORM-объекта — см. `_smoke_check`.
+
+    Успешный обход тоже мог пережить единичный сбой записи (сбойная страница →
+    rollback → `store` протух), а мутация протухшего атрибута уронила бы уже
+    сам финал: магазин остался бы без `last_successful_scrape_at` при полностью
+    собранном каталоге.
+    """
+    await db.execute(
+        update(Store)
+        .where(Store.id == store_id)
+        .values(last_successful_scrape_at=datetime.utcnow(), last_error=None)
+    )
 
 
-async def _mark_needs_browser(db, store: Store, msg: str) -> None:
-    if not store.requires_browser:
-        store.requires_browser = True
-        logger.warning("[%s] marked requires_browser=True (%s)", store.slug, msg)
-    store.last_error = msg
+async def _mark_needs_browser(db, store_id, slug: str, msg: str) -> None:
+    """UPDATE по id — см. `_mark_error`.
+
+    `requires_browser` выставляем безусловно: прочитать текущее значение с
+    протухшего ORM-объекта нельзя, а UPDATE идемпотентен.
+    """
+    await db.rollback()
+    await db.execute(
+        update(Store)
+        .where(Store.id == store_id)
+        .values(requires_browser=True, last_error=msg[:1000])
+    )
+    logger.warning("[%s] marked requires_browser=True (%s)", slug, msg)
 
 
 async def _mark_error(db, store_id, msg: str) -> None:
