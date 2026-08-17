@@ -13,6 +13,10 @@ from app.database import async_session_maker
 from app.models.record import Record
 from app.models.collection import CollectionItem
 from app.services.search_cache_db import cleanup_expired_search_cache
+# Разбор ценового поля Discogs ({value, currency} или голое число) живёт в
+# services/pricing.py: раньше он был выписан в трёх местах тремя разными
+# выражениями.
+from app.services.pricing import stat_price_value as _price_value
 from app.config import get_settings
 
 logger = logging.getLogger(__name__)
@@ -114,7 +118,7 @@ async def update_prices_batch():
     """
     from app.services.discogs import DiscogsService
     from app.services.exchange import get_usd_rub_rate
-    from app.services.pricing import PricingParams, estimate_rub
+    from app.services.pricing import PricingParams, estimate_rub, record_usd
 
     discogs = DiscogsService()
     settings = get_settings()
@@ -137,8 +141,15 @@ async def update_prices_batch():
                 .join(CollectionItem, CollectionItem.record_id == Record.id)
                 .where(Record.discogs_id.isnot(None))
                 .where(
-                    (Record.estimated_price_min.is_(None)) |
-                    (Record.updated_at < stale_cutoff)
+                    # «Без цены» = нет НИ median, НИ min. Проверка только по min
+                    # гоняла бы по кругу записи, у которых живых лотов нет, а
+                    # история продаж есть: median у них заполнен, min всегда
+                    # NULL, и они вечно считались бы неоценёнными.
+                    (
+                        Record.estimated_price_min.is_(None)
+                        & Record.estimated_price_median.is_(None)
+                    )
+                    | (Record.updated_at < stale_cutoff)
                 )
                 .distinct()
                 .order_by(Record.estimated_price_min.asc().nullsfirst())  # без цен первыми
@@ -150,9 +161,9 @@ async def update_prices_batch():
                 try:
                     stats = await discogs._get_price_stats(record.discogs_id)
                     if stats:
-                        lowest = stats.get("lowest_price", {}).get("value") if isinstance(stats.get("lowest_price"), dict) else stats.get("lowest_price")
-                        median = stats.get("median_price", {}).get("value") if isinstance(stats.get("median_price"), dict) else stats.get("median_price")
-                        highest = stats.get("highest_price", {}).get("value") if isinstance(stats.get("highest_price"), dict) else stats.get("highest_price")
+                        lowest = _price_value(stats.get("lowest_price"))
+                        median = _price_value(stats.get("median_price"))
+                        highest = _price_value(stats.get("highest_price"))
                         if lowest or median:
                             record.estimated_price_min = lowest
                             record.estimated_price_median = median
@@ -166,7 +177,7 @@ async def update_prices_batch():
             # Пересчитываем рубли для обновлённых записей
             if updated:
                 # Получаем CollectionItems для обновлённых записей
-                record_ids = [r.id for r in records if r.estimated_price_min]
+                record_ids = [r.id for r in records if record_usd(r) is not None]
                 if record_ids:
                     items_result = await session.execute(
                         select(CollectionItem)
@@ -176,9 +187,10 @@ async def update_prices_batch():
                     items = items_result.scalars().all()
                     for item in items:
                         rec = item.record
-                        if rec and rec.estimated_price_min:
+                        rec_usd = record_usd(rec) if rec else None
+                        if rec_usd is not None:
                             item.estimated_price_rub = estimate_rub(
-                                float(rec.estimated_price_min),
+                                rec_usd,
                                 rec.country,
                                 usd_rub,
                                 params,
@@ -197,7 +209,10 @@ async def update_prices_batch():
                 .join(Record, CollectionItem.record_id == Record.id)
                 .where(
                     CollectionItem.estimated_price_rub.is_(None),
-                    Record.estimated_price_min.isnot(None)
+                    # median ИЛИ min: этот backfill и есть штатный путь, которым
+                    # median-only записи получат рублёвую цену задним числом.
+                    Record.estimated_price_median.isnot(None)
+                    | Record.estimated_price_min.isnot(None),
                 )
                 .limit(_price_batch_size())
             )
@@ -205,9 +220,10 @@ async def update_prices_batch():
             if backfill_items:
                 for item in backfill_items:
                     rec = item.record
-                    if rec and rec.estimated_price_min:
+                    rec_usd = record_usd(rec) if rec else None
+                    if rec_usd is not None:
                         item.estimated_price_rub = estimate_rub(
-                            float(rec.estimated_price_min),
+                            rec_usd,
                             rec.country,
                             usd_rub,
                             params,
@@ -473,7 +489,7 @@ async def _process_price_backfill_batch(
         count_records_without_price,
         records_without_price_query,
     )
-    from app.services.pricing import PricingParams, estimate_rub
+    from app.services.pricing import PricingParams, estimate_rub, record_usd
 
     settings = get_settings()
     params = PricingParams.from_settings(settings)
@@ -515,7 +531,7 @@ async def _process_price_backfill_batch(
         # Рубли по свежим ценам — в той же транзакции: иначе полка показывала бы
         # «цена есть, рубли пустые» до ближайшего ночного backfill'а.
         if updated:
-            priced_ids = [r.id for r in records if r.estimated_price_min]
+            priced_ids = [r.id for r in records if record_usd(r) is not None]
             items_result = await session.execute(
                 select(CollectionItem)
                 .options(selectinload(CollectionItem.record))
@@ -523,9 +539,10 @@ async def _process_price_backfill_batch(
             )
             for item in items_result.scalars().all():
                 rec = item.record
-                if rec and rec.estimated_price_min:
+                rec_usd = record_usd(rec) if rec else None
+                if rec_usd is not None:
                     item.estimated_price_rub = estimate_rub(
-                        float(rec.estimated_price_min),
+                        rec_usd,
                         rec.country,
                         usd_rub,
                         params,
@@ -554,8 +571,3 @@ async def _process_price_backfill_batch(
     return processed, updated, remaining
 
 
-def _price_value(raw) -> float | None:
-    """Discogs отдаёт цену то объектом {value, currency}, то голым числом."""
-    if isinstance(raw, dict):
-        return raw.get("value")
-    return raw

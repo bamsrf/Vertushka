@@ -22,15 +22,21 @@ from app.services.exchange import get_usd_rub_rate
 from app.services.cover_storage import ensure_cover_cached
 from app.services.discogs_index import enrich_records_from_dump
 from app.services.price_backfill import enqueue_price_job, get_price_job
-from app.services.pricing import PricingParams, estimate_rub
+from app.services.pricing import (
+    PricingParams,
+    estimate_rub,
+    record_usd,
+    stat_price_value as _stat_value,
+)
 
 
 def _record_rub(record: Record, usd_rub: float, params: PricingParams) -> float:
     """Считает цену в рублях для записи через компонентную формулу."""
-    if not record.estimated_price_min:
+    usd = record_usd(record)
+    if usd is None:
         return 0.0
     return estimate_rub(
-        float(record.estimated_price_min),
+        usd,
         record.country,
         usd_rub,
         params,
@@ -120,9 +126,16 @@ async def recalculate_prices(
         try:
             stats = await discogs._get_price_stats(discogs_id)
             if stats:
-                lowest = stats.get("lowest_price", {}).get("value")
-                if lowest is not None:
+                # Раньше здесь брался только lowest_price, и запись, у которой
+                # живых лотов нет, а история продаж есть, уходила ни с чем:
+                # median просто выбрасывался. Теперь пишем всё, что дал Discogs.
+                lowest = _stat_value(stats.get("lowest_price"))
+                median = _stat_value(stats.get("median_price"))
+                highest = _stat_value(stats.get("highest_price"))
+                if lowest is not None or median is not None:
                     record.estimated_price_min = lowest
+                    record.estimated_price_median = median
+                    record.estimated_price_max = highest
                     record.price_currency = "USD"
                     updated_records += 1
         except Exception:
@@ -133,7 +146,7 @@ async def recalculate_prices(
     updated_items = 0
     for item in items:
         record = item.record
-        if record and record.estimated_price_min:
+        if record and record_usd(record) is not None:
             item.estimated_price_rub = _record_rub(record, usd_rub, params)
             updated_items += 1
         else:

@@ -38,6 +38,12 @@ STALE_RUNNING_AFTER = timedelta(minutes=15)
 def records_without_price_query(user_id: UUID):
     """Записи в коллекциях юзера, у которых нет цены.
 
+    «Нет цены» = нет НИ median, НИ min. Проверять только min нельзя: у
+    пластинки без живых лотов, но с историей продаж, min всегда NULL, а median
+    заполнен. Такая запись считалась бы неоценённой вечно — задача гоняла бы
+    её по кругу, каждый раз получая от Discogs тот же ответ без lowest_price и
+    никогда не доходя до состояния «готово».
+
     DISTINCT: одна и та же пластинка лежит и в основной коллекции, и в папке —
     платить за неё двумя запросами к Discogs незачем.
     """
@@ -49,6 +55,7 @@ def records_without_price_query(user_id: UUID):
             Collection.user_id == user_id,
             Record.discogs_id.isnot(None),
             Record.estimated_price_min.is_(None),
+            Record.estimated_price_median.is_(None),
             Record.merged_into_id.is_(None),
         )
         .distinct()
