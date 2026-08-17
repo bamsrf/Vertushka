@@ -68,6 +68,8 @@ import {
   RecordOffersSummary,
   RecordOffersFullResponse,
   AppConfig,
+  DiscogsImportResult,
+  DiscogsPriceJobStatus,
 } from './types';
 
 // API сервер
@@ -1595,8 +1597,19 @@ class ApiClient {
   }
 
   // One-time импорт коллекции из Discogs в основную коллекцию.
-  async importDiscogsCollection(): Promise<{ imported: number; skipped: number; total: number }> {
+  //
+  // prices_pending — сколько пластинок уехало в фоновую дозагрузку цен.
+  // Discogs отдаёт в списке коллекции только каталожные поля; цены есть лишь
+  // в marketplace-API, по запросу на релиз, поэтому импорт возвращается сразу,
+  // а цены докапываются следом (см. getDiscogsImportStatus).
+  async importDiscogsCollection(): Promise<DiscogsImportResult> {
     const { data } = await this.client.post('/collections/import/discogs');
+    return data;
+  }
+
+  // Прогресс фоновой дозагрузки цен после импорта. Для поллинга.
+  async getDiscogsImportStatus(): Promise<DiscogsPriceJobStatus> {
+    const { data } = await this.client.get('/collections/import/discogs/status');
     return data;
   }
 

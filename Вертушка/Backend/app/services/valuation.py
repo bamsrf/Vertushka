@@ -13,22 +13,24 @@ from app.models.collection import Collection, CollectionItem
 from app.models.collection_value_snapshot import CollectionValueSnapshot
 from app.models.record import Record
 from app.services.exchange import get_usd_rub_rate
-from app.services.pricing import PricingParams, estimate_rub
+from app.services.pricing import PricingParams, estimate_rub, record_usd
 
 
 def record_value_rub(record: Record, rate: float, params: PricingParams) -> float:
     """Рублёвая стоимость одной записи — единая формула с карточкой профиля.
 
-    Discogs отдаёт median_price только при ≥2 продажах, у редких пластинок он
-    NULL → берём fallback на estimated_price_min (как `_record_to_public`/
-    `compute_rub` в публичном профиле). Голый SUM(median) обнулял оценку и ломал
-    дельту за месяц.
+    База — `pricing.record_usd` (median, иначе min): Discogs отдаёт
+    median_price только при ≥2 продажах, у редких пластинок он NULL. Голый
+    SUM(median) обнулял оценку и ломал дельту за месяц.
+
+    Правило вынесено в pricing.py и стало общим: экран коллекции считал рубли
+    строго от min и расходился с этой карточкой на median-only пластинках.
     """
-    usd = record.estimated_price_median or record.estimated_price_min
-    if not usd:
+    usd = record_usd(record)
+    if usd is None:
         return 0.0
     return estimate_rub(
-        float(usd),
+        usd,
         record.country,
         rate,
         params,

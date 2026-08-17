@@ -167,8 +167,14 @@ export default function CollectionValueScreen() {
       .map(item => {
         if (item.estimated_price_rub) return item;
         const record = item.record;
-        if (record.estimated_price_min) {
-          return { ...item, estimated_price_rub: estimateRub(record.estimated_price_min, record.country) };
+        // median ИЛИ min — та же база, что у бэкенда (pricing.record_usd) и у
+        // счётчика «оценено N из M». Фолбэк смотрел только на min, и пластинка
+        // без живых лотов, но с историей продаж (min пустой, median есть)
+        // выпадала из списка, хотя в счётчике числилась. Отсюда брался
+        // рассинхрон «пишет 6, показывает 3».
+        const usd = record.estimated_price_median || record.estimated_price_min;
+        if (usd) {
+          return { ...item, estimated_price_rub: estimateRub(usd, record.country) };
         }
         return item;
       })

@@ -110,7 +110,7 @@ async def lifespan(app: FastAPI):
         if AsyncIOScheduler is not None:
           try:
             from app.tasks.booking_tasks import send_booking_reminders, auto_release_expired_bookings, auto_cancel_unverified_bookings
-            from app.tasks.discogs_tasks import cleanup_search_cache, enrich_records_artist_data, update_prices_batch, enrich_market_covers, refresh_market_store_stats, refresh_new_releases
+            from app.tasks.discogs_tasks import cleanup_search_cache, enrich_records_artist_data, update_prices_batch, enrich_market_covers, refresh_market_store_stats, refresh_new_releases, run_price_backfill_jobs
             from app.tasks.valuation_tasks import record_daily_snapshots
             from app.tasks.achievements_tasks import daily_tick_achievements
             from app.tasks.notification_tasks import (
@@ -139,7 +139,16 @@ async def lifespan(app: FastAPI):
             scheduler.add_job(auto_cancel_unverified_bookings, 'interval', minutes=5, id='booking_auto_cancel_unverified')
             scheduler.add_job(cleanup_search_cache, 'interval', hours=1, id='search_cache_cleanup')
             scheduler.add_job(enrich_records_artist_data, 'cron', hour=5, minute=0, id='enrich_artist_data')
-            scheduler.add_job(update_prices_batch, 'cron', hour=4, minute=0, id='update_prices_batch')
+            # Каждые 30 минут, а не раз в ночь: пачка в 50 записей в сутки на
+            # всю базу означала, что импортированная коллекция заполняется
+            # ценами неделями. 200 × 48 прогонов даёт ~9600/сутки при лимите
+            # app-токена 86 400/сутки. max_instances=1 — прогон на 200 записей
+            # идёт минуты, наложение запрещено.
+            scheduler.add_job(update_prices_batch, 'interval', minutes=30, id='update_prices_batch', max_instances=1, coalesce=True)
+            # Дозагрузка цен свежеимпортированных коллекций под личным токеном
+            # юзера. Раз в минуту: задача живёт в БД и разбирается батчами, так
+            # что частый лёгкий прогон и есть механика «долгой» работы.
+            scheduler.add_job(run_price_backfill_jobs, 'interval', minutes=1, id='price_backfill_jobs', max_instances=1, coalesce=True)
             scheduler.add_job(record_daily_snapshots, 'cron', hour=5, minute=0, id='value_snapshots')
             scheduler.add_job(cleanup_covers, 'cron', hour=3, minute=0, id='covers_lru_cleanup')
             # Перегрев мелких мастеров — ПОСЛЕ LRU-очистки: та освобождает место,

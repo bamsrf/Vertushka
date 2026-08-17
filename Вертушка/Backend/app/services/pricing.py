@@ -126,3 +126,42 @@ def effective_markup(
         discogs_data=discogs_data,
     )
     return round(rub / (usd_price * rate), 2)
+
+
+def record_usd(record) -> float | None:
+    """Долларовая база для рублёвой оценки записи: median, иначе min.
+
+    ЕДИНСТВЕННЫЙ источник правды. Все три пути — карточка коллекции
+    (`api/collections.py`), стоимость профиля (`services/valuation.py`) и
+    фоновые задачи (`tasks/discogs_tasks.py`) — обязаны звать эту функцию.
+
+    Discogs отдаёт `lowest_price` только при ЖИВЫХ лотах на маркетплейсе, а
+    `median_price` — при наличии истории продаж. Это независимые величины: у
+    пластинки, которую сейчас никто не продаёт, но которая продавалась раньше,
+    min пустой, а median заполнен. И наоборот, у редкого релиза с одним лотом и
+    без продаж median пустой, а min есть.
+
+    Правило уже было выведено в valuation.py для карточки профиля, но не
+    протянуто в коллекцию: там рубли считались строго от min, а счётчик
+    «оценено N из M» — от «median или min». Пластинка с одним лишь median
+    попадала в счётчик, но рублёвой цены не получала и выпадала из списка «По
+    стоимости» и из суммы. Снаружи это выглядело как «пишет 6, показывает 3».
+
+    Median первым, а не min: медиана устойчивее одиночного минимального лота.
+    """
+    usd = record.estimated_price_median or record.estimated_price_min
+    return float(usd) if usd else None
+
+
+def stat_price_value(raw) -> float | None:
+    """Достаёт число из ценового поля marketplace-статистики Discogs.
+
+    Discogs отдаёт цену то объектом `{"value": 12.5, "currency": "USD"}`, то
+    голым числом — форма зависит от эндпоинта и наличия лотов. Разбор был
+    продублирован в трёх местах разными выражениями; здесь он один.
+    """
+    if isinstance(raw, dict):
+        value = raw.get("value")
+    else:
+        value = raw
+    return float(value) if isinstance(value, (int, float)) else None
