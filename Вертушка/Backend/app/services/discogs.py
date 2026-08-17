@@ -1896,9 +1896,21 @@ class DiscogsService:
             logger.exception("Failed to get versions count for master %s", master_id)
         return None
 
-    async def _get_price_stats(self, release_id: str) -> dict | None:
+    async def _get_price_stats(
+        self,
+        release_id: str,
+        creds: "tuple[str, str] | None" = None,
+    ) -> dict | None:
         """Получение статистики цен для релиза (всегда в USD).
-        Кэшируется в Redis на 6 часов. Negative cache на 404."""
+        Кэшируется в Redis на 6 часов. Negative cache на 404.
+
+        creds — OAuth-пара юзера. Запрос тогда идёт под его подписью и, главное,
+        в его персональный бакет rate-limiter'а (60 req/min на токен). Это
+        нужно дозагрузке цен после импорта: коллекция в сотни пластинок = сотни
+        запросов, и гнать их через общий app-бакет значило бы выесть лимит
+        приложения ради одного пользователя. Цена от личности спрашивающего не
+        зависит, поэтому кэш общий — ключ по release_id.
+        """
         cached = await cache.get("price_stats", release_id)
         if cached is not None:
             return cached
@@ -1909,8 +1921,9 @@ class DiscogsService:
             result = await self._get(
                 f"{self.BASE_URL}/marketplace/stats/{release_id}",
                 params={"curr_abbr": "USD"},
-                headers=self._get_token_headers(),
+                headers=None if creds else self._get_token_headers(),
                 priority=Priority.ENRICHMENT,
+                creds=creds,
             )
             await cache.set("price_stats", release_id, result, TTL_PRICE_STATS)
             return result

@@ -26,6 +26,7 @@ from app.models.message_hidden import MessageHiddenFor
 from app.models.user_block import UserBlock
 from app.models.notification import Notification
 from app.models.report import Report
+from app.models.discogs_price_job import DiscogsPriceJob
 
 __all__ = [
     "User",
@@ -62,5 +63,6 @@ __all__ = [
     "UserBlock",
     "Notification",
     "Report",
+    "DiscogsPriceJob",
 ]
 

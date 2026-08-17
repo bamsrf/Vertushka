@@ -1147,3 +1147,28 @@ export interface AppConfig {
   update_message: string;
   flags: Record<string, boolean>;
 }
+
+/**
+ * Импорт коллекции из Discogs и дозагрузка цен.
+ *
+ * Discogs отдаёт в списке коллекции только `basic_information` — каталожные
+ * поля без цен. Цена доступна лишь поштучно, через marketplace-API, поэтому
+ * импорт возвращается сразу, а цены докапываются фоновой задачей под личным
+ * OAuth-токеном юзера. См. Backend/app/services/price_backfill.py.
+ */
+export interface DiscogsImportResult {
+  imported: number;
+  skipped: number;
+  total: number;
+  /** Сколько пластинок ушло в фоновую дозагрузку цен. 0 — добирать нечего. */
+  prices_pending: number;
+}
+
+export type DiscogsPriceJobStatus = {
+  /** idle — задачи нет; failed — Discogs отключён, цены доедут ночным проходом. */
+  status: 'idle' | 'pending' | 'running' | 'done' | 'failed';
+  total: number;
+  processed: number;
+  updated: number;
+  error?: string | null;
+};
