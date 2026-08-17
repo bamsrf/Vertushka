@@ -151,6 +151,37 @@ class RedisCache:
             logger.warning("Redis counter GET error: %s:%s", namespace, key, exc_info=True)
             return None
 
+    async def pfadd(self, namespace: str, key: str, *values: str, ttl: int) -> None:
+        """Добавить значения в HyperLogLog (счётчик уникальных).
+
+        Зачем HLL, а не SET: нам нужна ОЦЕНКА числа уникальных обложек за сутки,
+        а не сам список. HLL держит любой объём в ~12 КБ с погрешностью ~0.8% —
+        для планирования ёмкости этого с запасом, а SET на десятки тысяч id рос
+        бы линейно и жил в памяти рядом с рабочими данными.
+
+        TTL продлевается при каждой записи: ключ суточный, живёт с запасом.
+        """
+        if not self._available or not values:
+            return
+        try:
+            k = self._key(namespace, key)
+            pipe = self._pool.pipeline()
+            pipe.pfadd(k, *values)
+            pipe.expire(k, int(ttl))
+            await pipe.execute()
+        except Exception:
+            logger.warning("Redis PFADD error: %s:%s", namespace, key, exc_info=True)
+
+    async def pfcount(self, namespace: str, key: str) -> int:
+        """Оценка числа уникальных значений в HyperLogLog. 0 если недоступен."""
+        if not self._available:
+            return 0
+        try:
+            return int(await self._pool.pfcount(self._key(namespace, key)))
+        except Exception:
+            logger.warning("Redis PFCOUNT error: %s:%s", namespace, key, exc_info=True)
+            return 0
+
     async def set_nx(self, namespace: str, key: str, value: Any, ttl: int) -> bool:
         """SET if Not eXists с TTL. Возвращает True если ключ создан, False
         если уже существовал. Используется как single-flight lock.

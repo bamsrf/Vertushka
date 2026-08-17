@@ -116,6 +116,15 @@ export default function GiftDetailScreen() {
     }
   }, [giftFromStore, directionFromStore, snapshot]);
 
+  // Брони может не быть вовсе (отменена, пункт удалён из вишлиста). Вместо
+  // тупика «Подарок не найден» уводим в нужный раздел подарков — «Мне дарят»
+  // для брони на твой вишлист, «Я дарю» для своей.
+  const notFound = isLoaded && !isRefetching && !snapshot && !giftFromStore;
+  useEffect(() => {
+    if (!notFound) return;
+    router.replace(`/settings/wishlists?tab=${requestedDirection}` as any);
+  }, [notFound, requestedDirection, router]);
+
   const handleCancel = () => {
     if (!gift || direction !== 'given') return;
     const givenGift = gift as GiftGivenItem;
@@ -189,7 +198,7 @@ export default function GiftDetailScreen() {
     );
   };
 
-  if (!isLoaded || isRefetching) {
+  if (!isLoaded || isRefetching || notFound) {
     return (
       <View style={[styles.container, styles.center, { paddingTop: insets.top }]}>
         <ActivityIndicator size="large" color={Colors.royalBlue} />
@@ -197,6 +206,8 @@ export default function GiftDetailScreen() {
     );
   }
 
+  // Практически недостижимо: при notFound выше уже показан лоадер и идёт
+  // переход в раздел подарков. Оставлено как страховка на случай гонки.
   if (!gift) {
     return (
       <View style={[styles.container, { paddingTop: insets.top }]}>

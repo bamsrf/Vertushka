@@ -158,6 +158,13 @@ async def get_cover(
     # nginx проксирует полный путь `/covers/{discogs_id}.jpg` — снимаем суффикс.
     discogs_id = discogs_id.removesuffix(".jpg")
 
+    # Точка учёта холодного спроса. Сюда nginx попадает ТОЛЬКО когда мастера нет
+    # на диске, значит каждый вызов — холодный просмотр живого пользователя.
+    # Именно этого числа не хватало для планирования ёмкости: рост
+    # records.cover_cached_at считает и фоновые джобы, и людей вперемешку.
+    from app.services.cover_demand import record_cold_request
+    await record_cold_request(discogs_id)
+
     def _safe(url: str | None) -> str | None:
         """Guard для всех 302 этой ручки.
 

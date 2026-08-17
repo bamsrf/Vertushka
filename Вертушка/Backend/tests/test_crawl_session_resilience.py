@@ -6,7 +6,9 @@
 В async-контексте это MissingGreenlet, и он повторился на каждом из 8 956
 листингов: `{'discovered': 8956, 'upserted': 0, 'errors': 8957}`.
 """
+import ast
 import inspect
+import textwrap
 
 import pytest
 from sqlalchemy.exc import MissingGreenlet, SQLAlchemyError
@@ -112,3 +114,102 @@ def test_upsert_errors_do_not_loop_forever():
     src = _source(runner.crawl_store)
     assert "consecutive_errors = 0" in src
     assert SQLAlchemyError.__name__ in src
+
+
+# ---- Финал обхода тоже не должен трогать ORM-объект --------------------- #
+#
+# Ночь 08-17, doctorhead. Страница не уложилась в 120 c, за это время умерло
+# соединение → один upsert упал → обработчик сделал `db.rollback()` → `store`
+# протух. Цикл это пережил (скалярный `store_id` завезли 08-12), а вот финал —
+# нет: `_smoke_check` читал `store.id`, получил MissingGreenlet, и магазин с
+# 3 358 записанными позициями из 3 359 был помечен провалившимся.
+#
+# Первая починка этого класса бага (08-12) закрыла только цикл. Тесты ниже
+# сторожат хвост: smoke-check и обе отметки статуса.
+
+
+def _code_lines(fn) -> str:
+    """Тело функции без докстроки — в комментариях `store.id` упоминается."""
+    tree = ast.parse(textwrap.dedent(_source(fn))).body[0]
+    body = tree.body[1:] if ast.get_docstring(tree) else tree.body
+    return "\n".join(ast.unparse(node) for node in body)
+
+
+def test_smoke_check_takes_scalar_id_not_orm_object():
+    """Сигнатура — главный барьер: с ORM-объектом баг воспроизводим снова."""
+    params = list(inspect.signature(runner._smoke_check).parameters)
+    assert params[1] == "store_id", f"ожидали скаляр, получили {params[1]}"
+    assert "store.id" not in _code_lines(runner._smoke_check)
+
+
+def test_mark_success_takes_scalar_id_not_orm_object():
+    params = list(inspect.signature(runner._mark_success).parameters)
+    assert params[1] == "store_id"
+
+
+def test_no_orm_attribute_access_after_the_crawl_loop():
+    """В хвосте `crawl_store` не должно остаться ни одного `store.<attr>`."""
+    src = _source(runner.crawl_store)
+    _, _, tail = src.partition("async for dto in iterator")
+    leftovers = [
+        line.strip() for line in tail.splitlines()
+        if "store." in line and "store_id" not in line and "store_slug" not in line
+        and not line.strip().startswith("#")
+    ]
+    assert not leftovers, f"ORM-атрибуты после цикла: {leftovers}"
+
+
+class _DeadAfterRollback:
+    """Сессия, которая после `rollback()` протухляет переданный ORM-объект."""
+
+    def __init__(self, store, existing_listings: int):
+        self.store = store
+        self.existing = existing_listings
+        self.updates = []
+
+    async def rollback(self):
+        self.store.alive = False
+
+    async def commit(self):
+        pass
+
+    async def scalar(self, stmt):
+        return self.existing
+
+    async def execute(self, stmt):
+        self.updates.append(str(stmt).lower())
+
+
+@pytest.mark.asyncio
+async def test_crawl_finale_survives_dead_orm_object():
+    """Сквозная проверка: rollback убил `store`, финал всё равно доходит.
+
+    Ровно ночной сценарий doctorhead: почти весь каталог записан, одна запись
+    упала. Обход обязан получить честный статус, а не крэш в обработчике.
+    """
+    store = _Store()
+    db = _DeadAfterRollback(store, existing_listings=3613)
+
+    await db.rollback()          # сбойный upsert → сессия откачена, store протух
+    assert not store.alive
+
+    counters = {"discovered": 3359, "upserted": 3358, "errors": 1, "skipped": 0}
+    smoke = await runner._smoke_check(db, STORE_ID, counters, "full", None)
+    assert smoke is None, f"здоровый обход признан битым: {smoke}"
+
+    await runner._mark_success(db, STORE_ID)
+    assert any(u.startswith("update stores") for u in db.updates)
+    assert any("last_successful_scrape_at" in u for u in db.updates)
+
+
+@pytest.mark.asyncio
+async def test_mark_needs_browser_writes_by_id():
+    store = _Store()
+    db = _DeadAfterRollback(store, existing_listings=0)
+    await runner._mark_needs_browser(db, STORE_ID, "deadshop", "Cloudflare challenge")
+
+    assert not store.alive, "перед записью нужен rollback — сессия могла быть битой"
+    stmt = db.updates[0]
+    assert stmt.startswith("update stores")
+    assert "requires_browser" in stmt
+    assert "last_error" in stmt

@@ -23,6 +23,12 @@ logger = logging.getLogger(__name__)
 
 _SEARCH_URL = "https://api.deezer.com/search/album"
 _ALBUM_URL = "https://api.deezer.com/album/{album_id}"
+# Точный поиск по штрихкоду. Deezer резолвит UPC в альбом сам — в отличие от
+# /search/album здесь нечего угадывать и нечем промахнуться.
+_UPC_URL = "https://api.deezer.com/album/upc:{upc}"
+# UPC-12 / EAN-13, плюс короткие legacy-коды. Всё, что не цифры этой длины,
+# не штрихкод: в barcode_norm дампа попадаются каталожные номера и мусор.
+_UPC_RE = re.compile(r"^\d{8,14}$")
 
 # Глобальный троттл: Deezer ~50 запросов / 5с на IP. Держим ~8 req/s с запасом.
 _lock = asyncio.Lock()
@@ -105,6 +111,77 @@ async def _throttle() -> None:
         if wait > 0:
             await asyncio.sleep(wait)
         _last = time.monotonic()
+
+
+class DeezerQuotaExceeded(RuntimeError):
+    """Deezer упёрся в квоту — запрос не отвечен, его надо повторить позже.
+
+    Отдельный тип, а не None, потому что bulk-обход по этому различию решает,
+    закрывать ли штрихкод как проверенный. Живые вызовы в лестнице обложек уже
+    обёрнуты в try/except и получат обычный промах.
+    """
+
+
+async def cover_by_upc(upc: str) -> DeezerCover | None:
+    """Обложка альбома по штрихкоду — точный матч вместо угадывания по названию.
+
+    Зачем отдельно от `cover_by_meta`. Тот ищет по artist+title и потому
+    промахивается на разнописи: `Cause For Conflict` против
+    `Cause for Conflict (Remastered)`, `Kreator` против `Kreator (2)`. Полный
+    обход 1.86 млн мастеров таким способом дал 24%, и остаток — это ровно те,
+    чьи названия не совпали. Штрихкод же однозначен: либо Deezer вернёт именно
+    это издание, либо ничего. Ложный матч невозможен в принципе.
+
+    Работает потому, что лейбл присваивает UPC изданию, а не носителю — винил и
+    цифра одного альбома часто несут один код. Замер на проде: 15.3% попаданий
+    на случайной выборке штрихкодов, у которых обложки нет (n=150).
+
+    None — это «обложки нет». Превышение квоты — НЕ None, а
+    `DeezerQuotaExceeded`: для bulk-обхода разница принципиальна. Тот помечает
+    обработанные штрихкоды `done` навсегда, и если считать квоту промахом, при
+    первом же упоре в лимит десятки тысяч штрихкодов закроются необратимо, ни
+    разу не будучи спрошенными по-настоящему.
+    """
+    digits = (upc or "").strip()
+    if not _UPC_RE.match(digits):
+        return None
+
+    try:
+        await _throttle()
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.get(_UPC_URL.format(upc=digits))
+        # 404 на неизвестный UPC — штатный промах, не повод для шума в логах.
+        if resp.status_code == 404:
+            return None
+        if resp.status_code == 429:
+            raise DeezerQuotaExceeded(f"HTTP 429 на upc:{digits}")
+        resp.raise_for_status()
+        data = resp.json()
+    except (httpx.HTTPError, ValueError):
+        logger.debug("Deezer UPC lookup failed for %s", digits, exc_info=True)
+        return None
+
+    # Deezer отдаёт 200 с телом {"error": {...}} и на несуществующий UPC, и на
+    # превышение квоты — raise_for_status такое не поймает. code=4 («Quota limit
+    # exceeded») надо отличать от обычного промаха.
+    if not isinstance(data, dict):
+        return None
+    err = data.get("error")
+    if err:
+        if isinstance(err, dict) and (
+            err.get("code") == 4 or "quota" in str(err.get("message", "")).lower()
+        ):
+            raise DeezerQuotaExceeded(str(err))
+        return None
+
+    url = data.get("cover_xl") or data.get("cover_big")
+    if not url:
+        return None
+    return DeezerCover(
+        url=url,
+        md5_image=data.get("md5_image") or "",
+        album_id=int(data.get("id") or 0),
+    )
 
 
 def _fmt_dur_sec(sec: int | None) -> str | None:

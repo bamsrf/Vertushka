@@ -8,13 +8,13 @@
     <meta property="og:type" content="profile">
     <meta property="og:title" content="Коллекция винила @{{ user.username }}">
     <meta property="og:description" content="{{ og_description }}">
-    <meta property="og:image" content="{{ base_url }}/@{{ user.username }}/og-image.png">
+    <meta property="og:image" content="{{ og_image_url }}">
     <meta property="og:url" content="{{ base_url }}/@{{ user.username }}">
     <meta property="og:site_name" content="Вертушка">
     <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:title" content="Коллекция винила @{{ user.username }}">
     <meta name="twitter:description" content="{{ og_description }}">
-    <meta name="twitter:image" content="{{ base_url }}/@{{ user.username }}/og-image.png">
+    <meta name="twitter:image" content="{{ og_image_url }}">
 
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -75,16 +75,17 @@
             padding: 14px 28px 12px;
             background: rgba(245, 240, 234, 0);
             border-bottom: 1px solid transparent;
-            transition: background 220ms ease, border-color 220ms ease,
-                        backdrop-filter 220ms ease;
+            transition: background 220ms ease, border-color 220ms ease;
         }
         /* Подложка появляется только когда под шапку что-то заехало: на самом
            верху страницы она была бы лишней плашкой поверх градиента. */
         .topbar.stuck {
-            background: rgba(245, 240, 234, 0.82);
+            /* Плотная подложка вместо backdrop-filter. Блюр выглядел чуть
+               богаче, но заставлял браузер пересобирать картинку под полосой
+               на каждом кадре скролла — на десктопе это полоса во всю ширину
+               окна, и цена заметная. */
+            background: rgba(246, 242, 236, 0.97);
             border-bottom-color: var(--hairline);
-            backdrop-filter: saturate(160%) blur(14px);
-            -webkit-backdrop-filter: saturate(160%) blur(14px);
         }
         .brand {
             font-family: 'JetBrains Mono', monospace;
@@ -387,6 +388,10 @@
                 0 8px 18px -12px rgba(27, 29, 38, 0.28),
                 0 2px 4px -2px rgba(27, 29, 38, 0.08);
             background: linear-gradient(135deg, var(--lavender), var(--periwinkle));
+            /* Трек карусели длиннее экрана вдвое (клоны для бесшовной петли),
+               и всё это лежит под mask-image. Размер жёстко 116×116, так что
+               пропуск отрисовки за экраном ничего не двигает. */
+            content-visibility: auto;
         }
         .rail-cover img { width: 100%; height: 100%; object-fit: cover; display: block; }
         .rail-meta-artist {
@@ -401,6 +406,21 @@
         }
         .rail-meta-year {
             font-size: 11px; color: var(--periwinkle); margin-top: 2px; font-variant-numeric: tabular-nums;
+        }
+
+        /* Десктоп: подписи под обложками в каруселях набраны под ширину телефона
+           и на большом экране читаются как петит. Размеры карточек не трогаем —
+           растёт только типографика, поэтому раскладка рейла не едет. */
+        @media (min-width: 721px) {
+            .rail-title { font-size: 12px; }
+            .rail-sub { font-size: 13px; }
+            .rail-meta-artist { font-size: 11px; margin-top: 10px; }
+            .rail-meta-title { font-size: 14px; }
+            .rail-meta-year { font-size: 12px; }
+            /* .rail-slot внутри .rail-area — absolute, поэтому контент не
+               раздвигает контейнер: высоту под новый кегль задаём руками,
+               иначе overflow: hidden срезает названия. */
+            .rail-area { min-height: 238px; }
         }
 
         /* Auto-scroll infinite rail — нативный horizontal scroll, как в мобильном поиске.
@@ -445,6 +465,17 @@
             font-size: 12.5px; color: var(--slate); line-height: 1.5;
         }
         .booking-explainer .step .icon { font-size: 15px; flex-shrink: 0; line-height: 1.2; }
+
+        /* Десктоп: блок набран под ширину телефона, а на большом экране
+           растянут на две колонки — 12.5px в такой строке читается как петит.
+           Высота блока определяется содержимым, ничего подпирать не нужно. */
+        @media (min-width: 721px) {
+            .booking-explainer { padding: 22px 24px; }
+            .booking-explainer h3 { font-size: 16px; margin-bottom: 16px; }
+            .booking-explainer .steps { gap: 14px 22px; }
+            .booking-explainer .step { font-size: 14.5px; gap: 12px; }
+            .booking-explainer .step .icon { font-size: 17px; }
+        }
 
         /* TOOLBAR — format chips + view toggle (только над коллекцией) */
         .toolbar { padding: 6px 0 4px; margin-top: 4px; }
@@ -531,6 +562,13 @@
         .card-cover {
             width: 100%; aspect-ratio: 1 / 1; border-radius: 16px; overflow: hidden;
             position: relative;
+            /* Обложек в профиле под сотню, и каждая — растр 400×400. Держать их
+               все отрисованными браузер не может: на быстром скролле он
+               выбрасывает готовые тайлы и не успевает нарисовать заново — кадр
+               уходит белым. content-visibility говорит пропускать отрисовку
+               содержимого за экраном; размер коробки от этого не плывёт, он
+               задан width + aspect-ratio, а фон и тень рисует сам блок. */
+            content-visibility: auto;
             background: linear-gradient(135deg, var(--lavender), var(--sky));
             box-shadow:
                 0 1px 0 rgba(255, 255, 255, 0.8) inset,
@@ -562,11 +600,19 @@
             border: 1px solid rgba(154, 168, 255, 0.55);
             font-size: 10.5px; color: var(--cobalt); font-weight: 600;
             letter-spacing: 0.04em;
+            position: relative;
+        }
+        /* Свечение — отдельным слоем с анимацией opacity: анимировать box-shadow
+           значит перерисовывать бейдж каждый кадр, а их в вишлисте много. */
+        .reserved-badge::after {
+            content: ''; position: absolute; inset: 0; border-radius: inherit;
+            box-shadow: 0 0 0 6px rgba(154, 168, 255, 0.18);
+            opacity: 0; pointer-events: none;
             animation: pulseGlow 2.6s ease-in-out infinite;
         }
         @keyframes pulseGlow {
-            0%, 100% { box-shadow: 0 0 0 0 rgba(154, 168, 255, 0.0); }
-            50% { box-shadow: 0 0 0 6px rgba(154, 168, 255, 0.18); }
+            0%, 100% { opacity: 0; }
+            50% { opacity: 1; }
         }
         .reserved-dot {
             width: 6px; height: 6px; border-radius: 50%; background: var(--cobalt);
@@ -838,13 +884,20 @@
         }
         .cta:hover { transform: translateY(-2px); }
         .cta::after {
-            content: ''; position: absolute; top: 0; left: -40%;
+            content: ''; position: absolute; top: 0; left: 0;
             width: 30%; height: 100%;
             background: linear-gradient(110deg, transparent, rgba(255, 255, 255, 0.35), transparent);
+            /* transform, а не left: left — свойство раскладки, браузер пересчитывал
+               геометрию и перерисовывал КАЖДЫЙ кадр бесконечно. Кнопка живёт ещё и
+               в position:fixed поверх скролла, так что этот блик молотил всё время,
+               пока человек листает страницу с сотней обложек. */
+            transform: translateX(-133%);
             animation: sweep 3.8s linear infinite;
+            will-change: transform;
         }
         @keyframes sweep {
-            0% { left: -40%; } 60% { left: 110%; } 100% { left: 110%; }
+            0% { transform: translateX(-133%); }
+            60%, 100% { transform: translateX(367%); }
         }
 
         .footer-line {
@@ -1708,9 +1761,13 @@
                 rail.addEventListener('touchcancel', endTouch, { passive: true });
 
                 // Wheel — desktop колёсико. Двигаем offset на deltaX (или deltaY если горизонталь = 0).
+                // Только горизонтальное намерение. Трекпад шлёт обе оси всегда,
+                // и `deltaX || deltaY` подхватывал вертикаль: стоило курсору
+                // оказаться над каруселью во время скролла страницы — она
+                // начинала ехать вбок сама по себе.
                 rail.addEventListener('wheel', function(e) {
-                    var d = e.deltaX || e.deltaY || 0;
-                    offset = wrap(offset + d);
+                    if (Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return;
+                    offset = wrap(offset + e.deltaX);
                     applyTransform();
                     pauseAndResume();
                 }, { passive: true });
@@ -1731,7 +1788,13 @@
                 });
 
                 function tick(ts) {
-                    if (visible && !paused) {
+                    // Пока страница едет вертикально — карусель стоит. Маска на
+                    // .rail заставляет перерисовывать полосу на каждом кадре, а
+                    // внутри неё два десятка обложек; вместе со скроллом это
+                    // выбивает из памяти уже декодированные картинки, и они
+                    // моргают. Пауза длится 180мс после последнего события.
+                    var pageScrolling = document.documentElement.classList.contains('is-scrolling');
+                    if (visible && !paused && !pageScrolling) {
                         if (last !== null) {
                             var dt = (ts - last) / 1000;
                             if (dt > 0.1) dt = 0.1;

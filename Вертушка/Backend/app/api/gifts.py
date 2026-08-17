@@ -635,45 +635,67 @@ async def get_received_bookings(
     db: AsyncSession = Depends(get_db)
 ):
     """Получение списка бронирований для владельца вишлиста"""
-    # Получаем вишлист пользователя
+    # Вишлисты пользователя нужны и для выборки по пунктам, и для флага reveal.
     result = await db.execute(
         select(Wishlist).where(Wishlist.user_id == current_user.id)
     )
-    wishlist = result.scalar_one_or_none()
+    wishlists = result.scalars().all()
 
-    if not wishlist:
-        return []
+    # Ищем брони и по получателю, и по пункту вишлиста. Только join по пункту
+    # было мало: при вручении, отмене и удалении пункта wishlist_item_id
+    # обнуляется, и подарок пропадал из «Мне дарят» — тап по уведомлению
+    # «кто-то забронировал…» упирался в «Подарок не найден».
+    owner_conditions = [GiftBooking.recipient_user_id == current_user.id]
+    if wishlists:
+        owner_conditions.append(
+            GiftBooking.wishlist_item_id.in_(
+                select(WishlistItem.id).where(
+                    WishlistItem.wishlist_id.in_([w.id for w in wishlists])
+                ).scalar_subquery()
+            )
+        )
 
-    # Получаем все бронирования
     result = await db.execute(
         select(GiftBooking)
-        .join(WishlistItem)
-        .where(WishlistItem.wishlist_id == wishlist.id)
+        .where(
+            or_(*owner_conditions),
+            GiftBooking.status.in_(
+                [GiftStatus.PENDING, GiftStatus.BOOKED, GiftStatus.COMPLETED]
+            ),
+        )
         .options(
-            selectinload(GiftBooking.wishlist_item)
-            .selectinload(WishlistItem.record)
+            selectinload(GiftBooking.record),
+            selectinload(GiftBooking.wishlist_item).selectinload(WishlistItem.record),
         )
         .order_by(GiftBooking.booked_at.desc())
     )
-    bookings = result.scalars().all()
+    bookings = result.scalars().unique().all()
 
     # Если владелец явно включил «хочу знать имя сразу» — отдаём поля дарителя.
     # Иначе — анонимизируем как раньше (дефолтное поведение).
-    reveal = bool(wishlist.reveal_gifter_to_owner)
+    reveal = any(w.reveal_gifter_to_owner for w in wishlists)
 
-    return [GiftBookingOwnerResponse(
-        id=b.id,
-        wishlist_item_id=b.wishlist_item_id,
-        gifter_name=(b.gifter_name if reveal else ""),
-        gifter_email=(b.gifter_email if reveal else ""),
-        gifter_phone=(b.gifter_phone if reveal else None),
-        gifter_message=(b.gifter_message if reveal else None),
-        status=b.status,
-        booked_at=b.booked_at,
-        completed_at=b.completed_at,
-        cancelled_at=b.cancelled_at,
-        record=RecordBrief.model_validate(b.wishlist_item.record),
-    ) for b in bookings if b.wishlist_item is not None]
+    out: list[GiftBookingOwnerResponse] = []
+    for b in bookings:
+        # У вручённых/отвязанных броней пункта вишлиста уже нет — релиз берём
+        # с самой брони (record_id проставляется при бронировании и вручении).
+        record = b.record or (b.wishlist_item.record if b.wishlist_item else None)
+        if record is None:
+            continue
+        out.append(GiftBookingOwnerResponse(
+            id=b.id,
+            wishlist_item_id=b.wishlist_item_id,
+            gifter_name=(b.gifter_name if reveal else ""),
+            gifter_email=(b.gifter_email if reveal else ""),
+            gifter_phone=(b.gifter_phone if reveal else None),
+            gifter_message=(b.gifter_message if reveal else None),
+            status=b.status,
+            booked_at=b.booked_at,
+            completed_at=b.completed_at,
+            cancelled_at=b.cancelled_at,
+            record=RecordBrief.model_validate(record),
+        ))
+    return out
 
 
 @router.put("/me/received/{booking_id}/complete")

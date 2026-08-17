@@ -187,6 +187,17 @@ async def lifespan(app: FastAPI):
             scheduler.add_job(run_scheduled_batch, 'interval', minutes=2,
                               id='cover_backfill_deezer', max_instances=1, coalesce=True)
 
+            # Обложки по ШТРИХКОДУ через Deezer — точный канал вместо угадывания
+            # по названию. Замер на проде: 15.3% попаданий против 10.7% у iTunes,
+            # но темп 0.13с против 3.1с, то есть в 39 раз больше обложек за сутки
+            # обхода. Очередь 2.3 млн уникальных UPC ≈ 3.5 дня. Гейт — маркер
+            # /app/uploads/.backfill_upc_enabled.
+            from app.scripts.backfill_covers_upc import (
+                run_scheduled_batch as run_backfill_upc,
+            )
+            scheduler.add_job(run_backfill_upc, 'interval', minutes=2,
+                              id='cover_backfill_upc', max_instances=1, coalesce=True)
+
             # Доп. источники обложек для хвоста, не покрытого Deezer: iTunes
             # (западный латинский остаток) и Yandex (русский/советский + транслит
             # слой, которого нет в Discogs/Deezer). Каждый — своя worklist-таблица

@@ -44,7 +44,9 @@ import { VinylColorTag } from '../../components/VinylColorTag';
 import { VinylSpinner } from '../../components/VinylSpinner';
 import { OffersBlock } from '../../components/OffersBlock';
 import { CoachTip } from '../../components/onboarding/CoachTip';
+import { CoachPulse } from '../../components/onboarding/CoachPulse';
 import { useCoachMark } from '../../lib/useCoachMark';
+import { useRecordTour, type RecordTourKey } from '../../lib/recordTour';
 import { PriceSparkline } from '../../components/PriceSparkline';
 import { RadarIcon } from '../../components/RadarIcon';
 import { ThresholdSheet, type ThresholdSheetRef } from '../../components/wishlist/ThresholdSheet';
@@ -140,6 +142,7 @@ export default function RecordDetailScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [priceHistory, setPriceHistory] = useState<PriceHistoryResponse | null>(null);
+  const [historyResolved, setHistoryResolved] = useState(false);
   const thresholdSheetRef = useRef<ThresholdSheetRef>(null);
   const radarPulse = useSharedValue(0);
   const radarPulseStyle = useAnimatedStyle(() => ({
@@ -148,12 +151,89 @@ export default function RecordDetailScreen() {
   }));
   const hasPreview = Boolean(previewTitle || previewCover || previewThumb || previewArtist);
 
-  // Подсказка про Маркет разблокируется там, где блок офферов вообще
-  // отрисуется, — иначе объясняли бы витрину рядом с пустотой.
-  const marketTip = useCoachMark(
-    'market',
-    Boolean(record?.discogs_id || record?.source === 'store'),
+  // Какие блоки реально отрисуются для этого релиза — по ним и собирается тур.
+  // Порядок обязан совпадать с порядком блоков на экране: тур ведёт человека
+  // сверху вниз, и прыжок назад заставлял бы искать блок глазами.
+  const hasPrice = Boolean(
+    record?.estimated_price_median_rub ||
+      record?.estimated_price_min_rub ||
+      record?.estimated_price_median ||
+      record?.estimated_price_min,
   );
+  // Блок офферов может быть запрошен, но не отрисован: наличие discogs_id не
+  // значит, что магазины что-то предлагают. Для тура важен именно факт
+  // отрисовки, поэтому ждём ответ самого блока.
+  const [offersCount, setOffersCount] = useState<number | null>(null);
+  const offersRequested = Boolean(record?.discogs_id || record?.source === 'store');
+  const hasOffers = offersRequested && (offersCount ?? 0) > 0;
+  const hasHistory = Boolean(priceHistory && priceHistory.points.length > 0);
+  const hasVersions = Boolean(
+    record?.discogs_master_id && record.discogs_master_id !== '0',
+  );
+  const tourKeys: RecordTourKey[] = [
+    ...(hasPrice ? (['price'] as const) : []),
+    ...(hasOffers ? (['offers'] as const) : []),
+    ...(hasHistory ? (['history'] as const) : []),
+    ...(hasVersions ? (['versions'] as const) : []),
+  ];
+  // Тур стартует только когда состав блоков окончательный: офферы и история
+  // цен приезжают асинхронно, и запуск по неполному набору отрезал бы шаги,
+  // которые дорисуются через секунду.
+  const tourReady =
+    Boolean(record) && historyResolved && (!offersRequested || offersCount !== null);
+  const tour = useRecordTour(tourKeys, tourReady);
+
+  // Подсказка про Маркет разблокируется там, где блок офферов вообще
+  // отрисуется, — иначе объясняли бы витрину рядом с пустотой. Пока идёт тур,
+  // она молчит: две карточки-объяснения на одном экране спорят друг с другом,
+  // и обе читаются хуже.
+  const marketTip = useCoachMark('market', hasOffers && !tour.active);
+
+  // Подсказки про свойства самой пластинки. Условие у каждой — факт отрисовки
+  // соответствующего блока, поэтому они срабатывают на первом релизе, где это
+  // свойство вообще встретилось, а не «через N пластинок в коллекции».
+  //
+  // Все глушатся на время тура: он объясняет ту же страницу, и две карточки
+  // одновременно спорят друг с другом.
+  const hasVinylColor = Boolean(record?.display_vinyl_color ?? record?.vinyl_color_raw);
+  const rarityTiers = record ? allRarityTiers(record) : [];
+  const vinylColorTip = useCoachMark('vinyl-color', hasVinylColor && !tour.active);
+  const rarityTip = useCoachMark('rarity-tiers', rarityTiers.length > 0 && !tour.active);
+  const offerPriceTip = useCoachMark('offer-price', hasOffers && !tour.active);
+  const versionsTip = useCoachMark('other-versions', hasVersions && !tour.active);
+
+  /**
+   * Подсказка тура встаёт вплотную НАД блоком, который объясняет, поэтому
+   * маршрута «где искать» у неё нет. Крестик здесь — «пропустить весь тур»:
+   * человек, которому объяснения не нужны, не должен закрывать их по одному.
+   */
+  /**
+   * Подсказка про свойство этой пластинки. Маршрут не показываем: объясняемый
+   * блок стоит в паре строк отсюда и подсвечен — плашка «Карточка релиза →
+   * плашка с цветом» повторяла бы то, что и так перед глазами.
+   */
+  const renderRecordTip = (
+    tip: ReturnType<typeof useCoachMark>,
+    action?: { label: string; onPress: () => void },
+  ) =>
+    tip.visible ? (
+      <CoachTip
+        meta={{ ...tip.meta, where: undefined }}
+        analyticsKey={tip.meta.key}
+        onDismiss={tip.dismiss}
+        action={action}
+      />
+    ) : null;
+
+  const renderTourTip = (key: RecordTourKey) =>
+    tour.isAt(key) && tour.step ? (
+      <CoachTip
+        meta={tour.step}
+        position={tour.position}
+        onDismiss={tour.skip}
+        action={{ label: tour.isLast ? 'Понятно' : 'Дальше', onPress: tour.next }}
+      />
+    ) : null;
 
   // Динамика цены — грузим лениво после появления записи. Тихо игнорим ошибку:
   // блок графика просто не отрисуется, если истории нет.
@@ -161,12 +241,19 @@ export default function RecordDetailScreen() {
     const rid = record?.id;
     if (!rid) return;
     let alive = true;
+    setHistoryResolved(false);
     api
       .getPriceHistory(rid, 90)
       .then((res) => {
         if (alive) setPriceHistory(res);
       })
-      .catch(() => {});
+      .catch(() => {})
+      // Факт «ответ пришёл» нужен туру: до него нельзя решить, есть график на
+      // экране или нет, а стартовать с неполным набором блоков — значит
+      // потерять шаг, который дорисуется секундой позже.
+      .finally(() => {
+        if (alive) setHistoryResolved(true);
+      });
     return () => {
       alive = false;
     };
@@ -814,9 +901,24 @@ export default function RecordDetailScreen() {
                 <Text style={styles.metaText}>{record.country}</Text>
               </View>
             ) : null}
-            <VinylColorTag vinylColorRaw={record.display_vinyl_color ?? record.vinyl_color_raw} />
+            {/* Ореол, а не кольцо: кольцо расходится до 1.9× от цели, и у
+                плашки цвета — она стоит у самого левого края — половина
+                подсветки уезжала за экран. */}
+            <CoachPulse
+              active={vinylColorTip.visible}
+              variant="glow"
+              radius={BorderRadius.full}
+              inset={3}
+            >
+              <VinylColorTag vinylColorRaw={record.display_vinyl_color ?? record.vinyl_color_raw} />
+            </CoachPulse>
           </View>
         </View>
+
+        {/* Подсказка про цвет винила идёт СРАЗУ под шапкой, а не над ней:
+            плашка цвета живёт в строке меты вместе с форматом и страной,
+            вклиниться туда карточкой нельзя. Место показывает подсветка. */}
+        {renderRecordTip(vinylColorTip)}
 
         {/* Лейбл и каталог */}
         {(record.label || record.catalog_number) && (
@@ -867,21 +969,30 @@ export default function RecordDetailScreen() {
           </Card>
         )}
 
+        {renderRecordTip(rarityTip)}
+
         {/* Особенности (rarity) */}
-        {(() => {
-          const tiers = allRarityTiers(record);
-          if (tiers.length === 0) return null;
-          return (
+        {rarityTiers.length > 0 ? (
+          <CoachPulse
+            active={rarityTip.visible}
+            variant="glow"
+            radius={BorderRadius.lg}
+            inset={6}
+            // У блока свои marginHorizontal и marginBottom по Spacing.md.
+            // Без поправки ореол обводил их вместе с блоком: по бокам вылезал
+            // за карточку, а снизу ложился на «Примерную стоимость».
+            edges={{ left: -Spacing.md, right: -Spacing.md, bottom: -Spacing.md }}
+          >
             <View style={styles.featuresSection}>
               <Text style={styles.featuresTitle}>Особенности</Text>
               <View style={styles.featuresList}>
-                {tiers.map((tier) => (
+                {rarityTiers.map((tier) => (
                   <TierFeatureBlock key={tier} tier={tier} />
                 ))}
               </View>
             </View>
-          );
-        })()}
+          </CoachPulse>
+        ) : null}
 
         {/* Цена */}
         {(() => {
@@ -890,7 +1001,18 @@ export default function RecordDetailScreen() {
           if (!rubPrice && !usdPrice) return null;
 
           return (
-            <Card variant="flat" style={styles.card}>
+            <>
+            {renderTourTip('price')}
+            <CoachPulse
+              active={tour.isAt('price')}
+              variant="glow"
+              radius={BorderRadius.lg}
+              inset={4}
+              style={styles.tourTargetLg}
+            >
+            {/* Без styles.card: его единственное свойство — marginBottom,
+                и держит его теперь обёртка ореола. */}
+            <Card variant="flat" style={styles.cardInTour}>
               <Text style={[styles.cardTitle, { textAlign: 'center' }]}>Примерная стоимость</Text>
 
               {rubPrice ? (
@@ -951,6 +1073,8 @@ export default function RecordDetailScreen() {
                 return null;
               })()}
             </Card>
+            </CoachPulse>
+            </>
           );
         })()}
 
@@ -960,35 +1084,82 @@ export default function RecordDetailScreen() {
         {marketTip.visible && (
           <CoachTip
             meta={marketTip.meta}
+            analyticsKey={marketTip.meta.key}
             onDismiss={marketTip.dismiss}
             action={{ label: 'Открыть Маркет', onPress: () => router.push('/market') }}
           />
         )}
 
-        {/* Где купить — живые предложения магазинов */}
-        {record.discogs_id ? (
-          <OffersBlock discogsId={record.discogs_id} />
-        ) : record.source === 'store' ? (
-          // store-native (нет discogs_id) — берём офферы по record_id через
-          // /records/by-id/{uuid}/offers/full. Без alt-version'ов (нет master_id),
-          // только exact-match листинги магазинов.
-          <OffersBlock recordId={record.id} />
+        {renderTourTip('offers')}
+
+        {renderRecordTip(offerPriceTip)}
+
+        {/* Где купить — живые предложения магазинов. Обёртка ореола учитывает
+            marginVertical самого блока (Spacing.sm), иначе подсветка обводила
+            бы блок вместе с его отступами. */}
+        {offersRequested ? (
+          <CoachPulse
+            active={tour.isAt('offers') || offerPriceTip.visible}
+            variant="glow"
+            radius={BorderRadius.lg}
+            inset={4}
+            edges={{ top: -Spacing.sm, bottom: -Spacing.sm }}
+          >
+            {record.discogs_id ? (
+              <OffersBlock discogsId={record.discogs_id} onOffersResolved={setOffersCount} />
+            ) : (
+              // store-native (нет discogs_id) — берём офферы по record_id через
+              // /records/by-id/{uuid}/offers/full. Без alt-version'ов (нет
+              // master_id), только exact-match листинги магазинов.
+              <OffersBlock recordId={record.id} onOffersResolved={setOffersCount} />
+            )}
+          </CoachPulse>
         ) : null}
 
-        {/* Динамика цены (Волна C) — рисуем только когда есть точки истории */}
-        {priceHistory && priceHistory.points.length > 0 ? (
-          <PriceSparkline
-            points={priceHistory.points}
-            historicalLow={priceHistory.historical_low_rub}
-          />
+        {renderTourTip('history')}
+
+        {/* Динамика цены (Волна C) — рисуем только когда есть точки истории.
+            У самого графика marginHorizontal/marginBottom по Spacing.md —
+            втягиваем ореол на эту величину, чтобы он обвёл график, а не его
+            отступы. */}
+        {hasHistory && priceHistory ? (
+          <CoachPulse
+            active={tour.isAt('history')}
+            variant="glow"
+            radius={BorderRadius.lg}
+            inset={4}
+            edges={{ left: -Spacing.md, right: -Spacing.md, bottom: -Spacing.md }}
+          >
+            <PriceSparkline
+              points={priceHistory.points}
+              historicalLow={priceHistory.historical_low_rub}
+            />
+          </CoachPulse>
         ) : null}
+
+        {renderTourTip('versions')}
+
+        {renderRecordTip(versionsTip, {
+          label: 'Посмотреть',
+          onPress: () => router.push(`/master/${record.discogs_master_id}/versions` as never),
+        })}
 
         {/* Другие версии релиза. '0' — легаси-артефакт Discogs (master_id=0
             у релизов без мастера), по нему некуда переходить. */}
-        {record.discogs_master_id && record.discogs_master_id !== '0' ? (
-          <OtherVersionsButton
-            onPress={() => router.push(`/master/${record.discogs_master_id}/versions`)}
-          />
+        {hasVersions ? (
+          <CoachPulse
+            active={tour.isAt('versions') || versionsTip.visible}
+            variant="glow"
+            radius={BorderRadius.lg}
+            inset={4}
+            // Своя marginBottom у кнопки — втягиваем, иначе ореол свисает на
+            // «Треклист» под ней.
+            edges={{ bottom: -Spacing.md }}
+          >
+            <OtherVersionsButton
+              onPress={() => router.push(`/master/${record.discogs_master_id}/versions`)}
+            />
+          </CoachPulse>
         ) : null}
 
         {/* Треклист */}
@@ -1258,6 +1429,14 @@ const styles = StyleSheet.create({
   },
   card: {
     marginBottom: Spacing.md,
+  },
+  // Отступ карточки, обёрнутой в ореол тура, держит обёртка: ореол рисуется по
+  // границам обёртки, и внутренний marginBottom растянул бы его вниз.
+  tourTargetLg: {
+    marginBottom: Spacing.md,
+  },
+  cardInTour: {
+    marginBottom: 0,
   },
   cardTitle: {
     ...Typography.h4,

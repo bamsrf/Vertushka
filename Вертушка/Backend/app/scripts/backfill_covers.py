@@ -63,13 +63,20 @@ class Provider:
     lookup: Callable[[str, str, int | None], Awaitable[str | None]]
     concurrency: int  # перекрытие сетевой латентности; потолок держит троттл сервиса
     marker: str       # gate-файл для scheduled-джобы
+    min_interval: float  # троттл сервиса, с/запрос — из него считается размер батча
 
 
 PROVIDERS: dict[str, Provider] = {
+    # min_interval дублирует _ITUNES_MIN_INTERVAL / _MIN_INTERVAL из сервисов
+    # намеренно: сервис держит темп, а здесь из того же числа считается батч,
+    # который успеет уложиться в _BATCH_TIMEOUT. Разъедутся — вернётся баг
+    # «батч всегда в таймаут» (см. _safe_batch).
     "itunes": Provider("itunes", _itunes_lookup, concurrency=2,
-                       marker="/app/uploads/.backfill_itunes_enabled"),
+                       marker="/app/uploads/.backfill_itunes_enabled",
+                       min_interval=3.1),
     "yandex": Provider("yandex", _yandex_lookup, concurrency=3,
-                       marker="/app/uploads/.backfill_yandex_enabled"),
+                       marker="/app/uploads/.backfill_yandex_enabled",
+                       min_interval=0.25),
 }
 
 # Watchdog: любой батч обновляет _last_progress; при застое > лимита — self-exit
@@ -77,6 +84,9 @@ PROVIDERS: dict[str, Provider] = {
 _STALL_LIMIT = 600
 _last_progress = time.monotonic()
 _BATCH_TIMEOUT = 240
+# Доля таймаута, в которую должен уложиться батч. Запас на латентность самих
+# запросов поверх троттла — троттл задаёт паузы МЕЖДУ запросами, а не их время.
+_BATCH_FILL = 0.8
 
 
 async def _watchdog() -> None:
@@ -149,13 +159,36 @@ async def _build_masters_worklist(source: str, rebuild: bool = False) -> int:
         return int(total)
 
 
+def _safe_batch(prov: Provider, requested: int) -> int:
+    """Батч, который успевает целиком уложиться в _BATCH_TIMEOUT.
+
+    Троттл в сервисах глобальный и последовательный: `concurrency` перекрывает
+    только сетевую латентность, темп задаёт `min_interval`. У iTunes это
+    3.1 с/запрос, то есть батч из 200 требует 620 с — вдвое больше таймаута.
+    Таймаут был бы не аварией, а нормой каждого прогона.
+    """
+    fits = int(_BATCH_TIMEOUT * _BATCH_FILL / prov.min_interval)
+    return max(1, min(requested, fits))
+
+
 async def _gather_batch(prov: Provider, items: list[dict], sem: asyncio.Semaphore) -> list[dict]:
+    """Опросить батч. Возвращает ТОЛЬКО реально опрошенные элементы.
+
+    Это принципиально: вызывающий помечает `done = TRUE` всё, что получил
+    отсюда. Раньше таймаут возвращал весь батч (`setdefault("cover", None)`),
+    и мастера, до которых очередь не дошла, уходили в done без единого запроса —
+    навсегда, потому что worklist больше их не отдаст. При iTunes-троттле это
+    съедало бы ~60% очереди вхолостую.
+    """
     async def _lookup(item: dict) -> dict:
         async with sem:
             try:
                 item["cover"] = await prov.lookup(item["artist"], item["title"], item.get("year"))
             except Exception:
                 item["cover"] = None
+            # Ставим ПОСЛЕ вызова: отменённая по таймауту корутина сюда не
+            # доходит, значит элемент не будет закрыт и вернётся в следующий батч.
+            item["attempted"] = True
         return item
 
     try:
@@ -163,10 +196,12 @@ async def _gather_batch(prov: Provider, items: list[dict], sem: asyncio.Semaphor
             asyncio.gather(*(_lookup(it) for it in items)), timeout=_BATCH_TIMEOUT,
         )
     except asyncio.TimeoutError:
-        logger.warning("[%s] batch timeout (%ds) — miss, продолжаем", prov.name, _BATCH_TIMEOUT)
-        for it in items:
-            it.setdefault("cover", None)
-        return items
+        done = [it for it in items if it.get("attempted")]
+        logger.warning(
+            "[%s] batch timeout (%ds): опрошено %d из %d, остальные вернутся в очередь",
+            prov.name, _BATCH_TIMEOUT, len(done), len(items),
+        )
+        return done
 
 
 async def _run_masters(prov: Provider, batch: int, max_requests: int | None) -> None:
@@ -178,6 +213,7 @@ async def _run_masters(prov: Provider, batch: int, max_requests: int | None) -> 
         logger.info("[%s] masters worklist empty — nothing to do", prov.name)
         return
     sem = asyncio.Semaphore(prov.concurrency)
+    batch = _safe_batch(prov, batch)
     seen = covered = 0
     t0 = time.monotonic()
 
@@ -194,6 +230,13 @@ async def _run_masters(prov: Provider, batch: int, max_requests: int | None) -> 
 
         items = [dict(r) for r in rows]
         results = await _gather_batch(prov, items, sem)
+        if not results:
+            # Ни одного опроса за _BATCH_TIMEOUT — источник лежит или троттл
+            # встал. Продолжать нельзя: done не проставится, следующий SELECT
+            # вернёт те же строки, и цикл закрутится вхолостую навсегда.
+            logger.error("[%s] batch: ни одного ответа за %ds — прерываем проход",
+                         prov.name, _BATCH_TIMEOUT)
+            break
         hits = [r for r in results if r["cover"]]
         done_ids = [r["master_id"] for r in results]
         seen += len(results)

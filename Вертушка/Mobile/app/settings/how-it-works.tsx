@@ -20,16 +20,18 @@ import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Icon } from '@/components/ui';
 import { toast } from '../../lib/toast';
-import { useAuthStore, useOnboardingStore } from '../../lib/store';
+import { useAuthStore, useCollectionStore, useOnboardingStore } from '../../lib/store';
 import {
   COACH_MARKS,
   CoachMarkKey,
   type CoachMarkState,
+  getCoachMark,
   isSuppressed,
   loadCoachMarkStates,
   resetCoachMarks,
 } from '../../lib/coachMarks';
 import { restoreFirstSteps, useFirstStepsDismissed } from '../../lib/onboardingProgress';
+import { resetRecordTour, useRecordTourDone } from '../../lib/recordTour';
 import { BorderRadius, Colors, Shadows, Spacing, Typography } from '../../constants/theme';
 
 export default function HowItWorksScreen() {
@@ -39,6 +41,7 @@ export default function HowItWorksScreen() {
   const resetOnboarding = useOnboardingStore((s) => s.resetOnboarding);
 
   const stepsDismissed = useFirstStepsDismissed();
+  const tourDone = useRecordTourDone();
 
   const [states, setStates] = useState<Map<CoachMarkKey, CoachMarkState>>(new Map());
 
@@ -53,11 +56,34 @@ export default function HowItWorksScreen() {
     void refresh();
   }, [refresh]);
 
+  /**
+   * Вернуть подсказку и сразу отвести туда, где она живёт.
+   *
+   * Раньше «Показать снова» только сбрасывало флаг и показывало тост — человек
+   * оставался в настройках, внутри модального профиля, и должен был сам
+   * догадаться, куда идти и что она вообще появится не здесь. Теперь настройки
+   * с профилем закрываются, и мы открываем нужный раздел.
+   */
   const handleReset = async (key: CoachMarkKey) => {
     if (!userId) return;
     await resetCoachMarks(userId, key);
     await refresh();
-    toast.info('Подсказка вернётся, когда фича снова будет под рукой');
+
+    const meta = getCoachMark(key);
+    if (!meta.goTo) {
+      toast.info('Подсказка вернётся, когда фича снова будет под рукой');
+      return;
+    }
+
+    // Вкладку переключаем до навигации: экран коллекции читает активную
+    // вкладку из стора на маунте.
+    if (meta.goTo.tab) useCollectionStore.getState().setActiveTab(meta.goTo.tab);
+    if (meta.goTo.note) toast.info(meta.title, meta.goTo.note);
+
+    // dismissAll закрывает весь модальный стек — и настройки, и профиль под
+    // ними. Без него подсказка открывалась бы под модалкой, то есть невидимо.
+    if (router.canDismiss()) router.dismissAll();
+    router.navigate(meta.goTo.route as never);
   };
 
   const handleResetAll = async () => {
@@ -74,6 +100,15 @@ export default function HowItWorksScreen() {
     }
     await restoreFirstSteps();
     toast.success('Вернули', 'Чеклист снова в шапке коллекции');
+  };
+
+  const handleReplayTour = async () => {
+    if (!tourDone) {
+      toast.info('Разбор и так включён', 'Открой любую карточку релиза');
+      return;
+    }
+    await resetRecordTour();
+    toast.success('Вернули', 'Покажем при следующем открытии карточки');
   };
 
   const handleReplayWelcome = async () => {
@@ -102,7 +137,7 @@ export default function HowItWorksScreen() {
 
         {COACH_MARKS.map((mark) => {
           const state = states.get(mark.key) ?? { acknowledged: false, shows: 0 };
-          const suppressed = isSuppressed(state);
+          const suppressed = isSuppressed(state, mark.key);
           return (
             <View key={mark.key} style={[styles.card, Shadows.sm]}>
               <View style={styles.cardRow}>
@@ -155,6 +190,13 @@ export default function HowItWorksScreen() {
         <TouchableOpacity style={styles.secondary} onPress={handleResetAll}>
           <Icon name="refresh-outline" size={20} color={Colors.royalBlue} />
           <Text style={styles.secondaryText}>Сбросить все подсказки</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.secondary} onPress={handleReplayTour}>
+          <Icon name="refresh-outline" size={20} color={Colors.royalBlue} />
+          <Text style={styles.secondaryText}>
+            {tourDone ? 'Повторить разбор карточки релиза' : 'Разбор карточки релиза включён'}
+          </Text>
         </TouchableOpacity>
 
         <TouchableOpacity style={styles.secondary} onPress={handleReplayWelcome}>

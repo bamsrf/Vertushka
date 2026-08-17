@@ -26,7 +26,15 @@ export type CoachMarkKey =
   | 'multi-select'
   | 'radar'
   | 'market'
-  | 'gifts-incoming';
+  | 'gifts-incoming'
+  | 'scan-ways'
+  // Подсказки карточки релиза. Их условие — свойство КОНКРЕТНОЙ пластинки
+  // (цветной винил, ярлык редкости, живая цена магазина), а не состояние
+  // аккаунта, поэтому срабатывают на первом релизе, где такое встретилось.
+  | 'vinyl-color'
+  | 'rarity-tiers'
+  | 'offer-price'
+  | 'other-versions';
 
 export interface CoachMarkMeta {
   key: CoachMarkKey;
@@ -55,6 +63,36 @@ export interface CoachMarkMeta {
    */
   spotlight?: 'pulse' | 'glow';
   /**
+   * Группа лимита «одна за запуск». По умолчанию 'app'. Подсказки карточки
+   * релиза живут в своей группе — иначе слот всегда забирала бы коллекция,
+   * стартовый экран. См. CoachMarkGroup.
+   */
+  group?: CoachMarkGroup;
+  /**
+   * Сколько раз показывать без подтверждения. По умолчанию MAX_SHOWS_DEFAULT.
+   * Единица — для подсказок, которые и так попадаются на глаза сразу: второй
+   * показ там читается не как напоминание, а как навязчивость.
+   */
+  maxShows?: number;
+  /**
+   * Пауза перед показом. Нужна там, где подсказка иначе появляется
+   * одновременно с самим экраном и накрывает его прежде, чем человек успел
+   * посмотреть, куда попал.
+   */
+  delayMs?: number;
+  /**
+   * Куда идти из «Как это работает», когда подсказку возвращают вручную.
+   * Без этого «Показать снова» оставляло человека в настройках гадать, где
+   * теперь искать обещанное.
+   */
+  goTo?: {
+    route: string;
+    /** Вкладка внутри коллекции, если фича живёт на вишлисте. */
+    tab?: 'collection' | 'wishlist';
+    /** Что сказать, если точное место открыть нельзя (карточка любого релиза). */
+    note?: string;
+  };
+  /**
    * Меньше — важнее. Разрешает конкуренцию, когда условия сошлись у нескольких
    * подсказок в один момент. Порядок задан ценностью для новичка: сначала то,
    * без чего интерфейс непонятен (жест зума), затем то, что он всё равно
@@ -69,7 +107,28 @@ export interface CoachMarkMeta {
  */
 export const COACH_MARKS: CoachMarkMeta[] = [
   {
+    key: 'scan-ways',
+    // Самый высокий приоритет: это первый экран после регистрации, и на нём
+    // человек делает первое действие в приложении. Остальные подсказки к этому
+    // моменту всё равно заблокированы — коллекция пустая.
+    priority: 5,
+    // Один показ, а не два: подсказка появляется на стартовом экране сразу
+    // после регистрации, и повторить её на следующем запуске — значит встретить
+    // человека тем же текстом дважды подряд.
+    maxShows: 1,
+    // Пауза, чтобы экран сканера успел показаться первым. Без неё карточка
+    // выезжала одновременно с камерой и читалась как перехват управления.
+    delayMs: 1400,
+    title: 'Как добавить пластинку',
+    body: 'Сверху выбираешь: сканировать штрихкод или сфотографировать обложку. Если пластинки нет ни в Discogs, ни в Маркете — добавь вручную, кружком справа внизу.',
+    unlock: 'первый заход на экран сканирования',
+    where: 'Сканер → переключатель сверху, ручной ввод — кружок справа внизу',
+    goTo: { route: '/(tabs)' },
+    icon: 'plus',
+  },
+  {
     key: 'pinch-zoom',
+    goTo: { route: '/(tabs)/collection', tab: 'collection' },
     priority: 10,
     title: 'Вся полка на одном экране',
     body: 'Сожми сетку двумя пальцами — останутся одни обложки, влезет вся полка. Разожми, чтобы вернуть подписи.',
@@ -79,6 +138,7 @@ export const COACH_MARKS: CoachMarkMeta[] = [
   },
   {
     key: 'collection-value',
+    goTo: { route: '/(tabs)/collection', tab: 'collection' },
     priority: 60,
     title: 'Сколько стоит коллекция',
     body: 'Смотрим, почём такие же пластинки продают на Discogs, и переводим в рубли по курсу ЦБ.',
@@ -88,6 +148,7 @@ export const COACH_MARKS: CoachMarkMeta[] = [
   },
   {
     key: 'folders',
+    goTo: { route: '/(tabs)/collection', tab: 'collection' },
     priority: 50,
     title: 'Пора разложить по папкам',
     body: 'Жанры, эпохи, «на продажу» — раскладывай как удобно тебе. Пластинка может лежать в нескольких папках.',
@@ -97,6 +158,7 @@ export const COACH_MARKS: CoachMarkMeta[] = [
   },
   {
     key: 'multi-select',
+    goTo: { route: '/(tabs)/collection', tab: 'collection' },
     priority: 70,
     title: 'Можно выбирать пачкой',
     body: 'Задержи палец на обложке — включится выбор. Дальше папки, удаление и подарки сразу для нескольких.',
@@ -106,6 +168,7 @@ export const COACH_MARKS: CoachMarkMeta[] = [
   },
   {
     key: 'radar',
+    goTo: { route: '/(tabs)/collection', tab: 'wishlist' },
     priority: 20,
     title: 'Радар следит за ценой',
     body: 'Назови цену, за которую готов купить. Пришлём пуш, когда пластинка до неё подешевеет или просто появится в продаже.',
@@ -123,6 +186,7 @@ export const COACH_MARKS: CoachMarkMeta[] = [
   },
   {
     key: 'market',
+    goTo: { route: '/(tabs)/collection', tab: 'wishlist' },
     priority: 30,
     title: 'Маркет знает, где купить',
     body: 'Собираем магазины, где твои пластинки есть в наличии прямо сейчас, и показываем цены рядом.',
@@ -130,8 +194,59 @@ export const COACH_MARKS: CoachMarkMeta[] = [
     where: 'Поиск → вниз до плашки «Маркет»',
     icon: 'business-outline',
   },
+  // --- Подсказки карточки релиза ---------------------------------------
+  //
+  // Приоритеты подобраны по «насколько непонятно без объяснения»: ярлык
+  // редкости человек видит как цветную плашку без единого слова, цвет винила
+  // читается как опечатка в названии, цена магазина спорит с оценкой Discogs,
+  // а «другие версии» хотя бы честно подписаны кнопкой.
+  {
+    key: 'rarity-tiers',
+    goTo: { route: '/(tabs)/collection', tab: 'collection', note: 'Открой любую пластинку с ярлыком' },
+    group: 'record',
+    priority: 22,
+    title: 'Что значат ярлыки',
+    body: 'Коллекционка — дороже $100 и почти не появляется в продаже. Лимитка — специальное издание. Популярно — на неё высокий спрос на Discogs прямо сейчас.',
+    unlock: 'открыл релиз с ярлыком редкости',
+    where: 'Карточка релиза → блок «Особенности»',
+    icon: 'sparkle',
+  },
+  {
+    key: 'vinyl-color',
+    goTo: { route: '/(tabs)/collection', tab: 'collection', note: 'Открой любую пластинку с цветным винилом' },
+    group: 'record',
+    priority: 26,
+    title: 'Цвет винила',
+    body: 'Один и тот же альбом печатают на чёрном, цветном и прозрачном виниле. Цвет — часть конкретного издания и заметно влияет на цену.',
+    unlock: 'открыл релиз с цветным винилом',
+    where: 'Карточка релиза → плашка с цветом под обложкой',
+    icon: 'disc-outline',
+  },
+  {
+    key: 'offer-price',
+    goTo: { route: '/(tabs)/collection', tab: 'wishlist', note: 'Открой пластинку, которая есть в магазине' },
+    group: 'record',
+    priority: 38,
+    title: 'Цена магазина',
+    body: 'Это реальный ценник конкретного магазина сейчас, а не оценка Discogs выше. Поэтому числа отличаются: одно — сколько просят, другое — сколько такие пластинки обычно стоят.',
+    unlock: 'открыл релиз, который есть в наличии в магазине',
+    where: 'Карточка релиза → блок «Где купить»',
+    icon: 'currency-rub',
+  },
+  {
+    key: 'other-versions',
+    goTo: { route: '/(tabs)/collection', tab: 'collection', note: 'Открой любую пластинку с переизданиями' },
+    group: 'record',
+    priority: 44,
+    title: 'Другие версии',
+    body: 'Один альбом переиздают десятки раз: разные годы, страны, цвет винила. Здесь все издания этого релиза — сравни и добавь именно своё.',
+    unlock: 'открыл релиз, у которого есть переиздания',
+    where: 'Карточка релиза → «Смотреть другие версии релиза»',
+    icon: 'grid-outline',
+  },
   {
     key: 'gifts-incoming',
+    goTo: { route: '/profile' },
     priority: 40,
     title: 'Из вишлиста можно дарить',
     body: 'Скинь друзьям ссылку на профиль — они забронируют пластинку из вишлиста. Что именно выбрали, ты не узнаешь: сюрприз остаётся сюрпризом.',
@@ -160,7 +275,7 @@ const storageKey = (userId: string, key: CoachMarkKey) =>
  * возвращалась при каждом следующем запуске бесконечно. Два показа — предел:
  * первый мог быть не замечен, третий уже назойлив.
  */
-const MAX_SHOWS_WITHOUT_ACK = 2;
+const MAX_SHOWS_DEFAULT = 2;
 
 export interface CoachMarkState {
   /** Юзер подтвердил явно: закрыл крестиком или пошёл по действию. */
@@ -172,8 +287,15 @@ export interface CoachMarkState {
 const EMPTY_STATE: CoachMarkState = { acknowledged: false, shows: 0 };
 
 /** Больше не показываем: либо подтвердили, либо исчерпали лимит показов. */
-export const isSuppressed = (state: CoachMarkState | undefined): boolean =>
-  !!state && (state.acknowledged || state.shows >= MAX_SHOWS_WITHOUT_ACK);
+export const isSuppressed = (
+  state: CoachMarkState | undefined,
+  key?: CoachMarkKey,
+): boolean => {
+  if (!state) return false;
+  if (state.acknowledged) return true;
+  const limit = (key && META_BY_KEY.get(key)?.maxShows) ?? MAX_SHOWS_DEFAULT;
+  return state.shows >= limit;
+};
 
 /**
  * Формат значения в хранилище:
@@ -198,10 +320,24 @@ function parseState(raw: string | null): CoachMarkState {
  */
 let stateCache: { userId: string; states: Map<CoachMarkKey, CoachMarkState> } | null = null;
 
-/** Лимит «одна подсказка за запуск». Сбрасывается только перезапуском приложения. */
-let shownThisSession = false;
+/**
+ * Группа подсказки — у каждой свой лимит «одна за запуск».
+ *
+ * Зачем группы. Пока слот был общий, подсказки коллекции забирали его первыми:
+ * коллекция — стартовый экран, её условия сходятся раньше, чем человек вообще
+ * откроет карточку релиза. В итоге подсказки самой карточки (цвет винила,
+ * ярлыки, цена магазина) почти никогда не доходили до очереди — а объясняют они
+ * то, что видно прямо сейчас и больше нигде не объясняется.
+ *
+ * Группы независимы, поэтому за запуск можно увидеть максимум две подсказки:
+ * одну «про приложение» и одну «про эту пластинку». Это всё ещё не залп.
+ */
+export type CoachMarkGroup = 'app' | 'record';
 
-export const isSessionSlotTaken = () => shownThisSession;
+/** Лимит «одна подсказка за запуск» — свой на каждую группу. */
+const shownThisSession: Record<CoachMarkGroup, boolean> = { app: false, record: false };
+
+export const isSessionSlotTaken = (group: CoachMarkGroup = 'app') => shownThisSession[group];
 
 /**
  * Окно арбитража. Хуки разных подсказок монтируются в одном рендере, но их
@@ -213,6 +349,7 @@ const ARBITRATION_MS = 150;
 
 interface PendingRequest {
   priority: number;
+  group: CoachMarkGroup;
   resolve: (won: boolean) => void;
 }
 
@@ -225,19 +362,28 @@ function settleArbitration() {
   pending.clear();
   if (entries.length === 0) return;
 
-  entries.sort((a, b) => a[1].priority - b[1].priority);
-  const [, winner] = entries[0];
-
-  // Слот мог уйти, пока шло окно (например, подсказку сбросили из настроек и
-  // тут же показали) — тогда не выигрывает никто.
-  if (shownThisSession) {
-    entries.forEach(([, req]) => req.resolve(false));
-    return;
+  // Арбитраж идёт внутри группы: заявки из разных групп не конкурируют, у
+  // каждой свой слот.
+  const byGroup = new Map<CoachMarkGroup, typeof entries>();
+  for (const entry of entries) {
+    const group = entry[1].group;
+    const bucket = byGroup.get(group);
+    if (bucket) bucket.push(entry);
+    else byGroup.set(group, [entry]);
   }
 
-  shownThisSession = true;
-  winner.resolve(true);
-  entries.slice(1).forEach(([, req]) => req.resolve(false));
+  for (const [group, groupEntries] of byGroup) {
+    // Слот мог уйти, пока шло окно (например, подсказку сбросили из настроек и
+    // тут же показали) — тогда не выигрывает никто.
+    if (shownThisSession[group]) {
+      groupEntries.forEach(([, req]) => req.resolve(false));
+      continue;
+    }
+    groupEntries.sort((a, b) => a[1].priority - b[1].priority);
+    shownThisSession[group] = true;
+    groupEntries[0][1].resolve(true);
+    groupEntries.slice(1).forEach(([, req]) => req.resolve(false));
+  }
 }
 
 /**
@@ -245,14 +391,16 @@ function settleArbitration() {
  * той, у которой меньше `priority` среди заявившихся в окне арбитража.
  */
 export function requestCoachMark(key: CoachMarkKey): Promise<boolean> {
-  if (shownThisSession) return Promise.resolve(false);
+  const meta = getCoachMark(key);
+  const group = meta.group ?? 'app';
+  if (shownThisSession[group]) return Promise.resolve(false);
 
   const existing = pending.get(key);
   // Повторная заявка тем же ключом (перерендер) — не плодим промисы.
   if (existing) return new Promise((resolve) => existing.resolve = chain(existing.resolve, resolve));
 
   return new Promise<boolean>((resolve) => {
-    pending.set(key, { priority: getCoachMark(key).priority, resolve });
+    pending.set(key, { priority: meta.priority, group, resolve });
     if (!arbitrationTimer) {
       arbitrationTimer = setTimeout(settleArbitration, ARBITRATION_MS);
     }
@@ -263,8 +411,8 @@ export function requestCoachMark(key: CoachMarkKey): Promise<boolean> {
  * Вернуть слот, если победитель не смог показаться (компонент размонтировался,
  * пока шёл арбитраж). Без этого сессия осталась бы вовсе без подсказки.
  */
-export function releaseSessionSlot() {
-  shownThisSession = false;
+export function releaseSessionSlot(group: CoachMarkGroup = 'app') {
+  shownThisSession[group] = false;
 }
 
 /** Разрешить обе заявки одним результатом. */
@@ -333,8 +481,9 @@ export async function resetCoachMarks(userId: string, key?: CoachMarkKey) {
     targets.forEach((k) => stateCache!.states.delete(k));
   }
   // Сброс — это явный запрос увидеть подсказку снова, поэтому освобождаем и
-  // слот сессии: иначе пришлось бы перезапускать приложение.
-  shownThisSession = false;
+  // слоты сессии: иначе пришлось бы перезапускать приложение.
+  shownThisSession.app = false;
+  shownThisSession.record = false;
   if (arbitrationTimer) {
     clearTimeout(arbitrationTimer);
     arbitrationTimer = null;

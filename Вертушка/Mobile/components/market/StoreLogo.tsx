@@ -83,6 +83,14 @@ const STORE_REGISTRY: Record<string, {
     bgColor: '#FFFFFF',
     logoSource: require('../../assets/store-logos/rotaryrecords.png'),
   },
+  long_play: {
+    name: 'Long Play',
+    monogram: 'L',
+    // Лого — чёрный круг на белом поле, непрозрачный PNG 447×447, поэтому
+    // bgColor виден только в момент загрузки картинки.
+    bgColor: '#FFFFFF',
+    logoSource: require('../../assets/store-logos/long_play.png'),
+  },
 };
 
 interface StoreLogoProps {
