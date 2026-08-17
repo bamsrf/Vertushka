@@ -203,18 +203,30 @@ async def report_cover_coverage() -> dict:
     # ёмкости из спора в арифметику: сколько НОВЫХ обложек приносит один активный
     # пользователь за день. Всё остальное (диск, троттлы, лимиты) считается из
     # него умножением.
-    demand = await demand_snapshot(days=7)
-    async with async_session_maker() as db:
-        for day in demand["days"]:
-            dau = (await db.execute(
-                text(
-                    "SELECT count(*) FROM users "
-                    "WHERE last_seen_at >= :d::date AND last_seen_at < :d::date + 1"
-                ),
-                {"d": day["date"]},
-            )).scalar() or 0
-            day["dau"] = int(dau)
-            day["cold_per_dau"] = round(day["cold_unique"] / dau, 1) if dau else None
+    # Блок вспомогательный, и падать из-за него нельзя: покрытие с источниками
+    # уже посчитано, а без снапшота не сработают и алерты на регрессию. Именно
+    # так метрика молча простояла с 16 августа — asyncpg падал на `:d::date`,
+    # исключение уходило в APScheduler, и никто об этом не узнавал.
+    demand: dict = {}
+    try:
+        demand = await demand_snapshot(days=7)
+        async with async_session_maker() as db:
+            for day in demand["days"]:
+                dau = (await db.execute(
+                    # CAST, а НЕ `:d::date`: SQLAlchemy не распознаёт параметр
+                    # перед `::` и отдаёт драйверу текст с двоеточиями как есть.
+                    text(
+                        "SELECT count(*) FROM users "
+                        "WHERE last_seen_at >= CAST(:d AS date) "
+                        "  AND last_seen_at < CAST(:d AS date) + 1"
+                    ),
+                    {"d": day["date"]},
+                )).scalar() or 0
+                day["dau"] = int(dau)
+                day["cold_per_dau"] = round(day["cold_unique"] / dau, 1) if dau else None
+    except Exception:
+        logger.warning("cover coverage: блок demand не посчитан", exc_info=True)
+        demand = demand or {"error": "unavailable"}
 
     snapshot = {
         "computed_at": datetime.now(timezone.utc).isoformat(),
