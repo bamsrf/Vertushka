@@ -316,6 +316,13 @@ function RootLayout() {
 
     registerPushToken({ requestIfNeeded: false });
 
+    // Флаг обязан быть объявлен: без него колбэк ниже читает несуществующий
+    // глобал и падает на Hermes с «Property 'cancelled' doesn't exist». То есть
+    // ротация токена не просто не защищалась от гонки — она вообще не
+    // доезжала до сохранения, и бэк продолжал слать на мёртвый токен ровно в
+    // том сценарии, ради которого слушатель и заведён.
+    let cancelled = false;
+
     // R3: APNs/FCM может сменить токен в любой момент — слушаем ротацию и
     // пересохраняем, иначе бэк продолжит слать на мёртвый токен.
     const tokenSub = Notifications.addPushTokenListener((t) => {
@@ -354,6 +361,7 @@ function RootLayout() {
     });
 
     return () => {
+      cancelled = true;
       stopPolling();
       sub.remove();
       tokenSub.remove();
