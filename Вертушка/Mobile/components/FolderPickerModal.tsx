@@ -31,6 +31,12 @@ interface FolderPickerModalProps {
   selectedRecordIds?: string[];
   /** ID папки, которую скрыть из списка (текущая папка при переносе) */
   excludeFolderId?: string;
+  /**
+   * ID папки, в которую прямо сейчас идёт добавление. Пока не null — на карточке
+   * крутится спиннер, а остальные карточки не нажимаются: пачка летит секунды,
+   * и без этого тап по соседней папке дублировал в неё те же пластинки.
+   */
+  busyFolderId?: string | null;
 }
 
 export function FolderPickerModal({
@@ -39,6 +45,7 @@ export function FolderPickerModal({
   onSelectFolder,
   selectedRecordIds,
   excludeFolderId,
+  busyFolderId,
 }: FolderPickerModalProps) {
   const { folders, createFolder } = useCollectionStore();
   const [isCreating, setIsCreating] = useState(false);
@@ -72,6 +79,7 @@ export function FolderPickerModal({
   }, [visible]);
 
   const visibleFolders = folders.filter(f => f.id !== excludeFolderId);
+  const isBusy = !!busyFolderId;
 
   // Загружаем состав папок, чтобы показать галочки на тех, где уже есть выбранные пластинки
   useEffect(() => {
@@ -172,25 +180,36 @@ export function FolderPickerModal({
               contentContainerStyle={styles.scrollContent}
             >
               {/* New folder button */}
-              <TouchableOpacity style={styles.newFolderCard} onPress={handleCreateFolder}>
+              <TouchableOpacity
+                style={[styles.newFolderCard, isBusy && styles.cardDisabled]}
+                onPress={handleCreateFolder}
+                disabled={isBusy}
+              >
                 <FolderIcon size={80} variant="new" />
                 <Text style={styles.folderName} numberOfLines={1}>Новая</Text>
               </TouchableOpacity>
 
               {visibleFolders.map(folder => {
                 const hasOverlap = folderHasSelected(folder.id);
+                const isTarget = busyFolderId === folder.id;
                 return (
                   <TouchableOpacity
                     key={folder.id}
-                    style={styles.folderCard}
+                    style={[styles.folderCard, isBusy && !isTarget && styles.cardDisabled]}
                     onPress={() => onSelectFolder(folder.id)}
+                    disabled={isBusy}
                   >
                     <View style={styles.imageWrapper}>
                       <FolderIcon
                         size={80}
                         variant={folder.items_count > 0 ? 'filled' : 'empty'}
                       />
-                      {hasOverlap && (
+                      {isTarget && (
+                        <View style={styles.busyOverlay}>
+                          <ActivityIndicator size="small" color={Colors.background} />
+                        </View>
+                      )}
+                      {hasOverlap && !isTarget && (
                         <View style={styles.checkBadge}>
                           <Icon name="checkmark" size={10} color={Colors.background} />
                         </View>
@@ -252,6 +271,16 @@ const styles = StyleSheet.create({
     width: 100,
     alignItems: 'center',
     gap: Spacing.xs,
+  },
+  cardDisabled: {
+    opacity: 0.4,
+  },
+  busyOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: BorderRadius.sm,
+    backgroundColor: Colors.overlay,
   },
   imageWrapper: {
     position: 'relative',

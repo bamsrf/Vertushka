@@ -100,6 +100,10 @@ export default function CollectionScreen() {
   const sortMenuOpen = useRef(false);
 
   const [showFolderPicker, setShowFolderPicker] = useState(false);
+  // id папки, в которую прямо сейчас льётся пачка. Держим здесь, а не внутри
+  // модалки: закрыть её во время добавления можно, и гард должен пережить
+  // закрытие — иначе повторное открытие снова пустит тап в работу.
+  const [addingToFolderId, setAddingToFolderId] = useState<string | null>(null);
   const [showWishlistFolderPicker, setShowWishlistFolderPicker] = useState(false);
   const { user } = useAuthStore();
 
@@ -604,10 +608,18 @@ export default function CollectionScreen() {
   };
 
   const handleAddToFolder = async (folderId: string) => {
-    try {
-      // Определяем record_id для выбранных items
-      const selectedCollectionItems = collectionItems.filter(item => selectedItems.has(item.id));
+    // Пачка летит несколько секунд (по одному POST на пластинку), и всё это
+    // время модалка открыта. Без гарда тап по соседней папке запускал вторую
+    // пачку с тем же ещё не вычищенным выделением — так пластинки и двоились.
+    if (addingToFolderId) return;
 
+    // Снимок выделения делаем до первого await: дальше никакой setState на него
+    // уже не влияет, даже если экран перерисуется под нами.
+    const selectedCollectionItems = collectionItems.filter(item => selectedItems.has(item.id));
+    if (selectedCollectionItems.length === 0) return;
+
+    setAddingToFolderId(folderId);
+    try {
       // Загружаем папку, чтобы проверить что уже есть внутри
       const folderData = await api.getCollection(folderId);
       const existingRecordIds = new Set(
@@ -625,7 +637,9 @@ export default function CollectionScreen() {
       const duplicateCount = selectedCollectionItems.length - newItems.length;
 
       if (newItems.length === 0) {
-        setShowFolderPicker(false);
+        // Модалку не закрываем: ничего не произошло, и выделение цело —
+        // логично дать сразу ткнуть в другую папку. Раньше она закрывалась,
+        // оставляя выделение висеть, и следующий тап бил уже вслепую.
         toast.info(
           'Уже в папке',
           duplicateCount === 1
@@ -645,6 +659,8 @@ export default function CollectionScreen() {
       }
     } catch {
       toast.error('Не удалось добавить в папку');
+    } finally {
+      setAddingToFolderId(null);
     }
   };
 
@@ -1349,6 +1365,7 @@ export default function CollectionScreen() {
         visible={showFolderPicker}
         onClose={() => setShowFolderPicker(false)}
         onSelectFolder={handleAddToFolder}
+        busyFolderId={addingToFolderId}
         selectedRecordIds={collectionItems
           .filter(item => selectedItems.has(item.id))
           .map(item => item.record_id)}

@@ -1157,13 +1157,19 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
     await get().fetchCollections();
   },
 
+  // Ключ намеренно БЕЗ folderId. Баг был ровно в том, что вторая пачка уезжала
+  // в другую папку, пока первая ещё в полёте: 18.08.2026 те же 22 пластинки
+  // легли в «Рок», а через 5 секунд 20 из них — в «Japanese». Ключ с folderId
+  // такой параллельный вызов пропустил бы, так что лочим любое добавление.
   addItemsToFolder: async (folderId, collectionItemIds) => {
-    const { collectionItems } = get();
-    const items = collectionItems.filter(item => collectionItemIds.includes(item.id));
-    await Promise.all(
-      items.map(item => api.addRecordToFolder(folderId, item.record_id))
-    );
-    await get().fetchCollections();
+    return dedupeAction('addItemsToFolder', async () => {
+      const { collectionItems } = get();
+      const items = collectionItems.filter(item => collectionItemIds.includes(item.id));
+      await Promise.all(
+        items.map(item => api.addRecordToFolder(folderId, item.record_id))
+      );
+      await get().fetchCollections();
+    });
   },
 
   fetchWishlistFolders: async () => {
