@@ -10,7 +10,6 @@
  * Backend/app/services/achievements/levels.py).
  */
 import {
-  M_COBALT_SOFT,
   M_EMBER,
   M_GOLD,
   M_GOLD_HI,
@@ -194,22 +193,56 @@ export function levelTheme(key: string): LevelTheme {
  * нужна монотонная драматургия холод → синь → пурпур → жар → золото → свет,
  * различимая без подписи.
  *
+ * Шаг между соседями идёт сразу по трём осям — тон, насыщенность, светлота.
+ * Одного тона мало: первые ступени в hero-палитре все синие и в ряду иконок
+ * сливались в одно пятно.
+ *
  * Ключи те же, что у LEVEL_THEMES. Порядок = порядок LEVELS в lib/archetype.ts.
  */
 export const LEVEL_ICON_ACCENT: Record<string, string> = {
-  silence: '#7C8AB8',       // приглушённый серо-синий — ещё ничего не звучит
-  rustle: '#8FA2D8',
-  echo: '#7FA0FF',
-  wave: M_COBALT_SOFT,      // кобальт бренда — «Волна» и есть базовая нота
-  resonance: '#A98BEE',
-  overtone: '#F09BD8',
-  amplitude: '#FF8A5C',
-  frequency: '#FFB05C',
-  tuning_fork: M_GOLD_HI,
-  primal_sound: '#FFF0C4',  // белое золото — предел лестницы
+  silence: '#7F8798',       // тусклый серый — ещё ничего не звучит
+  rustle: '#7E9BC8',        // та же светлота, но появился цвет
+  echo: '#5C93F5',
+  wave: '#3E63E8',          // кобальт бренда — «Волна» и есть базовая нота
+  resonance: '#9B6BE8',
+  overtone: '#E070C8',
+  amplitude: '#FF6A4A',
+  frequency: '#FF9E2B',
+  tuning_fork: '#E8C24A',
+  primal_sound: '#FFEFA8',  // белое золото — предел лестницы
 };
 
 /** Акцент иконки уровня по ключу. Неизвестный ключ → «Эхо». */
 export function levelIconAccent(key: string): string {
   return LEVEL_ICON_ACCENT[key] ?? LEVEL_ICON_ACCENT.echo;
+}
+
+/**
+ * Корпус иконки папки — верхний и нижний стоп градиента.
+ *
+ * Почему не `LevelTheme.bg`: тот рассчитан на полноэкранный тёмный фон hero,
+ * где все ступени намеренно глубокие. Иконка 80 px живёт на светлом #FAFBFF,
+ * её видно мельком в горизонтальном скролле, и ступень должна читаться
+ * с полувзгляда — поэтому здесь и насыщенность выше, и разброс по светлоте
+ * больше. «Первозвук» тут прямо золотой, а не бронзовый: это вершина
+ * лестницы, и в коллекции она должна светиться.
+ *
+ * Ключи те же, что у LEVEL_THEMES. См. components/FolderIcon.tsx.
+ */
+export const LEVEL_FOLDER_BODY: Record<string, readonly [string, string]> = {
+  silence: ['#3E4657', '#232833'],       // графит, цвета почти нет
+  rustle: ['#35486E', '#1C2740'],        // сталь с синевой
+  echo: ['#24479E', '#12224F'],          // глубокий синий
+  wave: ['#2F62E0', '#16307A'],          // яркий кобальт
+  resonance: ['#6A45C8', '#331F66'],
+  overtone: ['#A63FAE', '#4E1B57'],
+  amplitude: ['#C93A66', '#5F1730'],
+  frequency: ['#E2622A', '#6E2410'],
+  tuning_fork: ['#C98A2E', '#5E3D0F'],   // бронзовое золото
+  primal_sound: ['#FFD24F', '#B8801C'],  // яркое золото — предел лестницы
+};
+
+/** Градиент корпуса папки по ключу ступени. Неизвестный ключ → «Эхо». */
+export function levelFolderBody(key: string): readonly [string, string] {
+  return LEVEL_FOLDER_BODY[key] ?? LEVEL_FOLDER_BODY.echo;
 }

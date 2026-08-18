@@ -31,6 +31,7 @@ import { ms } from '../lib/responsive';
 import { AchievementPin } from '../components/AchievementPin';
 import { prewarmAchievementPins, prefetchAchievementAsset } from '../lib/achievementAssets';
 import { AchievementsHero } from '../components/AchievementsHero';
+import { setCurrentLevelFrom } from '../lib/levelStore';
 import { countPull, reportAchievementsOpened } from '../lib/eggTracker';
 import { AchievementsTourOverlay } from '../components/AchievementsTourOverlay';
 import { MetaTrophyShelf } from '../components/MetaTrophyShelf';
@@ -93,6 +94,12 @@ export default function AchievementsScreen() {
         : await api.getMyAchievements();
       setData(resp);
       if (!username) {
+        // Приход по пушу «новый уровень» — единственный путь, где ступень
+        // поднялась без действия в приложении, а значит `achievementsBus` её
+        // ещё не пересчитал. Ответ уже на руках, так что иконки папок
+        // перекрашиваются здесь же, не дожидаясь следующего добавления
+        // пластинки. Чужой профиль ступень трогать не должен.
+        setCurrentLevelFrom(resp);
         const random = await api.getMyRandomUnlocked();
         setRandomItems(random.items);
       }

@@ -893,7 +893,6 @@ export default function CollectionScreen() {
                 >
                   <FolderIcon
                     size={80}
-                    seed={folder.id}
                     variant={folder.items_count > 0 ? 'filled' : 'empty'}
                   />
                   <Text style={styles.folderName} numberOfLines={1}>{folder.name}</Text>
@@ -932,7 +931,6 @@ export default function CollectionScreen() {
                 >
                   <FolderIcon
                     size={80}
-                    seed={folder.id}
                     variant={folder.items_count > 0 ? 'filled' : 'empty'}
                   />
                   <Text style={styles.folderName} numberOfLines={1}>{folder.name}</Text>

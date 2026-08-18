@@ -18,6 +18,7 @@ import {
   notifyAchievementUnlocked,
   resetCelebratedAchievements,
 } from '../components/AchievementUnlockOverlay';
+import { resetCurrentLevel, setCurrentLevelFrom } from './levelStore';
 import type { MyAchievementsResponse } from './types';
 
 let _knownUnlocked: Set<string> | null = null;
@@ -40,6 +41,7 @@ export async function initAchievementsCache(): Promise<void> {
   _initInflight = (async () => {
     try {
       const data = await api.getMyAchievements();
+      setCurrentLevelFrom(data);
       const unlocked = extractUnlocked(data);
       // Для рандомных тоже учтём (они отдельным endpoint'ом приходят полностью)
       try {
@@ -62,6 +64,7 @@ export async function initAchievementsCache(): Promise<void> {
 export function resetAchievementsCache(): void {
   _knownUnlocked = null;
   resetCelebratedAchievements();
+  resetCurrentLevel();
 }
 
 /** Проверить новые анлоки и показать overlay. Безопасно вызывать после любого
@@ -76,6 +79,7 @@ export async function detectAchievementUnlocks(): Promise<void> {
     }
 
     const data = await api.getMyAchievements();
+    setCurrentLevelFrom(data);
     const nowSet = extractUnlocked(data);
 
     // Рандомные приходят отдельно

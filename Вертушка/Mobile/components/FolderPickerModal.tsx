@@ -188,7 +188,6 @@ export function FolderPickerModal({
                     <View style={styles.imageWrapper}>
                       <FolderIcon
                         size={80}
-                        seed={folder.id}
                         variant={folder.items_count > 0 ? 'filled' : 'empty'}
                       />
                       {hasOverlap && (
