@@ -12,14 +12,14 @@
 true и меняем server_default, чтобы новые профили рождались с тем же значением.
 
 Revision ID: 20260818_always_value
-Revises: 20260818_apple_revoke
+Revises: 20260816_price_jobs
 Create Date: 2026-08-18
 """
 from alembic import op
 import sqlalchemy as sa
 
 revision = "20260818_always_value"
-down_revision = "20260818_apple_revoke"
+down_revision = "20260816_price_jobs"
 branch_labels = None
 depends_on = None
 
