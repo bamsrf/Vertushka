@@ -10,6 +10,7 @@
  * Backend/app/services/achievements/levels.py).
  */
 import {
+  M_COBALT_SOFT,
   M_EMBER,
   M_GOLD,
   M_GOLD_HI,
@@ -181,4 +182,34 @@ export const LEVEL_THEMES: Record<string, LevelTheme> = {
 /** Тема уровня по ключу. Неизвестный ключ → «Эхо» (базовый navy мокапа). */
 export function levelTheme(key: string): LevelTheme {
   return LEVEL_THEMES[key] ?? LEVEL_THEMES.echo;
+}
+
+/**
+ * Акцент иконки повышения уровня — см. components/LevelUpIcon.tsx.
+ *
+ * Почему отдельно от `LevelTheme.accent`: тот подобран под прогресс-бар и
+ * маркер на конкретном фоне своей ступени. У «Эха» он золотой (M_GOLD_HI) —
+ * в hero это читается, но в лестнице иконок золото между двумя синими рвёт
+ * прогрессию. А иконку видно вне hero: в пуше, в ленте «Ты», в шапке. Ей
+ * нужна монотонная драматургия холод → синь → пурпур → жар → золото → свет,
+ * различимая без подписи.
+ *
+ * Ключи те же, что у LEVEL_THEMES. Порядок = порядок LEVELS в lib/archetype.ts.
+ */
+export const LEVEL_ICON_ACCENT: Record<string, string> = {
+  silence: '#7C8AB8',       // приглушённый серо-синий — ещё ничего не звучит
+  rustle: '#8FA2D8',
+  echo: '#7FA0FF',
+  wave: M_COBALT_SOFT,      // кобальт бренда — «Волна» и есть базовая нота
+  resonance: '#A98BEE',
+  overtone: '#F09BD8',
+  amplitude: '#FF8A5C',
+  frequency: '#FFB05C',
+  tuning_fork: M_GOLD_HI,
+  primal_sound: '#FFF0C4',  // белое золото — предел лестницы
+};
+
+/** Акцент иконки уровня по ключу. Неизвестный ключ → «Эхо». */
+export function levelIconAccent(key: string): string {
+  return LEVEL_ICON_ACCENT[key] ?? LEVEL_ICON_ACCENT.echo;
 }

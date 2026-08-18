@@ -12,6 +12,7 @@ import { Image } from 'expo-image';
 import { Colors, Spacing, BorderRadius, Typography } from '@/constants/theme';
 import { Icon } from '@/components/ui';
 import { RadarIcon } from '@/components/RadarIcon';
+import { LevelUpIcon } from '@/components/LevelUpIcon';
 
 const RADAR_TINT: Record<string, string> = {
   match: Colors.success,
@@ -70,8 +71,6 @@ function iconForType(type: NotificationType): { name: string; tint: string } {
     case 'achievement_unlocked':
     case 'milestone_unlocked':
       return { name: 'trophy', tint: Colors.warning };
-    case 'level_up':
-      return { name: 'trending-up', tint: Colors.warning };
     default:
       return { name: 'notifications', tint: Colors.royalBlue };
   }
@@ -235,6 +234,11 @@ export const NotificationItem: React.FC<Props> = ({
   const showInlineActions = item.type === 'follow_request' && onAcceptFollow && onRejectFollow;
   const isMilestone = item.type === 'milestone_unlocked';
   const pinSource = useMemo(() => getAchievementPin(item), [item]);
+  // level_up рисуется собственной иконкой ступени вместо аватарки: цвет и
+  // заливка диска берутся из темы уровня, так что «Первозвук» в ленте и в
+  // hero ачивок — одна и та же вещь.
+  const levelKey =
+    item.type === 'level_up' ? ((item.data?.level_key as string | undefined) ?? 'echo') : null;
 
   const row = (
     <TouchableOpacity
@@ -246,7 +250,9 @@ export const NotificationItem: React.FC<Props> = ({
     >
       <View style={styles.avatarWrap}>
         {unread ? <View style={styles.unreadDot} /> : null}
-        {pinSource ? (
+        {levelKey ? (
+          <LevelUpIcon level={levelKey} size={44} animated={unread} />
+        ) : pinSource ? (
           <Image source={pinSource} style={styles.pin} contentFit="contain" cachePolicy="memory-disk" />
         ) : avatarUrl ? (
           <>
