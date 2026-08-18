@@ -6,7 +6,7 @@
  * - inline accept/reject для follow_request
  * - tap → переход (отмечает прочитанным)
  */
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { Image } from 'expo-image';
 import { Colors, Spacing, BorderRadius, Typography } from '@/constants/theme';
@@ -239,6 +239,12 @@ export const NotificationItem: React.FC<Props> = ({
   // hero ачивок — одна и та же вещь.
   const levelKey =
     item.type === 'level_up' ? ((item.data?.level_key as string | undefined) ?? 'echo') : null;
+  // Анимацию нельзя вешать прямо на `unread`: список помечает уведомления
+  // прочитанными через секунду после открытия, и взлёт стрелки обрывался на
+  // середине первого же цикла. Запоминаем состояние на момент монтирования —
+  // то, что юзер увидел строку, не повод отнимать у него анимацию, ради
+  // которой иконка и рисуется. Доиграет и сама остановится.
+  const [celebrate] = useState(() => !item.read_at);
 
   const row = (
     <TouchableOpacity
@@ -251,7 +257,7 @@ export const NotificationItem: React.FC<Props> = ({
       <View style={styles.avatarWrap}>
         {unread ? <View style={styles.unreadDot} /> : null}
         {levelKey ? (
-          <LevelUpIcon level={levelKey} size={44} animated={unread} />
+          <LevelUpIcon level={levelKey} size={44} animated={celebrate} />
         ) : pinSource ? (
           <Image source={pinSource} style={styles.pin} contentFit="contain" cachePolicy="memory-disk" />
         ) : avatarUrl ? (

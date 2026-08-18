@@ -11,12 +11,20 @@
  * ступени. То есть иконка «Первозвука» и hero «Первозвука» — одна вещь.
  *
  * Анимация (`animated`): стрелка отрывается вверх, от обода расходятся две
- * волны — визуальный эквивалент того, что и означает уровень. Уважает
- * системный Reduce Motion и уход приложения в фон через useAnimationGate;
- * при выключенной анимации остаётся статичный кадр в покое, без «застывшего»
- * промежуточного состояния.
+ * волны — визуальный эквивалент того, что и означает уровень. Играет ровно
+ * CYCLES раз и замирает в покое; бесконечный цикл означал бы пульсирующую
+ * строку всё время, пока открыта лента.
+ *
+ * Вызывающий обязан держать `animated` стабильным на всё время монтирования.
+ * Снять его посреди проигрывания — значит оборвать взлёт на середине: так и
+ * вышло, когда лента завязала анимацию на «непрочитанное» и сама же гасила
+ * его через секунду после открытия. См. NotificationItem.
+ *
+ * Уважает системный Reduce Motion и уход приложения в фон через
+ * useAnimationGate; при выключенной анимации остаётся статичный кадр в покое,
+ * без «застывшего» промежуточного состояния.
  */
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, Easing, StyleSheet, View } from 'react-native';
 import Svg, { Circle, Defs, Path, RadialGradient, Stop } from 'react-native-svg';
 
@@ -26,6 +34,13 @@ import { useAmbientAnimationsEnabled } from '../lib/useAnimationGate';
 
 /** Ниже этого размера «следы» под стрелкой превращаются в грязь. */
 const TRAILS_MIN_SIZE = 44;
+
+/** Длительность одного взлёта стрелки: 620 подъём + 520 возврат + 900 пауза.
+ *  Волны идут тем же периодом, поэтому фазы не разъезжаются. */
+const CYCLE_MS = 2040;
+/** Сколько раз проиграть и остановиться. Бесконечный цикл в ленте — это
+ *  пульсирующая строка всё время, пока экран открыт. */
+const CYCLES = 3;
 
 /** id градиента должен быть уникален на всё дерево: одинаковые defs в
  *  react-native-svg перетирают друг друга, и вторая иконка берёт чужой диск. */
@@ -131,6 +146,7 @@ function Arrow({ size, accent, animated }: { size: number; accent: string; anima
         }),
         Animated.delay(900),
       ]),
+      { iterations: CYCLES },
     );
     loop.start();
     return () => loop.stop();
@@ -168,52 +184,66 @@ function Arrow({ size, accent, animated }: { size: number; accent: string; anima
 
 /** Две волны, расходящиеся от обода со сдвигом по фазе. */
 function Waves({ size, accent }: { size: number; accent: string }) {
-  const a = useRef(new Animated.Value(0)).current;
-  const b = useRef(new Animated.Value(0)).current;
-
-  useEffect(() => {
-    const ring = (value: Animated.Value, delay: number) =>
-      Animated.loop(
-        Animated.sequence([
-          Animated.delay(delay),
-          Animated.timing(value, {
-            toValue: 1,
-            duration: 1400,
-            easing: Easing.out(Easing.quad),
-            useNativeDriver: true,
-          }),
-          Animated.timing(value, { toValue: 0, duration: 0, useNativeDriver: true }),
-          Animated.delay(640 - delay),
-        ]),
-      );
-    const loops = [ring(a, 0), ring(b, 640)];
-    loops.forEach((l) => l.start());
-    return () => loops.forEach((l) => l.stop());
-  }, [a, b]);
-
   return (
     <>
-      {[a, b].map((value, i) => (
-        <Animated.View
-          key={i}
-          style={[
-            StyleSheet.absoluteFill,
-            {
-              opacity: value.interpolate({ inputRange: [0, 1], outputRange: [0.55, 0] }),
-              // Потолок 1.17: при r=26.5 волна упирается ровно в край канвы
-              // SVG (32). Больше — и react-native-svg срежет её по viewBox.
-              transform: [
-                { scale: value.interpolate({ inputRange: [0, 1], outputRange: [1, 1.17] }) },
-              ],
-            },
-          ]}
-        >
-          <Svg width={size} height={size} viewBox="0 0 64 64" fill="none">
-            <Circle cx={32} cy={32} r={26.5} stroke={accent} strokeWidth={1.5} />
-          </Svg>
-        </Animated.View>
-      ))}
+      <Wave size={size} accent={accent} delay={0} />
+      <Wave size={size} accent={accent} delay={640} />
     </>
+  );
+}
+
+/**
+ * Одно кольцо.
+ *
+ * Само себя размонтирует, доиграв: цикл кончается сбросом значения в 0, а это
+ * «кольцо у обода, непрозрачность 0.55». Останься компонент в дереве — на
+ * иконке навсегда повис бы статичный ободок.
+ */
+function Wave({ size, accent, delay }: { size: number; accent: string; delay: number }) {
+  const value = useRef(new Animated.Value(0)).current;
+  const [done, setDone] = useState(false);
+
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.delay(delay),
+        Animated.timing(value, {
+          toValue: 1,
+          duration: 1400,
+          easing: Easing.out(Easing.quad),
+          useNativeDriver: true,
+        }),
+        Animated.timing(value, { toValue: 0, duration: 0, useNativeDriver: true }),
+        Animated.delay(CYCLE_MS - delay - 1400),
+      ]),
+      { iterations: CYCLES },
+    );
+    loop.start(({ finished }) => {
+      if (finished) setDone(true);
+    });
+    return () => loop.stop();
+  }, [delay, value]);
+
+  if (done) return null;
+
+  return (
+    <Animated.View
+      style={[
+        StyleSheet.absoluteFill,
+        {
+          opacity: value.interpolate({ inputRange: [0, 1], outputRange: [0.55, 0] }),
+          // Потолок 1.17: при r=26.5 волна упирается ровно в край канвы SVG
+          // (32). Больше — и react-native-svg срежет её по viewBox.
+          transform: [
+            { scale: value.interpolate({ inputRange: [0, 1], outputRange: [1, 1.17] }) },
+          ],
+        },
+      ]}
+    >
+      <Svg width={size} height={size} viewBox="0 0 64 64" fill="none">
+        <Circle cx={32} cy={32} r={26.5} stroke={accent} strokeWidth={1.5} />
+      </Svg>
+    </Animated.View>
   );
 }
 
