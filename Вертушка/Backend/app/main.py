@@ -155,6 +155,12 @@ async def lifespan(app: FastAPI):
             # которое апгрейд тут же займёт (мелкий файл ~10 КБ → нормальный ~84 КБ).
             # max_instances=1: прогон может идти до 30 минут, наложение запрещено.
             scheduler.add_job(upgrade_low_res_covers, 'cron', hour=3, minute=40, id='cover_upgrade_sweep', max_instances=1, coalesce=True)
+            # Сторож диска. Алертов было много, а за местом не следил никто —
+            # при этом кончившийся диск роняет Postgres, то есть всё приложение.
+            # Каждые 30 минут: авария развивается часами, чаще незачем.
+            from app.tasks.disk_tasks import check_disk_space
+            scheduler.add_job(check_disk_space, 'interval', minutes=30,
+                              id='disk_space_guard', max_instances=1, coalesce=True)
             # Метрика покрытия обложек (§4.2): 6:15, после ночного прогрева/enrichment.
             scheduler.add_job(report_cover_coverage, 'cron', hour=6, minute=15, id='cover_coverage_report', max_instances=1, coalesce=True)
             scheduler.add_job(enrich_market_covers, 'interval', hours=2, id='enrich_market_covers')
