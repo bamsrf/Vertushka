@@ -3,7 +3,7 @@
 """
 import uuid
 from datetime import datetime
-from sqlalchemy import String, DateTime, Boolean, Integer, Text, ForeignKey
+from sqlalchemy import String, DateTime, Boolean, Integer, Text, ForeignKey, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import UUID, ARRAY
 
@@ -85,10 +85,14 @@ class ProfileShare(Base):
         nullable=False
     )
 
-    # Настройки статистики профиля
+    # Стоимость коллекции в hero-карточке. Тумблера в UI больше нет: профиль
+    # публикуется осознанно, и отдельный шаг «а теперь ещё покажите стоимость»
+    # был лишним. Колонка осталась ради старых сборок мобилки, читающих поле
+    # из ответа API; бэкенд её больше не спрашивает.
     show_collection_value: Mapped[bool] = mapped_column(
         Boolean,
-        default=False,
+        default=True,
+        server_default=text("true"),
         nullable=False
     )
 

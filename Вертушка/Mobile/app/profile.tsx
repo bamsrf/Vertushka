@@ -25,7 +25,7 @@ import { useRouter } from 'expo-router';
 import { Icon } from '@/components/ui';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useAuthStore, useCollectionStore, useFollowStore, useGiftStore } from '../lib/store';
+import { useAuthStore, useCollectionStore, useFollowStore, useGiftStore, useProfileStore } from '../lib/store';
 import { useMessagesStore } from '../lib/messagesStore';
 import { ms } from '../lib/responsive';
 import { CollectionTab, GiftGivenItem } from '../lib/types';
@@ -62,9 +62,29 @@ function MessagesMenuItem({ onPress }: { onPress: () => void }) {
   );
 }
 
+/**
+ * «Запросы на подписку» — только для приватного профиля.
+ *
+ * У публичного профиля подписка не требует одобрения (users.py::follow_user:
+ * приватный → FollowRequest pending, публичный → сразу Follow), запросов
+ * физически не бывает, и пункт вёл бы на всегда пустой экран. Настройку тянем
+ * из profile-стора; пока она не загрузилась, пункт не рисуем — мигание строки
+ * в списке настроек хуже, чем её появление кадром позже.
+ *
+ * Экран остаётся доступен из уведомлений и по пушу независимо от этого пункта.
+ */
 function FollowRequestsMenuItem({ onPress }: { onPress: () => void }) {
+  const isPrivate = useProfileStore((s) => s.settings?.is_private_profile ?? false);
+  const fetchSettings = useProfileStore((s) => s.fetchSettings);
+  const hasSettings = useProfileStore((s) => s.settings !== null);
   const [count, setCount] = useState(0);
+
   useEffect(() => {
+    if (!hasSettings) fetchSettings().catch(() => {});
+  }, [hasSettings, fetchSettings]);
+
+  useEffect(() => {
+    if (!isPrivate) return;
     let cancelled = false;
     api
       .getIncomingFollowRequestsCount()
@@ -75,7 +95,10 @@ function FollowRequestsMenuItem({ onPress }: { onPress: () => void }) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [isPrivate]);
+
+  if (!isPrivate) return null;
+
   return (
     <TouchableOpacity style={styles.settingsItem} onPress={onPress}>
       <Icon name="person-add-outline" size={24} color={Colors.royalBlue} />
@@ -636,6 +659,7 @@ export default function ProfileScreen() {
           <FollowRequestsMenuItem
             onPress={() => router.push('/social/follow-requests' as any)}
           />
+
 
           <TouchableOpacity
             style={styles.settingsItem}

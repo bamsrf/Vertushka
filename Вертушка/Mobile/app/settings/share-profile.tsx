@@ -164,18 +164,6 @@ export default function ShareProfileScreen() {
           />
         </View>
 
-        {/* Статистика */}
-        <Text style={styles.sectionTitle}>Статистика</Text>
-        <View style={styles.section}>
-          <SettingRow
-            label="Общая стоимость коллекции"
-            description="Видна посетителям профиля"
-            value={settings?.show_collection_value ?? false}
-            settingKey="show_collection_value"
-            onToggle={handleToggle}
-            disabled={isSaving}
-          />
-        </View>
 
         {/* Избранные пластинки */}
         <Text style={styles.sectionTitle}>Избранные пластинки</Text>

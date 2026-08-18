@@ -1023,7 +1023,7 @@
 
                 {% if user.bio %}<p class="bio">{{ user.bio }}</p>{% endif %}
 
-                {% if collection_value_rub is not none and profile.show_collection_value %}
+                {% if collection_value_rub is not none %}
                 <div class="stats-card">
                     <div class="stat-label">Стоимость коллекции</div>
                     <div class="stat-value tnum" id="valueCounter" data-target="{{ collection_value_rub|int }}">

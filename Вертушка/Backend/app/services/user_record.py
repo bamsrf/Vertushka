@@ -349,3 +349,70 @@ async def update_user_record(
         record.barcode = normalize_barcode(changes["barcode"]) or changes["barcode"]
     await db.flush()
     return record
+
+
+# Мягкое удаление: запись не стирается из БД, а уходит в 'deleted'. Физический
+# DELETE опасен — на record_id висят коллекции, вишлисты, подарки, клики по
+# офферам и ачивки; каскад либо порвал бы их, либо выпилил чужую историю.
+DELETED_STATUS = "deleted"
+
+
+async def count_foreign_holders(
+    *, db: AsyncSession, record: Record, owner_id: uuid.UUID
+) -> int:
+    """Сколько ЧУЖИХ людей держат эту запись в коллекции или вишлисте.
+
+    Правило владельца: свою ручную запись можно убрать, только пока она никому
+    больше не понадобилась. Как только чужая коллекция на неё сослалась, запись
+    перестаёт быть личной черновой — удаление сломало бы её у других людей.
+    """
+    from sqlalchemy import func, select
+
+    from app.models.collection import Collection, CollectionItem
+    from app.models.wishlist import Wishlist, WishlistItem
+
+    in_collections = await db.scalar(
+        select(func.count(func.distinct(Collection.user_id)))
+        .select_from(CollectionItem)
+        .join(Collection, Collection.id == CollectionItem.collection_id)
+        .where(CollectionItem.record_id == record.id, Collection.user_id != owner_id)
+    ) or 0
+    in_wishlists = await db.scalar(
+        select(func.count(func.distinct(Wishlist.user_id)))
+        .select_from(WishlistItem)
+        .join(Wishlist, Wishlist.id == WishlistItem.wishlist_id)
+        .where(WishlistItem.record_id == record.id, Wishlist.user_id != owner_id)
+    ) or 0
+    return int(in_collections) + int(in_wishlists)
+
+
+async def soft_delete_user_record(
+    *, db: AsyncSession, record: Record, owner_id: uuid.UUID
+) -> None:
+    """Пометить запись удалённой и отцепить её от коллекции/вишлиста автора.
+
+    Свои ссылки чистим: иначе в коллекции осталась бы карточка, которая по
+    тапу отдаёт 404. Не делает commit — вызывающий код коммитит сам.
+    """
+    from sqlalchemy import delete, select
+
+    from app.models.collection import Collection, CollectionItem
+    from app.models.wishlist import Wishlist, WishlistItem
+
+    record.moderation_status = DELETED_STATUS
+
+    own_collections = select(Collection.id).where(Collection.user_id == owner_id)
+    await db.execute(
+        delete(CollectionItem).where(
+            CollectionItem.record_id == record.id,
+            CollectionItem.collection_id.in_(own_collections),
+        )
+    )
+    own_wishlists = select(Wishlist.id).where(Wishlist.user_id == owner_id)
+    await db.execute(
+        delete(WishlistItem).where(
+            WishlistItem.record_id == record.id,
+            WishlistItem.wishlist_id.in_(own_wishlists),
+        )
+    )
+    await db.flush()
