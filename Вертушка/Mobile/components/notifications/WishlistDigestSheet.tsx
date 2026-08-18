@@ -68,6 +68,11 @@ interface Props {
   onClose: () => void;
   records: DigestRecord[];
   onOpenRecord: (recordId: string) => void;
+  /**
+   * `alt` — свёртка «других версий» мастера. Заголовок обязан это проговорить:
+   * в списке лежат ЧУЖИЕ прессинги, а не те, что человек добавлял в вишлист.
+   */
+  variant?: 'exact' | 'alt';
 }
 
 function formatPrice(p: number | null | undefined): string {
@@ -82,6 +87,15 @@ function pluralRecords(n: number): string {
   if (mod10 === 1) return 'пластинка';
   if (mod10 >= 2 && mod10 <= 4) return 'пластинки';
   return 'пластинок';
+}
+
+function pluralVersions(n: number): string {
+  const mod10 = n % 10;
+  const mod100 = n % 100;
+  if (mod100 >= 11 && mod100 <= 14) return 'других версий';
+  if (mod10 === 1) return 'другая версия';
+  if (mod10 >= 2 && mod10 <= 4) return 'другие версии';
+  return 'других версий';
 }
 
 function pluralStores(n: number): string {
@@ -315,6 +329,7 @@ export const WishlistDigestSheet: React.FC<Props> = ({
   onClose,
   records,
   onOpenRecord,
+  variant = 'exact',
 }) => {
   const insets = useSafeAreaInsets();
 
@@ -387,7 +402,9 @@ export const WishlistDigestSheet: React.FC<Props> = ({
           <View style={styles.handle} />
           <View style={styles.header}>
             <Text style={styles.sheetTitle}>
-              {records.length} {pluralRecords(records.length)} снова в продаже
+              {variant === 'alt'
+                ? `${records.length} ${pluralVersions(records.length)} в продаже`
+                : `${records.length} ${pluralRecords(records.length)} снова в продаже`}
             </Text>
             <TouchableOpacity onPress={onClose} hitSlop={12} accessibilityLabel="Закрыть">
               <XV2 size={22} color={Colors.text} />

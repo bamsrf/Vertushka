@@ -63,6 +63,7 @@ function iconForType(type: NotificationType): { name: string; tint: string } {
     case 'digest_wishlist_in_stock':
       return { name: 'disc', tint: Colors.success };
     case 'wishlist_in_stock_alt':
+    case 'digest_wishlist_in_stock_alt':
       return { name: 'disc', tint: Colors.royalBlue };
     case 'wishlist_price_drop':
       return { name: 'pricetag', tint: Colors.success };
@@ -84,7 +85,8 @@ function isSystemType(type: NotificationType): boolean {
     type === 'wishlist_price_drop' ||
     type === 'milestone_unlocked' ||
     type === 'level_up' ||
-    type === 'digest_wishlist_in_stock'
+    type === 'digest_wishlist_in_stock' ||
+    type === 'digest_wishlist_in_stock_alt'
   );
 }
 
@@ -104,6 +106,15 @@ function pluralRecords(n: number): string {
   if (mod10 === 1) return 'пластинка';
   if (mod10 >= 2 && mod10 <= 4) return 'пластинки';
   return 'пластинок';
+}
+
+function pluralVersions(n: number): string {
+  const mod10 = n % 10;
+  const mod100 = n % 100;
+  if (mod100 >= 11 && mod100 <= 14) return 'других версий';
+  if (mod10 === 1) return 'другая версия';
+  if (mod10 >= 2 && mod10 <= 4) return 'другие версии';
+  return 'других версий';
 }
 
 function formatPrice(p: unknown): string {
@@ -171,6 +182,11 @@ function buildText(item: NotificationItemType): string {
     case 'digest_wishlist_in_stock': {
       const count = (data.count as number | undefined) ?? 0;
       return `${count} ${pluralRecords(count)} из вишлиста снова в продаже`;
+    }
+    case 'digest_wishlist_in_stock_alt': {
+      const count = (data.count as number | undefined) ?? 0;
+      const verb = count % 10 === 1 && count % 100 !== 11 ? 'появилась' : 'появились';
+      return `${count} ${pluralVersions(count)} ${verb} в продаже`;
     }
     case 'achievement_unlocked': {
       const title = (data.title as string | undefined) || (data.code as string | undefined) || '';

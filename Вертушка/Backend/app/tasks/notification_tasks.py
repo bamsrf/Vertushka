@@ -460,10 +460,13 @@ async def _run_weekly_digest(db: AsyncSession) -> None:
 
     # Тянем сами строки (а не COUNT): из data.record_artist собираем имена для
     # body — «Miles Davis, Bill Evans, John Coltrane». Ради них дайджест и открывают.
+    # Аналоги идут в тот же дайджест, но своим счётчиком: в ленте они тоже
+    # свёрнуты отдельной строкой (buildDigest в notifications.tsx), и push
+    # должен отражать то же деление — «твоя пластинка» ≠ «другой прессинг».
     rows = await db.execute(
-        select(Notification.user_id, Notification.data)
+        select(Notification.user_id, Notification.type, Notification.data)
         .where(
-            Notification.type == "wishlist_in_stock",
+            Notification.type.in_(["wishlist_in_stock", "wishlist_in_stock_alt"]),
             Notification.read_at.is_(None),
             Notification.created_at >= lookback,
         )
@@ -471,9 +474,13 @@ async def _run_weekly_digest(db: AsyncSession) -> None:
     )
 
     counts: dict[UUID, int] = defaultdict(int)
+    alt_counts: dict[UUID, int] = defaultdict(int)
     artists_by_user: dict[UUID, list[str]] = defaultdict(list)
-    for user_id, data in rows.all():
-        counts[user_id] += 1
+    for user_id, ntype, data in rows.all():
+        if ntype == "wishlist_in_stock_alt":
+            alt_counts[user_id] += 1
+        else:
+            counts[user_id] += 1
         d = data or {}
         # Артист, а если его не сохранили — название пластинки: пустой body хуже.
         artist = (d.get("record_artist") or d.get("record_title") or "").strip()
@@ -481,13 +488,16 @@ async def _run_weekly_digest(db: AsyncSession) -> None:
         if artist and artist not in artists_by_user[user_id]:
             artists_by_user[user_id].append(artist)
 
-    if not counts:
+    recipients = set(counts) | set(alt_counts)
+    if not recipients:
         return
 
     sent = 0
-    for user_id, count in counts.items():
+    for user_id in recipients:
+        count = counts.get(user_id, 0)
+        alt_count = alt_counts.get(user_id, 0)
         title, body = push_copy.weekly_digest(
-            count=count, artists=artists_by_user[user_id]
+            count=count, artists=artists_by_user[user_id], alt_count=alt_count
         )
         try:
             ok = await send_push(
@@ -496,7 +506,11 @@ async def _run_weekly_digest(db: AsyncSession) -> None:
                 notification_type="digest_wishlist_in_stock",
                 title=title,
                 body=body,
-                data={"type": "digest_wishlist_in_stock", "count": count},
+                data={
+                    "type": "digest_wishlist_in_stock",
+                    "count": count,
+                    "alt_count": alt_count,
+                },
             )
             if ok:
                 sent += 1

@@ -125,13 +125,43 @@ def wishlist_all_time_low(
     )
 
 
-def weekly_digest(*, count: int, artists: list[str]) -> tuple[str, str]:
-    """Недельная сводка по вишлисту. В body — имена, ради которых открывают."""
-    body = ", ".join(artists[:3])
-    return (
-        f"За неделю: {count} {plural_records(count)} из вишлиста",
-        body or "Подробности в ленте радара",
-    )
+def plural_editions(n: int) -> str:
+    """«1 другое издание», «3 других издания», «11 других изданий»."""
+    mod10, mod100 = n % 10, n % 100
+    if 11 <= mod100 <= 14:
+        return "других изданий"
+    if mod10 == 1:
+        return "другое издание"
+    if 2 <= mod10 <= 4:
+        return "других издания"
+    return "других изданий"
+
+
+def weekly_digest(
+    *, count: int, artists: list[str], alt_count: int = 0
+) -> tuple[str, str]:
+    """Недельная сводка по вишлисту. В body — имена, ради которых открывают.
+
+    `alt_count` — аналоги (другое издание того же мастера). Считаются отдельно
+    от точных совпадений: смешать их в одну цифру значит обещать «твою
+    пластинку» там, где в наличии чужой прессинг.
+    """
+    names = ", ".join(artists[:3])
+
+    # Только аналоги: субъект новости — они, врать про «из вишлиста» нельзя.
+    if count == 0 and alt_count > 0:
+        return (
+            f"За неделю: {alt_count} {plural_editions(alt_count)}",
+            names or "Другие издания пластинок из вишлиста",
+        )
+
+    title = f"За неделю: {count} {plural_records(count)} из вишлиста"
+    if alt_count > 0:
+        tail = f"и ещё {alt_count} {plural_editions(alt_count)}"
+        body = f"{tail} · {names}" if names else tail
+    else:
+        body = names
+    return title, body or "Подробности в ленте радара"
 
 
 # --- Социальные ------------------------------------------------------------

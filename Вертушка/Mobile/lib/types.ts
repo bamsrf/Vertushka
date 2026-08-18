@@ -931,7 +931,10 @@ export type NotificationType =
   | 'achievement_unlocked'
   | 'level_up'
   | 'milestone_unlocked'
-  | 'digest_wishlist_in_stock';
+  | 'digest_wishlist_in_stock'
+  // Синтетический тип: клиентская свёртка «N других версий» в ленте.
+  // Бэкенд его не шлёт — см. buildDigest в app/notifications.tsx.
+  | 'digest_wishlist_in_stock_alt';
 
 export interface NotificationActor {
   id: string;

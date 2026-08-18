@@ -50,9 +50,16 @@
 - Обычные in_stock/alt остаются QUIET.
 
 ### Фаза 4 — Mobile: карточка-дайджест + поп-ап  (✅ сделано)
-- `buildWishlistDigest` в `notifications.tsx`: ≥3 непрочитанных `wishlist_in_stock`
-  сворачиваются в одну строку «N пластинок снова в продаже» (тип
-  `digest_wishlist_in_stock`, синтетический id `__wishlist_digest__`).
+- `buildDigest` в `notifications.tsx` (бывший `buildWishlistDigest`): ≥3 непрочитанных
+  сворачиваются в одну строку. Вызывается дважды и даёт **две независимые свёртки**:
+  `wishlist_in_stock` → «N пластинок снова в продаже» (`__wishlist_digest__`) и
+  `wishlist_in_stock_alt` → «N других версий появились в продаже»
+  (`__wishlist_alt_digest__`, синтетический тип `digest_wishlist_in_stock_alt`,
+  бэкенд его не шлёт). Раздельно, потому что это разные обещания: «твоя пластинка
+  в продаже» ≠ «есть другой прессинг».
+- **Радар не сворачивается**: строки с `data.on_radar` остаются отдельными. Радар —
+  явная подписка «следи за этой», прятать её в общую кучу значит обнулить смысл
+  колокольчика. В дайджест уходит только фон (`watched`).
 - `WishlistDigestSheet.tsx` — bottom-sheet «полка корешков»:
   - тянешь корешок вправо → магазин (`api.trackOfferClick` + `Linking`, affiliate);
   - тап по обложке → `/record/[id]` со всеми листингами.
@@ -100,7 +107,7 @@ OS-пуш warm-tap, cold-start (`getLastNotificationResponseAsync`), foreground 
 | `wishlist_in_stock` снова в продаже | только Радар (subscribed) + цена ≤ порога; watched — тихо |
 | `wishlist_in_stock_alt` другое издание | только subscribed + порог |
 | `wishlist_price_drop` подешевела | subscribed+порог **ИЛИ новый исторический минимум** (даже watched) |
-| `digest_wishlist_in_stock` | 1 push/неделю (пн 10:00) |
+| `digest_wishlist_in_stock` | 1 push/неделю (пн 10:00); считает и `_alt`, но **своим счётчиком** — «5 пластинок из вишлиста» + body «и ещё 4 других издания» |
 | `absent` пропала («продали») | ❌ без push, только radar-история |
 
 **Социальные/транзакционные (push всегда, если тип не выключен):**

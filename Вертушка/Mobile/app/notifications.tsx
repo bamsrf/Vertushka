@@ -103,7 +103,8 @@ export default function NotificationsScreen() {
       let added = false;
       for (const v of viewableItems) {
         const it = v.item as NotificationItemType | undefined;
-        if (it && typeof it.id === 'string' && it.id !== WL_DIGEST_ID && !it.read_at) {
+        const synthetic = it?.id === WL_DIGEST_ID || it?.id === WL_ALT_DIGEST_ID;
+        if (it && typeof it.id === 'string' && !synthetic && !it.read_at) {
           pendingSeen.current.add(it.id);
           added = true;
         }
@@ -303,24 +304,46 @@ export default function NotificationsScreen() {
   // unread → дайджест пересобирается пустым («0 пластинок») и лента взрывается
   // обратно на 14 отдельных строк.
   const digestSticky = useRef<Set<string>>(new Set());
-  const { personalSections, digestRecords, digestCollapsedIds } = useMemo(() => {
-    const { list, records, collapsedIds } = buildWishlistDigest(
-      collapseByDedup(personalItems),
-      digestSticky.current,
-    );
-    return {
-      personalSections: groupByDateBucket(list),
-      digestRecords: records,
-      digestCollapsedIds: collapsedIds,
-    };
-  }, [personalItems]);
+  // Две независимые свёртки: точные совпадения и «другие версии». Раздельно,
+  // потому что это разные обещания — «твоя пластинка в продаже» против «есть
+  // другой прессинг». Смешивать их в одну строку значит врать в счётчике.
+  const { personalSections, digestRecords, digestCollapsedIds, altRecords, altCollapsedIds } =
+    useMemo(() => {
+      const exact = buildDigest(collapseByDedup(personalItems), digestSticky.current, {
+        sourceType: 'wishlist_in_stock',
+        digestType: 'digest_wishlist_in_stock',
+        digestId: WL_DIGEST_ID,
+      });
+      const alt = buildDigest(exact.list, digestSticky.current, {
+        sourceType: 'wishlist_in_stock_alt',
+        digestType: 'digest_wishlist_in_stock_alt',
+        digestId: WL_ALT_DIGEST_ID,
+        alt: true,
+      });
+      return {
+        personalSections: groupByDateBucket(alt.list),
+        digestRecords: exact.records,
+        digestCollapsedIds: exact.collapsedIds,
+        altRecords: alt.records,
+        altCollapsedIds: alt.collapsedIds,
+      };
+    }, [personalItems]);
 
-  const handleOpenDigest = useCallback(() => {
-    Haptics.selectionAsync().catch(() => {});
-    setDigestVisible(true);
-    // Открыл дайджест = увидел все свёрнутые алерты → гасим их unread.
-    if (digestCollapsedIds.length > 0) markManyRead(digestCollapsedIds);
-  }, [digestCollapsedIds, markManyRead]);
+  // Какую из двух свёрток показывает шторка. Сама шторка одна.
+  const [digestKind, setDigestKind] = useState<'exact' | 'alt'>('exact');
+  const openRecords = digestKind === 'alt' ? altRecords : digestRecords;
+
+  const handleOpenDigest = useCallback(
+    (kind: 'exact' | 'alt') => {
+      Haptics.selectionAsync().catch(() => {});
+      setDigestKind(kind);
+      setDigestVisible(true);
+      // Открыл дайджест = увидел все свёрнутые алерты → гасим их unread.
+      const ids = kind === 'alt' ? altCollapsedIds : digestCollapsedIds;
+      if (ids.length > 0) markManyRead(ids);
+    },
+    [digestCollapsedIds, altCollapsedIds, markManyRead],
+  );
 
   // Уход в релиз из дайджеста не должен «терять шаг»: закрываем шторку на
   // время навигации и поднимаем её обратно, когда юзер возвращается назад.
@@ -346,8 +369,9 @@ export default function NotificationsScreen() {
   const renderPersonal = ({ item }: { item: NotificationItemType }) => {
     // Синтетическая дайджест-строка: тап открывает поп-ап с корешками, без
     // swipe-delete/long-press (удалять/снузить нечего — это виртуальная свёртка).
-    if (item.id === WL_DIGEST_ID) {
-      return <NotificationItem item={item} onPress={handleOpenDigest} />;
+    if (item.id === WL_DIGEST_ID || item.id === WL_ALT_DIGEST_ID) {
+      const kind = item.id === WL_ALT_DIGEST_ID ? 'alt' : 'exact';
+      return <NotificationItem item={item} onPress={() => handleOpenDigest(kind)} />;
     }
     return (
       <NotificationItem
@@ -500,15 +524,17 @@ export default function NotificationsScreen() {
       <WishlistDigestSheet
         visible={digestVisible}
         onClose={() => setDigestVisible(false)}
-        records={digestRecords}
+        records={openRecords}
+        variant={digestKind}
         onOpenRecord={handleOpenDigestRecord}
       />
     </GestureHandlerRootView>
   );
 }
 
-// Синтетический id дайджест-строки + минимум пластинок для свёртки.
+// Синтетические id дайджест-строк + минимум пластинок для свёртки.
 const WL_DIGEST_ID = '__wishlist_digest__';
+const WL_ALT_DIGEST_ID = '__wishlist_alt_digest__';
 const WL_DIGEST_MIN = 3;
 // Окно свёртки: столько же дней, сколько бэкенд берёт в недельный дайджест
 // (WEEKLY_DIGEST_LOOKBACK_DAYS в notification_tasks.py). Прочитанные алерты
@@ -516,17 +542,23 @@ const WL_DIGEST_MIN = 3;
 // следующем заходе разворачивается обратно в 14 строк складского шума.
 const WL_DIGEST_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 
-/** Собрать DigestRecord из wishlist_in_stock: самый дешёвый магазин как цель. */
-function toDigestRecord(it: NotificationItemType): DigestRecord {
+/**
+ * Собрать DigestRecord: самый дешёвый магазин как цель.
+ *
+ * `alt` — строка про другую версию мастера. В data лежат ДВЕ записи: желаемая
+ * (record_*) и та, что реально появилась в продаже (alt_record_*). Показывать и
+ * открывать надо вторую — у желаемой листингов нет, и юзер упирается в тупик.
+ */
+function toDigestRecord(it: NotificationItemType, alt = false): DigestRecord {
   const data = (it.data || {}) as Record<string, any>;
   const stores: any[] = Array.isArray(data.stores) ? data.stores : [];
   const priced = stores.filter((s) => s?.price_rub != null).sort((a, b) => a.price_rub - b.price_rub);
   const cheapest = priced[0] ?? stores[0] ?? null;
   return {
-    record_id: String(data.record_id ?? it.entity_id ?? ''),
-    title: String(data.record_title ?? 'Пластинка'),
+    record_id: String((alt ? data.alt_record_id : null) ?? data.record_id ?? it.entity_id ?? ''),
+    title: String((alt ? data.alt_record_title : null) ?? data.record_title ?? 'Пластинка'),
     artist: (data.record_artist as string | undefined) ?? null,
-    cover_url: (data.cover_url as string | undefined) ?? null,
+    cover_url: ((alt ? data.alt_cover_url : null) ?? data.cover_url) as string | undefined ?? null,
     min_price_rub: (data.min_price_rub ?? data.price_rub ?? null) as number | null,
     store_count: (data.store_count as number | undefined) ?? (stores.length || 1),
     store: cheapest
@@ -541,17 +573,26 @@ function toDigestRecord(it: NotificationItemType): DigestRecord {
 }
 
 /**
- * Свёртка непрочитанных `wishlist_in_stock` в одну дайджест-строку
- * «N пластинок снова в продаже» (если их ≥WL_DIGEST_MIN). Убирает 12 отдельных
- * строк складского шума. Возвращает новый список + записи для поп-апа + id
- * свёрнутых уведомлений (чтобы пометить прочитанными при открытии).
+ * Свёртка непрочитанных складских алертов в одну дайджест-строку
+ * («N пластинок снова в продаже» / «N других версий появились в продаже»),
+ * если их ≥WL_DIGEST_MIN. Убирает десяток отдельных строк ночного шума.
+ *
+ * Что НЕ сворачивается — пластинки на радаре (`data.on_radar`). Радар это
+ * явная подписка «следи за этой»: прятать её в общую кучу — ровно то, ради
+ * чего человек колокольчик и включал. Сворачиваем только фон.
  *
  * `sticky` — id уже свёрнутых на этом экране пластинок: они остаются в дайджесте
  * после того, как их погасил markManyRead. Мутируется здесь же (union).
  */
-function buildWishlistDigest(
+function buildDigest(
   items: NotificationItemType[],
   sticky: Set<string>,
+  opts: {
+    sourceType: NotificationItemType['type'];
+    digestType: NotificationItemType['type'];
+    digestId: string;
+    alt?: boolean;
+  },
 ): {
   list: NotificationItemType[];
   records: DigestRecord[];
@@ -559,7 +600,9 @@ function buildWishlistDigest(
 } {
   const windowStart = Date.now() - WL_DIGEST_WINDOW_MS;
   const isCollapsible = (i: NotificationItemType) => {
-    if (i.type !== 'wishlist_in_stock') return false;
+    if (i.type !== opts.sourceType) return false;
+    // Радар остаётся отдельной строкой — см. док-строку выше.
+    if ((i.data as Record<string, unknown> | undefined)?.on_radar) return false;
     if (!i.read_at || sticky.has(i.id)) return true;
     // прочитанное сворачиваем, пока оно внутри недельного окна
     return new Date(i.bumped_at || i.created_at).getTime() >= windowStart;
@@ -570,7 +613,7 @@ function buildWishlistDigest(
 
   for (const i of wl) sticky.add(i.id);
   const rest = items.filter((i) => !isCollapsible(i));
-  const records = wl.map(toDigestRecord);
+  const records = wl.map((i) => toDigestRecord(i, opts.alt));
   const collapsedIds = wl.map((i) => i.id);
   const newest = wl.reduce((a, b) =>
     new Date(b.bumped_at || b.created_at).getTime() > new Date(a.bumped_at || a.created_at).getTime()
@@ -578,8 +621,8 @@ function buildWishlistDigest(
       : a,
   );
   const digest: NotificationItemType = {
-    id: WL_DIGEST_ID,
-    type: 'digest_wishlist_in_stock',
+    id: opts.digestId,
+    type: opts.digestType,
     dedup_key: null,
     entity_type: null,
     entity_id: null,
@@ -664,8 +707,15 @@ function routeForPersonal(item: NotificationItemType, router: ReturnType<typeof 
       }
       return;
     }
+    case 'wishlist_in_stock_alt': {
+      // Появилась ДРУГАЯ версия — ведём на неё, а не на желаемую: у желаемой
+      // листингов нет, и тап упирается в пустую карточку. Тот же контракт,
+      // что в pushRouting.ts.
+      const altId = (data.alt_record_id as string | undefined) || recordId;
+      if (altId) router.push(`/record/${altId}` as any);
+      return;
+    }
     case 'wishlist_in_stock':
-    case 'wishlist_in_stock_alt':
     case 'wishlist_price_drop':
       if (recordId) router.push(`/record/${recordId}` as any);
       return;

@@ -109,8 +109,18 @@ function buildPreviewLine(item: {
       return { actorPrefix: actor ?? 'Кто-то', body: `получил(а) «${recordTitle}»` };
     case 'wishlist_in_stock':
       return { actorPrefix: null, body: `«${recordTitle}» снова в продаже` };
+    case 'wishlist_in_stock_alt':
+      return { actorPrefix: null, body: `Другая версия «${recordTitle}» в продаже` };
     case 'wishlist_price_drop':
       return { actorPrefix: null, body: `«${recordTitle}» подешевела` };
+    case 'digest_wishlist_in_stock': {
+      const count = (data.count as number | undefined) ?? 0;
+      return { actorPrefix: null, body: `${count} пластинок из вишлиста снова в продаже` };
+    }
+    case 'level_up': {
+      const label = (data.level_label as string | undefined) || '';
+      return { actorPrefix: null, body: label ? `Новый уровень: ${label}` : 'Новый уровень' };
+    }
     case 'achievement_unlocked': {
       const title = (data.title as string | undefined) || (data.code as string | undefined) || '';
       return { actorPrefix: null, body: `Новая ачивка: ${title}` };
@@ -120,7 +130,9 @@ function buildPreviewLine(item: {
       return { actorPrefix: null, body: title };
     }
     default:
-      return { actorPrefix: actor, body: '' };
+      // Незнакомый тип не должен рисовать пустую строку с одним «1 д»: пока
+      // сюда не добавили кейс, показываем хотя бы нейтральный текст.
+      return { actorPrefix: actor, body: actor ? 'новое событие' : 'Новое уведомление' };
   }
 }
 
