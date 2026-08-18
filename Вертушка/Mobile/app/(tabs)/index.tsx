@@ -55,7 +55,7 @@ export default function ScannerScreen() {
   const isFocused = useIsFocused();
   // Подсказка про способы добавления. Условие — только фокус экрана: объяснять
   // тут нечего разблокировать, это первое, что человек видит после регистрации.
-  const scanWaysTip = useCoachMark('scan-ways', isFocused);
+  const scanWaysTip = useCoachMark('scan-ways', true, isFocused);
   const [isScanning, setIsScanning] = useState(true);
   const [showResults, setShowResults] = useState(false);
 

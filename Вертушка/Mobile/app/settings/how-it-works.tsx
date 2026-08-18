@@ -25,12 +25,14 @@ import {
   COACH_MARKS,
   CoachMarkKey,
   type CoachMarkState,
+  forceCoachMark,
   getCoachMark,
   isSuppressed,
   loadCoachMarkStates,
   resetCoachMarks,
 } from '../../lib/coachMarks';
 import { restoreFirstSteps, useFirstStepsDismissed } from '../../lib/onboardingProgress';
+import { pickDemoRecordId } from '../../lib/onboardingDemoRecord';
 import { resetRecordTour, useRecordTourDone } from '../../lib/recordTour';
 import { BorderRadius, Colors, Shadows, Spacing, Typography } from '../../constants/theme';
 
@@ -57,21 +59,40 @@ export default function HowItWorksScreen() {
   }, [refresh]);
 
   /**
-   * Вернуть подсказку и сразу отвести туда, где она живёт.
+   * Показать подсказку прямо сейчас и отвести туда, где она живёт.
    *
-   * Раньше «Показать снова» только сбрасывало флаг и показывало тост — человек
-   * оставался в настройках, внутри модального профиля, и должен был сам
-   * догадаться, куда идти и что она вообще появится не здесь. Теперь настройки
-   * с профилем закрываются, и мы открываем нужный раздел.
+   * Две правки против прошлой версии, обе из-за того, что кнопка «молчала».
+   *
+   * Первая: сброса флага мало. Экран коллекции всё это время смонтирован, и
+   * без forceCoachMark ни одна зависимость эффекта не двигалась — человек
+   * приезжал на нужную вкладку, где не происходило ровно ничего.
+   *
+   * Вторая: ручной запрос обходит и порог разблокировки. Подсказку про зум
+   * иначе нельзя было посмотреть, не набрав сперва 12 пластинок, — а
+   * пришёл человек сюда именно затем, чтобы посмотреть, как это устроено.
    */
-  const handleReset = async (key: CoachMarkKey) => {
+  const handleShow = async (key: CoachMarkKey) => {
     if (!userId) return;
-    await resetCoachMarks(userId, key);
+    // Сбрасываем, только если подсказка отработана: иначе счётчик показов
+    // обнулился бы у той, что и так ещё вернётся сама.
+    if (isSuppressed(states.get(key), key)) await resetCoachMarks(userId, key);
+    forceCoachMark(key);
     await refresh();
 
     const meta = getCoachMark(key);
     if (!meta.goTo) {
       toast.info('Подсказка вернётся, когда фича снова будет под рукой');
+      return;
+    }
+
+    // Подсказки карточки релиза объясняют то, что видно только внутри неё.
+    // Ищем подходящую пластинку и открываем её сами: «открой любую с ярлыком»
+    // перекладывало поиск примера на человека, который как раз пришёл
+    // посмотреть, как это выглядит.
+    const demoId = pickDemoRecordId(key);
+    if (demoId) {
+      if (router.canDismiss()) router.dismissAll();
+      router.navigate(`/record/${demoId}` as never);
       return;
     }
 
@@ -157,25 +178,37 @@ export default function HowItWorksScreen() {
                 </View>
               </View>
 
-              {suppressed ? (
+              {/* Кнопка есть у каждой карточки, а не только у отработанных.
+                  Раньше у неувиденных подсказок был один лишь статус — то
+                  есть посмотреть заранее, как устроено то, до чего ещё не
+                  дорос, было нельзя. Именно за этим сюда и заходят. */}
+              <View style={styles.cardAction}>
+                {/* Три состояния, а не два: показанная, но не закрытая
+                    подсказка вернётся сама — и честнее об этом сказать,
+                    чем писать «ещё не показывалась». */}
+                <Text style={styles.cardPending}>
+                  {suppressed
+                    ? 'Уже показывали'
+                    : state.shows > 0
+                      ? 'Показывалась — вернётся ещё раз'
+                      : 'Ещё не показывалась'}
+                </Text>
                 <TouchableOpacity
-                  style={styles.cardAction}
-                  onPress={() => handleReset(mark.key)}
+                  style={styles.cardButton}
+                  onPress={() => handleShow(mark.key)}
                   accessibilityRole="button"
+                  hitSlop={8}
                 >
-                  <Icon name="refresh-outline" size={14} color={Colors.royalBlue} />
-                  <Text style={styles.cardActionText}>Показать снова</Text>
-                </TouchableOpacity>
-              ) : (
-                <View style={styles.cardAction}>
-                  {/* Три состояния, а не два: показанная, но не закрытая
-                      подсказка вернётся сама — и честнее об этом сказать,
-                      чем писать «ещё не показывалась». */}
-                  <Text style={styles.cardPending}>
-                    {state.shows > 0 ? 'Показывалась — вернётся ещё раз' : 'Ещё не показывалась'}
+                  <Icon
+                    name={suppressed ? 'refresh-outline' : 'arrow-right'}
+                    size={14}
+                    color={Colors.royalBlue}
+                  />
+                  <Text style={styles.cardActionText}>
+                    {suppressed ? 'Показать снова' : 'Показать'}
                   </Text>
-                </View>
-              )}
+                </TouchableOpacity>
+              </View>
             </View>
           );
         })}
@@ -291,9 +324,17 @@ const styles = StyleSheet.create({
   cardAction: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: Spacing.xs,
+    gap: Spacing.sm,
     marginTop: Spacing.sm,
     marginLeft: 36 + Spacing.sm + 2,
+  },
+  cardButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.xs,
+    // Кнопка прижата вправо: слева статус, справа действие — так карточка
+    // читается как строка списка, а не как два одинаковых по весу текста.
+    marginLeft: 'auto',
   },
   cardActionText: {
     ...Typography.caption,
@@ -303,6 +344,7 @@ const styles = StyleSheet.create({
   cardPending: {
     ...Typography.caption,
     color: Colors.textMuted,
+    flexShrink: 1,
   },
   secondary: {
     flexDirection: 'row',

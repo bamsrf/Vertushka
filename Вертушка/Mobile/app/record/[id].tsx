@@ -34,6 +34,7 @@ import { FolderPickerModal } from '../../components/FolderPickerModal';
 import { Button, Card, ActionSheet, ActionSheetAction } from '../../components/ui';
 import { api, getMasterCoverUrl, getPlaceholderCoverUrl } from '../../lib/api';
 import { analytics } from '../../lib/analytics';
+import { getForcedCoachMark } from '../../lib/coachMarks';
 import { countSpin } from '../../lib/eggTracker';
 import { cleanArtistName } from '../../lib/format';
 import { useCollectionStore, useAuthStore } from '../../lib/store';
@@ -181,13 +182,16 @@ export default function RecordDetailScreen() {
   // которые дорисуются через секунду.
   const tourReady =
     Boolean(record) && historyResolved && (!offersRequested || offersCount !== null);
-  const tour = useRecordTour(tourKeys, tourReady);
+  // Ручной запрос из «Как это работает» тур глушит: человек пришёл смотреть
+  // одну конкретную подсказку, и разбор всей карточки поверх неё — это ответ
+  // не на его вопрос.
+  const tour = useRecordTour(tourKeys, tourReady && !getForcedCoachMark());
 
   // Подсказка про Маркет разблокируется там, где блок офферов вообще
   // отрисуется, — иначе объясняли бы витрину рядом с пустотой. Пока идёт тур,
   // она молчит: две карточки-объяснения на одном экране спорят друг с другом,
   // и обе читаются хуже.
-  const marketTip = useCoachMark('market', hasOffers && !tour.active);
+  const marketTip = useCoachMark('market', true, hasOffers && !tour.active);
 
   // Подсказки про свойства самой пластинки. Условие у каждой — факт отрисовки
   // соответствующего блока, поэтому они срабатывают на первом релизе, где это
@@ -197,10 +201,14 @@ export default function RecordDetailScreen() {
   // одновременно спорят друг с другом.
   const hasVinylColor = Boolean(record?.display_vinyl_color ?? record?.vinyl_color_raw);
   const rarityTiers = record ? allRarityTiers(record) : [];
-  const vinylColorTip = useCoachMark('vinyl-color', hasVinylColor && !tour.active);
-  const rarityTip = useCoachMark('rarity-tiers', rarityTiers.length > 0 && !tour.active);
-  const offerPriceTip = useCoachMark('offer-price', hasOffers && !tour.active);
-  const versionsTip = useCoachMark('other-versions', hasVersions && !tour.active);
+  //
+  // Здесь условие целиком в третьем аргументе: это не порог опыта, а факт
+  // наличия блока на странице. Ручной показ из настроек его тоже обязан
+  // соблюдать — иначе подсветит пустое место.
+  const vinylColorTip = useCoachMark('vinyl-color', true, hasVinylColor && !tour.active);
+  const rarityTip = useCoachMark('rarity-tiers', true, rarityTiers.length > 0 && !tour.active);
+  const offerPriceTip = useCoachMark('offer-price', true, hasOffers && !tour.active);
+  const versionsTip = useCoachMark('other-versions', true, hasVersions && !tour.active);
 
   /**
    * Подсказка тура встаёт вплотную НАД блоком, который объясняет, поэтому

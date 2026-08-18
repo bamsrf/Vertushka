@@ -24,7 +24,7 @@ import { useCollectionStore, useAuthStore } from '../../lib/store';
 import { FirstStepsCard } from '../../components/onboarding/FirstStepsCard';
 import { CoachTip } from '../../components/onboarding/CoachTip';
 import { CoachPulse } from '../../components/onboarding/CoachPulse';
-import { useCoachSpotlight } from '../../lib/coachSpotlight';
+import { setCoachSpotlight, useCoachSpotlight } from '../../lib/coachSpotlight';
 import { PinchHint } from '../../components/onboarding/PinchHint';
 import { useCoachMark } from '../../lib/useCoachMark';
 import { ms } from '../../lib/responsive';
@@ -785,15 +785,19 @@ export default function CollectionScreen() {
   const recordCount = stats?.total_records ?? collectionItems.length;
   const isCollectionTab = activeTab === 'collection';
 
+  // Второй аргумент — порог опыта, третий — «цель сейчас на экране». Порог
+  // ручной показ из «Как это работает» обходит, вкладку — нет.
   const pinchTip = useCoachMark(
     'pinch-zoom',
-    isCollectionTab && viewMode === 'grid' && recordCount >= 12,
+    recordCount >= 12,
+    isCollectionTab && viewMode === 'grid',
   );
   const foldersTip = useCoachMark(
     'folders',
-    isCollectionTab && recordCount >= 15 && folders.length === 0,
+    recordCount >= 15 && folders.length === 0,
+    isCollectionTab,
   );
-  const valueTip = useCoachMark('collection-value', isCollectionTab && recordCount >= 5);
+  const valueTip = useCoachMark('collection-value', recordCount >= 5, isCollectionTab);
   // Кольцо на кнопке ₽ в липкой шапке — она за пределами карточки подсказки,
   // поэтому связь между ними держится через спотлайт-ключ, а не через вёрстку.
   const valueSpotlight = useCoachSpotlight('collection-value');
@@ -801,10 +805,10 @@ export default function CollectionScreen() {
   const multiSelectSpotlight = useCoachSpotlight('multi-select');
   // Радару — 'glow', а не кольцо: у кнопки уже свой sonar. См. coachMarks.ts.
   const radarSpotlight = useCoachSpotlight('radar');
-  const multiSelectTip = useCoachMark('multi-select', soloRemovals >= 2);
-  const radarTip = useCoachMark('radar', !isCollectionTab && wishlistItems.length > 0);
-  const marketTip = useCoachMark('market', !isCollectionTab && wishlistItems.length >= 3);
-  const giftsTip = useCoachMark('gifts-incoming', !isCollectionTab && wishlistItems.length > 0);
+  const multiSelectTip = useCoachMark('multi-select', soloRemovals >= 2, isCollectionTab);
+  const radarTip = useCoachMark('radar', wishlistItems.length > 0, !isCollectionTab);
+  const marketTip = useCoachMark('market', wishlistItems.length >= 3, !isCollectionTab);
+  const giftsTip = useCoachMark('gifts-incoming', wishlistItems.length > 0, !isCollectionTab);
 
   const ScrollableHeader = (
     <View style={styles.headerContainer}>
@@ -857,7 +861,16 @@ export default function CollectionScreen() {
             meta={giftsTip.meta}
             analyticsKey={giftsTip.meta.key}
             onDismiss={giftsTip.dismiss}
-            action={{ label: 'Поделиться профилем', onPress: () => router.push('/profile') }}
+            action={{
+              label: 'Поделиться профилем',
+              onPress: () => {
+                // Зажигаем саму кнопку «Поделиться» до перехода: без этого
+                // действие открывало профиль, и человек оставался наедине с
+                // экраном, где ничего не подсказывает, куда нажимать.
+                setCoachSpotlight('profile-share', { ttlMs: 12000 });
+                router.push('/profile');
+              },
+            }}
           />
         )}
         {multiSelectTip.visible && (

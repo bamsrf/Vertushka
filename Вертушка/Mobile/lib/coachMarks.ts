@@ -246,7 +246,11 @@ export const COACH_MARKS: CoachMarkMeta[] = [
   },
   {
     key: 'gifts-incoming',
-    goTo: { route: '/profile' },
+    // Не '/profile': карточка этой подсказки живёт в шапке вишлиста, а в
+    // профиле её рисовать некому — «Показать» открывало профиль, где ничего
+    // не происходило. Ведём туда, где подсказка есть; кнопку в профиле она
+    // подсветит сама, когда человек нажмёт её действие.
+    goTo: { route: '/(tabs)/collection', tab: 'wishlist' },
     priority: 40,
     title: 'Из вишлиста можно дарить',
     body: 'Скинь друзьям ссылку на профиль — они забронируют пластинку из вишлиста. Что именно выбрали, ты не узнаешь: сюрприз остаётся сюрпризом.',
@@ -340,6 +344,69 @@ const shownThisSession: Record<CoachMarkGroup, boolean> = { app: false, record: 
 export const isSessionSlotTaken = (group: CoachMarkGroup = 'app') => shownThisSession[group];
 
 /**
+ * Ревизия правил показа. Хуки подсказок подписаны на неё и перезапускают свою
+ * проверку, когда правила поменялись извне.
+ *
+ * Зачем. Экран коллекции смонтирован всё время, пока приложение открыто.
+ * Сброс подсказки из «Как это работает» менял только AsyncStorage и модульные
+ * флаги — ни одна зависимость эффекта в useCoachMark при этом не двигалась,
+ * эффект не перезапускался, и «Показать снова» приводило человека на экран,
+ * где молча ничего не происходило.
+ */
+let revision = 0;
+const revisionListeners = new Set<() => void>();
+
+export const subscribeCoachMarks = (listener: () => void) => {
+  revisionListeners.add(listener);
+  return () => {
+    revisionListeners.delete(listener);
+  };
+};
+
+export const getCoachMarkRevision = () => revision;
+
+function bumpRevision() {
+  revision += 1;
+  revisionListeners.forEach((l) => l());
+}
+
+/**
+ * Подсказка, которую попросили показать вручную из «Как это работает».
+ *
+ * Ручной запрос сильнее всех обычных правил: он игнорирует лимит показов,
+ * слот сессии и арбитраж приоритетов. Не игнорирует он ровно одно — наличие
+ * самой цели на экране (`place` в useCoachMark): подсказка про цвет винила на
+ * чёрной пластинке указывала бы в пустоту.
+ *
+ * Ключ живёт, пока его не заберёт подходящий экран. Поэтому «Покажи про
+ * ярлыки» работает и тогда, когда нужную пластинку человек откроет через
+ * минуту, а не сразу.
+ */
+let forcedKey: CoachMarkKey | null = null;
+
+export function forceCoachMark(key: CoachMarkKey) {
+  forcedKey = key;
+  // Слот группы, наоборот, ЗАНИМАЕМ. Ручной показ проверку слота не проходит
+  // (он её пропускает), а вот автоподсказки той же группы должны замолчать:
+  // resetCoachMarks прямо перед этим освободил слоты, и без захвата на экран
+  // приехали бы сразу две карточки — запрошенная и случайная.
+  shownThisSession[getCoachMark(key).group ?? 'app'] = true;
+  bumpRevision();
+}
+
+export const isForcedCoachMark = (key: CoachMarkKey) => forcedKey === key;
+
+/** Есть ли вообще ждущий ручной запрос — и какой. */
+export const getForcedCoachMark = () => forcedKey;
+
+/** Забрать ручной запрос: показываем его ровно один раз. */
+export function consumeForcedCoachMark(key: CoachMarkKey) {
+  if (forcedKey !== key) return false;
+  forcedKey = null;
+  return true;
+}
+
+/**
  * Окно арбитража. Хуки разных подсказок монтируются в одном рендере, но их
  * эффекты и чтение AsyncStorage разъезжаются на несколько тиков. Собираем
  * заявки в течение окна и только потом выбираем победителя — иначе слот
@@ -413,6 +480,11 @@ export function requestCoachMark(key: CoachMarkKey): Promise<boolean> {
  */
 export function releaseSessionSlot(group: CoachMarkGroup = 'app') {
   shownThisSession[group] = false;
+}
+
+/** Занять слот в обход арбитража — только для ручного показа из настроек. */
+export function markSessionSlot(group: CoachMarkGroup = 'app') {
+  shownThisSession[group] = true;
 }
 
 /** Разрешить обе заявки одним результатом. */
@@ -490,4 +562,5 @@ export async function resetCoachMarks(userId: string, key?: CoachMarkKey) {
   }
   pending.forEach((req) => req.resolve(false));
   pending.clear();
+  bumpRevision();
 }
