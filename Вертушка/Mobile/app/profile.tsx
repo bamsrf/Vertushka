@@ -39,8 +39,6 @@ import { markProfileShared } from '../lib/onboardingProgress';
 import { CoachPulse } from '../components/onboarding/CoachPulse';
 import { useCoachSpotlight } from '../lib/coachSpotlight';
 import { toast } from '../lib/toast';
-import Toast from 'react-native-toast-message';
-import { toastConfig } from '../components/CustomToast';
 import { Colors, Typography, Spacing, BorderRadius, Shadows } from '../constants/theme';
 import { AchievementsBlock } from '../components/AchievementsBlock';
 import { ArchetypeChip } from '../components/ArchetypeChip';
@@ -754,8 +752,6 @@ export default function ProfileScreen() {
           <Text style={styles.version}>Вертушка v1.0.0</Text>
         </View>
       </ScrollView>
-
-      <Toast config={toastConfig} topOffset={56} />
     </View>
   );
 }

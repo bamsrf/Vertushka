@@ -59,8 +59,7 @@ import { GiftMatchModal } from '../components/GiftMatchModal';
 import { MascotIntro } from '../components/MascotIntro';
 import { initFirstStepsWatcher } from '../lib/onboardingProgress';
 import { InAppNotificationToastHost, inAppToast } from '../components/notifications/InAppNotificationToast';
-import Toast from 'react-native-toast-message';
-import { toastConfig } from '../components/CustomToast';
+import { ToastHost } from '../components/ToastHost';
 import { analytics, initAmplitude } from '../lib/analytics';
 import { initDeviceMetrics } from '../lib/deviceMetrics';
 import { useRemoteConfigStore } from '../lib/remoteConfig';
@@ -454,7 +453,6 @@ function RootLayout() {
       <BottomSheetModalProvider>
         <SafeAreaProvider>
           <StatusBar style="dark" />
-          <OfflineBanner />
         <Stack
           screenOptions={{
             headerShown: false,
@@ -530,7 +528,11 @@ function RootLayout() {
         <GiftMatchModal />
         {!introDone && <MascotIntro onFinish={() => setIntroDone(true)} />}
         <InAppNotificationToastHost />
-        <Toast config={toastConfig} topOffset={56} bottomOffset={100} />
+        {/* Порядок = z-order оверлеев: каждый следующий RootOverlay создаёт
+            своё UIWindow выше предыдущего. Тост последний — он самый срочный
+            и должен ложиться поверх плашки «нет сети». */}
+        <OfflineBanner />
+        <ToastHost />
         </SafeAreaProvider>
       </BottomSheetModalProvider>
     </GestureHandlerRootView>
