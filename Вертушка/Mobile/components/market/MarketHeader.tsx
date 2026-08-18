@@ -15,12 +15,49 @@
  * stickyHeader prop) + docs/plans/MARKET_AND_PRICE_DRAWER.md §1.6.
  */
 import React from 'react';
-import { Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
+import { Platform, Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
 import { BlurView } from 'expo-blur';
 
 import { Icon } from '../ui/Icon';
 import { MarketPalette } from '../../constants/theme';
 import { ms } from '../../lib/responsive';
+
+/**
+ * Оптическое выравнивание disc-иконки с капителями «МАРКЕТ».
+ *
+ * Подбирать сдвиг на глаз бесполезно: он зависит от того, где внутри line-box
+ * лежит baseline, а это считается из метрик шрифта и различается по платформам.
+ * Метрики RubikMonoOne-Regular (upem 1000): ascender 932, descender −306,
+ * capHeight 700.
+ */
+const HERO_FONT_SIZE = 40;
+const HERO_LINE_HEIGHT = 40;
+const HERO_DISC_SIZE = 30;
+
+const RUBIK_ASCENT = 0.932 * HERO_FONT_SIZE;   // 37.28
+const RUBIK_DESCENT = 0.306 * HERO_FONT_SIZE;  // 12.24
+const RUBIK_CAP = 0.700 * HERO_FONT_SIZE;      // 28.00
+
+/**
+ * Позиция baseline от верха line-box:
+ *   • iOS (TextKit): при lineHeight меньше натурального (37.28 + 12.24 = 49.52)
+ *     строка поджимается сверху, baseline = lineHeight − descent = 27.76;
+ *   • Android (CustomLineHeightSpan): разница распределяется поровну сверху и
+ *     снизу, baseline = (lineHeight − (ascent + descent)) / 2 + ascent = 32.52.
+ */
+const HERO_BASELINE =
+  Platform.OS === 'ios'
+    ? HERO_LINE_HEIGHT - RUBIK_DESCENT
+    : (HERO_LINE_HEIGHT - (RUBIK_ASCENT + RUBIK_DESCENT)) / 2 + RUBIK_ASCENT;
+
+/**
+ * У titleRow alignItems:'center', значит центр иконки сейчас совпадает с
+ * центром line-box. Нужный сдвиг = центр капителей − центр line-box.
+ * Иконка (Phosphor VinylRecord) отрисована по центру своего бокса, поэтому
+ * центр бокса = визуальный центр пластинки. Итог: −6 (iOS) / −1.5 (Android).
+ */
+const HERO_DISC_OFFSET =
+  Math.round(((HERO_BASELINE - RUBIK_CAP / 2) - HERO_LINE_HEIGHT / 2) * 2) / 2;
 
 interface MarketHeaderProps {
   mode?: 'hero' | 'sticky';
@@ -83,13 +120,9 @@ export function MarketHeader({
     >
       <View style={styles.titleRow}>
         <Text style={styles.heroTitle}>МАРКЕТ</Text>
-        {/* RubikMonoOne line-box выше визуальных глифов: cap-height ≈75% от
-            lineHeight, поэтому видимый центр текста сидит ВЫШЕ центра flex-
-            контейнера. Приподнимаем иконку на ~7px, чтобы оптически легла
-            на одну линию с текстом. */}
         <Icon
           name="disc"
-          size={30}
+          size={HERO_DISC_SIZE}
           color="accent"
           weight="duotone"
           style={styles.heroDiscIcon}
@@ -111,9 +144,9 @@ const styles = StyleSheet.create({
   heroTitle: {
     // RubikMonoOne — display font из theme.ts (T.type.heroTitle.font)
     fontFamily: 'RubikMonoOne-Regular',
-    fontSize: 40,
+    fontSize: HERO_FONT_SIZE,
     letterSpacing: -0.5,
-    lineHeight: 40,
+    lineHeight: HERO_LINE_HEIGHT,
     color: MarketPalette.chrome.textPrimary,
     includeFontPadding: false,
     // textShadow в RN — через text-shadow props. Лёгкая dark подложка чтобы
@@ -123,10 +156,9 @@ const styles = StyleSheet.create({
     textShadowRadius: 24,
   },
   heroDiscIcon: {
-    // Оптическая коррекция: визуально выровнять disc-иконку с глифами «МАРКЕТ».
-    // -7 оставлял диск нижним краем на baseline, т.е. его центр сидел ниже
-    // оптического центра капителей. -10 ставит центры на одну линию.
-    transform: [{ translateY: -10 }],
+    // Центр пластинки на оптическом центре капителей «МАРКЕТ».
+    // Значение выведено из метрик шрифта — см. HERO_DISC_OFFSET выше.
+    transform: [{ translateY: HERO_DISC_OFFSET }],
   },
   underline: {
     width: 56,
