@@ -13,18 +13,17 @@
  * Batch: если открылось 2+ ачивки за один emit_event, показываем стек —
  * сверху главная (самая редкая), снизу подписные пины с «+N ещё».
  *
- * Слой: на iOS overlay рисуется в `RootOverlay` (FullWindowOverlay), а не в
+ * Слой: RootModalOverlay — на iOS это FullWindowOverlay, а не
  * RN `<Modal>`. RN-модалку нельзя презентовать поверх нативной модалки экрана
  * (profile, notifications) — iOS её просто не открывает, и ачивка «иногда
  * есть, иногда нет». FullWindowOverlay живёт в своём окне и показывается
  * всегда, с какого бы экрана ни прилетел анлок.
  */
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   Animated,
   Dimensions,
   Easing,
-  Modal,
   Share,
   StyleSheet,
   Text,
@@ -40,7 +39,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { api } from '../lib/api';
 import { AchievementPin } from './AchievementPin';
 import { Confetti } from './Confetti';
-import { RootOverlay } from './ui/RootOverlay';
+import { RootModalOverlay } from './ui/RootOverlay';
 import { TIER_AURA } from './achievement-scenes';
 import type { AchievementItem, AchievementTierKey } from '../lib/types';
 
@@ -298,7 +297,7 @@ function UnlockModal({
   });
 
   return (
-    <UnlockLayer onRequestClose={handleDismiss}>
+    <RootModalOverlay onRequestClose={handleDismiss}>
       <Animated.View
         style={[
           styles.backdrop,
@@ -430,35 +429,7 @@ function UnlockModal({
           </LinearGradient>
         </View>
       </View>
-    </UnlockLayer>
-  );
-}
-
-/**
- * Слой показа: iOS — FullWindowOverlay (перебивает нативные модалки экранов),
- * Android — обычная RN-модалка (там это Dialog, он и так поверх всего и ловит
- * системную кнопку «назад»).
- */
-function UnlockLayer({
-  children,
-  onRequestClose,
-}: {
-  children: ReactNode;
-  onRequestClose: () => void;
-}) {
-  if (Platform.OS === 'ios') {
-    return <RootOverlay>{children}</RootOverlay>;
-  }
-  return (
-    <Modal
-      transparent
-      visible
-      animationType="none"
-      onRequestClose={onRequestClose}
-      statusBarTranslucent
-    >
-      {children}
-    </Modal>
+    </RootModalOverlay>
   );
 }
 

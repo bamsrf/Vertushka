@@ -18,7 +18,6 @@ import Animated, {
   useSharedValue,
   withRepeat,
   withTiming,
-  withSequence,
   Easing,
   interpolate,
   type SharedValue,
@@ -204,7 +203,17 @@ export default function RadarScreen() {
       load();
       sweep.value = 0;
       sweep.value = withRepeat(withTiming(360, { duration: 4200, easing: Easing.linear }), -1, false);
-      pulse.value = withRepeat(withSequence(withTiming(1, { duration: 1500 }), withTiming(0, { duration: 1500 })), -1, false);
+      // Пинг-понг одним таймингом (reverse=true), а не withSequence(0→1, 1→0).
+      // У последовательности easing применялся к КАЖДОЙ ноге отдельно: на
+      // pulse=1 и на стыке цикла анимация тормозила в ноль и тут же
+      // разгонялась заново — два мёртвых стопа за цикл, и на сжатии к центру
+      // это читалось как подскок аватарки. Синус даёт нулевую скорость на
+      // краях без шва, репульсация выходит мягче.
+      pulse.value = withRepeat(
+        withTiming(1, { duration: 1800, easing: Easing.inOut(Easing.sin) }),
+        -1,
+        true,
+      );
     }, [load]),
   );
 
@@ -213,7 +222,7 @@ export default function RadarScreen() {
     transform: [{ scale: 1 + pulse.value * 0.35 }],
     opacity: interpolate(pulse.value, [0, 1], [0.5, 0]),
   }));
-  const avatarStyle = useAnimatedStyle(() => ({ transform: [{ scale: 1 + pulse.value * 0.04 }] }));
+  const avatarStyle = useAnimatedStyle(() => ({ transform: [{ scale: 1 + pulse.value * 0.025 }] }));
 
   const items = data?.items ?? [];
   const limit = data?.limit ?? 5;

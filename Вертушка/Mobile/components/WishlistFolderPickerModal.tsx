@@ -19,11 +19,9 @@ import {
 } from 'react-native';
 import { toast } from '../lib/toast';
 import { Icon } from '@/components/ui';
-import Toast from 'react-native-toast-message';
 import { useCollectionStore } from '../lib/store';
 import { api } from '../lib/api';
 import { Colors, Spacing, Typography, BorderRadius } from '../constants/theme';
-import { toastConfig } from './CustomToast';
 
 const folderPlaceholder = require('../assets/images/folder-placeholder.png');
 
@@ -203,7 +201,6 @@ export function WishlistFolderPickerModal({
           )}
         </Animated.View>
       </Animated.View>
-      <Toast config={toastConfig} topOffset={56} />
     </Modal>
   );
 }

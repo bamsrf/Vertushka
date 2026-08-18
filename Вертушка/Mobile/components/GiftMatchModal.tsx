@@ -12,18 +12,18 @@
  *
  * Имя дарителя здесь не показывается: бронь для получателя анонимна.
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
-  Modal,
+  Animated,
   StyleSheet,
   TouchableOpacity,
   ActivityIndicator,
 } from 'react-native';
 import { Image } from 'expo-image';
 
-import { Icon } from '@/components/ui';
+import { Icon, RootModalOverlay } from '@/components/ui';
 import { useCollectionStore } from '../lib/store';
 import { resolveMediaUrl } from '../lib/api';
 import { toast } from '../lib/toast';
@@ -46,6 +46,19 @@ export function GiftMatchModal() {
     if (!shownBookingId || !matchKind) return;
     analytics.giftMatchShown(matchKind);
   }, [shownBookingId, matchKind]);
+
+  // Своё проявление: раньше его давал animationType="fade" у RN-модалки, но
+  // на iOS диалог теперь рисуется в FullWindowOverlay — там анимации нет.
+  // Один и тот же fade на обеих платформах, поэтому Android-модалка
+  // смонтирована с animationType="none".
+  const fade = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    if (!shownBookingId) {
+      fade.setValue(0);
+      return;
+    }
+    Animated.timing(fade, { toValue: 1, duration: 180, useNativeDriver: true }).start();
+  }, [shownBookingId, fade]);
 
   if (!pending) return null;
 
@@ -80,8 +93,8 @@ export function GiftMatchModal() {
   };
 
   return (
-    <Modal visible transparent animationType="fade" onRequestClose={handleDismiss}>
-      <View style={styles.overlay}>
+    <RootModalOverlay onRequestClose={handleDismiss}>
+      <Animated.View style={[styles.overlay, { opacity: fade }]}>
         <View style={styles.sheet}>
           <View style={styles.iconWrap}>
             <Icon name="gift" size={22} color={Colors.royalBlue} />
@@ -142,8 +155,8 @@ export function GiftMatchModal() {
             <Text style={styles.ghostBtnTxt}>Нет, купил сам</Text>
           </TouchableOpacity>
         </View>
-      </View>
-    </Modal>
+      </Animated.View>
+    </RootModalOverlay>
   );
 }
 

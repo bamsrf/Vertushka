@@ -184,9 +184,10 @@ export default function DiscogsSettings() {
                 startPolling();
               }
 
-              // Alert, не toast: этот экран — нативный stack-screen и рендерится
-              // поверх корневого <Toast>, поэтому toast тут не виден. Alert
-              // нативный и всегда поверх.
+              // Alert, а не toast: итог импорта — это три числа плюс приписка
+              // про фоновые цены, такое не влезает в плашку и его хочется
+              // прочитать не спеша. (Тост тут теперь виден — корневой хост
+              // живёт в RootOverlay, см. components/ToastHost.tsx.)
               Alert.alert(
                 'Импорт завершён',
                 `Добавлено: ${r.imported}, пропущено: ${r.skipped} из ${r.total}` +

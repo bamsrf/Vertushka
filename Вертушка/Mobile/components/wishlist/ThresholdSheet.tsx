@@ -18,7 +18,7 @@ import {
 } from 'react-native';
 import {
   BottomSheetModal,
-  BottomSheetView,
+  BottomSheetScrollView,
   BottomSheetBackdrop,
   type BottomSheetBackdropProps,
 } from '@gorhom/bottom-sheet';
@@ -352,7 +352,12 @@ export const ThresholdSheet = forwardRef<ThresholdSheetRef, Props>(({ onSaved, o
       handleIndicatorStyle={styles.handle}
       backgroundStyle={styles.sheetBg}
     >
-      <BottomSheetView style={styles.container}>
+      {/* ScrollView, а не View: с enableDynamicSizing лист растёт по контенту,
+          но упирается в topInset. В режиме «дешевле обычного» блок выше, и
+          «Сохранить» уезжал за нижнюю кромку без единого способа доскроллить.
+          Горизонтальный pan слайдера не конфликтует с вертикальным скроллом —
+          у жеста заявлен activeOffsetX. */}
+      <BottomSheetScrollView contentContainerStyle={styles.container}>
         {onOpenRadar ? (
           <TouchableOpacity
             style={styles.radarBtn}
@@ -529,7 +534,7 @@ export const ThresholdSheet = forwardRef<ThresholdSheetRef, Props>(({ onSaved, o
           </TouchableOpacity>
         ) : null}
         <View style={{ height: Math.max(insets.bottom, 12) }} />
-      </BottomSheetView>
+      </BottomSheetScrollView>
     </BottomSheetModal>
   );
 });
