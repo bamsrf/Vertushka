@@ -1,22 +1,13 @@
 /**
- * Визуальная идентичность ступеней архетипа.
+ * Визуальная идентичность ступеней архетипа — лента айдентики приложения.
  *
- * Все десять ступеней «Физики звука» стоят на одной ленте — градиенте
- * айдентики приложения, от почти чёрного фиолетового к почти белому розовому.
- * Ступень отличается от соседней только позицией на ней: выше значит светлее.
- * Отсюда цвет папок, иконки повышения и плашки уровня в разделе ачивок.
- *
- * Ключи совпадают с LevelDef.key из lib/archetype.ts (и с зеркалом на бэкенде
- * Backend/app/services/achievements/levels.py).
- */
-/**
- * Палитра ступеней — лента айдентики приложения.
- *
- * Один градиент, снятый с `Design/Color palette.jpeg`: от почти чёрного
- * фиолетового через кобальт к почти белому розовому. Ступень — точка на этой
- * ленте, и ничего кроме позиции её не отличает. Предыдущая лестница гуляла по
- * тонам (графит → синь → пурпур → жар → золото) и жила отдельной жизнью от
- * остального приложения; здесь «выше» значит ровно «светлее».
+ * Все десять ступеней «Физики звука» стоят на одном градиенте, снятом с
+ * `Design/Color palette.jpeg`: от почти чёрного фиолетового через кобальт к
+ * почти белому розовому. Ступень — точка на этой
+ * ленте, и ничего кроме позиции её не отличает: «выше» значит ровно «светлее».
+ * Отсюда цвет папок, иконки повышения, плашки уровня в разделе ачивок и chip-а
+ * в профиле. Предыдущая лестница гуляла по тонам (графит → синь → пурпур →
+ * жар → золото) и жила отдельной жизнью от остального приложения.
  *
  * Производные тона считаются не подмешиванием почти-чёрного, а умножением:
  * оно сохраняет тон и насыщенность, тогда как подмешивание уводило бледные
@@ -30,7 +21,13 @@
  * `chip` тянут к белилам тем сильнее, чем темнее ступень: у «Тиши» `base` сам
  * почти чёрный и плашка утонула бы в фоне hero.
  *
- * Ключи совпадают с LevelDef.key из lib/archetype.ts.
+ * `soft`/`softInk`/`softBorder` — та же плашка, но на СВЕТЛОЙ поверхности
+ * (профиль). Отдельная пара нужна потому, что `chip` подобран под тёмный hero:
+ * на белом фоне бледные верхние ступени превращались в белое на белом.
+ * `softInk` затемняется от `base` ровно до контраста 4.5 и ниже не идёт.
+ *
+ * Ключи совпадают с LevelDef.key из lib/archetype.ts (и с зеркалом на бэкенде
+ * Backend/app/services/achievements/levels.py).
  */
 export interface LevelPalette {
   /** Опорный тон ступени на ленте. */
@@ -48,6 +45,10 @@ export interface LevelPalette {
   /** Верхний и средний стоп фона hero. Держим тёмными: поверх лежит ivory-текст. */
   heroTop: string;
   heroMid: string;
+  /** Плашка ступени на СВЕТЛОЙ поверхности — профиль. Пара под контраст ≥ 4.5. */
+  soft: string;
+  softInk: string;
+  softBorder: string;
 }
 
 export const LEVEL_PALETTE: Record<string, LevelPalette> = {
@@ -61,6 +62,9 @@ export const LEVEL_PALETTE: Record<string, LevelPalette> = {
     chipInk: '#F4EEE6',
     heroTop: '#05040E',
     heroMid: '#030208',
+    soft: '#DDDDE0',
+    softInk: '#0D0A24',
+    softBorder: '#7F7E8B',
   },
   // Шорох — тьма начинает синеть.
   rustle: {
@@ -72,6 +76,9 @@ export const LEVEL_PALETTE: Record<string, LevelPalette> = {
     chipInk: '#F4EEE6',
     heroTop: '#0A091C',
     heroMid: '#06050F',
+    soft: '#D7D7DF',
+    softInk: '#1A1746',
+    softBorder: '#82819A',
   },
   // Эхо — синий проступил, но глухой.
   echo: {
@@ -83,6 +90,9 @@ export const LEVEL_PALETTE: Record<string, LevelPalette> = {
     chipInk: '#F4EEE6',
     heroTop: '#0D122E',
     heroMid: '#070A19',
+    soft: '#D1D3E2',
+    softInk: '#202C72',
+    softBorder: '#8188B0',
   },
   // Волна — чистый глубокий синий.
   wave: {
@@ -94,6 +104,9 @@ export const LEVEL_PALETTE: Record<string, LevelPalette> = {
     chipInk: '#0B0A22',
     heroTop: '#0B1943',
     heroMid: '#060E25',
+    soft: '#C9D1EA',
+    softInk: '#1C3FA8',
+    softBorder: '#7B8FCC',
   },
   // Резонанс — кобальт, самая насыщенная точка ленты.
   resonance: {
@@ -105,6 +118,9 @@ export const LEVEL_PALETTE: Record<string, LevelPalette> = {
     chipInk: '#0B0A22',
     heroTop: '#112456',
     heroMid: '#091430',
+    soft: '#C5D2F4',
+    softInk: '#2651C2',
+    softBorder: '#7D98DE',
   },
   // Обертон — кобальт светлеет в барвинок.
   overtone: {
@@ -116,6 +132,9 @@ export const LEVEL_PALETTE: Record<string, LevelPalette> = {
     chipInk: '#0B0A22',
     heroTop: '#243058',
     heroMid: '#141B30',
+    soft: '#CDD6F4',
+    softInk: '#405599',
+    softBorder: '#8E9CCB',
   },
   // Амплитуда — цвет отдаёт светлоту, насыщенность падает.
   amplitude: {
@@ -127,6 +146,9 @@ export const LEVEL_PALETTE: Record<string, LevelPalette> = {
     chipInk: '#0B0A22',
     heroTop: '#343B59',
     heroMid: '#1C2031',
+    soft: '#D4DAF4',
+    softInk: '#4D5886',
+    softBorder: '#97A0C2',
   },
   // Частота — бледная лаванда.
   frequency: {
@@ -138,6 +160,9 @@ export const LEVEL_PALETTE: Record<string, LevelPalette> = {
     chipInk: '#0B0A22',
     heroTop: '#44465B',
     heroMid: '#252632',
+    soft: '#DFE1F5',
+    softInk: '#5D607D',
+    softBorder: '#A4A7BF',
   },
   // Камертон — сирень уходит в розовое.
   tuning_fork: {
@@ -149,6 +174,9 @@ export const LEVEL_PALETTE: Record<string, LevelPalette> = {
     chipInk: '#0B0A22',
     heroTop: '#524E59',
     heroMid: '#2D2B31',
+    soft: '#EBE7F2',
+    softInk: '#66616F',
+    softBorder: '#AFABB7',
   },
   // Первозвук — почти белый розовый. Предел ленты.
   primal_sound: {
@@ -160,6 +188,9 @@ export const LEVEL_PALETTE: Record<string, LevelPalette> = {
     chipInk: '#0B0A22',
     heroTop: '#615458',
     heroMid: '#352E30',
+    soft: '#F9ECF0',
+    softInk: '#79696E',
+    softBorder: '#BFB1B6',
   },
 };
 

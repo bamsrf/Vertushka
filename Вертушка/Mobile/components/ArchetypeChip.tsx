@@ -1,14 +1,15 @@
 /**
  * ArchetypeChip — маленький chip с уровнем коллекционера под аватаркой/ником.
  *
- * V3: уровень из XP-лестницы «Физика звука» (см. lib/archetype.ts).
+ * V3: уровень из XP-лестницы «Физика звука» (см. lib/archetype.ts), цвет —
+ * с ленты айдентики (LEVEL_PALETTE), вариант под светлую поверхность.
  * Если уровень = «Тишь» (стартовый) и `hideRookie=true` — ничего не рисуем.
  */
 import { useEffect, useState } from 'react';
 import { StyleSheet, Text, View, ViewStyle, StyleProp } from 'react-native';
 import { api } from '../lib/api';
 import { computeArchetype, ArchetypeInfo } from '../lib/archetype';
-import { TIER_AURA } from './achievement-scenes';
+import { levelPalette } from './achievement-mockup/levelTheme';
 import type { MyAchievementsResponse } from '../lib/types';
 
 interface Props {
@@ -43,20 +44,23 @@ export function ArchetypeChip({ username, hideRookie = true, style }: Props) {
   if (!archetype) return null;
   if (hideRookie && archetype.key === 'silence') return null;
 
-  const tone = TIER_AURA[archetype.tierKey] || TIER_AURA.simple;
+  // Цвет ступени с ленты айдентики, а не тира ачивки: у «Обертона» тир rare, и
+  // chip получал розовый TIER_AURA — розовым по светло-розовому, мимо палитры и
+  // мимо читаемости. Пара soft/softInk подобрана под светлый фон профиля.
+  const tone = levelPalette(archetype.key);
 
   return (
     <View
       style={[
         styles.chip,
         {
-          borderColor: tone.aura,
-          backgroundColor: tone.aura + '15',
+          borderColor: tone.softBorder,
+          backgroundColor: tone.soft,
         },
         style,
       ]}
     >
-      <Text style={[styles.label, { color: tone.aura }]}>
+      <Text style={[styles.label, { color: tone.softInk }]}>
         {archetype.label}
       </Text>
     </View>
