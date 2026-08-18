@@ -39,7 +39,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Icon } from '@/components/ui';
 import { Button, Input, Card } from '../../components/ui';
 import { toast } from '../../lib/toast';
-import { api, getCoverUrl } from '../../lib/api';
+import { api, apiErrorText, getCoverUrl } from '../../lib/api';
 import { useCollectionStore } from '../../lib/store';
 import type { SpotifyAlbumCandidate, VinylRecord, PreflightResponse, RecordSearchResult } from '../../lib/types';
 import { Colors, Typography, Spacing, BorderRadius, ComponentSizes, Gradients, Shadows } from '../../constants/theme';
@@ -61,19 +61,8 @@ function normalizeFormat(raw: string | null | undefined): string {
   return 'vinyl';
 }
 
-// Текст ошибки из ответа бэка. `detail` бывает трёх видов: строка (обычные
-// HTTPException), объект с `message` (409 дедупа — там ещё status/match_id) и
-// массив pydantic-ошибок валидации. Раньше брали только строку, поэтому 409
-// «эта пластинка уже есть» показывался как безликое «Попробуйте ещё раз».
-function errorText(e: any, fallback = 'Попробуйте ещё раз'): string {
-  const detail = e?.response?.data?.detail;
-  if (typeof detail === 'string' && detail.trim()) return detail;
-  if (detail && typeof detail === 'object') {
-    const msg = Array.isArray(detail) ? detail[0]?.msg : detail.message;
-    if (typeof msg === 'string' && msg.trim()) return msg;
-  }
-  return fallback;
-}
+// Текст ошибки из ответа бэка — общий парсер `detail` живёт в lib/api.
+const errorText = apiErrorText;
 
 // Сжать фото с camera/library → base64 JPEG (≤1024px), как в режиме скана.
 async function pickPhotoBase64(fromCamera: boolean): Promise<{ uri: string; base64: string } | null> {

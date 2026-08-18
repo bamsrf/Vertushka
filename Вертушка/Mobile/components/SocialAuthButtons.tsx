@@ -23,6 +23,12 @@ try {
   // Expo Go — Apple Sign In кнопка не покажется
 }
 
+// Google Sign In выключен и не собирается в бинарь: нативная часть исключена
+// из автолинковки (react-native.config.js + expo.autolinking.exclude). Пакет
+// остаётся в зависимостях только чтобы Metro смог отрезолвить этот require —
+// он статический, и без пакета сломается сборка бандла. Обращаться к
+// GoogleSignin.* при выключенном GOOGLE_SIGN_IN_ENABLED нельзя: нативного
+// биндинга за ним нет.
 let GoogleSignin: any = null;
 let statusCodes: any = {};
 try {
@@ -32,6 +38,14 @@ try {
 } catch {
   // Expo Go — модуль не собран, кнопка просто не покажется
 }
+
+/**
+ * Единственный рубильник Google-входа. Чтобы вернуть: true + плагин
+ * `@react-native-google-signin/google-signin` в app.json (с iosUrlScheme) +
+ * снять исключения из автолинковки. Бэкенд-эндпоинт `/auth/google` живой,
+ * трогать его не нужно.
+ */
+const GOOGLE_SIGN_IN_ENABLED = false;
 
 const googleWebClientId =
   (Constants.expoConfig?.extra?.googleWebClientId as string | undefined) ?? '';
@@ -158,7 +172,7 @@ export function SocialAuthButtons({ mode }: Props) {
   const showApple = Platform.OS === 'ios' && appleAvailable && AppleAuthentication;
   // Google Sign In скрыт: ФЗ о запрете авторизации через иностранные сервисы (ГД, 09.06.2026).
   // Код входа сохранён — снять флаг, чтобы вернуть кнопку.
-  const showGoogle = false && Boolean(GoogleSignin && googleWebClientId);
+  const showGoogle = GOOGLE_SIGN_IN_ENABLED && Boolean(GoogleSignin && googleWebClientId);
   const showDiscogs = true; // OAuth через WebBrowser — без нативных модулей
 
   if (!showApple && !showGoogle && !showDiscogs) return null;

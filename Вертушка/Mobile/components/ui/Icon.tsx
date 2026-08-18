@@ -62,7 +62,13 @@ import {
   CurrencyCircleDollarIcon,
   CurrencyRubIcon,
   DownloadSimpleIcon,
+  FlagIcon,
   FolderIcon,
+  FolderOpenIcon,
+  FileTextIcon,
+  StorefrontIcon,
+  ShieldCheckIcon,
+  ArrowsLeftRightIcon,
   GiftIcon,
   GlobeIcon,
   SquaresFourIcon,
@@ -197,6 +203,9 @@ const REGISTRY = {
   'eye':                 EyeIcon,
   'eye-slash':           EyeSlashIcon,
   'copy':                CopyIcon,
+  'file-text':           FileTextIcon,
+  'storefront':          StorefrontIcon,
+  'arrows-left-right':   ArrowsLeftRightIcon,
   'users':               UsersIcon,
   'user-plus':           UserPlusIcon,
   'user-minus':          UserMinusIcon,
@@ -208,6 +217,8 @@ const REGISTRY = {
 
   // State
   'warning-circle':      WarningCircleIcon,
+  'flag':                FlagIcon,
+  'shield-check':        ShieldCheckIcon,
 
   // System
   'bell':                BellIcon,
@@ -231,6 +242,7 @@ const REGISTRY = {
   'globe':               GlobeIcon,
   'buildings':           BuildingsIcon,
   'folder':              FolderIcon,
+  'folder-open':         FolderOpenIcon,
   'tag':                 TagIcon,
   'map-pin':             MapPinIcon,
   'map-trifold':         MapTrifoldIcon,
@@ -321,6 +333,16 @@ const IONICON_ALIASES = {
 
   // State
   'alert-circle-outline':   'warning-circle',
+  'create-outline':         'pencil',
+  'pencil-outline':         'pencil',
+  'duplicate-outline':      'copy',
+  'folder-open-outline':    'folder-open',
+  'document-text-outline':  'file-text',
+  'notifications':          'bell',
+  'storefront':             'storefront',
+  'swap-horizontal':        'arrows-left-right',
+  'flag-outline':           'flag',
+  'shield-checkmark-outline': 'shield-check',
 
   // System
   'notifications-outline':  'bell',

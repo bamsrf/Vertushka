@@ -24,6 +24,8 @@ from sqlalchemy import select
 
 from app.database import async_session_maker, engine
 from app.models.user import User
+from app.services import apple_auth
+from app.services.secret_crypto import decrypt_secret
 
 logger = logging.getLogger(__name__)
 
@@ -88,6 +90,17 @@ async def purge() -> int:
                 "purge_deleted_users: удаляю %s (%s), deleted_at=%s",
                 user.username, user.id, user.deleted_at,
             )
+            # Последняя попытка отозвать доступ Apple: при удалении аккаунта
+            # мы уже пробовали, но Apple мог быть недоступен. Дальше строка
+            # исчезнет вместе с токеном — второго шанса не будет.
+            if user.apple_refresh_token:
+                token = decrypt_secret(user.apple_refresh_token)
+                if token:
+                    revoked = await apple_auth.revoke_refresh_token(token)
+                    logger.info(
+                        "purge_deleted_users: apple revoke %s → %s",
+                        user.username, revoked,
+                    )
             await session.delete(user)  # ondelete=CASCADE в БД уберёт связанные строки
 
         await session.commit()

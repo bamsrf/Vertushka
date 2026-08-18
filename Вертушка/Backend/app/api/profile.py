@@ -372,39 +372,40 @@ async def get_public_profile_payload(user: User, profile: ProfileShare, db: Asyn
     collection_value = None
     collection_value_rub = None
     monthly_delta = None
-    if profile.show_collection_value:
-        # ЕДИНАЯ формула с экраном владельца: median-first + estimate_rub
-        # (country/format/Discogs наценки). Раньше тут был сырой
-        # SUM(coalesce(min, median)) × rate — min-first и БЕЗ наценок, из-за
-        # чего публичная стоимость не совпадала с /collection/value владельца.
-        value_records = (
-            (
-                await db.execute(
-                    select(Record)
-                    .join(CollectionItem, CollectionItem.record_id == Record.id)
-                    .join(Collection)
-                    .where(Collection.user_id == user.id, _PUBLIC_VISIBLE_CLAUSE)
-                )
-            )
-            .scalars()
-            .all()
-        )
-        # Дедуп по record.id (DISTINCT по строке ломается на JSON discogs_data).
-        by_id = {r.id: r for r in value_records}
-        rate = await get_usd_rub_rate()
-        params = PricingParams.from_settings(get_settings())
-        collection_value_rub = round(
-            sum(record_value_rub(r, rate, params) for r in by_id.values()), 2
-        )
-        # USD — сырая median-first сумма (нужна og-image / API-полю).
-        collection_value = float(
-            sum(
-                float(r.estimated_price_median or r.estimated_price_min or 0)
-                for r in by_id.values()
+    # Стоимость считаем всегда: тумблер «показывать стоимость» убран из UI,
+    # публикация профиля — единственное решение юзера.
+    # ЕДИНАЯ формула с экраном владельца: median-first + estimate_rub
+    # (country/format/Discogs наценки). Раньше тут был сырой
+    # SUM(coalesce(min, median)) × rate — min-first и БЕЗ наценок, из-за
+    # чего публичная стоимость не совпадала с /collection/value владельца.
+    value_records = (
+        (
+            await db.execute(
+                select(Record)
+                .join(CollectionItem, CollectionItem.record_id == Record.id)
+                .join(Collection)
+                .where(Collection.user_id == user.id, _PUBLIC_VISIBLE_CLAUSE)
             )
         )
-        delta = await get_monthly_delta(user.id, db)
-        monthly_delta = float(delta) if delta is not None else None
+        .scalars()
+        .all()
+    )
+    # Дедуп по record.id (DISTINCT по строке ломается на JSON discogs_data).
+    by_id = {r.id: r for r in value_records}
+    rate = await get_usd_rub_rate()
+    params = PricingParams.from_settings(get_settings())
+    collection_value_rub = round(
+        sum(record_value_rub(r, rate, params) for r in by_id.values()), 2
+    )
+    # USD — сырая median-first сумма (нужна og-image / API-полю).
+    collection_value = float(
+        sum(
+            float(r.estimated_price_median or r.estimated_price_min or 0)
+            for r in by_id.values()
+        )
+    )
+    delta = await get_monthly_delta(user.id, db)
+    monthly_delta = float(delta) if delta is not None else None
 
     # Highlights
     highlights: list[PublicProfileRecord] = []

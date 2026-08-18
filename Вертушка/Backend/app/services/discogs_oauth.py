@@ -111,7 +111,7 @@ def user_creds(user) -> "tuple[str, str] | None":
     Передаётся в DiscogsService.search/suggest, чтобы запрос шёл через токен
     юзера (его персональный rate-limit). None → используется app-токен.
     """
-    from app.services.discogs_crypto import decrypt_secret
+    from app.services.secret_crypto import decrypt_secret
 
     if not user or not user.discogs_oauth_token or not user.discogs_oauth_token_secret:
         return None

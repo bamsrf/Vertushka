@@ -389,38 +389,39 @@ async def public_profile_page(
     collection_value = None
     collection_value_rub = None
     monthly_delta = None
-    if profile.show_collection_value:
-        # Суррогат базовой USD-цены через distinct запись (берём min/median)
-        usd_subq = (
-            select(
-                CollectionItem.record_id.label("rid"),
-                func.coalesce(Record.estimated_price_min, Record.estimated_price_median).label("usd"),
-            )
-            .join(Collection, Collection.id == CollectionItem.collection_id)
-            .join(Record, Record.id == CollectionItem.record_id)
-            .where(Collection.user_id == user.id)
-            .distinct(CollectionItem.record_id)
-            .subquery()
+    # Стоимость считаем всегда: тумблер «показывать стоимость» убран из UI,
+    # публикация профиля — единственное решение юзера.
+    # Суррогат базовой USD-цены через distinct запись (берём min/median)
+    usd_subq = (
+        select(
+            CollectionItem.record_id.label("rid"),
+            func.coalesce(Record.estimated_price_min, Record.estimated_price_median).label("usd"),
         )
-        value_result = await db.scalar(select(func.sum(usd_subq.c.usd)))
-        collection_value = round(float(value_result), 2) if value_result else 0.0
+        .join(Collection, Collection.id == CollectionItem.collection_id)
+        .join(Record, Record.id == CollectionItem.record_id)
+        .where(Collection.user_id == user.id)
+        .distinct(CollectionItem.record_id)
+        .subquery()
+    )
+    value_result = await db.scalar(select(func.sum(usd_subq.c.usd)))
+    collection_value = round(float(value_result), 2) if value_result else 0.0
 
-        # Рубли — кэшированные на уровне CollectionItem.estimated_price_rub.
-        # Берём max среди дублей (разные папки могут иметь разные значения).
-        rub_subq = (
-            select(
-                CollectionItem.record_id.label("rid"),
-                func.max(CollectionItem.estimated_price_rub).label("rub"),
-            )
-            .join(Collection, Collection.id == CollectionItem.collection_id)
-            .where(Collection.user_id == user.id)
-            .group_by(CollectionItem.record_id)
-            .subquery()
+    # Рубли — кэшированные на уровне CollectionItem.estimated_price_rub.
+    # Берём max среди дублей (разные папки могут иметь разные значения).
+    rub_subq = (
+        select(
+            CollectionItem.record_id.label("rid"),
+            func.max(CollectionItem.estimated_price_rub).label("rub"),
         )
-        value_rub_result = await db.scalar(select(func.sum(rub_subq.c.rub)))
-        collection_value_rub = round(float(value_rub_result), 2) if value_rub_result else 0.0
-        delta = await get_monthly_delta(user.id, db)
-        monthly_delta = float(delta) if delta is not None else None
+        .join(Collection, Collection.id == CollectionItem.collection_id)
+        .where(Collection.user_id == user.id)
+        .group_by(CollectionItem.record_id)
+        .subquery()
+    )
+    value_rub_result = await db.scalar(select(func.sum(rub_subq.c.rub)))
+    collection_value_rub = round(float(value_rub_result), 2) if value_rub_result else 0.0
+    delta = await get_monthly_delta(user.id, db)
+    monthly_delta = float(delta) if delta is not None else None
 
     # Рейлы
     top_expensive = await _get_top_expensive(user.id, db, limit=12) if profile.show_collection else []
@@ -486,7 +487,7 @@ async def public_profile_page(
 
     # OG description
     og_parts = [f"{collection_count} пластинок"]
-    if collection_value and profile.show_collection_value:
+    if collection_value:
         og_parts.append(f"~${collection_value:,.0f}")
     if wishlist_count > 0:
         og_parts.append(f"{wishlist_count} в вишлисте")
@@ -626,21 +627,22 @@ async def profile_og_image(
     # превью расходилось со страницей и по валюте, и по дублям.
     collection_value_rub = None
     monthly_delta = None
-    if profile.show_collection_value:
-        rub_subq = (
-            select(
-                CollectionItem.record_id.label("rid"),
-                func.max(CollectionItem.estimated_price_rub).label("rub"),
-            )
-            .join(Collection, Collection.id == CollectionItem.collection_id)
-            .where(Collection.user_id == user.id)
-            .group_by(CollectionItem.record_id)
-            .subquery()
+    # Стоимость считаем всегда: тумблер «показывать стоимость» убран из UI,
+    # публикация профиля — единственное решение юзера.
+    rub_subq = (
+        select(
+            CollectionItem.record_id.label("rid"),
+            func.max(CollectionItem.estimated_price_rub).label("rub"),
         )
-        value_rub_result = await db.scalar(select(func.sum(rub_subq.c.rub)))
-        collection_value_rub = round(float(value_rub_result), 2) if value_rub_result else None
-        delta = await get_monthly_delta(user.id, db)
-        monthly_delta = float(delta) if delta is not None else None
+        .join(Collection, Collection.id == CollectionItem.collection_id)
+        .where(Collection.user_id == user.id)
+        .group_by(CollectionItem.record_id)
+        .subquery()
+    )
+    value_rub_result = await db.scalar(select(func.sum(rub_subq.c.rub)))
+    collection_value_rub = round(float(value_rub_result), 2) if value_rub_result else None
+    delta = await get_monthly_delta(user.id, db)
+    monthly_delta = float(delta) if delta is not None else None
 
     # Фишки коллекции — тот же расчёт, что на странице; для картинки берём три
     # самых цепляющих.

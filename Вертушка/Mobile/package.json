@@ -73,5 +73,12 @@
       "@react-native-async-storage/async-storage": "2.2.0"
     }
   },
-  "private": true
+  "private": true,
+  "expo": {
+    "autolinking": {
+      "exclude": [
+        "@react-native-google-signin/google-signin"
+      ]
+    }
+  }
 }

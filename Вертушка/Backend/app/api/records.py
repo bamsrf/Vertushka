@@ -1752,6 +1752,10 @@ async def list_my_user_records(
             Record.source == "user",
             Record.created_by_user_id == current_user.id,
             Record.merged_into_id.is_(None),
+            # Мягко удалённые автором сюда не возвращаются — иначе «удалить»
+            # ничего бы не меняло: список строится по авторству, а не по
+            # наличию записи в коллекции.
+            Record.moderation_status != "deleted",
         )
         .order_by(Record.created_at.desc())
     )
@@ -1801,6 +1805,58 @@ async def update_user_submitted_record(
     await db.commit()
     await db.refresh(record)
     return RecordResponse.model_validate(record)
+
+
+@router.delete("/user/{record_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_user_submitted_record(
+    record_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Удалить свою user-record (§11). Мягко: moderation_status='deleted'.
+
+    Физического DELETE нет намеренно — на record_id висят коллекции, вишлисты,
+    подарки, клики по офферам и ачивки. Помеченная запись пропадает из «Моих
+    релизов», из публичного профиля и из выдачи по прямой ссылке.
+
+    Отказ (409), если запись уже держит кто-то ещё: с этого момента она не
+    личный черновик, а общая карточка — удаление порвало бы чужие коллекции.
+    Такая запись остаётся в «Моих релизах» как есть.
+    """
+    from app.services.profile_stats import ru_plural
+    from app.services.user_record import (
+        count_foreign_holders,
+        soft_delete_user_record,
+    )
+
+    res = await db.execute(select(Record).where(Record.id == record_id))
+    record = res.scalar_one_or_none()
+    if record is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Пластинка не найдена")
+    if record.source != "user" or record.created_by_user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Можно удалять только свои добавленные релизы",
+        )
+
+    holders = await count_foreign_holders(db=db, record=record, owner_id=current_user.id)
+    if holders:
+        word = ru_plural(holders, "человек", "человека", "человек")
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "record_in_use",
+                "holders": holders,
+                "message": (
+                    f"Релиз уже добавили к себе {holders} {word} — удалить нельзя. "
+                    "Он останется в «Моих релизах»."
+                ),
+            },
+        )
+
+    await soft_delete_user_record(db=db, record=record, owner_id=current_user.id)
+    await db.commit()
+    return None
 
 
 @router.get("/{record_id}/price-history")
@@ -1875,6 +1931,15 @@ async def get_record(
     # §6 (revised 2026-06-17): модерация отменена — user-records сразу approved
     # и видны всем. Pending-гейт убран. Поле moderation_status оставлено для
     # 'merged' (rematch) и на будущее.
+
+    # Автор удалил свою запись ('deleted') — её нет ни для кого, включая автора
+    # и staff. Мягкое удаление отличается от жалобы именно этим: это осознанное
+    # решение владельца, а не спорная модерация, которую кто-то пересматривает.
+    if record.source == "user" and record.moderation_status == "deleted":
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Пластинка не найдена"
+        )
 
     # UGC takedown (Guideline 1.2): скрытая по жалобе запись ('rejected')
     # недоступна по прямой ссылке никому, кроме автора и staff.

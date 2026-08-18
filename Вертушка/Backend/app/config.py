@@ -117,6 +117,10 @@ class Settings(BaseSettings):
     apple_client_id: str = Field(default="", alias="APPLE_CLIENT_ID")
     apple_team_id: str = Field(default="", alias="APPLE_TEAM_ID")
     apple_key_id: str = Field(default="", alias="APPLE_KEY_ID")
+    # Содержимое .p8 (Sign in with Apple key из developer.apple.com). Нужен,
+    # чтобы отзывать токен при удалении аккаунта — без него Apple реджектит
+    # по 5.1.1(v). Переносы строк можно экранировать как \n.
+    apple_private_key: str = Field(default="", alias="APPLE_PRIVATE_KEY")
     
     # Google Sign In
     google_client_id: str = Field(default="", alias="GOOGLE_CLIENT_ID")

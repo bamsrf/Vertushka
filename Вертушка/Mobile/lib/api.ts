@@ -792,6 +792,16 @@ class ApiClient {
     return response.data;
   }
 
+  /**
+   * Удалить свой ручной релиз (мягко: на бэке moderation_status='deleted').
+   *
+   * 409 `record_in_use` — релиз уже держит кто-то ещё, удалять нельзя; он
+   * остаётся в «Моих релизах». Текст для юзера приходит в detail.message.
+   */
+  async deleteUserRecord(recordId: string): Promise<void> {
+    await this.client.delete(`/records/user/${recordId}`);
+  }
+
   async getRecordByDiscogsId(discogsId: string): Promise<VinylRecord> {
     return this.deduplicatedGet<VinylRecord>(`/records/discogs/${discogsId}`);
   }
@@ -1624,6 +1634,23 @@ class ApiClient {
     return data;
   }
 
+}
+
+/**
+ * Текст ошибки из ответа бэка. `detail` бывает трёх видов: строка (обычные
+ * HTTPException), объект с `message` (409-конфликты — там ещё код и контекст)
+ * и массив pydantic-ошибок валидации. Разбирать надо все три: если брать
+ * только строку, 409 «эта пластинка уже есть» превращается в безликое
+ * «Попробуйте ещё раз».
+ */
+export function apiErrorText(e: any, fallback = 'Попробуйте ещё раз'): string {
+  const detail = e?.response?.data?.detail;
+  if (typeof detail === 'string' && detail.trim()) return detail;
+  if (detail && typeof detail === 'object') {
+    const msg = Array.isArray(detail) ? detail[0]?.msg : detail.message;
+    if (typeof msg === 'string' && msg.trim()) return msg;
+  }
+  return fallback;
 }
 
 export const api = new ApiClient();
