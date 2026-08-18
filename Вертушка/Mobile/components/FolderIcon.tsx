@@ -10,10 +10,10 @@
  * Единственная линия во всей иконке — светлая кромка стекла: она и читается
  * как стекло, поэтому диагональных бликов и содержимого папке не нужно.
  *
- * Цвет — цвет ступени пользователя, а не самой папки. Корпус берёт градиент
- * `LEVEL_FOLDER_BODY`, подтон стекла и кромка — акцент иконки уровня. Поэтому
- * вся полка папок перекрашивается разом, когда юзер берёт новый уровень:
- * ступень видно не только на экране ачивок.
+ * Цвет — цвет ступени пользователя, а не самой папки, и берётся он с ленты
+ * айдентики: `LEVEL_PALETTE`. Корпус и клапан — три тона одной ступени, так
+ * что вся полка перекрашивается разом при повышении и вместе идёт от почти
+ * чёрного у «Тиши» к почти белому розовому у «Первозвука».
  *
  * Ступень приходит из `useCurrentLevelKey` — общего стора, который
  * `achievementsBus` обновляет с уже запрашиваемых ответов `/achievements/me`.
@@ -28,7 +28,7 @@ import Svg, {
   Stop,
 } from 'react-native-svg';
 
-import { levelFolderBody, levelIconAccent } from './achievement-mockup/levelTheme';
+import { levelPalette } from './achievement-mockup/levelTheme';
 import { useCurrentLevelKey } from '../lib/levelStore';
 
 /** Корпус папки: язычок слева, скос, тело. */
@@ -50,23 +50,23 @@ const PLUS_PATH = 'M32 36.5 v11 M26.5 42 h11';
 export interface FolderPalette {
   /** Верх градиента корпуса. */
   backTop: string;
-  /** Низ градиента корпуса. */
+  /** Низ градиента корпуса, он же верх клапана. */
   backBottom: string;
-  /** Подтон стекла и кромка. */
-  accent: string;
+  /** Низ клапана. */
+  deep: string;
 }
 
-/** Палитра папки для ступени — см. LEVEL_FOLDER_BODY в levelTheme. */
+/** Палитра папки для ступени — см. LEVEL_PALETTE в levelTheme. */
 export function folderPalette(levelKey: string): FolderPalette {
-  const [backTop, backBottom] = levelFolderBody(levelKey);
-  return { backTop, backBottom, accent: levelIconAccent(levelKey) };
+  const p = levelPalette(levelKey);
+  return { backTop: p.light, backBottom: p.base, deep: p.deep };
 }
 
 /** Пустая папка и карточка «Новая» вне цвета ступени: хвастаться нечем. */
 const NEUTRAL_PALETTE: FolderPalette = {
-  backTop: '#3A404E',
-  backBottom: '#22262F',
-  accent: '#8B91A3',
+  backTop: '#4A5060',
+  backBottom: '#2E3340',
+  deep: '#1B1F28',
 };
 
 /** Градиенты живут в общем неймспейсе документа: одинаковые id перетирают
@@ -105,20 +105,18 @@ export function FolderIcon({ size = 80, variant = 'filled', level }: FolderIconP
           <Stop offset="0" stopColor={p.backTop} />
           <Stop offset="1" stopColor={p.backBottom} />
         </LinearGradient>
-        {/* Стекло: сверху почти прозрачное, книзу плотное — но не глухое.
-            Корпуса ступеней насыщенные, и полностью чёрный низ съедал бы их
-            цвет: «Первозвук» переставал быть золотым. Подтон ступени держит
-            клапан в семье корпуса, иначе он читается серой накладкой. */}
+        {/* Стекло — не чернота с альфой, а сами тона ступени. Полупрозрачный
+            чёрный низ съедал цвет светлых ступеней: «Первозвук» переставал
+            быть почти белым и уходил в грязь. Прозрачность осталась только у
+            верхнего блика — он и читается как стекло. */}
         <LinearGradient id={id.glass} x1="0.15" y1="0" x2="0.45" y2="1">
-          <Stop offset="0" stopColor="#FFFFFF" stopOpacity={0.7} />
-          <Stop offset="0.1" stopColor="#FFFFFF" stopOpacity={0.32} />
-          <Stop offset="0.34" stopColor={p.accent} stopOpacity={0.18} />
-          <Stop offset="0.64" stopColor="#10131C" stopOpacity={0.44} />
-          <Stop offset="1" stopColor="#06080E" stopOpacity={0.78} />
+          <Stop offset="0" stopColor="#FFFFFF" stopOpacity={0.5} />
+          <Stop offset="0.16" stopColor={p.backBottom} />
+          <Stop offset="1" stopColor={p.deep} />
         </LinearGradient>
         <LinearGradient id={id.edge} x1="0" y1="0" x2="1" y2="0">
-          <Stop offset="0" stopColor="#FFFFFF" stopOpacity={0.85} />
-          <Stop offset="1" stopColor="#FFFFFF" stopOpacity={0.22} />
+          <Stop offset="0" stopColor="#FFFFFF" stopOpacity={0.9} />
+          <Stop offset="1" stopColor="#FFFFFF" stopOpacity={0.3} />
         </LinearGradient>
       </Defs>
 

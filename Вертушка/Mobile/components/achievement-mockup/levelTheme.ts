@@ -1,23 +1,172 @@
 /**
- * Визуальная идентичность уровней архетипа.
+ * Визуальная идентичность ступеней архетипа.
  *
- * Каждая из 10 ступеней «Физики звука» получает свой фон hero-блока и окрас
- * плашки. Драматургия лестницы: холодная тишина → синева → пурпур резонанса →
- * жар амплитуды → золото легенды. Уровень должно быть видно с полувзгляда,
- * не читая подпись.
+ * Все десять ступеней «Физики звука» стоят на одной ленте — градиенте
+ * айдентики приложения, от почти чёрного фиолетового к почти белому розовому.
+ * Ступень отличается от соседней только позицией на ней: выше значит светлее.
+ * Отсюда цвет папок, иконки повышения и плашки уровня в разделе ачивок.
  *
  * Ключи совпадают с LevelDef.key из lib/archetype.ts (и с зеркалом на бэкенде
  * Backend/app/services/achievements/levels.py).
  */
-import {
-  M_EMBER,
-  M_GOLD,
-  M_GOLD_HI,
-  M_GOLD_RIM_SOFT,
-  M_IVORY,
-  M_NAVY,
-  M_NAVY_MID,
-} from './palette';
+/**
+ * Палитра ступеней — лента айдентики приложения.
+ *
+ * Один градиент, снятый с `Design/Color palette.jpeg`: от почти чёрного
+ * фиолетового через кобальт к почти белому розовому. Ступень — точка на этой
+ * ленте, и ничего кроме позиции её не отличает. Предыдущая лестница гуляла по
+ * тонам (графит → синь → пурпур → жар → золото) и жила отдельной жизнью от
+ * остального приложения; здесь «выше» значит ровно «светлее».
+ *
+ * Производные тона считаются не подмешиванием почти-чёрного, а умножением:
+ * оно сохраняет тон и насыщенность, тогда как подмешивание уводило бледные
+ * верхние ступени в серость.
+ *
+ * `ink` — контрастный к `base`, выбран по WCAG: ivory на тёмных ступенях,
+ * тёмный на светлых. Им рисуются стрелка и канавки иконки повышения, им же
+ * обведён её диск — иначе бледный «Первозвук» растворялся бы в светлой ленте
+ * уведомлений.
+ *
+ * `chip` тянут к белилам тем сильнее, чем темнее ступень: у «Тиши» `base` сам
+ * почти чёрный и плашка утонула бы в фоне hero.
+ *
+ * Ключи совпадают с LevelDef.key из lib/archetype.ts.
+ */
+export interface LevelPalette {
+  /** Опорный тон ступени на ленте. */
+  base: string;
+  /** Осветлённый: верх корпуса папки, светлая сторона диска иконки, обводка плашки. */
+  light: string;
+  /** Затемнённый: низ клапана папки, тёмная сторона диска иконки. */
+  deep: string;
+  /** Контрастный к base: стрелка, канавки и обводка диска иконки. */
+  ink: string;
+  /** Плашка ступени в hero и заливка прогресс-бара. */
+  chip: string;
+  /** Текст на плашке. */
+  chipInk: string;
+  /** Верхний и средний стоп фона hero. Держим тёмными: поверх лежит ivory-текст. */
+  heroTop: string;
+  heroMid: string;
+}
+
+export const LEVEL_PALETTE: Record<string, LevelPalette> = {
+  // Тишь — почти чёрный фиолетовый низ градиента. Ещё ничего не звучит.
+  silence: {
+    base: '#0D0A24',
+    light: '#565466',
+    deep: '#070513',
+    ink: '#F4EEE6',
+    chip: '#696777',
+    chipInk: '#F4EEE6',
+    heroTop: '#05040E',
+    heroMid: '#030208',
+  },
+  // Шорох — тьма начинает синеть.
+  rustle: {
+    base: '#1A1746',
+    light: '#5B587A',
+    deep: '#0E0D26',
+    ink: '#F4EEE6',
+    chip: '#676584',
+    chipInk: '#F4EEE6',
+    heroTop: '#0A091C',
+    heroMid: '#06050F',
+  },
+  // Эхо — синий проступил, но глухой.
+  echo: {
+    base: '#202C72',
+    light: '#5B6497',
+    deep: '#121942',
+    ink: '#F4EEE6',
+    chip: '#626A9C',
+    chipInk: '#F4EEE6',
+    heroTop: '#0D122E',
+    heroMid: '#070A19',
+  },
+  // Волна — чистый глубокий синий.
+  wave: {
+    base: '#1C3FA8',
+    light: '#546EBD',
+    deep: '#112666',
+    ink: '#F4EEE6',
+    chip: '#5670BE',
+    chipInk: '#0B0A22',
+    heroTop: '#0B1943',
+    heroMid: '#060E25',
+  },
+  // Резонанс — кобальт, самая насыщенная точка ленты.
+  resonance: {
+    base: '#2A5AD8',
+    light: '#5B80E1',
+    deep: '#1B3989',
+    ink: '#F4EEE6',
+    chip: '#577DE0',
+    chipInk: '#0B0A22',
+    heroTop: '#112456',
+    heroMid: '#091430',
+  },
+  // Обертон — кобальт светлеет в барвинок.
+  overtone: {
+    base: '#5B79DB',
+    light: '#7E95E3',
+    deep: '#3C5092',
+    ink: '#0B0A22',
+    chip: '#7790E1',
+    chipInk: '#0B0A22',
+    heroTop: '#243058',
+    heroMid: '#141B30',
+  },
+  // Амплитуда — цвет отдаёт светлоту, насыщенность падает.
+  amplitude: {
+    base: '#8193DF',
+    light: '#99A8E5',
+    deep: '#59669B',
+    ink: '#0B0A22',
+    chip: '#91A1E3',
+    chipInk: '#0B0A22',
+    heroTop: '#343B59',
+    heroMid: '#1C2031',
+  },
+  // Частота — бледная лаванда.
+  frequency: {
+    base: '#A9AEE3',
+    light: '#B8BCE8',
+    deep: '#7A7EA4',
+    ink: '#0B0A22',
+    chip: '#B0B5E5',
+    chipInk: '#0B0A22',
+    heroTop: '#44465B',
+    heroMid: '#252632',
+  },
+  // Камертон — сирень уходит в розовое.
+  tuning_fork: {
+    base: '#CDC3DF',
+    light: '#D5CCE4',
+    deep: '#9A92A7',
+    ink: '#0B0A22',
+    chip: '#CFC6E0',
+    chipInk: '#0B0A22',
+    heroTop: '#524E59',
+    heroMid: '#2D2B31',
+  },
+  // Первозвук — почти белый розовый. Предел ленты.
+  primal_sound: {
+    base: '#F2D3DC',
+    light: '#F4D9E1',
+    deep: '#BDA5AC',
+    ink: '#0B0A22',
+    chip: '#F2D3DC',
+    chipInk: '#0B0A22',
+    heroTop: '#615458',
+    heroMid: '#352E30',
+  },
+};
+
+/** Палитра ступени по ключу. Неизвестный ключ → «Эхо». */
+export function levelPalette(key: string): LevelPalette {
+  return LEVEL_PALETTE[key] ?? LEVEL_PALETTE.echo;
+}
 
 export interface LevelTheme {
   /** Три стопа вертикального градиента фона (сверху вниз). */
@@ -34,8 +183,7 @@ export interface LevelTheme {
   accent: string;
   /** Гало вокруг гнезда пина. */
   halo: string;
-  /** Заливка диска под пином. Держим в семье фона ступени: единый navy на
-   *  золотом «Первозвуке» читался как чужая деталь. */
+  /** Заливка диска под пином. */
   discBg: string;
   /** Обводка всей карточки. */
   rim: string;
@@ -43,206 +191,59 @@ export interface LevelTheme {
   grooveOpacity: number;
 }
 
-const IVORY_ON_DARK = M_IVORY;
+/** hex → rgba(). Альфа нужна ореолам и обводкам, а палитра хранит чистый тон. */
+function alpha(hex: string, a: number): string {
+  const n = parseInt(hex.slice(1), 16);
+  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
+}
 
-export const LEVEL_THEMES: Record<string, LevelTheme> = {
-  // 0 — Тишь: почти чёрная синева, минимум света. Ещё ничего не звучит.
-  silence: {
-    bg: ['#131A3D', '#0B1438', '#05091C'],
-    glow: ['rgba(92,122,232,0.16)', 'rgba(92,122,232,0)'],
-    chipBg: 'rgba(244,238,230,0.10)',
-    chipFg: IVORY_ON_DARK,
-    chipBorder: 'rgba(244,238,230,0.28)',
-    accent: '#8FA2D8',
-    halo: 'rgba(143,162,216,0.20)',
-    discBg: '#101638',
-    rim: 'rgba(244,238,230,0.14)',
-    grooveOpacity: 0.05,
-  },
-  // 1 — Шорох: первая искра тепла в холодном фоне.
-  rustle: {
-    bg: ['#18225A', '#0D1640', '#070C24'],
-    glow: ['rgba(92,122,232,0.26)', 'rgba(92,122,232,0)'],
-    chipBg: 'rgba(244,238,230,0.92)',
-    chipFg: M_NAVY,
-    chipBorder: 'rgba(168,126,50,0.55)',
-    accent: '#C9D2F2',
-    halo: 'rgba(92,122,232,0.28)',
-    discBg: '#131C4C',
-    rim: 'rgba(244,238,230,0.16)',
-    grooveOpacity: 0.06,
-  },
-  // 2 — Эхо: базовый navy мокапа, золотая плашка. Точка отсчёта серии.
-  echo: {
-    bg: ['#1B237D', '#0B1438', '#070C24'],
-    glow: ['rgba(110,91,198,0.35)', 'rgba(110,91,198,0)'],
-    chipBg: M_IVORY,
-    chipFg: M_NAVY,
-    chipBorder: M_GOLD,
-    accent: M_GOLD_HI,
-    halo: 'rgba(232,90,42,0.25)',
-    discBg: M_NAVY_MID,
-    rim: M_GOLD_RIM_SOFT,
-    grooveOpacity: 0.07,
-  },
-  // 3 — Волна: кобальт выходит на первый план, фон «качает».
-  wave: {
-    bg: ['#22389B', '#101B4E', '#070C24'],
-    glow: ['rgba(42,75,215,0.42)', 'rgba(42,75,215,0)'],
-    chipBg: '#DDE6FF',
-    chipFg: '#16205C',
-    chipBorder: '#5C7AE8',
-    accent: '#7FA0FF',
-    halo: 'rgba(42,75,215,0.35)',
-    discBg: '#16265E',
-    rim: 'rgba(124,154,255,0.32)',
-    grooveOpacity: 0.08,
-  },
-  // 4 — Резонанс: пурпур, фон начинает «гудеть».
-  resonance: {
-    bg: ['#3A2A8E', '#1B1550', '#0A0722'],
-    glow: ['rgba(150,96,214,0.45)', 'rgba(150,96,214,0)'],
-    chipBg: '#EADEFF',
-    chipFg: '#2B1A63',
-    chipBorder: '#9B6BD8',
-    accent: '#C79BF2',
-    halo: 'rgba(150,96,214,0.38)',
-    discBg: '#231A5E',
-    rim: 'rgba(199,155,242,0.34)',
-    grooveOpacity: 0.09,
-  },
-  // 5 — Обертон: пурпур с розовым подтоном — призвук над основным тоном.
-  overtone: {
-    bg: ['#54277F', '#26124B', '#0C0620'],
-    glow: ['rgba(214,106,180,0.45)', 'rgba(214,106,180,0)'],
-    chipBg: '#FBE0F2',
-    chipFg: '#43164F',
-    chipBorder: '#D66AB4',
-    accent: '#F09BD8',
-    halo: 'rgba(214,106,180,0.40)',
-    discBg: '#331A55',
-    rim: 'rgba(240,155,216,0.34)',
-    grooveOpacity: 0.09,
-  },
-  // 6 — Амплитуда: жар. Коллекция давит на воздух.
-  amplitude: {
-    bg: ['#7A2B4C', '#3A122C', '#120616'],
-    glow: ['rgba(232,90,42,0.50)', 'rgba(232,90,42,0)'],
-    chipBg: '#FFE0D2',
-    chipFg: '#5B1A1A',
-    chipBorder: M_EMBER,
-    accent: '#FF8A5C',
-    halo: 'rgba(232,90,42,0.45)',
-    discBg: '#4A1A2E',
-    rim: 'rgba(255,138,92,0.36)',
-    grooveOpacity: 0.10,
-  },
-  // 7 — Частота: раскалённая медь, точность настройки.
-  frequency: {
-    bg: ['#8E3A22', '#48170F', '#150707'],
-    glow: ['rgba(255,150,60,0.48)', 'rgba(255,150,60,0)'],
-    chipBg: '#FFEBD0',
-    chipFg: '#5A2708',
-    chipBorder: '#E08A3C',
-    accent: '#FFB05C',
-    halo: 'rgba(255,150,60,0.45)',
-    discBg: '#54200F',
-    rim: 'rgba(255,176,92,0.38)',
-    grooveOpacity: 0.10,
-  },
-  // 8 — Камертон: золото на глубоком бронзовом. К тебе приходят сверяться.
-  tuning_fork: {
-    bg: ['#6E5220', '#33240D', '#120C04'],
-    glow: ['rgba(242,199,112,0.45)', 'rgba(242,199,112,0)'],
-    chipBg: '#FFF3D6',
-    chipFg: '#3F2C08',
-    chipBorder: M_GOLD_HI,
-    accent: M_GOLD_HI,
-    halo: 'rgba(58,42,16,0.85)',
-    discBg: '#3A2A10',
-    rim: 'rgba(242,199,112,0.45)',
-    grooveOpacity: 0.11,
-  },
-  // 9 — Первозвук: почти белое золото на чёрном. Предел лестницы.
-  primal_sound: {
-    bg: ['#3D3216', '#150F04', '#000000'],
-    glow: ['rgba(255,240,200,0.40)', 'rgba(255,240,200,0)'],
-    chipBg: '#FFFAF0',
-    chipFg: '#1A1206',
-    chipBorder: '#FFF0C4',
-    accent: '#FFF0C4',
-    halo: 'rgba(32,26,10,0.9)',
-    discBg: '#151206',
-    rim: 'rgba(255,240,200,0.55)',
-    grooveOpacity: 0.12,
-  },
+/**
+ * Плотность «волн» на фоне hero растёт со ступенью — единственное, что не
+ * выводится из палитры, поэтому лежит таблицей.
+ */
+const GROOVE_OPACITY: Record<string, number> = {
+  silence: 0.05,
+  rustle: 0.06,
+  echo: 0.07,
+  wave: 0.08,
+  resonance: 0.09,
+  overtone: 0.09,
+  amplitude: 0.1,
+  frequency: 0.1,
+  tuning_fork: 0.11,
+  primal_sound: 0.12,
 };
 
-/** Тема уровня по ключу. Неизвестный ключ → «Эхо» (базовый navy мокапа). */
+/**
+ * Тема hero целиком выводится из `LEVEL_PALETTE` — своей таблицы цветов у неё
+ * больше нет. Раньше здесь жил отдельный набор (золотая плашка «Эха», медь
+ * «Частоты», бронза «Камертона»), и он расходился с остальным приложением.
+ *
+ * Фон намеренно берёт только тёмные стопы ленты: поверх него лежит ivory-текст
+ * и пины, и светлые верхние ступени сделали бы его нечитаемым. Светлоту ступени
+ * несут плашка и прогресс-бар — они как раз идут по ленте до почти белого.
+ */
+function themeFor(key: string): LevelTheme {
+  const p = levelPalette(key);
+  return {
+    bg: [p.heroTop, p.heroMid, '#05060F'],
+    glow: [alpha(p.light, 0.3), alpha(p.light, 0)],
+    chipBg: p.chip,
+    chipFg: p.chipInk,
+    chipBorder: p.light,
+    accent: p.chip,
+    halo: alpha(p.light, 0.32),
+    discBg: p.deep,
+    rim: alpha(p.light, 0.32),
+    grooveOpacity: GROOVE_OPACITY[key] ?? 0.07,
+  };
+}
+
+export const LEVEL_THEMES: Record<string, LevelTheme> = Object.fromEntries(
+  Object.keys(LEVEL_PALETTE).map((key) => [key, themeFor(key)]),
+);
+
+/** Тема уровня по ключу. Неизвестный ключ → «Эхо». */
 export function levelTheme(key: string): LevelTheme {
   return LEVEL_THEMES[key] ?? LEVEL_THEMES.echo;
-}
-
-/**
- * Акцент иконки повышения уровня — см. components/LevelUpIcon.tsx.
- *
- * Почему отдельно от `LevelTheme.accent`: тот подобран под прогресс-бар и
- * маркер на конкретном фоне своей ступени. У «Эха» он золотой (M_GOLD_HI) —
- * в hero это читается, но в лестнице иконок золото между двумя синими рвёт
- * прогрессию. А иконку видно вне hero: в пуше, в ленте «Ты», в шапке. Ей
- * нужна монотонная драматургия холод → синь → пурпур → жар → золото → свет,
- * различимая без подписи.
- *
- * Шаг между соседями идёт сразу по трём осям — тон, насыщенность, светлота.
- * Одного тона мало: первые ступени в hero-палитре все синие и в ряду иконок
- * сливались в одно пятно.
- *
- * Ключи те же, что у LEVEL_THEMES. Порядок = порядок LEVELS в lib/archetype.ts.
- */
-export const LEVEL_ICON_ACCENT: Record<string, string> = {
-  silence: '#7F8798',       // тусклый серый — ещё ничего не звучит
-  rustle: '#7E9BC8',        // та же светлота, но появился цвет
-  echo: '#5C93F5',
-  wave: '#3E63E8',          // кобальт бренда — «Волна» и есть базовая нота
-  resonance: '#9B6BE8',
-  overtone: '#E070C8',
-  amplitude: '#FF6A4A',
-  frequency: '#FF9E2B',
-  tuning_fork: '#E8C24A',
-  primal_sound: '#FFEFA8',  // белое золото — предел лестницы
-};
-
-/** Акцент иконки уровня по ключу. Неизвестный ключ → «Эхо». */
-export function levelIconAccent(key: string): string {
-  return LEVEL_ICON_ACCENT[key] ?? LEVEL_ICON_ACCENT.echo;
-}
-
-/**
- * Корпус иконки папки — верхний и нижний стоп градиента.
- *
- * Почему не `LevelTheme.bg`: тот рассчитан на полноэкранный тёмный фон hero,
- * где все ступени намеренно глубокие. Иконка 80 px живёт на светлом #FAFBFF,
- * её видно мельком в горизонтальном скролле, и ступень должна читаться
- * с полувзгляда — поэтому здесь и насыщенность выше, и разброс по светлоте
- * больше. «Первозвук» тут прямо золотой, а не бронзовый: это вершина
- * лестницы, и в коллекции она должна светиться.
- *
- * Ключи те же, что у LEVEL_THEMES. См. components/FolderIcon.tsx.
- */
-export const LEVEL_FOLDER_BODY: Record<string, readonly [string, string]> = {
-  silence: ['#3E4657', '#232833'],       // графит, цвета почти нет
-  rustle: ['#35486E', '#1C2740'],        // сталь с синевой
-  echo: ['#24479E', '#12224F'],          // глубокий синий
-  wave: ['#2F62E0', '#16307A'],          // яркий кобальт
-  resonance: ['#6A45C8', '#331F66'],
-  overtone: ['#A63FAE', '#4E1B57'],
-  amplitude: ['#C93A66', '#5F1730'],
-  frequency: ['#E2622A', '#6E2410'],
-  tuning_fork: ['#C98A2E', '#5E3D0F'],   // бронзовое золото
-  primal_sound: ['#FFD24F', '#B8801C'],  // яркое золото — предел лестницы
-};
-
-/** Градиент корпуса папки по ключу ступени. Неизвестный ключ → «Эхо». */
-export function levelFolderBody(key: string): readonly [string, string] {
-  return LEVEL_FOLDER_BODY[key] ?? LEVEL_FOLDER_BODY.echo;
 }

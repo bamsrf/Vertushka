@@ -5,10 +5,11 @@
  * системных типов: событие «ты взял новую ступень» выглядело так же, как
  * «пластинка подешевела». Иконка даёт ему собственный образ.
  *
- * Образ: пластинка (чёрный диск с канавками — базовая форма всей айдентики),
- * сквозь центр которой вверх уходит стрелка. Цвет стрелки, канавок и обода —
- * цвет взятой ступени (`LEVEL_ICON_ACCENT`), заливка диска — `discBg` той же
- * ступени. То есть иконка «Первозвука» и hero «Первозвука» — одна вещь.
+ * Образ: пластинка с канавками — базовая форма всей айдентики, — сквозь центр
+ * которой вверх уходит стрелка. Диск залит тонами взятой ступени с ленты
+ * `LEVEL_PALETTE` и светлеет вместе с папками; стрелка, канавки и обод — её
+ * контрастный `ink`. То есть иконка «Первозвука», его папки и его плашка в
+ * hero ачивок — одна вещь.
  *
  * Анимация (`animated`): стрелка отрывается вверх, от обода расходятся две
  * волны — визуальный эквивалент того, что и означает уровень. Играет ровно
@@ -28,7 +29,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, Easing, StyleSheet, View } from 'react-native';
 import Svg, { Circle, Defs, Path, RadialGradient, Stop } from 'react-native-svg';
 
-import { levelTheme, levelIconAccent } from './achievement-mockup/levelTheme';
+import { levelPalette } from './achievement-mockup/levelTheme';
 import { LEVELS } from '../lib/archetype';
 import { useAmbientAnimationsEnabled } from '../lib/useAnimationGate';
 
@@ -55,8 +56,11 @@ interface LevelUpIconProps {
 }
 
 export function LevelUpIcon({ level, size = 40, animated = false }: LevelUpIconProps) {
-  const accent = levelIconAccent(level);
-  const discBg = levelTheme(level).discBg;
+  // Диск светлеет вместе с папкой, а стрелка и обводка — контрастный `ink`
+  // ступени. Обводка тут не украшение: без неё бледный «Первозвук» растворялся
+  // бы в светлой ленте уведомлений.
+  const p = levelPalette(level);
+  const accent = p.ink;
   // Reduce Motion и уход в фон гасят движение независимо от желания вызывающего.
   const motionAllowed = useAmbientAnimationsEnabled();
   const moving = animated && motionAllowed;
@@ -67,8 +71,8 @@ export function LevelUpIcon({ level, size = 40, animated = false }: LevelUpIconP
     const idx = LEVELS.findIndex((l) => l.key === level);
     return idx < 0 ? 0 : idx / (LEVELS.length - 1);
   }, [level]);
-  const grooveOpacity = 0.12 + depth * 0.16;
-  const rimOpacity = 0.4 + depth * 0.35;
+  const grooveOpacity = 0.13 + depth * 0.06;
+  const rimOpacity = 0.5;
 
   const gradientId = useMemo(() => `levelup-${level}-${(gradientSeq += 1)}`, [level]);
 
@@ -85,8 +89,8 @@ export function LevelUpIcon({ level, size = 40, animated = false }: LevelUpIconP
       >
         <Defs>
           <RadialGradient id={gradientId} cx="38%" cy="30%" r="78%">
-            <Stop offset="0" stopColor={discBg} />
-            <Stop offset="1" stopColor="#05070F" />
+            <Stop offset="0" stopColor={p.light} />
+            <Stop offset="1" stopColor={p.deep} />
           </RadialGradient>
         </Defs>
         <Circle
