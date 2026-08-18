@@ -1,4 +1,9 @@
-"""Шифрование Discogs oauth_token_secret для хранения в БД (Fernet)."""
+"""Шифрование сторонних токенов перед записью в БД (Fernet).
+
+Общий модуль: Discogs oauth_token_secret, Apple refresh_token. Переменная
+окружения исторически называется DISCOGS_TOKEN_ENCRYPTION_KEY — переименовывать
+её нельзя, иначе прод перестанет читать уже сохранённые Discogs-секреты.
+"""
 import base64
 import hashlib
 from functools import lru_cache

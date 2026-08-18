@@ -13,7 +13,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.database import get_db
+from app.services import apple_auth
 from app.services.blocking import is_user_blocked
+from app.services.secret_crypto import decrypt_secret
 from app.services.push import absolute_media_url
 from app.models.user import User
 from app.models.follow import Follow
@@ -422,12 +424,47 @@ async def update_current_user(
     return current_user
 
 
+async def _revoke_apple_access(user: User) -> None:
+    """Отзывает Apple refresh_token и вычищает его из БД.
+
+    Мягко: неудача Apple не должна мешать пользователю удалить аккаунт —
+    TN3194 прямо разрешает завершить удаление и без успешного отзыва.
+
+    При неудаче токен оставляем: purge-джоба через 30 дней попробует ещё раз,
+    а потом снесёт строку целиком. Обнулить его здесь означало бы навсегда
+    потерять единственную возможность отозвать доступ.
+    """
+    if not user.apple_refresh_token:
+        return
+
+    token = decrypt_secret(user.apple_refresh_token)
+    if token is None:
+        # Ключ шифрования сменился — расшифровать нечем, отзывать нечего.
+        user.apple_refresh_token = None
+        return
+
+    revoked = await apple_auth.revoke_refresh_token(token)
+    logger.info(
+        "apple_token_revoke",
+        extra={"user_id": str(user.id), "revoked": revoked},
+    )
+    if revoked:
+        user.apple_refresh_token = None
+
+
 @router.delete("/me", status_code=status.HTTP_200_OK)
 async def delete_my_account(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
     """Soft delete аккаунта текущего пользователя (30 дней на восстановление)"""
+    # Sign in with Apple: Apple требует отозвать выданный токен в момент, когда
+    # пользователь удаляет аккаунт (Guideline 5.1.1(v)). Отзываем здесь, а не в
+    # purge-джобе через 30 дней: пользователь нажал «удалить» сейчас, и связь с
+    # Apple ID должна рваться сейчас. Если он вернётся в окно восстановления,
+    # повторный вход через Apple выдаст новый токен и перезапишет поле.
+    await _revoke_apple_access(current_user)
+
     current_user.is_active = False
     current_user.deleted_at = datetime.utcnow()
     current_user.scheduled_purge_at = datetime.utcnow() + timedelta(days=30)
