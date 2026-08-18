@@ -338,6 +338,8 @@ class CoverStorageService:
         """
         from app.models.record import Record  # отложенный импорт
         from app.models.store_listing import StoreListing
+        from app.models.collection import CollectionItem
+        from app.models.wishlist import WishlistItem
 
         current_mb = self._get_cache_size_mb()
         if current_mb <= target_size_mb:
@@ -361,16 +363,45 @@ class CoverStorageService:
             .exists()
         )
 
-        # Выбираем старейшие записи с локальными обложками (кроме активных).
+        # В чьей-то коллекции или вишлисте — не трогаем. Это личная библиотека
+        # человека и самый посещаемый экран приложения; терять там обложки
+        # недопустимо, сколько бы места ни требовалось.
+        in_library = (
+            select(CollectionItem.id)
+            .where(CollectionItem.record_id == Record.id)
+            .exists()
+        ) | (
+            select(WishlistItem.id)
+            .where(WishlistItem.record_id == Record.id)
+            .exists()
+        )
+
+        # Выбираем старейшие записи с локальными обложками.
+        #
         # ⚠️ НИКОГДА не эвиктим source='user' — это загруженное юзером фото,
-        # НЕВОССТАНОВИМО (не тянется из Discogs/Deezer как зеркала). discogs/store
-        # обложки эвиктить можно — само-лечатся из cover_image_url при next view.
+        # НЕВОССТАНОВИМО.
+        #
+        # ⚠️ И НИКОГДА — записи с подписанной ссылкой Discogs. Здесь была
+        # ошибка в допущении: «discogs/store обложки эвиктить можно, само-лечатся
+        # из cover_image_url при next view». Для Discogs это неверно — их URL
+        # подписаны и протухают, поэтому после эвикции self-heal получает 403,
+        # и плитка остаётся пустой НАВСЕГДА.
+        #
+        # Инцидент 18.08.2026: в коллекции из 172 позиций 63 (37%) имели blurhash
+        # при отсутствующем файле — то есть обложка была скачана, посчитана и
+        # затем удалена. У всех 63 cover_image_url вёл на discogs.com. Юзер видел
+        # размытые плитки и думал, что дело в интернете.
+        #
+        # Правило теперь простое: выселяем только то, что честно вернётся само.
         result = await db.execute(
             select(Record.id, Record.discogs_id, Record.cover_local_path)
             .where(
                 Record.cover_local_path.isnot(None),
                 ~active_in_stock,
+                ~in_library,
                 Record.source.is_distinct_from("user"),
+                Record.cover_image_url.isnot(None),
+                ~Record.cover_image_url.like("%discogs.com%"),
             )
             .order_by(Record.cover_cached_at.asc())
         )
