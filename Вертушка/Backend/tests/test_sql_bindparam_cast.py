@@ -62,3 +62,24 @@ def test_guard_actually_catches_the_broken_form():
     assert not _BAD.search("SELECT discogs_id::text FROM t")
     assert not _BAD.search("https://coverartarchive.org/release/x/front")
     assert not _BAD.search("CAST(:d AS date)")
+
+
+def test_date_cast_params_are_not_strings():
+    """`CAST(:d AS date)` требует объект date, а не строку.
+
+    Второй заход на те же грабли. Сначала было `:d::date` — SQLAlchemy не видел
+    параметр, asyncpg падал на синтаксисе. Замена на `CAST(:d AS date)` починила
+    синтаксис, но принесла новую поломку: asyncpg выводит тип аргумента из каста
+    и на строке '2026-08-18' падает с `'str' object has no attribute 'toordinal'`.
+
+    Метрика при этом не падала — блок обёрнут в try/except — просто `cold_per_dau`
+    молча не считался. Ровно то число, ради которого инструментацию и ставили.
+    """
+    import inspect
+    from app.tasks import cover_coverage_tasks as t
+
+    src = inspect.getsource(t.report_cover_coverage)
+    assert "CAST(:d AS date)" in src
+    assert "date.fromisoformat(day[\"date\"])" in src, (
+        "в CAST(:d AS date) обязан идти объект date, иначе asyncpg падает"
+    )
