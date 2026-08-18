@@ -143,6 +143,9 @@ export const PriceHistorySheet = forwardRef<PriceHistorySheetRef, Props>(
 
     const pill = data ? STATUS_PILL[data.status] : STATUS_PILL.available;
     const cover = data?.coverUrl ?? null;
+    // buyUrl приходит только когда на бэке нашёлся подходящий in_stock листинг
+    // (для accept_alt — ссылка на принятый аналог). Нет ссылки = купить негде.
+    const canBuy = !!data?.buyUrl;
 
     return (
       <BottomSheetModal
@@ -229,12 +232,19 @@ export const PriceHistorySheet = forwardRef<PriceHistorySheetRef, Props>(
           ) : null}
 
           <View style={styles.btnRow}>
+            {/* Купить можно только если есть живой листинг. Раньше кнопка была
+                активна всегда и на absent-релизе уводила в карточку — обещала
+                магазин там, где его нет. Пользователь не заперт: «Открыть
+                релиз» в шапке никуда не делось. */}
             <TouchableOpacity
-              style={styles.primaryBtn}
+              style={[styles.primaryBtn, !canBuy && styles.primaryBtnOff]}
               activeOpacity={0.9}
+              disabled={!canBuy}
               onPress={() => { sheetRef.current?.dismiss(); data && onOpenStore?.(data); }}
             >
-              <Text style={styles.primaryTxt}>{data?.buyUrl ? 'Заказать в магазине' : 'В магазин'}</Text>
+              <Text style={[styles.primaryTxt, !canBuy && styles.primaryTxtOff]}>
+                {canBuy ? 'Заказать в магазине' : 'Сейчас нет в продаже'}
+              </Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.secondaryBtn} onPress={() => { sheetRef.current?.dismiss(); data && onEditThreshold?.(data); }}>
               <RadarIcon size={16} color={Colors.royalBlue} />
@@ -283,6 +293,8 @@ const styles = StyleSheet.create({
   btnRow: { flexDirection: 'row', gap: 12, marginTop: 22 },
   primaryBtn: { flex: 1, alignItems: 'center', paddingVertical: 17, backgroundColor: Colors.royalBlue, borderRadius: 16 },
   primaryTxt: { ...Typography.button, color: '#fff' },
+  primaryBtnOff: { backgroundColor: Colors.surfaceHover },
+  primaryTxtOff: { color: Colors.textMuted },
   secondaryBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 17, paddingHorizontal: 20, backgroundColor: '#E8EBFA', borderRadius: 16 },
   secondaryTxt: { ...Typography.button, color: Colors.royalBlue },
 });
