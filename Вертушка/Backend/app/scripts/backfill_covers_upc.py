@@ -71,6 +71,21 @@ _RUN_BUDGET = 240
 # в очереди — следующий запуск возьмёт их снова.
 _QUOTA_BACKOFF = 60
 
+# Сторож нулевого выхлопа: столько подряд промахов — и прогон прерывается с
+# алертом. Защищает не от потери элементов (от неё защищает волна), а от
+# СИСТЕМАТИЧЕСКИ НЕВЕРНОГО ЗАПРОСА, который выглядит как честный промах.
+#
+# Инцидент 18.08.2026: Deezer не нормализует ведущий ноль, обход шёл по
+# возрастанию штрихкода и залип в блоках Universal (`06025x`), где работает
+# только 12-значная форма. 1775 запросов подряд с нулём попаданий, три часа,
+# все помечены пройденными — и ни одного сигнала.
+#
+# Порог выбран так, чтобы не ловить честно пустые блоки: при базовом хит-рейте
+# 15% вероятность 500 промахов подряд неотличима от нуля, при пессимистичных
+# 3% — порядка 1e-7. Ложное срабатывание стоит остановленного прогона, который
+# человек перезапустит; пропущенный систематический баг стоит очереди.
+_ZERO_STREAK_ABORT = 500
+
 
 async def _ensure_infra() -> None:
     async with async_session_maker() as s:
@@ -179,8 +194,9 @@ async def _persist(results: list[tuple[str, str | None]]) -> int:
 async def run(batch: int = 200, max_requests: int | None = None,
               budget_s: float = _RUN_BUDGET) -> dict:
     """Один проход: волнами по batch штрихкодов, пока не выйдет бюджет."""
-    stats = {"asked": 0, "hits": 0, "releases": 0, "quota": False}
+    stats = {"asked": 0, "hits": 0, "releases": 0, "quota": False, "zero_streak": False}
     started = time.monotonic()
+    streak = 0  # промахов подряд, через границы волн
 
     if not await _build_worklist():
         logger.info("UPC worklist пуст — нечего делать")
@@ -207,6 +223,29 @@ async def run(batch: int = 200, max_requests: int | None = None,
             stats["releases"] += await _persist(results)
             stats["asked"] += len(results)
             stats["hits"] += sum(1 for _, url in results if url)
+        # Считаем серию по порядку внутри волны: важна именно длина цепочки
+        # промахов, а не их доля.
+        for _, url in results:
+            streak = 0 if url else streak + 1
+        if streak >= _ZERO_STREAK_ABORT:
+            stats["zero_streak"] = True
+            logger.error(
+                "upc: %d промахов подряд — прерываем прогон. Похоже на "
+                "систематически неверную форму запроса, а не на пустой блок; "
+                "последний штрихкод %s", streak, results[-1][0] if results else "?",
+            )
+            from app.services import alerts
+            alerts.fire_and_forget(
+                key="cover_upc_zero_yield",
+                title=f"UPC-обход: {streak} промахов подряд",
+                body=(
+                    f"Прогон остановлен. Обработано {stats['asked']} за прогон, "
+                    f"попаданий {stats['hits']}. Проверить форму запроса к Deezer "
+                    f"на штрихкодах около {results[-1][0] if results else '?'} — "
+                    f"так выглядел баг с ведущим нулём."
+                ),
+            )
+            break
         if quota:
             stats["quota"] = True
             break

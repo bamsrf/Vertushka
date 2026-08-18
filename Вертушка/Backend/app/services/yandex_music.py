@@ -154,6 +154,16 @@ async def _throttle() -> None:
         _last = time.monotonic()
 
 
+class YandexThrottled(RuntimeError):
+    """Yandex не ответил по существу: троттлинг (429), бан по IP (403) или 5xx.
+
+    Отдельный тип, а не None, потому что bulk-обход по этому различию решает,
+    закрывать ли запись как проверенную. Живые вызовы (лестница обложек,
+    enrich-джобы, listing_matcher) уже обёрнуты в try/except и получат обычный
+    промах — поведение для них не меняется.
+    """
+
+
 def _album_year(item: dict) -> int | None:
     y = item.get("year")
     try:
@@ -185,8 +195,15 @@ async def _best_album_match(
         await _throttle()
         async with httpx.AsyncClient(timeout=15.0) as client:
             resp = await client.get(_SEARCH_URL, params=params, headers={"User-Agent": _UA})
-            resp.raise_for_status()
-            data = resp.json()
+        # API неофициальный: на превышение темпа он отвечает 429, а на бан по IP
+        # — 403. И то и другое означает «не спросили», а НЕ «обложки нет».
+        # Для bulk-обхода разница решающая: тот метит записи пройденными, и один
+        # бан закрыл бы навсегда всю оставшуюся очередь (сотни тысяч записей),
+        # ни разу их не спросив. Тот же класс потери, что был у Deezer с квотой.
+        if resp.status_code in (403, 429) or resp.status_code >= 500:
+            raise YandexThrottled(f"HTTP {resp.status_code} на поиске {artist} — {title}")
+        resp.raise_for_status()
+        data = resp.json()
     except (httpx.HTTPError, ValueError):
         logger.debug("Yandex lookup failed for %s — %s", artist, title, exc_info=True)
         return None

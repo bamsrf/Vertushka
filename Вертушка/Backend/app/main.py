@@ -198,6 +198,25 @@ async def lifespan(app: FastAPI):
             scheduler.add_job(run_backfill_upc, 'interval', minutes=2,
                               id='cover_backfill_upc', max_instances=1, coalesce=True)
 
+            # Обратный поток обложек из маркета в дамп: магазины фотографируют
+            # свой товар, но ссылка дальше витрины не шла. Данные уже в нашей
+            # базе — ноль внешних запросов на поиск, только замер картинки.
+            # Раз в 6 часов: маркет растёт медленно, очередь мала (8.2 тыс).
+            from app.scripts.backfill_covers_from_market import (
+                run_scheduled_batch as run_backfill_market,
+            )
+            scheduler.add_job(run_backfill_market, 'interval', hours=6,
+                              id='cover_backfill_market', max_instances=1, coalesce=True)
+
+            # Постсоветский винил: Deezer → Yandex, ПО РЕЛИЗАМ. 45% этой
+            # популяции не имеет master_id и потому не попадала ни в одну
+            # master-очередь. Гейт — /app/uploads/.backfill_ru_enabled.
+            from app.scripts.backfill_covers_ru import (
+                run_scheduled_batch as run_backfill_ru,
+            )
+            scheduler.add_job(run_backfill_ru, 'interval', minutes=2,
+                              id='cover_backfill_ru', max_instances=1, coalesce=True)
+
             # Доп. источники обложек для хвоста, не покрытого Deezer: iTunes
             # (западный латинский остаток) и Yandex (русский/советский + транслит
             # слой, которого нет в Discogs/Deezer). Каждый — своя worklist-таблица

@@ -146,6 +146,38 @@ async def cover_by_upc(upc: str) -> DeezerCover | None:
     if not _UPC_RE.match(digits):
         return None
 
+    for form in _upc_forms(digits):
+        cover = await _ask_upc(form)
+        if cover:
+            return cover
+    return None
+
+
+def _upc_forms(digits: str) -> list[str]:
+    """Формы штрихкода в порядке проверки: как есть, затем без ведущих нулей.
+
+    Deezer НЕ нормализует ведущий ноль. Discogs хранит UPC-A в 13-значном
+    EAN-виде (`0602537191154`), а Deezer индексирует канонические 12 цифр
+    (`602537191154`) — и на первую форму отвечает `{"error": "no data"}`,
+    неотличимо от честного промаха.
+
+    Цена ошибки была наглядной: обход шёл по возрастанию штрихкода и на 13 часов
+    залип в блоках Universal (`06025x`), где 13-значная форма не работает вообще.
+    1775 запросов подряд с нулём попаданий, и все помечены пройденными.
+
+    Глобально снятие нуля добавляет немного (замер на случайной выборке 40:
+    17.5% находятся как есть, +2.5 п.п. даёт снятие), но внутри таких блоков
+    спасает большинство — 3 из 5 в точечной проверке.
+    """
+    forms = [digits]
+    stripped = digits.lstrip("0")
+    if stripped and stripped != digits and len(stripped) >= 8:
+        forms.append(stripped)
+    return forms
+
+
+async def _ask_upc(digits: str) -> DeezerCover | None:
+    """Один запрос к Deezer по конкретной форме кода."""
     try:
         await _throttle()
         async with httpx.AsyncClient(timeout=15.0) as client:
