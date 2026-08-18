@@ -34,6 +34,7 @@ import { FolderPickerModal } from '../../components/FolderPickerModal';
 import { Button, Card, ActionSheet, ActionSheetAction } from '../../components/ui';
 import { api, getMasterCoverUrl, getPlaceholderCoverUrl } from '../../lib/api';
 import { analytics } from '../../lib/analytics';
+import { getForcedCoachMark } from '../../lib/coachMarks';
 import { countSpin } from '../../lib/eggTracker';
 import { cleanArtistName } from '../../lib/format';
 import { useCollectionStore, useAuthStore } from '../../lib/store';
@@ -181,7 +182,10 @@ export default function RecordDetailScreen() {
   // которые дорисуются через секунду.
   const tourReady =
     Boolean(record) && historyResolved && (!offersRequested || offersCount !== null);
-  const tour = useRecordTour(tourKeys, tourReady);
+  // Ручной запрос из «Как это работает» тур глушит: человек пришёл смотреть
+  // одну конкретную подсказку, и разбор всей карточки поверх неё — это ответ
+  // не на его вопрос.
+  const tour = useRecordTour(tourKeys, tourReady && !getForcedCoachMark());
 
   // Подсказка про Маркет разблокируется там, где блок офферов вообще
   // отрисуется, — иначе объясняли бы витрину рядом с пустотой. Пока идёт тур,

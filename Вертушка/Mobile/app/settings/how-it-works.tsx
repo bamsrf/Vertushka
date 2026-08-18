@@ -32,6 +32,7 @@ import {
   resetCoachMarks,
 } from '../../lib/coachMarks';
 import { restoreFirstSteps, useFirstStepsDismissed } from '../../lib/onboardingProgress';
+import { pickDemoRecordId } from '../../lib/onboardingDemoRecord';
 import { resetRecordTour, useRecordTourDone } from '../../lib/recordTour';
 import { BorderRadius, Colors, Shadows, Spacing, Typography } from '../../constants/theme';
 
@@ -81,6 +82,17 @@ export default function HowItWorksScreen() {
     const meta = getCoachMark(key);
     if (!meta.goTo) {
       toast.info('Подсказка вернётся, когда фича снова будет под рукой');
+      return;
+    }
+
+    // Подсказки карточки релиза объясняют то, что видно только внутри неё.
+    // Ищем подходящую пластинку и открываем её сами: «открой любую с ярлыком»
+    // перекладывало поиск примера на человека, который как раз пришёл
+    // посмотреть, как это выглядит.
+    const demoId = pickDemoRecordId(key);
+    if (demoId) {
+      if (router.canDismiss()) router.dismissAll();
+      router.navigate(`/record/${demoId}` as never);
       return;
     }
 

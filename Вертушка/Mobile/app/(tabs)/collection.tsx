@@ -24,7 +24,7 @@ import { useCollectionStore, useAuthStore } from '../../lib/store';
 import { FirstStepsCard } from '../../components/onboarding/FirstStepsCard';
 import { CoachTip } from '../../components/onboarding/CoachTip';
 import { CoachPulse } from '../../components/onboarding/CoachPulse';
-import { useCoachSpotlight } from '../../lib/coachSpotlight';
+import { setCoachSpotlight, useCoachSpotlight } from '../../lib/coachSpotlight';
 import { PinchHint } from '../../components/onboarding/PinchHint';
 import { useCoachMark } from '../../lib/useCoachMark';
 import { ms } from '../../lib/responsive';
@@ -861,7 +861,16 @@ export default function CollectionScreen() {
             meta={giftsTip.meta}
             analyticsKey={giftsTip.meta.key}
             onDismiss={giftsTip.dismiss}
-            action={{ label: 'Поделиться профилем', onPress: () => router.push('/profile') }}
+            action={{
+              label: 'Поделиться профилем',
+              onPress: () => {
+                // Зажигаем саму кнопку «Поделиться» до перехода: без этого
+                // действие открывало профиль, и человек оставался наедине с
+                // экраном, где ничего не подсказывает, куда нажимать.
+                setCoachSpotlight('profile-share', { ttlMs: 12000 });
+                router.push('/profile');
+              },
+            }}
           />
         )}
         {multiSelectTip.visible && (

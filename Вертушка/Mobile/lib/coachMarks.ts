@@ -246,7 +246,11 @@ export const COACH_MARKS: CoachMarkMeta[] = [
   },
   {
     key: 'gifts-incoming',
-    goTo: { route: '/profile' },
+    // Не '/profile': карточка этой подсказки живёт в шапке вишлиста, а в
+    // профиле её рисовать некому — «Показать» открывало профиль, где ничего
+    // не происходило. Ведём туда, где подсказка есть; кнопку в профиле она
+    // подсветит сама, когда человек нажмёт её действие.
+    goTo: { route: '/(tabs)/collection', tab: 'wishlist' },
     priority: 40,
     title: 'Из вишлиста можно дарить',
     body: 'Скинь друзьям ссылку на профиль — они забронируют пластинку из вишлиста. Что именно выбрали, ты не узнаешь: сюрприз остаётся сюрпризом.',
@@ -391,6 +395,9 @@ export function forceCoachMark(key: CoachMarkKey) {
 }
 
 export const isForcedCoachMark = (key: CoachMarkKey) => forcedKey === key;
+
+/** Есть ли вообще ждущий ручной запрос — и какой. */
+export const getForcedCoachMark = () => forcedKey;
 
 /** Забрать ручной запрос: показываем его ровно один раз. */
 export function consumeForcedCoachMark(key: CoachMarkKey) {
