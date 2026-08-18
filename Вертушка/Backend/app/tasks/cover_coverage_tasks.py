@@ -29,7 +29,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 from sqlalchemy import text
 
@@ -212,15 +212,19 @@ async def report_cover_coverage() -> dict:
         demand = await demand_snapshot(days=7)
         async with async_session_maker() as db:
             for day in demand["days"]:
+                # Два подвоха в одном запросе, оба уже стоили нам метрики.
+                # 1) `:d::date` SQLAlchemy не распознаёт как параметр — отдаёт
+                #    драйверу текст с двоеточиями, asyncpg падает на синтаксисе.
+                # 2) `CAST(:d AS date)` со СТРОКОЙ тоже падает: asyncpg выводит
+                #    тип из каста и требует объект date, а не '2026-08-18'.
+                # Поэтому и явный CAST, и настоящий date на входе.
                 dau = (await db.execute(
-                    # CAST, а НЕ `:d::date`: SQLAlchemy не распознаёт параметр
-                    # перед `::` и отдаёт драйверу текст с двоеточиями как есть.
                     text(
                         "SELECT count(*) FROM users "
                         "WHERE last_seen_at >= CAST(:d AS date) "
                         "  AND last_seen_at < CAST(:d AS date) + 1"
                     ),
-                    {"d": day["date"]},
+                    {"d": date.fromisoformat(day["date"])},
                 )).scalar() or 0
                 day["dau"] = int(dau)
                 day["cold_per_dau"] = round(day["cold_unique"] / dau, 1) if dau else None
