@@ -27,3 +27,6 @@ Backend/nginx/.active_color
 # Supabase CLI local state (не коммитить)
 supabase/.temp/
 supabase/.branches/
+
+# Пароль read-only роли metabase_ro (локальный Metabase поверх прод-БД)
+Backend/.env.metabase
