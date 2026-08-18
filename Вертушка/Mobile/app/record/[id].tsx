@@ -187,7 +187,7 @@ export default function RecordDetailScreen() {
   // отрисуется, — иначе объясняли бы витрину рядом с пустотой. Пока идёт тур,
   // она молчит: две карточки-объяснения на одном экране спорят друг с другом,
   // и обе читаются хуже.
-  const marketTip = useCoachMark('market', hasOffers && !tour.active);
+  const marketTip = useCoachMark('market', true, hasOffers && !tour.active);
 
   // Подсказки про свойства самой пластинки. Условие у каждой — факт отрисовки
   // соответствующего блока, поэтому они срабатывают на первом релизе, где это
@@ -197,10 +197,14 @@ export default function RecordDetailScreen() {
   // одновременно спорят друг с другом.
   const hasVinylColor = Boolean(record?.display_vinyl_color ?? record?.vinyl_color_raw);
   const rarityTiers = record ? allRarityTiers(record) : [];
-  const vinylColorTip = useCoachMark('vinyl-color', hasVinylColor && !tour.active);
-  const rarityTip = useCoachMark('rarity-tiers', rarityTiers.length > 0 && !tour.active);
-  const offerPriceTip = useCoachMark('offer-price', hasOffers && !tour.active);
-  const versionsTip = useCoachMark('other-versions', hasVersions && !tour.active);
+  //
+  // Здесь условие целиком в третьем аргументе: это не порог опыта, а факт
+  // наличия блока на странице. Ручной показ из настроек его тоже обязан
+  // соблюдать — иначе подсветит пустое место.
+  const vinylColorTip = useCoachMark('vinyl-color', true, hasVinylColor && !tour.active);
+  const rarityTip = useCoachMark('rarity-tiers', true, rarityTiers.length > 0 && !tour.active);
+  const offerPriceTip = useCoachMark('offer-price', true, hasOffers && !tour.active);
+  const versionsTip = useCoachMark('other-versions', true, hasVersions && !tour.active);
 
   /**
    * Подсказка тура встаёт вплотную НАД блоком, который объясняет, поэтому
