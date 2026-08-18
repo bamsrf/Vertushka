@@ -111,6 +111,9 @@ Safeguards in place:
 ACCOUNT DELETION (5.1.1(v))
 Profile → "Удалить аккаунт" (Delete account). Soft-delete with a clearly
 communicated 30-day restore window, then permanent deletion.
+For accounts created with Sign in with Apple, deleting the account also
+revokes the Apple token via the Sign in with Apple REST API
+(appleid.apple.com/auth/revoke).
 
 NOTES
 - The app UI is in Russian (primary market: Russia/CIS).
@@ -122,14 +125,20 @@ NOTES
   Transparency is not required. Crash reports go to our self-hosted tracker.
 ```
 
-> **Проверено в коде 2026-08-01 — две формулировки были неверны:**
-> - «Google Sign-In is offered» — кнопка выключена наглухо
->   (`SocialAuthButtons.tsx`: `showGoogle = false`). Реально предлагаются
->   Apple и Discogs. Заявлять несуществующий способ входа — путать ревьюера
->   на ровном месте.
-> - «No third-party analytics active» — станет ложью в тот момент, когда
->   будет прописан ключ Amplitude (§4.1 плана). Формулировка исправлена
->   заранее; если решишь релизиться без аналитики — верни прежний текст.
+> **Сверено с кодом 2026-08-18:**
+> - **Способы входа — email+пароль, Apple, Discogs.** Google-вход выключен и с
+>   2026-08-18 не собирается в бинарь вовсе: нативная часть исключена из
+>   автолинковки (`Mobile/react-native.config.js` + `expo.autolinking.exclude`),
+>   плагин убран из `app.json`. JS-код и бэкенд-эндпоинт `/auth/google` живы,
+>   рубильник — `GOOGLE_SIGN_IN_ENABLED` в `SocialAuthButtons.tsx`. Заявлять
+>   Google в notes нельзя, пока рубильник не вернут в `true`.
+> - **Аналитика Amplitude активна** — формулировка в notes верна и должна
+>   остаться. Если релизиться без ключа, абзац про аналитику убрать.
+> - **Отзыв Apple-токена реализован** (`Backend/app/services/apple_auth.py`).
+>   ⚠️ Работает только когда в прод-окружении заданы `APPLE_CLIENT_ID`,
+>   `APPLE_TEAM_ID`, `APPLE_KEY_ID` и `APPLE_PRIVATE_KEY` (содержимое .p8).
+>   Без ключа код молча деградирует в no-op — то есть в notes будет написано
+>   про отзыв, а отзыва не будет. **Проверить перед сабмитом.**
 
 ## 3. Метаданные листинга (primary locale: ru)
 
@@ -194,30 +203,45 @@ Release data by Discogs. The app is free.
 
 Data collection: **Yes**. Tracking: **No** (ATT не нужен).
 
-| Data type | Collected | Linked to identity | Tracking | Purpose |
+> ⚠️ **Пересобрано 2026-08-18 по факту кода.** Прежняя таблица (5 типов, Crash Data
+> «не связаны с личностью», аналитики нет) описывала состояние до включения
+> Amplitude и до `Sentry.setUser`. Ответы ниже **дословно соответствуют**
+> `NSPrivacyCollectedDataTypes` в [Mobile/app.json](../../Mobile/app.json) — это
+> и есть смысл раздела: анкета в ASC и манифест внутри бинаря обязаны совпадать,
+> расхождение Apple ловит и заворачивает.
+
+| Раздел ASC | Data type | Linked to identity | Tracking | Purpose |
 |---|---|---|---|---|
-| Contact Info → Email Address | Yes | Yes | No | App Functionality |
-| User Content → Photos or Videos | Yes | Yes | No | App Functionality |
-| User Content → Other User Content (записи, сообщения, профиль) | Yes | Yes | No | App Functionality |
-| Identifiers → User ID | Yes | Yes | No | App Functionality |
-| Diagnostics → Crash Data | Yes | **No** (Sentry.setUser не вызывается — проверено 2026-07-02) | No | App Functionality |
+| Contact Info | Name | Yes | No | App Functionality |
+| Contact Info | Email Address | Yes | No | App Functionality |
+| User Content | Photos or Videos | Yes | No | App Functionality |
+| User Content | Emails or Text Messages (личные сообщения) | Yes | No | App Functionality |
+| User Content | Other User Content (записи, профиль) | Yes | No | App Functionality |
+| Identifiers | User ID | Yes | No | App Functionality |
+| Identifiers | Device ID | Yes | No | **Analytics** |
+| Usage Data | Product Interaction | Yes | No | **Analytics** |
+| Diagnostics | Crash Data | **Yes** | No | App Functionality |
+| Diagnostics | Performance Data | Yes | No | App Functionality |
 
 Не собираем: точную геолокацию, контакты, историю поиска вне аппки, финансовые данные,
 health, browsing history, advertising data.
 
-Соответствует `NSPrivacyCollectedDataTypes` в `Mobile/app.json` (добавлено 2026-07-02).
-
-**Сверка с кодом 2026-08-01 (закрывает пункт B5 аудита):**
-- Мобильный Sentry **не вызывает** `setUser` — проверено грепом по `Mobile/`.
-  Значит Crash Data действительно не связаны с личностью на стороне
-  приложения, ответ в таблице верен.
-- Бэкенд вызывает `sentry_sdk.set_user({id, username, email})`
-  ([auth.py](Backend/app/api/auth.py)) — но это серверные ошибки нашего
-  же API в собственном трекере, и email там уже задекларирован как
-  собираемый (Contact Info → Email). Новой категории сбора не возникает,
-  ответы менять не нужно.
-- ⚠️ Если когда-нибудь добавишь `Sentry.setUser` в мобильном коде —
-  Crash Data придётся переключить в **Linked: Yes**. Пометь это на будущее.
+**Почему именно так — сверка с кодом 2026-08-18:**
+- **Analytics-цель у Device ID и Product Interaction** появилась потому, что
+  Amplitude реально включён: [lib/analytics.ts](../../Mobile/lib/analytics.ts),
+  ключ приходит через [app.config.js](../../Mobile/app.config.js). Пока ключа не
+  было, аналитики в декларации справедливо не было — теперь есть.
+- **Tracking всё равно No.** В инициализации Amplitude выключены `ipAddress`,
+  `adid`, `dma`, `carrier`, регион EU, рекламных сетей и брокеров нет. Это
+  продуктовая аналитика внутри приложения, а не трекинг между приложениями,
+  поэтому ATT-промпт не нужен, `NSPrivacyTracking: false` верен.
+- **Crash Data теперь Linked: Yes.** [_layout.tsx](../../Mobile/app/_layout.tsx)
+  вызывает `Sentry.setUser({ id })` — крэши связаны с идентификатором. Старая
+  формулировка «setUser не вызывается» устарела и была бы прямой ложью в анкете.
+- **Бэкенд шлёт в Sentry `{id, username}` без email** ([auth.py](../../Backend/app/api/auth.py))
+  — раньше в этом разделе было написано, что уходит и email. Не уходит.
+- Из поиска в аналитику уходит только длина запроса и число результатов, сам
+  текст остаётся на устройстве — поэтому Search History не декларируется.
 
 ## 4a. Content Rights (ASC → App Review Information)
 
@@ -263,6 +287,13 @@ catalog number) and cover images.
 новые вопросы не отвечены, App Store Connect **не даст отправить сборку**.
 Это не «сделать перед сабмитом», это «сделать до того, как жать Submit» —
 проверить в ASC → App Information прямо сейчас, до сборки.
+
+⚠️ **Второй дедлайн, отдельный от первого.** Вопросы именно про **social media**
+Apple добавила в анкету 09.07.2026, и **с сентября 2026 ответы на них обязательны**
+при сабмите новых приложений и апдейтов. Наш первый сабмит попадает в это окно:
+поле не «желательно заполнить», без него не отправить. Побочные следствия ответа
+`Present` — дескриптор **Social Media** на продуктовой странице и попадание в
+категорию Time Allowance «Social Media» в iOS 27+.
 
 ### 5.2. Как устроена анкета — полная карта
 
@@ -402,11 +433,56 @@ Apple разрешает вручную поднять рейтинг выше �
 насчитала анкета, имеет смысл только если этого требует собственная политика
 продукта.
 
+### 5.7. Держать согласованным с Terms
+
+В [terms.tsx](../../Mobile/app/legal/terms.tsx) и на `/terms` записано «не младше
+13 лет, до 18 — с согласия родителя»: строка добавлена вместе с этим разделом,
+раньше минимального возраста в условиях не было вовсе. Если по §5.5 решишь
+поднять рейтинг до 16+, эту строку надо поднять следом — иначе документы
+противоречат витрине, а это ровно тот тип расхождения, который ревьюер замечает.
+
 ## 6. Прочее в ASC
 
 - [ ] Категория: **Music** (secondary: Lifestyle)
-- [ ] Price: Free, все регионы (или RU/CIS + выборочно)
+- [ ] Price: Free
+- [ ] Availability (география) — решение в [ASO Kit §1.4](APPSTORE_ASO_KIT.md); см. блок про trader status ниже
 - [ ] App Review contact: имя, телефон, email
 - [ ] Contact for UGC complaints в metadata: support@vinyl-vertushka.store
 - [ ] Скриншоты 6.9" (1320×2868) — 5–8 шт (см. аудит A6)
-- [ ] `Mobile/app.json` → решить `supportsTablet` (аудит A3 — отложено по решению 2026-07-02)
+- [x] `Mobile/app.json` → `supportsTablet: false` (решение 2026-07-02, в коде подтверждено)
+
+## 7. Trader status (DSA) — заполняется до сабмита
+
+С февраля 2025 Apple требует декларировать trader status **у всех** аккаунтов,
+независимо от географии распространения. Для приложений, доступных в ЕС,
+контактные данные трейдера (адрес, телефон, email) **публикуются на витрине**
+и должны быть верифицированы; без этого Apple снимает приложение со всех 27
+сторфронтов ЕС — автоматически, даже если оно уже опубликовано и ничего в нём
+не менялось.
+
+**Наш случай:** публикуемся через аккаунт разработчика в **Бразилии**
+(подтверждён, подписка оплачена на год). Значит:
+
+- [ ] Декларацию заполняет владелец аккаунта — данными бразильского
+      юрлица/физлица, не российскими. Наши данные тут не подходят вообще.
+- [ ] **Решить, включать ли ЕС в Availability.** Если да — контакты владельца
+      аккаунта станут публичными на странице приложения. Для физлица это
+      публикация домашнего адреса и телефона; для юрлица вопрос снимается.
+      Если ЕС не нужен на 1.0 — исключить регион и вернуться к вопросу позже.
+- [ ] Проверить, что верификация trader status **пройдена до** отправки билда:
+      она занимает дни, а не минуты, и упереться в неё в день релиза обидно.
+
+## 8. Ключ Sign in with Apple (.p8) — блокер отзыва токена
+
+Отзыв токена при удалении аккаунта (Guideline 5.1.1(v)) реализован в
+`Backend/app/services/apple_auth.py`, но включается только при заполненном
+окружении:
+
+- [ ] В developer.apple.com → Keys создать ключ с включённым **Sign in with Apple**
+      (делает владелец бразильского аккаунта), скачать `.p8` — он выдаётся **один раз**
+- [ ] Прописать в прод-окружении: `APPLE_CLIENT_ID` (= `com.vertushka.app`),
+      `APPLE_TEAM_ID`, `APPLE_KEY_ID`, `APPLE_PRIVATE_KEY` (содержимое .p8,
+      переносы можно экранировать как `\n`)
+- [ ] Проверить на живом проде: вход через Apple → удаление аккаунта → в логах
+      `apple_token_revoke ... revoked=True`. Пока ключа нет, код тихо ничего не
+      делает — а в review notes уже написано, что отзыв есть.

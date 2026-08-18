@@ -32,7 +32,9 @@ from app.schemas.auth import (
     ForgotPasswordRequest, VerifyResetCodeRequest, ResetPasswordRequest,
     RestoreAccountRequest,
 )
+from app.services import apple_auth
 from app.services.email import send_reset_code_email
+from app.services.secret_crypto import encrypt_secret
 from app.utils.security import (
     hash_password,
     verify_password,
@@ -616,6 +618,16 @@ async def apple_sign_in(
         db.add(ProfileShare(user_id=user.id, is_active=True))
 
         await db.commit()
+
+    # Обмениваем authorization_code на refresh_token и сохраняем: это
+    # единственный момент, когда код вообще существует, а без refresh_token
+    # мы не сможем отозвать доступ при удалении аккаунта (Guideline 5.1.1(v)).
+    # Не вышло — вход всё равно состоится, просто отзывать будет нечего.
+    apple_refresh = await apple_auth.exchange_code_for_refresh_token(
+        data.authorization_code
+    )
+    if apple_refresh:
+        user.apple_refresh_token = encrypt_secret(apple_refresh)
 
     user.last_login_at = datetime.utcnow()
     await db.commit()

@@ -68,6 +68,13 @@ class User(Base):
         nullable=True,
         index=True
     )
+    # Apple refresh_token (шифруется Fernet до записи). Хранится ровно ради
+    # отзыва при удалении аккаунта: Apple требует дёрнуть /auth/revoke, а
+    # authorization_code для обмена прилетает только один раз, при входе.
+    apple_refresh_token: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True
+    )
 
     # Discogs OAuth 1.0a — per-user токен. oauth_token_secret шифруется (Fernet) до записи.
     discogs_username: Mapped[str | None] = mapped_column(

@@ -136,18 +136,17 @@
     },
     "plugins": [
       "expo-router",
-      "expo-secure-store",
-      "expo-apple-authentication",
       [
-        "@react-native-google-signin/google-signin",
+        "expo-secure-store",
         {
-          "iosUrlScheme": "com.googleusercontent.apps.550292169554-quqge5locvvkfkgcv2f9in4ka9spgd4h"
+          "faceIDPermission": false
         }
       ],
+      "expo-apple-authentication",
       [
         "expo-camera",
         {
-          "cameraPermission": "Приложению нужен доступ к камере для сканирования штрихкодов пластинок",
+          "cameraPermission": "Приложению нужен доступ к камере для сканирования штрихкодов и распознавания обложек пластинок",
           "microphonePermission": false
         }
       ],
@@ -156,19 +155,7 @@
       "expo-notifications",
       "expo-font",
       "expo-web-browser",
-      "expo-video",
-      [
-        "expo-build-properties",
-        {
-          "ios": {
-            "extraPods": [
-              { "name": "GoogleUtilities", "modular_headers": true },
-              { "name": "AppCheckCore", "modular_headers": true },
-              { "name": "RecaptchaInterop", "modular_headers": true }
-            ]
-          }
-        }
-      ]
+      "expo-video"
     ],
     "experiments": {
       "typedRoutes": true

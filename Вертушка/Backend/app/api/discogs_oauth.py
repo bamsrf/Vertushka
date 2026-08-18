@@ -20,7 +20,7 @@ from app.models.wishlist import Wishlist
 from app.schemas.auth import Token
 from app.services import discogs_oauth
 from app.services.cache import cache
-from app.services.discogs_crypto import encrypt_secret
+from app.services.secret_crypto import encrypt_secret
 from app.utils.security import create_access_token, create_refresh_token
 
 logger = logging.getLogger(__name__)
