@@ -20,7 +20,9 @@ class ProfileShareSettings(BaseModel):
     show_record_label: bool = True
     show_record_format: bool = True
     show_record_prices: bool = False
-    show_collection_value: bool = False
+    # Тумблера в UI нет — стоимость показывается всегда. Поле остаётся в
+    # ответе ради старых сборок мобилки, которые его читают.
+    show_collection_value: bool = True
 
 
 class ProfileShareUpdate(BaseModel):
@@ -34,7 +36,9 @@ class ProfileShareUpdate(BaseModel):
     show_record_label: bool | None = None
     show_record_format: bool | None = None
     show_record_prices: bool | None = None
-    show_collection_value: bool | None = None
+    # show_collection_value убран намеренно: выключить стоимость больше
+    # нельзя, и молча принимать false от старого клиента — хуже, чем
+    # игнорировать поле (pydantic отбросит лишний ключ).
 
 
 class ProfileHighlightsUpdate(BaseModel):

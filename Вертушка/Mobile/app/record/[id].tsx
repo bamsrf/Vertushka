@@ -32,7 +32,7 @@ import { Header } from '../../components/Header';
 import { GradientText } from '../../components/GradientText';
 import { FolderPickerModal } from '../../components/FolderPickerModal';
 import { Button, Card, ActionSheet, ActionSheetAction } from '../../components/ui';
-import { api, getMasterCoverUrl, getPlaceholderCoverUrl } from '../../lib/api';
+import { api, apiErrorText, getMasterCoverUrl, getPlaceholderCoverUrl } from '../../lib/api';
 import { analytics } from '../../lib/analytics';
 import { countSpin } from '../../lib/eggTracker';
 import { cleanArtistName } from '../../lib/format';
@@ -618,6 +618,39 @@ export default function RecordDetailScreen() {
     );
   };
 
+  // §11: удалить свой ручной релиз. Мягко — бэк ставит moderation_status
+  // 'deleted', запись пропадает из «Моих релизов», профиля и прямой ссылки.
+  // Если её уже добавил себе кто-то ещё, бэк отвечает 409 и релиз остаётся:
+  // с этого момента он общая карточка, а не личный черновик.
+  const handleDeleteUserRecord = () => {
+    setShowActionSheet(false);
+    if (!record) return;
+    Alert.alert(
+      'Удалить релиз?',
+      `"${record.title}" исчезнет из «Моих релизов» и перестанет открываться по ссылке. Отменить будет нельзя.`,
+      [
+        { text: 'Отмена', style: 'cancel' },
+        {
+          text: 'Удалить',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await api.deleteUserRecord(record.id);
+              toast.success('Релиз удалён');
+              router.back();
+            } catch (error: any) {
+              if (error?.response?.status === 409) {
+                Alert.alert('Удалить нельзя', apiErrorText(error));
+                return;
+              }
+              toast.error('Не удалось удалить релиз');
+            }
+          },
+        },
+      ],
+    );
+  };
+
   const getActionSheetActions = (): ActionSheetAction[] => {
     const recordStatus = getRecordStatus();
     const actions: ActionSheetAction[] = [];
@@ -641,6 +674,12 @@ export default function RecordDetailScreen() {
           setShowActionSheet(false);
           router.push(`/record/manual?editId=${record.id}` as any);
         },
+      });
+      actions.push({
+        label: 'Удалить релиз',
+        icon: 'trash-outline',
+        onPress: handleDeleteUserRecord,
+        destructive: true,
       });
     }
 
@@ -673,7 +712,7 @@ export default function RecordDetailScreen() {
         } else {
           // Открыли из основной коллекции — показываем «Удалить из коллекции»
           actions.push({
-            label: 'Удалить',
+            label: 'Удалить из коллекции',
             icon: 'trash-outline',
             onPress: handleRemoveFromCollection,
             destructive: true,

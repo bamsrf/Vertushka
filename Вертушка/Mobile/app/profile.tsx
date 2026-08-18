@@ -62,33 +62,6 @@ function MessagesMenuItem({ onPress }: { onPress: () => void }) {
   );
 }
 
-function FollowRequestsMenuItem({ onPress }: { onPress: () => void }) {
-  const [count, setCount] = useState(0);
-  useEffect(() => {
-    let cancelled = false;
-    api
-      .getIncomingFollowRequestsCount()
-      .then((c) => {
-        if (!cancelled) setCount(c);
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-  return (
-    <TouchableOpacity style={styles.settingsItem} onPress={onPress}>
-      <Icon name="person-add-outline" size={24} color={Colors.royalBlue} />
-      <Text style={styles.settingsItemText}>Запросы на подписку</Text>
-      {count > 0 ? (
-        <View style={styles.followReqBadge}>
-          <Text style={styles.followReqBadgeTxt}>{count > 99 ? '99+' : count}</Text>
-        </View>
-      ) : null}
-    </TouchableOpacity>
-  );
-}
-
 export default function ProfileScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -633,9 +606,6 @@ export default function ProfileScreen() {
             <Text style={styles.settingsItemText}>Уведомления</Text>
           </TouchableOpacity>
 
-          <FollowRequestsMenuItem
-            onPress={() => router.push('/social/follow-requests' as any)}
-          />
 
           <TouchableOpacity
             style={styles.settingsItem}

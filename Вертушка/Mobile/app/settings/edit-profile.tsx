@@ -242,7 +242,11 @@ export default function EditProfileScreen() {
           {/* Публичный профиль */}
           <Text style={[styles.sectionTitle, { marginTop: Spacing.xl }]}>Публичный профиль</Text>
           <View style={styles.section}>
-            <View style={styles.settingRow}>
+            {/* Единственное решение по профилю: публиковать или нет.
+                Стоимость коллекции показывается всегда — отдельный тумблер был
+                лишним шагом, из-за которого hero-карточка у большинства
+                опубликованных профилей стояла пустой. */}
+            <View style={[styles.settingRow, styles.settingRowLast]}>
               <View style={styles.settingInfo}>
                 <Text style={styles.settingLabel}>Активировать профиль</Text>
                 <Text style={styles.settingDescription}>
@@ -252,19 +256,6 @@ export default function EditProfileScreen() {
               <Toggle
                 value={settings?.is_active ?? false}
                 onValueChange={(val) => handleToggle('is_active', val)}
-                disabled={isToggleSaving}
-              />
-            </View>
-            <View style={[styles.settingRow, styles.settingRowLast]}>
-              <View style={styles.settingInfo}>
-                <Text style={styles.settingLabel}>Общая стоимость коллекции</Text>
-                <Text style={styles.settingDescription}>
-                  Видна посетителям профиля
-                </Text>
-              </View>
-              <Toggle
-                value={settings?.show_collection_value ?? false}
-                onValueChange={(val) => handleToggle('show_collection_value', val)}
                 disabled={isToggleSaving}
               />
             </View>
