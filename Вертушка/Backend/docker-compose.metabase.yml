@@ -1,0 +1,69 @@
+# ===========================================
+# Локальный Metabase поверх БОЕВОЙ базы (только чтение).
+#
+# Metabase жил на проде и был снят 2026-05-09 ради ~1.8 ГБ диска. Здесь он
+# крутится на маке, а в боевую БД ходит через SSH-туннель — VPS не тратит ни
+# памяти, ни диска.
+#
+# Почему туннель отдельным контейнером, а не `ssh -L` на хосте: боевой Postgres
+# слушает только 127.0.0.1:5432 на VPS, а контейнер Metabase не видит loopback
+# мака. Пробрасывать порт на 0.0.0.0 хоста нельзя — это открыло бы прод-базу
+# всей Wi-Fi сети. Внутри compose-сети порт наружу не публикуется вовсе.
+#
+# Запуск:  bash scripts/metabase_local.sh up
+# ===========================================
+
+services:
+  # SSH-туннель до боевого Postgres. Внутри сети доступен как db-tunnel:5432.
+  db-tunnel:
+    image: alpine:3.20
+    container_name: vertushka_db_tunnel
+    restart: unless-stopped
+    # ВНИМАНИЕ: в folded-скаляре (>) строки с БОЛЬШИМ отступом YAML сохраняет
+    # буквально, вместе с переводами строк. Из-за этого ssh однажды получил
+    # команду без адреса назначения и падал в usage. Все строки — вровень.
+    command:
+      - sh
+      - -c
+      - >-
+        apk add --no-cache openssh-client >/dev/null 2>&1 &&
+        exec ssh -N -T
+        -o StrictHostKeyChecking=accept-new
+        -o ExitOnForwardFailure=yes
+        -o ServerAliveInterval=30
+        -o ServerAliveCountMax=3
+        -i /key/id_ed25519
+        -L 0.0.0.0:5432:127.0.0.1:5432
+        deploy@85.198.85.12
+    volumes:
+      # Ключ строго read-only. ssh откажется работать, если права шире 600.
+      - ${HOME}/.ssh/id_ed25519:/key/id_ed25519:ro
+    healthcheck:
+      # Туннель жив ⇔ порт принимает соединения. Без этого Metabase стартует
+      # раньше и первым же коннектом ловит connection refused.
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 5432 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  metabase:
+    image: metabase/metabase:v0.50.21
+    container_name: vertushka_metabase
+    restart: unless-stopped
+    environment:
+      # Своё состояние (дашборды, вопросы) — в H2-файле на volume.
+      # В боевую БД Metabase не пишет ничего: он ходит туда под metabase_ro.
+      MB_DB_FILE: /metabase-data/metabase.db
+      JAVA_OPTS: -Xmx1g
+    volumes:
+      - metabase_data:/metabase-data
+    ports:
+      # Только loopback мака: наружу админка с email'ами не смотрит.
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      db-tunnel:
+        condition: service_healthy
+
+volumes:
+  metabase_data:
