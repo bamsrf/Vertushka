@@ -20,6 +20,7 @@ import { useRouter } from 'expo-router';
 import { Icon, Toggle } from '@/components/ui';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Notifications from 'expo-notifications';
+import { registerPushToken } from '../../lib/push';
 import { api } from '../../lib/api';
 import { toast } from '../../lib/toast';
 import { NotificationSettings } from '../../lib/types';
@@ -108,13 +109,31 @@ function pickPreset(
   }
 }
 
+/**
+ * `canAskAgain` важнее сырого статуса: на Android 13+ первый отказ даёт
+ * status='denied', но промпт ещё можно показать. Гнать такого юзера в системные
+ * настройки рано — сначала предлагаем нативный запрос.
+ */
+function permissionState(
+  p: Notifications.NotificationPermissionsStatus,
+): 'granted' | 'ask' | 'blocked' {
+  if (p.status === 'granted') return 'granted';
+  return p.canAskAgain === false ? 'blocked' : 'ask';
+}
+
 export default function NotificationsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const [settings, setSettings] = useState<NotificationSettings | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
-  const [osPermission, setOsPermission] = useState<boolean | null>(null);
+  // Три состояния, а не boolean: 'ask' (промпт ещё не показывали — можно
+  // спросить) и 'blocked' (отказано, промпт больше не поднять — только системные
+  // настройки) требуют РАЗНЫХ действий. Раньше оба схлопывались в false, и
+  // новый юзер получал «Разрешите в настройках устройства» вместо нативного
+  // промпта, а кнопка «Разрешить» не рендерилась никогда: она висела на
+  // `=== null`, а null жил только пока isLoading гейтил весь экран.
+  const [osPermission, setOsPermission] = useState<'granted' | 'ask' | 'blocked' | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -124,7 +143,7 @@ export default function NotificationsScreen() {
           Notifications.getPermissionsAsync(),
         ]);
         setSettings(s);
-        setOsPermission(p.status === 'granted');
+        setOsPermission(permissionState(p));
       } catch {
         toast.error('Не удалось загрузить настройки');
       } finally {
@@ -170,16 +189,12 @@ export default function NotificationsScreen() {
     );
 
   const handleRequestPermission = useCallback(async () => {
-    const { status } = await Notifications.requestPermissionsAsync();
-    if (status === 'granted') {
-      setOsPermission(true);
-      try {
-        const tokenData = await Notifications.getExpoPushTokenAsync();
-        await api.savePushToken(tokenData.data);
-      } catch {/* silently */}
-    } else {
-      setOsPermission(false);
-    }
+    // Через общий registerPushToken: он передаёт projectId в
+    // getExpoPushTokenAsync. Локальный вызов без projectId мог не резолвнуться,
+    // и юзер оставался с выданным разрешением, но без токена — молча.
+    const ok = await registerPushToken({ requestIfNeeded: true });
+    setOsPermission(permissionState(await Notifications.getPermissionsAsync()));
+    if (!ok) toast.error('Не удалось включить уведомления');
   }, []);
 
   if (isLoading) {
@@ -203,7 +218,7 @@ export default function NotificationsScreen() {
       </View>
 
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        {osPermission === false ? (
+        {osPermission === 'blocked' ? (
           <View style={styles.permissionBanner}>
             <View style={styles.permissionIconContainer}>
               <Icon name="notifications-off-outline" size={24} color={Colors.warning} />
@@ -218,7 +233,7 @@ export default function NotificationsScreen() {
           </View>
         ) : null}
 
-        {osPermission === null ? (
+        {osPermission === 'ask' ? (
           <View style={styles.permissionBanner}>
             <View style={styles.permissionIconContainer}>
               <Icon name="notifications-outline" size={24} color={Colors.royalBlue} />

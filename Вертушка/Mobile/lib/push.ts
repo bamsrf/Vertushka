@@ -16,10 +16,14 @@ export async function registerPushToken(
   try {
     if (Platform.OS !== 'ios' && Platform.OS !== 'android') return false;
 
-    const { status: existing } = await Notifications.getPermissionsAsync();
-    let granted = existing === 'granted';
+    const perms = await Notifications.getPermissionsAsync();
+    let granted = perms.status === 'granted';
 
-    if (!granted && requestIfNeeded && existing === 'undetermined') {
+    // Спрашиваем, пока система вообще разрешает спрашивать. Раньше условие было
+    // `status === 'undetermined'`, и Android 13+ выпадал: там первый отказ даёт
+    // status='denied' при canAskAgain=true — то есть промпт ещё можно показать,
+    // а мы уже молча сдавались.
+    if (!granted && requestIfNeeded && perms.canAskAgain !== false) {
       const { status } = await Notifications.requestPermissionsAsync();
       granted = status === 'granted';
     }
