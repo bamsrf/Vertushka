@@ -56,6 +56,10 @@ MV_CROWN_CODE = "MV_crown_jewel"
 M5_TARGET = 50
 CROWN_JEWEL_RUB = Decimal("20000")
 
+# «Цена-огонь»: листинг должен быть дешевле рыночной оценки хотя бы на пятую
+# часть. Без порога ачивкой считалась разница в рубль.
+DEAL_MAX_SHARE_OF_MARKET = 0.80
+
 
 # --- Рыночный нюх ------------------------------------------------------------
 
@@ -113,15 +117,26 @@ async def _evaluate_wishlist_hunter(
 async def _evaluate_deal_finder(
     db: AsyncSession, user_id: UUID, payload: dict[str, Any], unlocked_now: set[str]
 ) -> EvalResult:
-    """Нашёл листинг дешевле медианы Discogs по этой же пластинке.
+    """Кликнутый листинг заметно дешевле рыночной оценки Discogs.
 
-    Сравниваем в рублях: `estimate_rub` учитывает курс и наценку, иначе
-    «дешевле» получалось бы у всех подряд просто из-за валюты.
+    Сравниваем с ЧИСТОЙ оценкой — median × курс, — а не с `record_value_rub`.
+    Тот считает стоимость ВВОЗА: к цене Discogs он добавляет фиксированные
+    ~$20 доставки, 20% накладных и пошлину. Для дешёвой пластинки это
+    множитель под ×6 ($5 → «оценка» $30), и любой российский магазин
+    оказывается «дешевле» автоматически. Ачивка редкого тира открывалась на
+    первом же переходе в магазин, вместе с «Первой вылазкой».
+
+    Median, а не min: `record_usd` откатывается на min, а Discogs отдаёт его
+    по живым лотам — у релиза без истории продаж это одна-единственная цена.
+    Оценки рынка за ней нет, и сравнивать не с чем.
+
+    Порог `DEAL_MAX_SHARE_OF_MARKET` отсекает случайную копеечную разницу:
+    находка — это заметно дешевле, а не дешевле на рубль.
+
+    Ужесточение не отбирает ачивку у тех, кто её уже получил: открытые коды
+    эвалюатор пропускает (см. evaluator.py) и заново не считает.
     """
-    from app.config import get_settings
     from app.services.exchange import get_usd_rub_rate
-    from app.services.pricing import PricingParams
-    from app.services.valuation import record_value_rub
 
     rows = await db.execute(
         select(StoreListing.price_rub, Record)
@@ -134,10 +149,15 @@ async def _evaluate_deal_finder(
         return EvalResult()
 
     rate = await get_usd_rub_rate()
-    params = PricingParams.from_settings(get_settings())
+    if rate <= 0:
+        return EvalResult()
+
     for price_rub, record in pairs:
-        median_rub = record_value_rub(record, rate, params)
-        if median_rub > 0 and float(price_rub) < median_rub:
+        median_usd = record.estimated_price_median
+        if not median_usd:
+            continue
+        market_rub = float(median_usd) * rate
+        if float(price_rub) <= market_rub * DEAL_MAX_SHARE_OF_MARKET:
             return EvalResult(unlocked=True)
     return EvalResult()
 
@@ -249,10 +269,10 @@ DEFINITIONS: list[AchievementDefinition] = [
        AchievementTier.NOTABLE, (OFFER_CLICKED,), _evaluate_wishlist_hunter,
        "То, чего давно не хватало, оказалось в наличии.", "m3_wishlist_hunter", "market",
        done="Переход в магазин по пластинке из своего вишлиста."),
-    _d(M4_CODE, "Цена-огонь", "Найди предложение дешевле оценки Discogs.",
+    _d(M4_CODE, "Цена-огонь", "Найди предложение минимум на 20% дешевле оценки Discogs.",
        AchievementTier.RARE, _MARKET_TRIGGERS, _evaluate_deal_finder,
        "Дешевле, чем принято считать.", "m4_deal_finder", "market",
-       done="Найдено предложение дешевле оценки Discogs."),
+       done="Найдено предложение минимум на 20% дешевле оценки Discogs."),
     _d(M5_CODE, "Завсегдатай", "Сделай 50 переходов в магазины.",
        AchievementTier.RARE, (OFFER_CLICKED,), _evaluate_regular,
        "Тебя тут уже узнают.", "m5_regular", "market",
