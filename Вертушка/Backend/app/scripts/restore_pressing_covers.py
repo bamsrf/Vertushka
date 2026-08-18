@@ -101,10 +101,16 @@ async def restore(limit: int = 500, dry_run: bool = False) -> dict:
                 logger.info("%s → %s", did, url[:70])
                 continue
 
-            # Подменённый файл удаляем ПЕРЕД скачиванием: download_and_store
-            # видит существующий файл и может уйти по короткому пути.
-            if bad_path:
-                Path("uploads", bad_path).unlink(missing_ok=True)
+            # Старый файл убираем во ВРЕМЕННОЕ имя, а не удаляем: если новая
+            # обложка не встанет, надо вернуть то, что было. В первом прогоне
+            # этого не было — 4 пластинки со сканом мельче MASTER_MIN_SIDE
+            # (224-494px) остались вообще без файла: гейт тира отверг скан, а
+            # прежний уже был стёрт.
+            old_file = Path("uploads", bad_path) if bad_path else None
+            stash = old_file.with_suffix(old_file.suffix + ".rollback") if old_file else None
+            if old_file and old_file.exists():
+                old_file.replace(stash)
+
             await session.execute(text(
                 "UPDATE records SET cover_local_path = NULL, cover_cached_at = NULL, "
                 "cover_min_side = NULL, cover_image_url = :u WHERE discogs_id = :d"
@@ -116,9 +122,23 @@ async def restore(limit: int = 500, dry_run: bool = False) -> dict:
             except Exception:
                 ok = None
                 logger.debug("download failed for %s", did, exc_info=True)
+
             if not ok:
+                # Не встало — возвращаем прежнее состояние целиком. Пусть обложка
+                # неправильная, но она лучше пустого места, а `cover_image_url`
+                # теперь верный: отдача пойдёт редиректом на нужный скан.
                 stats["download_failed"] += 1
+                if stash and stash.exists():
+                    stash.replace(old_file)
+                    await session.execute(text(
+                        "UPDATE records SET cover_local_path = :p WHERE discogs_id = :d"
+                    ), {"p": bad_path, "d": did})
+                    await session.commit()
+                    logger.warning("%s: новая обложка не встала — вернул прежний файл", did)
                 continue
+
+            if stash and stash.exists():
+                stash.unlink(missing_ok=True)
 
             await session.execute(text(
                 f"UPDATE {TABLE} SET restored = true WHERE discogs_id = :d"), {"d": did})

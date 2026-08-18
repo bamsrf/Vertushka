@@ -84,15 +84,30 @@ def test_restore_busts_stale_discogs_cache():
     assert '"release"' in src and '"release_cover"' in src
 
 
-def test_restore_deletes_bad_file_before_redownload():
-    """download_and_store видит существующий файл и уходит по короткому пути —
-    подменённый файл надо снести заранее, иначе откат ничего не изменит."""
+def test_restore_stashes_old_file_instead_of_deleting():
+    """Старый файл убирается во временное имя, а НЕ удаляется.
+
+    В первом прогоне он удалялся сразу, и 4 пластинки со сканом мельче
+    MASTER_MIN_SIDE (224-494px) остались вообще без файла: гейт тира отверг
+    новый скан, а прежний уже был стёрт. Стало хуже, чем до лечения.
+    """
     from app.scripts import restore_pressing_covers as rp
     src = inspect.getsource(rp.restore)
-    assert "unlink(missing_ok=True)" in src
-    # Сравниваем позиции РЕАЛЬНОГО вызова, а не первого упоминания: имя метода
-    # встречается ещё и в комментарии выше.
-    assert src.index("unlink(missing_ok=True)") < src.index("await service.download_and_store")
+    assert "old_file.replace(stash)" in src, "прежний файл прячем, а не удаляем"
+    assert src.index("old_file.replace(stash)") < src.index("await service.download_and_store")
+
+
+def test_restore_rolls_back_when_new_cover_does_not_fit():
+    """Не встало — возвращаем прежнее состояние целиком.
+
+    Неправильная обложка лучше пустого места, а cover_image_url к этому моменту
+    уже верный, так что отдача пойдёт редиректом на нужный скан.
+    """
+    from app.scripts import restore_pressing_covers as rp
+    src = inspect.getsource(rp.restore)
+    tail = src[src.index('stats["download_failed"] += 1'):]
+    assert "stash.replace(old_file)" in tail
+    assert "cover_local_path = :p" in tail, "путь к файлу тоже надо вернуть в БД"
 
 
 def test_restore_set_is_frozen_in_a_table():
