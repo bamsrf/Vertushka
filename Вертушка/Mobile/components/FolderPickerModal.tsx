@@ -11,7 +11,6 @@ import {
   StyleSheet,
   TouchableOpacity,
   ScrollView,
-  Image,
   Alert,
   ActivityIndicator,
   Animated,
@@ -21,9 +20,8 @@ import { toast } from '../lib/toast';
 import { Icon } from '@/components/ui';
 import { useCollectionStore } from '../lib/store';
 import { api } from '../lib/api';
+import { FolderIcon } from './FolderIcon';
 import { Colors, Spacing, Typography, BorderRadius } from '../constants/theme';
-
-const folderPlaceholder = require('../assets/images/folder-placeholder.png');
 
 interface FolderPickerModalProps {
   visible: boolean;
@@ -175,9 +173,7 @@ export function FolderPickerModal({
             >
               {/* New folder button */}
               <TouchableOpacity style={styles.newFolderCard} onPress={handleCreateFolder}>
-                <View style={styles.newFolderIcon}>
-                  <Icon name="add" size={32} color={Colors.textMuted} />
-                </View>
+                <FolderIcon size={80} variant="new" />
                 <Text style={styles.folderName} numberOfLines={1}>Новая</Text>
               </TouchableOpacity>
 
@@ -190,7 +186,11 @@ export function FolderPickerModal({
                     onPress={() => onSelectFolder(folder.id)}
                   >
                     <View style={styles.imageWrapper}>
-                      <Image source={folderPlaceholder} style={styles.folderImage} />
+                      <FolderIcon
+                        size={80}
+                        seed={folder.id}
+                        variant={folder.items_count > 0 ? 'filled' : 'empty'}
+                      />
                       {hasOverlap && (
                         <View style={styles.checkBadge}>
                           <Icon name="checkmark" size={10} color={Colors.background} />
@@ -254,24 +254,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: Spacing.xs,
   },
-  newFolderIcon: {
-    width: 80,
-    height: 80,
-    borderRadius: BorderRadius.md,
-    backgroundColor: Colors.surface,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
   imageWrapper: {
     position: 'relative',
     width: 80,
     height: 80,
-  },
-  folderImage: {
-    width: 80,
-    height: 80,
-    borderRadius: BorderRadius.md,
-    backgroundColor: Colors.surface,
   },
   checkBadge: {
     position: 'absolute',

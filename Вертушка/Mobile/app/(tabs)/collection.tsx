@@ -5,11 +5,11 @@
 import { useEffect, useCallback, useState, useRef, useMemo } from 'react';
 import { View, StyleSheet, Alert, TouchableOpacity, Text, Animated, ScrollView, LayoutAnimation, UIManager, Platform, Easing } from 'react-native';
 import { toast } from '../../lib/toast';
-import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { Icon } from '@/components/ui';
 import { RadarIcon } from '../../components/RadarIcon';
+import { FolderIcon } from '../../components/FolderIcon';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import { AnimatedGradientText } from '../../components/AnimatedGradientText';
@@ -51,8 +51,6 @@ function getFormatDisplayInfo(format?: string): { label: string; verb: string } 
   if (f.includes('cd')) return { label: 'CD', verb: 'добавлен' };
   return { label: 'Винил', verb: 'добавлен' };
 }
-
-const folderPlaceholder = require('../../assets/images/folder-placeholder.png');
 
 const SEGMENTS: { key: CollectionTab; label: string }[] = [
   { key: 'collection', label: 'В наличии' },
@@ -884,9 +882,7 @@ export default function CollectionScreen() {
             <Text style={styles.foldersSectionTitle}>Папки</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.foldersScroll}>
               <TouchableOpacity style={styles.newFolderCard} onPress={handleCreateFolder}>
-                <View style={styles.newFolderIcon}>
-                  <Icon name="add" size={32} color={Colors.textMuted} />
-                </View>
+                <FolderIcon size={80} variant="new" />
                 <Text style={styles.newFolderText}>Новая</Text>
               </TouchableOpacity>
               {folders.map(folder => (
@@ -895,7 +891,11 @@ export default function CollectionScreen() {
                   style={styles.folderCard}
                   onPress={() => router.push(`/folder/${folder.id}` as any)}
                 >
-                  <Image source={folderPlaceholder} style={styles.folderImage} />
+                  <FolderIcon
+                    size={80}
+                    seed={folder.id}
+                    variant={folder.items_count > 0 ? 'filled' : 'empty'}
+                  />
                   <Text style={styles.folderName} numberOfLines={1}>{folder.name}</Text>
                   <Text style={styles.folderCount}>{folder.items_count} пл.</Text>
                 </TouchableOpacity>
@@ -921,9 +921,7 @@ export default function CollectionScreen() {
             <Text style={styles.foldersSectionTitle}>Папки</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.foldersScroll}>
               <TouchableOpacity style={styles.newFolderCard} onPress={handleCreateWishlistFolder}>
-                <View style={styles.newFolderIcon}>
-                  <Icon name="add" size={32} color={Colors.textMuted} />
-                </View>
+                <FolderIcon size={80} variant="new" />
                 <Text style={styles.newFolderText}>Новая</Text>
               </TouchableOpacity>
               {wishlistFolders.map(folder => (
@@ -932,7 +930,11 @@ export default function CollectionScreen() {
                   style={styles.folderCard}
                   onPress={() => router.push(`/wishlist-folder/${folder.id}` as any)}
                 >
-                  <Image source={folderPlaceholder} style={styles.folderImage} />
+                  <FolderIcon
+                    size={80}
+                    seed={folder.id}
+                    variant={folder.items_count > 0 ? 'filled' : 'empty'}
+                  />
                   <Text style={styles.folderName} numberOfLines={1}>{folder.name}</Text>
                   <Text style={styles.folderCount}>{folder.items_count} пл.</Text>
                 </TouchableOpacity>
@@ -1636,24 +1638,10 @@ const styles = StyleSheet.create({
     alignItems: 'center' as const,
     gap: Spacing.xs,
   },
-  newFolderIcon: {
-    width: 80,
-    height: 80,
-    borderRadius: BorderRadius.md,
-    backgroundColor: Colors.surface,
-    justifyContent: 'center' as const,
-    alignItems: 'center' as const,
-  },
   newFolderText: {
     ...Typography.caption,
     color: Colors.textMuted,
     fontFamily: 'Inter_600SemiBold',
-  },
-  folderImage: {
-    width: 80,
-    height: 80,
-    borderRadius: BorderRadius.md,
-    backgroundColor: Colors.surface,
   },
   folderName: {
     ...Typography.caption,
