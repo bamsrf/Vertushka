@@ -57,19 +57,47 @@ def test_market_visible_still_protected():
     assert "~active_in_stock" in _sql()
 
 
-def test_heal_script_avoids_discogs():
-    """Лечилка не должна ходить в Discogs: его подписанные ссылки и создали
-    проблему, повторно опираться на них бессмысленно."""
-    from app.scripts import heal_lost_covers
-    src = inspect.getsource(heal_lost_covers.heal)
-    assert "discogs_probe=None" in src
+def test_restore_uses_the_record_own_source_not_a_guess():
+    """Лечилка обязана брать источник ИЗ ЗАПИСИ, а не искать заново.
+
+    Первая версия (`heal_lost_covers`, удалена) прогоняла общую лестницу
+    источников и подменила сканы конкретных прессов на album-level арт
+    стриминга: 119 пластинок, у Tatsuro Yamashita вместо японского конверта с
+    оби приехал CAA, у Baile и Ryo Fukui — Deezer 1000x1000.
+
+    Ошибка была в выборе инструмента: лестница создана искать обложку там, где
+    её НЕТ. Здесь обложка БЫЛА, и точный ответ лежал в records.cover_image_url.
+    """
+    from app.scripts import restore_pressing_covers as rp
+    src = inspect.getsource(rp._fresh_url)
+    assert "orig" in src, "источник берётся из записи, а не резолвится заново"
+    assert "resolve_cover_url" not in src, "общая лестница здесь запрещена"
+    assert "get_release_cover" in src, "для протухшей подписи Discogs — свежая по тому же id"
 
 
-def test_heal_targets_the_exact_symptom():
-    """Признак потери: blurhash есть, файла нет. Другого способа отличить
-    «удалили» от «никогда не качали» у нас нет."""
-    from app.scripts import heal_lost_covers
-    src = inspect.getsource(heal_lost_covers._candidates)
-    assert "blurhash IS NOT NULL" in src
-    assert "cover_local_path IS NULL" in src
-    assert "in_library DESC" in src, "библиотечные лечим первыми — их видно людям"
+def test_restore_busts_stale_discogs_cache():
+    """Без сброса кэша get_release_cover честно вернёт ту же мёртвую подпись —
+    в кэше лежит payload релиза с уже протухшей ссылкой."""
+    from app.scripts import restore_pressing_covers as rp
+    src = inspect.getsource(rp._fresh_url)
+    assert "cache.delete" in src
+    assert '"release"' in src and '"release_cover"' in src
+
+
+def test_restore_deletes_bad_file_before_redownload():
+    """download_and_store видит существующий файл и уходит по короткому пути —
+    подменённый файл надо снести заранее, иначе откат ничего не изменит."""
+    from app.scripts import restore_pressing_covers as rp
+    src = inspect.getsource(rp.restore)
+    assert "unlink(missing_ok=True)" in src
+    # Сравниваем позиции РЕАЛЬНОГО вызова, а не первого упоминания: имя метода
+    # встречается ещё и в комментарии выше.
+    assert src.index("unlink(missing_ok=True)") < src.index("await service.download_and_store")
+
+
+def test_restore_set_is_frozen_in_a_table():
+    """Набор пострадавших зафиксирован снапшотом, а не запросом по времени:
+    фоновые джобы трогают те же поля, и окно поплыло бы."""
+    from app.scripts import restore_pressing_covers as rp
+    assert rp.TABLE == "cover_heal_rollback"
+    assert "NOT restored" in inspect.getsource(rp._pending)
