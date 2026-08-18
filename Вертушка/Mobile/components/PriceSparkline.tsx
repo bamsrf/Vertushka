@@ -10,6 +10,16 @@ import Svg, { Polyline, Circle, Line } from 'react-native-svg';
 import { Colors, Typography, Spacing, BorderRadius } from '../constants/theme';
 import { PriceHistoryPoint } from '../lib/types';
 
+// Минимум точек для графика. Две точки формально линия, но при нормализации
+// они обязаны лечь в противоположные углы — картинка одна и та же при любом
+// движении цены. Пять — паритет с MIN_BASELINE_POINTS режима «дешевле обычного».
+const MIN_POINTS = 5;
+
+// Шкала не должна схлопываться под разброс данных: иначе движение на 2%
+// рисуется как отвесный обрыв, и график врёт о масштабе. Ниже этой доли от
+// цены окно растягиваем вокруг середины.
+const MIN_SPAN_RATIO = 0.1;
+
 interface PriceSparklineProps {
   points: PriceHistoryPoint[];
   historicalLow: number | null;
@@ -29,16 +39,22 @@ export function PriceSparkline({
     (p): p is PriceHistoryPoint & { min_price_rub: number } => p.min_price_rub != null,
   );
 
-  // Нужно ≥2 точки, иначе линию не построить — показываем только цифру.
-  if (priced.length < 2) {
-    if (historicalLow == null) return null;
+  // Мало точек — отдаём цифры текстом. Рисовать линию по двум замерам значит
+  // показывать драму там, где цена шевельнулась на процент.
+  if (priced.length < MIN_POINTS) {
+    const latest = priced.length ? priced[priced.length - 1].min_price_rub : null;
+    if (latest == null && historicalLow == null) return null;
     return (
       <View style={styles.container}>
         <View style={styles.header}>
           <Text style={styles.title}>Динамика цены</Text>
-          <Text style={styles.lowValue}>мин. {formatRub(historicalLow)}</Text>
+          <Text style={styles.lowValue}>
+            {latest != null ? `сейчас ${formatRub(latest)}` : ''}
+            {latest != null && historicalLow != null ? ' · ' : ''}
+            {historicalLow != null ? `мин. ${formatRub(historicalLow)}` : ''}
+          </Text>
         </View>
-        <Text style={styles.tooFew}>Пока мало данных для графика</Text>
+        <Text style={styles.tooFew}>Цена менялась слишком редко — графика пока нет</Text>
       </View>
     );
   }
@@ -46,22 +62,34 @@ export function PriceSparkline({
   const values = priced.map((p) => p.min_price_rub);
   const minV = Math.min(...values);
   const maxV = Math.max(...values);
-  const span = maxV - minV || 1;
+
+  // Раньше span = maxV − minV, то есть шкала подгонялась ровно под разброс, и
+  // любое движение занимало всю высоту: +100 ₽ на пятитысячной пластинке
+  // выглядели как обвал. Держим окно не уже MIN_SPAN_RATIO от цены и центрируем
+  // данные внутри — тогда 2% и рисуются как 2%.
+  const mid = (maxV + minV) / 2;
+  const span = Math.max(maxV - minV, mid * MIN_SPAN_RATIO, 1);
+  const floorV = mid - span / 2;
 
   const padX = 4;
   const padY = 8;
   const innerW = width - padX * 2;
   const innerH = height - padY * 2;
 
-  const coords = priced.map((p, i) => {
-    const x = padX + (priced.length === 1 ? 0 : (i / (priced.length - 1)) * innerW);
-    const y = padY + (1 - (p.min_price_rub - minV) / span) * innerH;
-    return { x, y, v: p.min_price_rub };
-  });
+  const yOf = (v: number) => padY + (1 - (v - floorV) / span) * innerH;
+
+  const coords = priced.map((p, i) => ({
+    x: padX + (i / (priced.length - 1)) * innerW,
+    y: yOf(p.min_price_rub),
+    v: p.min_price_rub,
+  }));
 
   const polyPoints = coords.map((c) => `${c.x.toFixed(1)},${c.y.toFixed(1)}`).join(' ');
   const last = coords[coords.length - 1];
-  const lowY = padY + (1 - (minV - minV) / span) * innerH; // = линия минимума
+  // Пунктир дна теперь считается по общей шкале. Раньше формула (minV−minV)/span
+  // давала тождественный ноль, и линия всегда лежала на нижней кромке, куда
+  // упиралась и самая нижняя точка.
+  const lowY = yOf(minV);
 
   const first = values[0];
   const current = values[values.length - 1];
