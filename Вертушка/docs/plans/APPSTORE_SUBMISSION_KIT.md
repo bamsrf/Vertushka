@@ -248,24 +248,55 @@ health, browsing history, advertising data.
 Вопрос ASC: «Does your app contain, show, or access third-party content?» →
 **Yes**. Заготовка ответа:
 
+**Ответ в диалоге:** «Yes, it contains, shows, or accesses third-party
+content, and I have the necessary rights». Вариант «No» был бы прямой
+неправдой — мы показываем чужие метаданные и обложки.
+
 ```
 The app displays vinyl release metadata (artist, title, year, label, format,
-catalog number) and cover images.
+catalog number) and cover artwork.
 
-- Release metadata: Discogs monthly data dumps, published by Discogs under
-  CC0 (public domain dedication), plus the Discogs API used under its terms.
-- Cover images: Discogs and the Cover Art Archive.
+- Release metadata: Discogs monthly data dumps, released under CC0 (public
+  domain dedication), plus the Discogs API used under its terms.
+- Cover artwork is shown for identification of a specific pressing, sourced
+  from Discogs and the Cover Art Archive. Artwork remains the property of its
+  respective rights holders; we display it solely to identify the release a
+  user is cataloguing or looking for.
 - Attribution to Discogs as the data source is displayed in the app.
 - Shop listings ("where to buy") link out to the shops' own pages; we display
   price and availability and send the user to the shop's site to purchase.
   No in-app purchase of physical goods (Guideline 3.1.5(a)).
 ```
 
-> ⚠️ Раздел добавлен 2026-08-01 — раньше в ките его не было вовсе, а вопрос в
-> ASC обязательный. Формулировка опирается на то, что дампы Discogs
-> распространяются под CC0. **Это утверждение нужно подтвердить** до
-> сабмита — см. §5 плана (юр. проверка ToS). Если окажется иначе, правится
-> и этот ответ, и раздел «Маркет».
+### 4a.1. Проверено 2026-08-18 — и одна поправка
+
+**CC0 на метаданные подтвердился.** Discogs распространяет месячные дампы
+(Release, Artist, Label, Master) под CC0 No Rights Reserved. Пункт §5 плана
+про юридическую проверку ToS в этой части закрыт.
+
+⚠️ **Но CC0 не распространяется на изображения, и раньше здесь это
+смешивалось в один пункт.** Discogs прямо оговаривает: дискографические
+данные — общественное достояние, **изображения — нет**; они лежат на их
+серверах по принципам fair use, и массовое перераспространение в лицензию
+не входит.
+
+Что это значит для нас:
+
+| | Статус |
+|---|---|
+| Метаданные релизов | ✅ CC0, вопросов нет |
+| Показ обложки для идентификации пресса | практика всей отрасли (Discogs, MusicBrainz, магазины); формулировка выше описывает именно это |
+| **Зеркалирование обложек в свой S3** ([COVERS_S3_IMGPROXY_MILESTONE.md](COVERS_S3_IMGPROXY_MILESTONE.md)) | ⚠️ **это уже не показ, а хранение и раздача копий** — то, что Discogs называет mass re-distribution |
+
+📌 **Для App Review это не блокер.** Apple задаёт вопрос-галочку, а не
+проводит аудит прав, и ответ «Yes, I have the necessary rights» — стандартный
+для любого каталога. Риск здесь не со стороны Apple, а со стороны Discogs
+(их ToS) и правообладателей обложек.
+
+⚠️ **Оценить этот риск я не могу — это вопрос к юристу, а не к разработке.**
+Что можно сказать по фактам: копии обложек у нас лежат на своём хранилище,
+формально это выходит за рамки того, что Discogs разрешает дампами. Стоит
+хотя бы понимать, что это осознанное решение, а не недосмотр.
 
 ## 5. Age Rating (questionnaire)
 
