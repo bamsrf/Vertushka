@@ -1,0 +1,37 @@
+name: Uptime check
+
+# Внешний uptime-чек Вертушки. Весь остальной алёртинг (Telegram, GlitchTip,
+# disk-alert) живёт на самом прод-сервере: если сервер умер — он не сможет
+# об этом сообщить. GitHub Actions — единственная внешняя точка без нового
+# аккаунта. При провале GitHub шлёт e-mail автору workflow.
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+jobs:
+  health:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: API /health
+        run: |
+          for i in 1 2 3; do
+            if curl -fsS --max-time 15 https://api.vinyl-vertushka.ru/health > /dev/null; then
+              echo "API жив (попытка $i)"; exit 0
+            fi
+            echo "попытка $i не удалась, жду 20с"; sleep 20
+          done
+          echo "::error::api.vinyl-vertushka.ru/health не отвечает после 3 попыток"
+          exit 1
+      - name: Веб-профили
+        if: always()
+        run: |
+          for i in 1 2 3; do
+            if curl -fsS --max-time 15 -o /dev/null https://vinyl-vertushka.ru/; then
+              echo "Сайт жив (попытка $i)"; exit 0
+            fi
+            echo "попытка $i не удалась, жду 20с"; sleep 20
+          done
+          echo "::error::vinyl-vertushka.ru не отвечает после 3 попыток"
+          exit 1

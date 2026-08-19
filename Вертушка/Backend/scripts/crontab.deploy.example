@@ -1,0 +1,13 @@
+# Эталон crontab юзера deploy на проде (85.198.85.12). Установлен 19.08.2026.
+# Ручной crontab не виден из git — при изменении на сервере обновляй и этот файл.
+# Проверить на сервере: crontab -l
+
+# Ночной бэкап БД через обёртку: exec-бит не важен, провал уходит в Telegram.
+0 4 * * * bash ~/vertushka/Вертушка/Backend/scripts/backup_cron_wrapper.sh
+
+# Продление TLS. reload вместо restart: graceful, не рвёт WebSocket-соединения
+# (до 19.08.2026 стоял restart — nginx рестартовал КАЖДУЮ ночь безусловно).
+0 3 * * * cd ~/vertushka/Вертушка/Backend && docker compose -f docker-compose.prod.yml run --rm certbot renew >> ~/backups/certbot.log 2>&1 && docker exec vertushka_nginx nginx -s reload >> ~/backups/certbot.log 2>&1
+
+# Дневной снапшот стоимости коллекций.
+7 9 * * * bash ~/vertushka/Вертушка/Backend/scripts/backfill_snapshot.sh
