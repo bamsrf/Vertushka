@@ -8,10 +8,12 @@
 import asyncio
 import logging
 import os
+import re
 import uuid
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from io import BytesIO
 from pathlib import Path
+from urllib.parse import urlparse
 
 import httpx
 from PIL import Image
@@ -48,6 +50,52 @@ def _retain(coro) -> None:
 _MAX_SIDE = 1000
 _JPEG_QUALITY = 85
 _DOWNLOAD_TIMEOUT = 30  # секунд
+
+# ── Суточный бюджет скачиваний картинок с хостов Discogs ──────────────────
+# У Discogs неофициальный потолок ~1000 изображений/сутки на IP, после — 403
+# на всё. Прогрев/апгрейд/зеркалирование без учёта могли выесть его за часы,
+# и остаток дня пользователи получали бы битые картинки. Считаем каждое
+# скачивание с discogs-хоста, при исчерпании бюджета скачивание скипается.
+_DISCOGS_IMG_NS = "discogs_img"
+# 48ч: ключ суточный, живёт с запасом — вчерашний счётчик ещё читается
+# метриками (/health/covers), позавчерашний уже никому не нужен.
+_DISCOGS_IMG_TTL = 48 * 3600
+
+
+def is_discogs_image_url(url: str | None) -> bool:
+    """URL картинки на хосте Discogs (i.discogs.com, st.discogs.com, ...).
+
+    По hostname, а не substring: 'discogs.com' в query-строке чужого CDN не
+    должен списывать бюджет.
+    """
+    if not url:
+        return False
+    try:
+        host = (urlparse(url).hostname or "").lower()
+    except ValueError:
+        return False
+    return host == "discogs.com" or host.endswith(".discogs.com")
+
+
+async def discogs_img_used_today() -> int | None:
+    """Сколько картинок скачано с Discogs за сегодня. None — Redis недоступен."""
+    return await cache.get_counter(_DISCOGS_IMG_NS, date.today().isoformat())
+
+
+async def discogs_img_budget_exhausted() -> bool:
+    """Исчерпан ли дневной бюджет. Redis недоступен → False: без учёта душить
+    скачивания нечем, а ложный отказ хуже риска перебора (graceful, как везде).
+    """
+    used = await discogs_img_used_today()
+    if used is None:
+        return False
+    return used >= get_settings().discogs_img_daily_budget
+
+
+async def _count_discogs_img_download() -> None:
+    await cache.incr(
+        _DISCOGS_IMG_NS, date.today().isoformat(), ttl=_DISCOGS_IMG_TTL,
+    )
 
 
 def _compute_blurhash(img: "Image.Image") -> str | None:
@@ -228,6 +276,16 @@ class CoverStorageService:
                 discogs_id, stored_min_side, image_url,
             )
 
+        # Бюджет-гейт для discogs-хостов — до лока и до сети. Скип, не ошибка:
+        # обложка приедет завтра или из бесплатного источника, а вот сегодняшние
+        # 403 на живых пользователей после перебора лимита — уже не лечатся.
+        if is_discogs_image_url(image_url) and await discogs_img_budget_exhausted():
+            logger.warning(
+                "cover_storage: дневной бюджет Discogs-картинок исчерпан — скип %s (%s)",
+                discogs_id, image_url,
+            )
+            return None
+
         if not await self._acquire_lock(discogs_id):
             logger.debug("cover_storage: lock busy for %s, skipping", discogs_id)
             return None
@@ -237,6 +295,10 @@ class CoverStorageService:
             self._ensure_covers_dir()
             tmp_path = self._tmp_path(discogs_id)
 
+            # Считаем ПОПЫТКУ, а не успех: неудачный запрос всё равно ушёл на
+            # хост Discogs и потратил их лимит.
+            if is_discogs_image_url(image_url):
+                await _count_discogs_img_download()
             try:
                 resp = await safe_image_get(image_url, timeout=_DOWNLOAD_TIMEOUT)
             except UnsafeUrlError as exc:
@@ -331,9 +393,21 @@ class CoverStorageService:
 
     async def cleanup_lru(self, target_size_mb: int, db: AsyncSession) -> int:
         """
-        Удаляет самые старые обложки пока кэш не уложится в target_size_mb.
+        Удаляет самые давние обложки пока кэш не уложится в target_size_mb.
 
-        Синхронизирует PostgreSQL в одной транзакции с удалением файлов.
+        «Давность» — mtime файла, а не records.cover_cached_at. cover_cached_at —
+        дата ДОБЫЧИ, то есть FIFO: файл, апгрейженный вчера лучшим источником,
+        считался бы «старым» по дате первого скачивания и вылетал первым. mtime
+        же ставится при зеркалировании и обновляется при апгрейде — это честный
+        прокси «когда обложкой в последний раз занимались». Сигнала реального
+        чтения нет вовсе (статику отдаёт nginx, noatime), так что лучшего
+        приближения без учёта доступов в nginx-логах не существует.
+
+        Кандидаты из ДВУХ источников: записи с cover_local_path и файлы-мастера
+        m{gid}.jpg (см. _master_orphan_candidates — их records-выборка не видит
+        в принципе). Обе группы выселяются одной очередью строго по mtime.
+
+        Синхронизирует PostgreSQL с удалением файлов.
         Возвращает количество удалённых обложек.
         """
         from app.models.record import Record  # отложенный импорт
@@ -403,28 +477,42 @@ class CoverStorageService:
                 Record.cover_image_url.isnot(None),
                 ~Record.cover_image_url.like("%discogs.com%"),
             )
-            .order_by(Record.cover_cached_at.asc())
         )
         candidates = result.all()
 
-        deleted = 0
-        freed_mb = 0.0
-        ids_to_clear: list = []
-
+        # Единая очередь кандидатов: (mtime, size_mb, path, record_id | None).
+        # Сортировка по mtime в Python, а не ORDER BY в SQL: порядок задаёт
+        # файловая система, БД про mtime ничего не знает.
+        entries: list[tuple[float, float, Path, object | None]] = []
+        # Запись ссылается на файл, которого нет, — битый указатель: чистим
+        # БД-поля независимо от того, сколько места надо освободить.
+        stale_ids: list = []
         for row in candidates:
-            if freed_mb >= to_free_mb:
-                break
             if not row.cover_local_path:
                 continue
             file_path = Path("uploads") / row.cover_local_path
-            # Пробуем удалить файл
             try:
-                if file_path.exists():
-                    size_mb = file_path.stat().st_size / 1024 / 1024
-                    file_path.unlink()
-                    freed_mb += size_mb
-                # Даже если файла нет — обнуляем БД-поля
-                ids_to_clear.append(row.id)
+                st = file_path.stat()
+            except OSError:
+                stale_ids.append(row.id)
+                continue
+            entries.append((st.st_mtime, st.st_size / 1024 / 1024, file_path, row.id))
+
+        entries.extend(await self._master_orphan_candidates(db))
+        entries.sort(key=lambda e: e[0])
+
+        deleted = len(stale_ids)
+        freed_mb = 0.0
+        ids_to_clear: list = list(stale_ids)
+
+        for _mtime, size_mb, file_path, record_id in entries:
+            if freed_mb >= to_free_mb:
+                break
+            try:
+                file_path.unlink()
+                freed_mb += size_mb
+                if record_id is not None:
+                    ids_to_clear.append(record_id)
                 deleted += 1
             except OSError as e:
                 logger.warning("cover_storage: cleanup failed to delete %s: %s", file_path, e)
@@ -438,32 +526,106 @@ class CoverStorageService:
             await db.commit()
 
         logger.info(
-            "cover_storage: LRU cleanup deleted %d covers, freed %.1f MB",
+            "cover_storage: LRU cleanup deleted %d covers (%d stale DB pointers), freed %.1f MB",
             deleted,
+            len(stale_ids),
             freed_mb,
         )
         return deleted
 
-    def _get_cache_size_mb(self) -> float:
-        """Суммарный размер всех файлов в covers_dir в МБ."""
+    # Файл мастера сетки артиста: m{gid}.jpg строго в корне covers_dir.
+    _MASTER_FILE_RE = re.compile(r"^m(\d+)\.jpg$")
+
+    async def _master_orphan_candidates(
+        self, db: AsyncSession,
+    ) -> list[tuple[float, float, Path, None]]:
+        """Кандидаты на эвикцию среди мастер-зеркал m{gid}.jpg.
+
+        Эти файлы живут ВНЕ таблицы records: их пишет _spawn_mirror из
+        GET /covers/m{gid}, а UPDATE records WHERE discogs_id='m123' не матчит
+        ни одной строки. records-выборка cleanup_lru их не видит, поэтому до
+        этого скана мастер-зеркала не эвиктились никогда и копились до конца
+        диска.
+
+        Правило то же, что для записей («выселяем только то, что честно
+        вернётся само»), источник — discogs_master_covers.cover_image_url:
+          * URL с discogs.com — подписанный и протухает, self-heal после
+            эвикции получит 403 → НЕ трогаем (урок инцидента 18.08);
+          * строки нет или URL пуст — достоверного пути восстановления нет
+            (фолбэк по releases_index может упереться в тот же discogs) →
+            НЕ трогаем;
+          * бесплатный URL (CAA/Deezer/iTunes/store) — вернётся при следующем
+            просмотре через @covers_fallback → эвиктим по mtime.
+        """
+        from sqlalchemy import text as _text
+
         if not self.covers_dir.exists():
-            return 0.0
-        total = sum(
-            f.stat().st_size
-            for f in self.covers_dir.iterdir()
-            if f.is_file() and not f.name.startswith(".tmp_")
-        )
+            return []
+
+        by_mid: dict[int, Path] = {}
+        for f in self.covers_dir.iterdir():
+            m = self._MASTER_FILE_RE.match(f.name)
+            if m and f.is_file():
+                by_mid[int(m.group(1))] = f
+        if not by_mid:
+            return []
+
+        evictable = (await db.execute(
+            _text(
+                "SELECT master_id FROM discogs_master_covers "
+                "WHERE master_id = ANY(:mids) "
+                "AND cover_image_url IS NOT NULL "
+                "AND cover_image_url NOT LIKE '%discogs.com%'"
+            ),
+            {"mids": list(by_mid)},
+        )).scalars().all()
+
+        out: list[tuple[float, float, Path, None]] = []
+        for mid in evictable:
+            path = by_mid[mid]
+            try:
+                st = path.stat()
+            except OSError:
+                continue  # исчез между сканом и stat — уже не кандидат
+            out.append((st.st_mtime, st.st_size / 1024 / 1024, path, None))
+        return out
+
+    def _walk_cover_files(self) -> "list[Path]":
+        """Все файлы кэша, РЕКУРСИВНО — включая covers/store/ (store-native
+        зеркала). Нерекурсивный iterdir() не видел подкаталоги, из-за чего
+        лимит COVERS_MAX_CACHE_MB по факту был больше заявленного, а очистка
+        стартовала позже, чем должна."""
+        if not self.covers_dir.exists():
+            return []
+        out: list[Path] = []
+        for root, _dirs, files in os.walk(self.covers_dir):
+            for name in files:
+                if name.startswith(".tmp_"):
+                    continue
+                out.append(Path(root) / name)
+        return out
+
+    def _get_cache_size_mb(self) -> float:
+        """Суммарный размер всех файлов в covers_dir (с подкаталогами) в МБ."""
+        total = 0
+        for f in self._walk_cover_files():
+            try:
+                total += f.stat().st_size
+            except OSError:
+                continue
         return total / 1024 / 1024
 
     async def get_cache_stats(self) -> dict:
         """Статистика кэша обложек."""
-        if not self.covers_dir.exists():
+        files = self._walk_cover_files()
+        if not files:
             return {"files": 0, "size_mb": 0.0}
-        files = [
-            f for f in self.covers_dir.iterdir()
-            if f.is_file() and not f.name.startswith(".tmp_")
-        ]
-        total_bytes = sum(f.stat().st_size for f in files)
+        total_bytes = 0
+        for f in files:
+            try:
+                total_bytes += f.stat().st_size
+            except OSError:
+                continue
         return {
             "files": len(files),
             "size_mb": round(total_bytes / 1024 / 1024, 1),

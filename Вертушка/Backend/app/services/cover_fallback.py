@@ -2,10 +2,12 @@
 
 Не трогает Discogs API / его rate-limit. Используется когда у записи нет
 обложки от Discogs (холодные dump-релизы). MusicBrainz требует уникальный
-User-Agent и лимит ≤1 req/s — соблюдаем модульным asyncio-локом.
+User-Agent и лимит ≤1 req/s — соблюдаем распределённым Redis-троттлом
+(cache.throttle_slot), локальный asyncio-лок остаётся graceful fallback'ом.
 """
 import asyncio
 import logging
+import random
 import re
 import time
 
@@ -20,7 +22,11 @@ _MB_URL = "https://musicbrainz.org/ws/2/release"
 # detail-экране во всю ширину; зеркало в cover_storage ужмёт до 1000px.
 _CAA_FRONT = "https://coverartarchive.org/release/{mbid}/front-1200"
 
-# MusicBrainz: жёсткий лимит 1 req/s на IP. Глобальный троттл.
+# MusicBrainz: жёсткий лимит 1 req/s на IP. Троттл на уровне процесса — лишь
+# fallback: лимит считается ПО IP, а процессов на этом IP минимум три (api,
+# scheduler, второй цвет при деплое), и каждый со своим asyncio-локом давал
+# суммарно 2-3 rps. Первичный троттл — кросс-процессный, через Redis
+# (см. _distributed_throttle).
 _mb_lock = asyncio.Lock()
 _mb_last = 0.0
 _MB_MIN_INTERVAL = 1.1
@@ -31,8 +37,31 @@ def _user_agent() -> str:
     return get_settings().discogs_user_agent
 
 
+async def _distributed_throttle(name: str, min_interval: float) -> bool:
+    """Взять слот кросс-процессного троттла источника.
+
+    True — слот взят через Redis (интервал держится на весь IP). False —
+    Redis недоступен: caller обязан применить локальный лок (лимит тогда
+    соблюдается хотя бы в рамках процесса — лучше, чем ничего). Джиттер в
+    ожидании разводит проснувшихся одновременно конкурентов: SET NX выиграет
+    один, остальные получат новый wait, но без синхронного шторма.
+    """
+    from app.services.cache import cache
+
+    while True:
+        wait_ms = await cache.throttle_slot(name, int(min_interval * 1000))
+        if wait_ms == 0:
+            return True
+        if wait_ms is None:
+            return False
+        await asyncio.sleep(wait_ms / 1000.0 + random.random() * 0.05)
+
+
 async def _mb_throttle() -> None:
     global _mb_last
+    if await _distributed_throttle("musicbrainz", _MB_MIN_INTERVAL):
+        return
+    # Redis недоступен — локальный интервал в рамках процесса.
     async with _mb_lock:
         wait = _MB_MIN_INTERVAL - (time.monotonic() - _mb_last)
         if wait > 0:
@@ -122,6 +151,29 @@ async def cover_url_by_barcode(barcode: str) -> str | None:
         return None
 
 
+async def caa_cover_url_by_mbid(mbid: str) -> str | None:
+    """HEAD-проверка front-обложки CAA по готовому MBID. Ни БД, ни MB-троттла.
+
+    Выделено из cover_url_by_discogs_id, чтобы вызывающий мог сделать lookup
+    маппинга короткой сессией и НЕ держать соединение БД на время сетевого HEAD.
+    """
+    if not mbid:
+        return None
+    caa_url = _CAA_FRONT.format(mbid=mbid)
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            head = await client.head(
+                caa_url, follow_redirects=False,
+                headers={"User-Agent": _user_agent()},
+            )
+        if head.status_code in (301, 302, 307):
+            return caa_url
+        return None
+    except httpx.HTTPError:
+        logger.debug("CAA lookup failed for mbid %s", mbid, exc_info=True)
+        return None
+
+
 async def cover_url_by_discogs_id(session, discogs_id: str) -> str | None:
     """CAA-обложка по офлайн-маппингу mb_discogs_map (без MusicBrainz API).
 
@@ -137,22 +189,7 @@ async def cover_url_by_discogs_id(session, discogs_id: str) -> str | None:
         text("SELECT mbid::text FROM mb_discogs_map WHERE discogs_id = :did"),
         {"did": int(discogs_id)},
     )).scalar()
-    if not mbid:
-        return None
-
-    caa_url = _CAA_FRONT.format(mbid=mbid)
-    try:
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            head = await client.head(
-                caa_url, follow_redirects=False,
-                headers={"User-Agent": _user_agent()},
-            )
-        if head.status_code in (301, 302, 307):
-            return caa_url
-        return None
-    except httpx.HTTPError:
-        logger.debug("CAA lookup failed for discogs_id %s", discogs_id, exc_info=True)
-        return None
+    return await caa_cover_url_by_mbid(mbid)
 
 
 # ── iTunes Search API fallback ──────────────────────────────────────────
@@ -174,6 +211,10 @@ def _norm(s: str) -> str:
 
 async def _itunes_throttle() -> None:
     global _itunes_last
+    # Кросс-процессный интервал — по тем же причинам, что у MusicBrainz:
+    # лимит iTunes считается по IP, локальный лок его не держит.
+    if await _distributed_throttle("itunes", _ITUNES_MIN_INTERVAL):
+        return
     async with _itunes_lock:
         wait = _ITUNES_MIN_INTERVAL - (time.monotonic() - _itunes_last)
         if wait > 0:

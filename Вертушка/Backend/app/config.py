@@ -160,6 +160,12 @@ class Settings(BaseSettings):
         default="https://api.vinyl-vertushka.ru/covers", alias="PUBLIC_COVERS_BASE",
     )
     covers_max_cache_mb: int = Field(default=5000, alias="COVERS_MAX_CACHE_MB")
+    # Дневной бюджет скачиваний КАРТИНОК с хостов Discogs (i.discogs.com).
+    # У Discogs неофициальный потолок ~1000 изображений/сутки на IP, дальше
+    # 403 на всё — включая обложки, которые видят живые пользователи. 800
+    # оставляет запас на ручные refresh, ретраи и погрешность счётчика.
+    # Учёт — Redis-счётчик в cover_storage (discogs_img:{YYYY-MM-DD}).
+    discogs_img_daily_budget: int = Field(default=800, alias="DISCOGS_IMG_DAILY_BUDGET")
     # Ночной перегрев мелких мастеров (cover_upgrade_tasks).
     #
     # Замер на проде (2026-08-13): 92 кандидата за 432с = ~4.7с на штуку. Цена не

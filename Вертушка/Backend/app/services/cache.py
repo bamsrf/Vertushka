@@ -253,6 +253,36 @@ class RedisCache:
             logger.warning("Redis take_token error: %s", bucket_key, exc_info=True)
             return None
 
+    async def throttle_slot(self, name: str, min_interval_ms: int) -> int | None:
+        """Кросс-процессный интервал-троттл: один слот на все процессы не чаще,
+        чем раз в min_interval_ms.
+
+        Зачем: asyncio-локи в cover_fallback держали интервал только внутри
+        одного процесса, а процессов минимум три (api, scheduler, второй цвет
+        при деплое) — MusicBrainz получал 2-3 rps при их жёстком лимите 1 rps.
+
+        Механика — SET NX PX: ключ живёт ровно интервал, кто создал ключ — тот
+        и взял слот. В отличие от take_token (скользящее окно, burst до лимита
+        разрешён) здесь важен именно РАВНОМЕРНЫЙ интервал: MB банит за
+        мгновенные всплески, а не только за среднее.
+
+        Возвращает 0 (слот взят), wait_ms до освобождения, None — Redis
+        недоступен (caller делает локальный fallback, как в take_token).
+        """
+        if not self._available:
+            return None
+        try:
+            key = self._key("throttle", name)
+            ok = await self._pool.set(key, b"1", nx=True, px=int(min_interval_ms))
+            if ok:
+                return 0
+            pttl = await self._pool.pttl(key)
+            # Ключ истёк между SET и PTTL (-2/-1) — пробовать почти сразу.
+            return max(int(pttl), 10) if pttl and pttl > 0 else 10
+        except Exception:
+            logger.warning("Redis throttle_slot error: %s", name, exc_info=True)
+            return None
+
     async def peek_tokens(
         self, bucket_key: str, capacity: float, refill_rate_per_sec: float,
     ) -> float | None:

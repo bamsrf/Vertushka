@@ -529,6 +529,15 @@ async def cover_coverage_snapshot(
 
     snapshot = await cache.get("metrics", "cover_coverage")
     if snapshot is None:
-        return {"status": "no_data", "hint": "cover_coverage job ещё не отработала"}
+        snapshot = {"status": "no_data", "hint": "cover_coverage job ещё не отработала"}
+
+    # Живой счётчик, а не из снапшота: снапшот суточный (6:15), а бюджет
+    # скачиваний Discogs-картинок интересен именно «сколько уже сегодня».
+    # used=None — Redis недоступен, учёт не ведётся.
+    from app.services.cover_storage import discogs_img_used_today
+    snapshot["discogs_img_today"] = {
+        "used": await discogs_img_used_today(),
+        "budget": settings.discogs_img_daily_budget,
+    }
     return snapshot
 

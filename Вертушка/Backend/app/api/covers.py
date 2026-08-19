@@ -16,11 +16,25 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
-from app.database import get_db
+from app.database import async_session_maker, get_db
 from app.models.record import Record
+from app.services.cache import cache
+from app.services.cover_demand import (
+    OUTCOME_BUDGET,
+    OUTCOME_BUSY,
+    OUTCOME_LIVE_HIT,
+    OUTCOME_LIVE_MISS,
+    OUTCOME_NEG_CACHE,
+    OUTCOME_NOT_FOUND,
+    OUTCOME_REDIRECT,
+    record_cold_outcome,
+    record_cold_request,
+)
 from app.services.cover_storage import (
     CoverStorageService,
     _download_cover_background,
+    discogs_img_budget_exhausted,
+    is_discogs_image_url,
     schedule_store_native_cover_cache,
 )
 from app.utils.url_guard import is_safe_redirect_target
@@ -35,6 +49,25 @@ router = APIRouter(tags=["Обложки"])
 # и каждый заход снова падает в 302 на Discogs (баг «обложки грузятся заново»).
 _mirror_tasks: set[asyncio.Task] = set()
 
+# ── Гейты живого резолва ────────────────────────────────────────────────────
+# Живой резолв — единственное место, где запрос юзера ходит по внешним API.
+# Без гейтов он был бомбой: каждый повторный промах того же id заново гонял
+# лестницу на 6с, параллельные запросы дублировали её, а каждый висящий
+# запрос держал соединение пула БД (их 15 на один uvicorn-воркер).
+_RESOLVE_NEG_NS = "cover_resolve_neg"
+# 12ч (внутри вилки 6-24ч): достаточно, чтобы шквал ретраев одного экрана не
+# гонял лестницу, и достаточно коротко, чтобы обложка, появившаяся у
+# источников, приехала на следующий день.
+_RESOLVE_NEG_TTL = 12 * 3600
+_RESOLVE_LOCK_NS = "cover_resolve_lock"
+# Резолв капнут 6с; TTL с запасом страхует от смерти процесса с висящим локом.
+_RESOLVE_LOCK_TTL = 30
+_RESOLVE_TIMEOUT = 6
+# ~4 одновременных резолва на процесс: больше — значит лестница стала главным
+# потребителем и пула БД, и троттлов источников. Остальные получают мгновенный
+# 404 + фоновый прогрев.
+_resolve_semaphore = asyncio.Semaphore(4)
+
 
 def _spawn_mirror(discogs_id: str, url: str) -> None:
     """Fire-and-forget зеркалирование с удержанием ссылки до завершения."""
@@ -43,8 +76,40 @@ def _spawn_mirror(discogs_id: str, url: str) -> None:
     task.add_done_callback(_mirror_tasks.discard)
 
 
+def _safe(url: str | None) -> str | None:
+    """Guard для всех 302 ручки /covers/{id}.
+
+    Три разные причины не редиректить:
+    1. собственное зеркало — петля;
+    2. no-image заглушка Discogs (st.discogs.com/.../spacer.gif);
+    3. небезопасная цель — иначе api-домен работает открытым редиректором.
+       URL едет из dump-индекса и из живого резолва, то есть в конечном
+       счёте из внешних данных. См. SECURITY_AUDIT_PRERELEASE.md §S2.
+    """
+    if not url:
+        return None
+    if url.startswith(get_settings().public_covers_base):
+        return None
+    if "spacer.gif" in url or "st.discogs.com" in url:
+        return None
+    if not is_safe_redirect_target(url):
+        logger.warning("covers: небезопасная цель редиректа отброшена: %s", url)
+        return None
+    return url
+
+
+async def _deny_discogs_by_budget(url: str | None) -> bool:
+    """True — это discogs-URL при исчерпанном дневном бюджете скачиваний.
+
+    302 на подписанный Discogs-URL при выеденном бюджете — почти наверняка
+    битая картинка после 403 (клиентская заглушка честнее), а зеркалирование
+    всё равно будет скипнуто бюджет-гейтом в download_and_store.
+    """
+    return bool(url) and is_discogs_image_url(url) and await discogs_img_budget_exhausted()
+
+
 async def _resolve_cover_live(
-    db, discogs_id: str, artist: str | None, title: str | None,
+    discogs_id: str, artist: str | None, title: str | None,
     year: int | None, barcode: str | None,
 ) -> str | None:
     """Синхронный резолв обложки для release без URL в индексе — показать
@@ -53,11 +118,28 @@ async def _resolve_cover_live(
     бесплатные) → Discogs (последним, под лимитером 60/мин + interactive-reserve).
     Yandex перед Discogs добирает русский/советский слой. Найденное пишем в
     индекс → следующий заход отдаёт 302 из БД без повторного резолва.
+
+    Сессию БД сюда НЕ передаём: лестница ходит только во внешние API, и держать
+    соединение пула (15 на воркер) до 6с ради неё непозволительно. Оба похода в
+    БД — lookup офлайн-маппинга и запись результата — своими короткими сессиями,
+    которые закрываются ДО/ПОСЛЕ сетевых вызовов.
     """
     url = None
     try:
-        from app.services.cover_fallback import cover_url_by_discogs_id
-        url = await cover_url_by_discogs_id(db, discogs_id)
+        from app.services.cover_fallback import caa_cover_url_by_mbid
+        from sqlalchemy import text as _t
+
+        mbid = None
+        if str(discogs_id).isdigit():
+            # Короткая сессия только на lookup — сетевой HEAD к CAA идёт уже
+            # без соединения БД на руках.
+            async with async_session_maker() as s:
+                mbid = (await s.execute(
+                    _t("SELECT mbid::text FROM mb_discogs_map WHERE discogs_id = :did"),
+                    {"did": int(discogs_id)},
+                )).scalar()
+        if mbid:
+            url = await caa_cover_url_by_mbid(mbid)
     except Exception:
         pass
     if not url and artist and title:
@@ -92,16 +174,74 @@ async def _resolve_cover_live(
     if url and str(discogs_id).isdigit():
         from sqlalchemy import text as _t
         try:
-            await db.execute(
-                _t("UPDATE discogs_releases_index SET cover_image_url = :u, "
-                   "cover_checked_at = now() WHERE discogs_id = :d "
-                   "AND cover_image_url IS NULL"),
-                {"u": url, "d": int(discogs_id)},
-            )
-            await db.commit()
+            async with async_session_maker() as s:
+                await s.execute(
+                    _t("UPDATE discogs_releases_index SET cover_image_url = :u, "
+                       "cover_checked_at = now() WHERE discogs_id = :d "
+                       "AND cover_image_url IS NULL"),
+                    {"u": url, "d": int(discogs_id)},
+                )
+                await s.commit()
         except Exception:
-            await db.rollback()
+            pass
     return url
+
+
+async def _live_resolve_guarded(db: AsyncSession, discogs_id: str, row) -> str | None:
+    """Обёртка живого резолва: negative-cache → семафор → дедуп → лестница.
+
+    Все «нет» здесь мгновенные — клиент получает 404 и ретраит позже
+    (MarketCarouselCard уже умеет), обложка доезжает фоном. Ни один запрос
+    юзера не висит на лестнице толпой и не держит сессию БД на 6с.
+    """
+    # Неудача уже известна — не гоняем лестницу повторно весь TTL.
+    if await cache.exists(_RESOLVE_NEG_NS, discogs_id):
+        await record_cold_outcome(OUTCOME_NEG_CACHE)
+        return None
+
+    # Семафор полон — не ждём: мгновенный 404 + fire-and-forget прогрев, чтобы
+    # обложка приехала к следующему просмотру. discogs_budget=1: точечный
+    # прогрев одного id не должен выедать батчевый бюджет warm'а.
+    if _resolve_semaphore.locked():
+        from app.services.cover_warm import schedule_warm_dump_covers
+        schedule_warm_dump_covers([discogs_id], discogs_budget=1)
+        await record_cold_outcome(OUTCOME_BUSY)
+        return None
+
+    # Дедуп одновременных резолвов одного id (SET NX, как lock в cover_storage):
+    # второй запрос не ждёт первого — тот сам запишет результат в индекс.
+    if not await cache.set_nx(_RESOLVE_LOCK_NS, discogs_id, 1, ttl=_RESOLVE_LOCK_TTL):
+        await record_cold_outcome(OUTCOME_BUSY)
+        return None
+
+    resolved = None
+    try:
+        # Отпускаем сессию запроса ДО лестницы: commit возвращает соединение в
+        # пул, дальше лестница живёт только на внешних API и коротких сессиях
+        # внутри _resolve_cover_live.
+        await db.commit()
+        async with _resolve_semaphore:
+            resolved = _safe(await asyncio.wait_for(
+                _resolve_cover_live(
+                    discogs_id, row["artist"], row["title"],
+                    row["year"], row["barcode_norm"],
+                ),
+                timeout=_RESOLVE_TIMEOUT,
+            ))
+    except Exception:
+        resolved = None
+    finally:
+        await cache.delete(_RESOLVE_LOCK_NS, discogs_id)
+
+    if resolved:
+        await record_cold_outcome(OUTCOME_LIVE_HIT)
+        return resolved
+
+    # Помечаем промах: повторные запросы того же id получают мгновенный 404
+    # без лестницы, пока TTL не даст источникам шанс обновиться.
+    await cache.set(_RESOLVE_NEG_NS, discogs_id, 1, ttl=_RESOLVE_NEG_TTL)
+    await record_cold_outcome(OUTCOME_LIVE_MISS)
+    return None
 
 
 @router.get("/store/{record_id}")
@@ -162,29 +302,7 @@ async def get_cover(
     # на диске, значит каждый вызов — холодный просмотр живого пользователя.
     # Именно этого числа не хватало для планирования ёмкости: рост
     # records.cover_cached_at считает и фоновые джобы, и людей вперемешку.
-    from app.services.cover_demand import record_cold_request
     await record_cold_request(discogs_id)
-
-    def _safe(url: str | None) -> str | None:
-        """Guard для всех 302 этой ручки.
-
-        Три разные причины не редиректить:
-        1. собственное зеркало — петля;
-        2. no-image заглушка Discogs (st.discogs.com/.../spacer.gif);
-        3. небезопасная цель — иначе api-домен работает открытым редиректором.
-           URL едет из dump-индекса и из живого резолва, то есть в конечном
-           счёте из внешних данных. См. SECURITY_AUDIT_PRERELEASE.md §S2.
-        """
-        if not url:
-            return None
-        if url.startswith(get_settings().public_covers_base):
-            return None
-        if "spacer.gif" in url or "st.discogs.com" in url:
-            return None
-        if not is_safe_redirect_target(url):
-            logger.warning("covers: небезопасная цель редиректа отброшена: %s", url)
-            return None
-        return url
 
     # m{master_id} — обложка МАСТЕРА (сетка артиста): discogs_master_covers,
     # иначе лучшая обложка любой версии группы из dump-индекса.
@@ -206,8 +324,13 @@ async def get_cover(
                 {"mid": mid},
             )).scalar())
         if not url:
+            await record_cold_outcome(OUTCOME_NOT_FOUND)
+            raise HTTPException(status_code=404, detail="Cover image not available")
+        if await _deny_discogs_by_budget(url):
+            await record_cold_outcome(OUTCOME_BUDGET)
             raise HTTPException(status_code=404, detail="Cover image not available")
         _spawn_mirror(discogs_id, url)
+        await record_cold_outcome(OUTCOME_REDIRECT)
         return RedirectResponse(url=url, status_code=302)
 
     result = await db.execute(
@@ -218,10 +341,14 @@ async def get_cover(
 
     record_url = _safe(record.cover_image_url) if record is not None else None
     if record_url:
+        if await _deny_discogs_by_budget(record_url):
+            await record_cold_outcome(OUTCOME_BUDGET)
+            raise HTTPException(status_code=404, detail="Cover image not available")
         # Запускаем фоновое скачивание если обложки нет локально
         if not record.cover_local_path:
             _spawn_mirror(discogs_id, record_url)
         # 302 redirect — клиент получит обложку немедленно через внешний URL
+        await record_cold_outcome(OUTCOME_REDIRECT)
         return RedirectResponse(url=record_url, status_code=302)
 
     # Записи нет (или без обложки) — dump-индекс: сетка артиста, поиск,
@@ -239,26 +366,22 @@ async def get_cover(
         if row:
             url = _safe(row["cover_image_url"])
             if url:
+                if await _deny_discogs_by_budget(url):
+                    await record_cold_outcome(OUTCOME_BUDGET)
+                    raise HTTPException(status_code=404, detail="Cover image not available")
                 _spawn_mirror(discogs_id, url)
+                await record_cold_outcome(OUTCOME_REDIRECT)
                 return RedirectResponse(url=url, status_code=302)
 
-            # Нет URL в индексе → живой резолв (мин заглушек). Bounded таймаутом,
-            # чтобы /covers не висел; на промах/таймаут — 404 (клиент заглушку).
-            resolved = None
-            try:
-                resolved = _safe(await asyncio.wait_for(
-                    _resolve_cover_live(
-                        db, discogs_id, row["artist"], row["title"],
-                        row["year"], row["barcode_norm"],
-                    ),
-                    timeout=6,
-                ))
-            except Exception:
-                resolved = None
+            # Нет URL в индексе → живой резолв (мин заглушек), под гейтами:
+            # negative-cache / дедуп / семафор — см. _live_resolve_guarded.
+            resolved = await _live_resolve_guarded(db, discogs_id, row)
             if resolved:
                 _spawn_mirror(discogs_id, resolved)
                 return RedirectResponse(url=resolved, status_code=302)
+            raise HTTPException(status_code=404, detail="Cover image not available")
 
+    await record_cold_outcome(OUTCOME_NOT_FOUND)
     raise HTTPException(status_code=404, detail="Cover image not available")
 
 
