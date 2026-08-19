@@ -25,6 +25,9 @@ RED='\033[0;31m'
 NC='\033[0m'
 
 SERVER="${VERTUSHKA_SSH:-deploy@85.198.85.12}"
+# Куда писать. Переопределяется только для проверки самого скрипта:
+#   VERTUSHKA_ENV_FILE=/tmp/envtest bash Backend/scripts/setup_apple_key.sh ...
+TARGET_ENV="${VERTUSHKA_ENV_FILE:-.env.prod}"
 
 if [ $# -ne 3 ]; then
     echo "Использование: bash $0 <путь к AuthKey_XXXX.p8> <TEAM_ID> <KEY_ID>"
@@ -76,31 +79,49 @@ PAYLOAD=$(
 )
 
 # ─── Запись на сервер ───────────────────────────────────────────────────
-printf '%s\n' "$PAYLOAD" | ssh "$SERVER" 'bash -s' <<'REMOTE'
+# Скрипт уезжает АРГУМЕНТОМ ssh, а не heredoc'ом: если отдать его через
+# `ssh bash -s <<EOF`, heredoc перебьёт пайп, и секрет на ту сторону просто
+# не доедет — remote отработает с пустым payload и молча ничего не изменит.
+# Секретам место только в stdin (в argv их видно в `ps` на сервере).
+# Внутри — одинарные кавычки не использовать: строка сама в них завёрнута.
+REMOTE_SCRIPT='
 set -euo pipefail
 cd ~/vertushka/Вертушка/Backend
+ENV_FILE="__ENV_FILE__"
 
 TMP=$(mktemp)
-trap 'rm -f "$TMP" "$TMP.env"' EXIT
+TMP_ENV=$(mktemp)
+trap "rm -f $TMP $TMP_ENV" EXIT
 cat > "$TMP"
 
+# Страховка от бага выше и от оборванного пайпа: пустой payload не должен
+# молча превратиться в «успешно обновлено».
+if [ ! -s "$TMP" ]; then
+    echo "   ❌ На сервер не пришло ни байта — .env.prod не тронут."
+    exit 1
+fi
+
 BACKUP=~/env.prod.bak.$(date +%Y%m%d_%H%M%S)
-cp .env.prod "$BACKUP"
+cp "$ENV_FILE" "$BACKUP"
 echo "   Бэкап: $BACKUP"
 
 # Старые значения выкидываем — иначе при повторном запуске в файле окажется
 # два APPLE_PRIVATE_KEY, и какое подхватит docker compose, зависит от порядка.
-grep -vE '^(APPLE_TEAM_ID|APPLE_KEY_ID|APPLE_PRIVATE_KEY)=' .env.prod > "$TMP.env"
-cat "$TMP" >> "$TMP.env"
-mv "$TMP.env" .env.prod
-chmod 600 .env.prod
+grep -vE "^(APPLE_TEAM_ID|APPLE_KEY_ID|APPLE_PRIVATE_KEY)=" "$ENV_FILE" > "$TMP_ENV"
+cat "$TMP" >> "$TMP_ENV"
+mv "$TMP_ENV" "$ENV_FILE"
+chmod 600 "$ENV_FILE"
 
-if ! grep -q '^APPLE_CLIENT_ID=' .env.prod; then
+if ! grep -q "^APPLE_CLIENT_ID=" "$ENV_FILE"; then
     echo "   ⚠️  APPLE_CLIENT_ID отсутствует — добавь его (= com.vertushka.app),"
     echo "      без него is_configured() всё равно вернёт False."
 fi
-echo "   ✅ .env.prod обновлён"
-REMOTE
+echo "   ✅ $ENV_FILE обновлён"
+'
+
+REMOTE_SCRIPT="${REMOTE_SCRIPT//__ENV_FILE__/$TARGET_ENV}"
+
+printf '%s\n' "$PAYLOAD" | ssh "$SERVER" "$REMOTE_SCRIPT"
 
 echo ""
 echo -e "${GREEN}✅ Переменные записаны.${NC}"
