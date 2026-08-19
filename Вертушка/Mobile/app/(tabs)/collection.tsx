@@ -250,6 +250,15 @@ export default function CollectionScreen() {
     }
   }, []);
 
+  // Стабильный ключ состава вишлиста: fetchWishlistItems на каждом фокусе
+  // отдаёт НОВЫЙ массив с тем же содержимым, и зависимость по identity
+  // перезапускала getOffersSummary/getRadar вхолостую. Ключ меняется только
+  // когда реально изменился набор items.
+  const wishlistIdsKey = useMemo(
+    () => wishlistItems.map((i) => i.id).sort().join(','),
+    [wishlistItems]
+  );
+
   useEffect(() => {
     if (activeTab !== 'wishlist' || wishlistItems.length === 0) {
       setHotStockMap(new Map());
@@ -280,7 +289,9 @@ export default function CollectionScreen() {
       }
     })();
     return () => { cancelled = true; };
-  }, [activeTab, wishlistItems]);
+    // wishlistItems в deps заменён стабильным ключом — см. wishlistIdsKey выше.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, wishlistIdsKey]);
 
   // Сброс режима выбора при смене вкладки
   useEffect(() => {
@@ -319,7 +330,8 @@ export default function CollectionScreen() {
   useEffect(() => {
     if (activeTab !== 'wishlist') return;
     api.getRadar().then((r) => setRadarMatchCount(r.match_count)).catch(() => {});
-  }, [activeTab, wishlistItems]);
+    // Ключ вместо identity массива — иначе радар дёргался на каждый рефетч.
+  }, [activeTab, wishlistIdsKey]);
 
   // Анимация смены кнопки Выбрать ↔ Отмена + скрытие меню
   useEffect(() => {

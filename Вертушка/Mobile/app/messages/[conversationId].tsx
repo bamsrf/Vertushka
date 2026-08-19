@@ -72,8 +72,9 @@ import type {
 // Safety-net на случай отвалившегося WS, а не основной транспорт: доставку
 // держит messagesWs.ts. Каждый тик перезапрашивает тред целиком — на 8с это
 // было радио и парсинг JSON каждые восемь секунд в течение всего разговора.
+// Тик при живом сокете пропускается вовсе (см. guard в setInterval ниже).
 const POLL_INTERVAL_MS = 30_000;
-const PRESENCE_INTERVAL_MS = 30_000;
+const PRESENCE_INTERVAL_MS = 60_000;
 const GROUP_GAP_MS = 5 * 60 * 1000; // сообщения подряд того же sender → одна группа
 const EMPTY_MESSAGES: Message[] = [];
 
@@ -798,7 +799,11 @@ export default function ConversationScreen() {
 
     const start = () => {
       if (timer) return;
-      timer = setInterval(() => loadThread(conversationId), POLL_INTERVAL_MS);
+      timer = setInterval(() => {
+        // Живой WS сам доставляет сообщения — поллим тред только как
+        // страховку, когда сокет лежит.
+        if (!messagesSocket.isOpen()) loadThread(conversationId);
+      }, POLL_INTERVAL_MS);
     };
     const stop = () => {
       if (timer) {
@@ -861,7 +866,8 @@ export default function ConversationScreen() {
     [conversationId],
   );
 
-  // Presence: подгружаем статус собеседника каждые 30с пока экран открыт.
+  // Presence: подгружаем статус собеседника раз в минуту пока экран открыт.
+  // Чаще незачем: гранулярность самого статуса — «N мин назад».
   useEffect(() => {
     if (!partner?.id) return undefined;
     let cancelled = false;

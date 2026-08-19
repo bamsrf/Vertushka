@@ -7,7 +7,7 @@
  * кружку → шторка истории; peach → alt-подтверждение.
  */
 import { useCallback, useMemo, useRef, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, useWindowDimensions, Linking } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, useWindowDimensions, Linking, PixelRatio } from 'react-native';
 import { Image } from 'expo-image';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
@@ -29,7 +29,7 @@ import { RadarIcon } from '../components/RadarIcon';
 import { PriceHistorySheet, type PriceHistorySheetRef, type PriceHistorySheetData } from '../components/wishlist/PriceHistorySheet';
 import { AltVersionSheet, type AltVersionSheetRef } from '../components/wishlist/AltVersionSheet';
 import { ThresholdSheet, type ThresholdSheetRef } from '../components/wishlist/ThresholdSheet';
-import { api, getCoverUrl, resolveMediaUrl } from '../lib/api';
+import { api, getCoverUrl, resolveMediaUrl, sizedCoverUrl } from '../lib/api';
 import { analytics } from '../lib/analytics';
 import { useAuthStore } from '../lib/store';
 import { useRadarReopen } from '../lib/radarReopen';
@@ -129,7 +129,9 @@ function RadarCover({
   const absent = item.status === 'absent';
   const price = item.status === 'alt' ? item.alt?.price_rub : item.lowest_price_rub;
   const age = absent ? absentAge(item.absent_since) : null;
-  const cover = getCoverUrl(item.record);
+  // Кружок радара — 50pt: нарезка 320 вместо мастера (~1000px). Внешние URL
+  // sizedCoverUrl вернёт как есть.
+  const cover = sizedCoverUrl(getCoverUrl(item.record), Math.ceil(COVER * PixelRatio.get()));
 
   // Луч (передняя кромка + центр клина ~+27°) в экранных градусах.
   const beam = useAnimatedStyle(() => {

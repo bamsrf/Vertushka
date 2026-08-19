@@ -132,12 +132,12 @@ export default function ScannerScreen() {
   // ID пластинки, на детали которой ушли (null = не уходили)
   const viewedDetailId = useRef<string | null>(null);
 
-  // Owned-ids подгружаются лениво (fetchCollectionItems). Scanner может открыться
-  // первым на холодном старте — тянем сет владения при фокусе, иначе дабл-чек
-  // дубля не срабатывает на первом скане.
+  // Owned-ids тянем один раз на холодный старт (сканер может открыться раньше
+  // коллекции), дальше сет поддерживают сами мутации: optimistic add и рефетч
+  // в removeFromCollection. Рефетчить на каждый фокус сканера незачем.
   useFocusEffect(
     useCallback(() => {
-      fetchOwnedIds();
+      if (!useCollectionStore.getState().ownedIdsLoaded) fetchOwnedIds();
     }, [fetchOwnedIds])
   );
 

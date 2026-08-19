@@ -178,6 +178,9 @@ export default function GiftDetailScreen() {
               analytics.giftCompleted({ via: 'gift_screen', discogs_id: gift.record.discogs_id });
               removeReceived(gift.id);
               await Promise.all([fetchCollectionItems(), fetchWishlistItems()]);
+              // Подарок вошёл в коллекцию — owned-ids обновляются только по
+              // мутациям, рефетч списков сет больше не трогает.
+              useCollectionStore.getState().fetchOwnedIds();
               toast.success('Спасибо!', 'Пластинка теперь в твоей коллекции');
               router.back();
             } catch (error: any) {

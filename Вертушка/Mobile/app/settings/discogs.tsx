@@ -170,6 +170,9 @@ export default function DiscogsSettings() {
               // сломанным сразу после главного действия онбординга.
               await useCollectionStore.getState().fetchCollections();
               await useCollectionStore.getState().fetchCollectionItems();
+              // Импорт — массовая смена владения: owned-ids теперь обновляются
+              // только по мутациям, а не прицепом к fetchCollectionItems.
+              useCollectionStore.getState().fetchOwnedIds();
 
               // Цены приезжают отдельно и минутами позже — без этой строчки
               // юзер видел бы полку с прочерками вместо стоимости и считал бы

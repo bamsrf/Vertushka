@@ -15,6 +15,7 @@ import {
   TouchableOpacity,
   Pressable,
   Platform,
+  PixelRatio,
   LayoutChangeEvent,
 } from 'react-native';
 import Animated, {
@@ -30,7 +31,7 @@ import { useIsFocused } from '@react-navigation/native';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { ms } from '../lib/responsive';
-import { resolveMediaUrl } from '../lib/api';
+import { resolveMediaUrl, sizedCoverUrl } from '../lib/api';
 import { cleanArtistName } from '../lib/format';
 import { PublicProfileRecord } from '../lib/types';
 
@@ -44,6 +45,9 @@ const PALETTE = {
 
 const HORIZONTAL_PADDING = 20;
 const RAIL_COVER = 108;
+// Нарезка обложки под слот 108pt вместо мастера (~1000px): sizedCoverUrl
+// округлит вверх до ступени 320/640 по DPR устройства.
+const RAIL_COVER_PX = Math.ceil(RAIL_COVER * PixelRatio.get());
 const ITEM_GAP = 12;
 const FULL_LOOP_DURATION_MS = 30000;
 // Абсолютная скорость авто-скролла (px/ms) — НЕ зависит от числа карточек.
@@ -278,7 +282,7 @@ export function AutoRail({
       <View style={styles.railCover}>
         {r.cover_image_url ? (
           <Image
-            source={resolveMediaUrl(r.cover_image_url)}
+            source={sizedCoverUrl(resolveMediaUrl(r.cover_image_url), RAIL_COVER_PX)}
             style={{ width: RAIL_COVER, height: RAIL_COVER }}
             cachePolicy="disk"
           />

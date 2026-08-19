@@ -5,12 +5,12 @@
  * текст «alex добавил 10 пластинок» + carousel из 3 первых обложек.
  */
 import React, { useMemo } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView, PixelRatio } from 'react-native';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Colors, Spacing, BorderRadius, Typography } from '@/constants/theme';
 import { Icon } from '@/components/ui';
-import { resolveMediaUrl, getCoverUrl } from '@/lib/api';
+import { resolveMediaUrl, getCoverUrl, sizedCoverUrl } from '@/lib/api';
 import type { SocialFeedItem, SocialFeedRecord } from '@/lib/types';
 
 interface Props {
@@ -86,7 +86,12 @@ function buildText(item: SocialFeedItem): string {
 
 function recordCover(r: SocialFeedRecord | null | undefined): string | undefined {
   if (!r) return undefined;
-  return getCoverUrl({ cover_url: r.cover_url ?? undefined });
+  // Слоты в ленте мелкие (44/56pt) — просим нарезку 320 вместо мастера.
+  // Внешние (не наши /covers/*.jpg) URL sizedCoverUrl возвращает как есть.
+  return sizedCoverUrl(
+    getCoverUrl({ cover_url: r.cover_url ?? undefined }),
+    Math.ceil(56 * PixelRatio.get())
+  );
 }
 
 export const SocialFeedRow: React.FC<Props> = ({ item, onPress }) => {

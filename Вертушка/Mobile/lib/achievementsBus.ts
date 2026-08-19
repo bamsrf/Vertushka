@@ -63,8 +63,28 @@ export async function initAchievementsCache(): Promise<void> {
 /** Сбросить кэш — например, при выходе из аккаунта. */
 export function resetAchievementsCache(): void {
   _knownUnlocked = null;
+  if (_detectDebounceTimer) {
+    clearTimeout(_detectDebounceTimer);
+    _detectDebounceTimer = null;
+  }
   resetCelebratedAchievements();
   resetCurrentLevel();
+}
+
+let _detectDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+
+/**
+ * Дебаунс-обёртка над detectAchievementUnlocks для серийных мутаций: скан 20
+ * пластинок подряд раньше давал 20 пар запросов ачивок, теперь по тишине в 3с
+ * уходит один. Анлоки не теряются — diff считается от последнего показанного
+ * набора, поэтому отложенная проверка увидит всё, что открылось за серию.
+ */
+export function detectAchievementUnlocksDebounced(delayMs = 3000): void {
+  if (_detectDebounceTimer) clearTimeout(_detectDebounceTimer);
+  _detectDebounceTimer = setTimeout(() => {
+    _detectDebounceTimer = null;
+    detectAchievementUnlocks();
+  }, delayMs);
 }
 
 /** Проверить новые анлоки и показать overlay. Безопасно вызывать после любого

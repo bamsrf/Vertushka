@@ -12,6 +12,7 @@ import {
   initAchievementsCache,
   resetAchievementsCache,
   detectAchievementUnlocks,
+  detectAchievementUnlocksDebounced,
 } from './achievementsBus';
 
 // ==================== In-flight action deduplication ====================
@@ -50,6 +51,51 @@ function dedupeAction<T>(key: string, fn: () => Promise<T>): Promise<T> {
   });
   inFlightActions.set(key, promise);
   return promise;
+}
+
+// ==================== Freshness / deferred refetch ====================
+/**
+ * TTL свежести коллекции/вишлиста для фокус-рефетчей. Тот же принцип, что у
+ * кэша поиска ниже (CacheStore + TTL.search): пока данные моложе TTL — экраны
+ * читают стор и не трогают сеть. Мутации либо сами рефетчат (и обновляют
+ * метку), либо явно её сбрасывают.
+ */
+const COLLECTION_FRESH_TTL_MS = 5 * 60 * 1000;
+
+/**
+ * Один отложенный рефетч на серию мутаций: каждое добавление передёргивает
+ * таймер, и 20 сканов подряд дают ОДИН refetch коллекции+вишлиста вместо 20
+ * пар запросов. Данные до сверки держит оптимистичный локальный апдейт.
+ */
+let collectionRefetchTimer: ReturnType<typeof setTimeout> | null = null;
+function scheduleCollectionRefetch(delayMs = 2000): void {
+  if (collectionRefetchTimer) clearTimeout(collectionRefetchTimer);
+  collectionRefetchTimer = setTimeout(() => {
+    collectionRefetchTimer = null;
+    const s = useCollectionStore.getState();
+    s.fetchCollectionItems().catch(() => {});
+    s.fetchWishlistItems().catch(() => {});
+  }, delayMs);
+}
+
+/**
+ * Оптимистично вписывает добавленный элемент в стор: бэк уже вернул его
+ * целиком, поэтому список (сорт по added_at desc → в начало) и сеты владения
+ * можно обновить без немедленного полного рефетча. Сверку с сервером сделает
+ * scheduleCollectionRefetch().
+ */
+function applyOptimisticCollectionAdd(item: CollectionItem): void {
+  useCollectionStore.setState((s) => {
+    const ownedDiscogsIds = new Set(s.ownedDiscogsIds);
+    const ownedRecordIds = new Set(s.ownedRecordIds);
+    if (item.record.discogs_id) ownedDiscogsIds.add(String(item.record.discogs_id));
+    if (item.record_id) ownedRecordIds.add(String(item.record_id));
+    return {
+      collectionItems: [item, ...s.collectionItems.filter((i) => i.id !== item.id)],
+      ownedDiscogsIds,
+      ownedRecordIds,
+    };
+  });
 }
 import {
   User,
@@ -594,6 +640,11 @@ interface CollectionState {
   // Полный сет владения (все коллекции, не только page 1) — для дедупа.
   ownedDiscogsIds: Set<string>;
   ownedRecordIds: Set<string>;
+  /** Owned-ids уже загружались хоть раз — дальше сет поддерживают мутации. */
+  ownedIdsLoaded: boolean;
+  /** Момент последней успешной загрузки (0 = не загружено/инвалидировано). */
+  collectionFetchedAt: number;
+  wishlistFetchedAt: number;
   wishlistItems: WishlistItem[];
   wishlistFolders: WishlistFolder[];
   isLoading: boolean;
@@ -609,6 +660,13 @@ interface CollectionState {
   isOwned: (opts: { discogsId?: string | null; recordId?: string | null }) => boolean;
   loadMoreCollectionItems: () => Promise<void>;
   fetchWishlistItems: () => Promise<void>;
+  /**
+   * Фокус-варианты fetch'ей: сеть трогают только если данные старше TTL
+   * (COLLECTION_FRESH_TTL_MS) или инвалидированы мутацией. Экраны, которым
+   * нужно «обновить при фокусе», зовут их вместо прямых fetch*.
+   */
+  ensureCollectionFresh: () => Promise<void>;
+  ensureWishlistFresh: () => Promise<void>;
   fetchStats: () => Promise<void>;
   setSortBy: (sort: 'added_at' | 'price_desc' | 'price_asc') => void;
   // Подарок, который бэк опознал при добавлении в коллекцию: показываем поп-ап
@@ -667,6 +725,9 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
   collectionItems: [],
   ownedDiscogsIds: new Set<string>(),
   ownedRecordIds: new Set<string>(),
+  ownedIdsLoaded: false,
+  collectionFetchedAt: 0,
+  wishlistFetchedAt: 0,
   collectionPage: 1,
   collectionHasMore: false,
   isLoadingMore: false,
@@ -700,9 +761,17 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
     set({ isLoading: true });
     try {
       const { items, hasMore } = await api.getCollectionItems(defaultCollection.id, sortBy, 1);
-      set({ collectionItems: items, collectionPage: 1, collectionHasMore: hasMore, isLoading: false });
-      // Полный сет владения держим в синхроне с любым refetch коллекции.
-      get().fetchOwnedIds();
+      // Owned-ids грузим ОДИН раз (холодный старт), а не на каждый refetch
+      // коллекции: дальше сет поддерживают сами мутации — optimistic add,
+      // removeFromCollection и ownership-флоу (move, gift, импорт).
+      if (!get().ownedIdsLoaded) get().fetchOwnedIds();
+      set({
+        collectionItems: items,
+        collectionPage: 1,
+        collectionHasMore: hasMore,
+        isLoading: false,
+        collectionFetchedAt: Date.now(),
+      });
     } catch (error) {
       set({ isLoading: false });
       throw error;
@@ -715,6 +784,7 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
       set({
         ownedDiscogsIds: new Set(discogs_ids),
         ownedRecordIds: new Set(record_ids),
+        ownedIdsLoaded: true,
       });
     } catch {
       // Тихо: дедуп — не критичный путь, не роняем загрузку коллекции.
@@ -779,11 +849,27 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
     set({ isLoading: true });
     try {
       const items = await api.getWishlistItems();
-      set({ wishlistItems: items, isLoading: false });
+      set({ wishlistItems: items, isLoading: false, wishlistFetchedAt: Date.now() });
     } catch (error) {
       set({ isLoading: false });
       throw error;
     }
+  },
+
+  ensureCollectionFresh: async () => {
+    if (
+      get().defaultCollection &&
+      Date.now() - get().collectionFetchedAt < COLLECTION_FRESH_TTL_MS
+    ) {
+      return;
+    }
+    await get().fetchCollections();
+    await get().fetchCollectionItems();
+  },
+
+  ensureWishlistFresh: async () => {
+    if (Date.now() - get().wishlistFetchedAt < COLLECTION_FRESH_TTL_MS) return;
+    await get().fetchWishlistItems();
   },
 
   setWishlistNotifyMode: async (itemId, mode) => {
@@ -952,7 +1038,7 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
 
   addToCollection: async (discogsId) => {
     return dedupeAction(`addToCollection:${discogsId}`, async () => {
-      let { defaultCollection, collections, fetchCollectionItems, fetchWishlistItems } = get();
+      let { defaultCollection, collections } = get();
 
       if (!defaultCollection) {
         if (collections.length === 0) {
@@ -971,18 +1057,20 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
       // Инвалидируем кэш поиска — счётчики коллекции могли измениться
       useCacheStore.getState().invalidateAll();
 
-      await Promise.all([
-        fetchCollectionItems(),
-        fetchWishlistItems()
-      ]);
+      // Бэк вернул элемент целиком — вписываем его в стор оптимистично, а
+      // полную сверку (и вишлист, который бэк мог тронуть gift-матчем) делаем
+      // одним отложенным рефетчем на всю серию добавлений: 20 сканов подряд =
+      // 1 пара запросов, а не 20.
+      applyOptimisticCollectionAdd(added);
+      scheduleCollectionRefetch();
       // Возможные анлоки: A1, B*, R_* (числовые/самореферентные)
-      detectAchievementUnlocks();
+      detectAchievementUnlocksDebounced();
     });
   },
 
   addToCollectionByRecordId: async (recordId) => {
     return dedupeAction(`addToCollectionByRecordId:${recordId}`, async () => {
-      let { defaultCollection, collections, fetchCollectionItems, fetchWishlistItems } = get();
+      let { defaultCollection, collections } = get();
       if (!defaultCollection) {
         if (collections.length === 0) {
           await api.createCollection({ name: 'Моя коллекция' });
@@ -996,8 +1084,9 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
       const added = await api.addToCollectionByRecordId(defaultCollection.id, recordId);
       captureGiftMatch(added, set);
       useCacheStore.getState().invalidateAll();
-      await Promise.all([fetchCollectionItems(), fetchWishlistItems()]);
-      detectAchievementUnlocks();
+      applyOptimisticCollectionAdd(added);
+      scheduleCollectionRefetch();
+      detectAchievementUnlocksDebounced();
     });
   },
 
@@ -1019,6 +1108,8 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
         ? await api.addToCollection(defaultCollection.id, discogsId)
         : await api.addToCollectionByRecordId(defaultCollection.id, recordId!);
       captureGiftMatch(item, set);
+      // Сеты владения обновляем сразу: refetch ниже их больше не трогает.
+      applyOptimisticCollectionAdd(item);
 
       // Фото не критично: релиз уже в коллекции — при сбое аплоада просто
       // останется обложка Discogs.
@@ -1043,8 +1134,8 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
       await api.addToWishlist(discogsId);
       useCacheStore.getState().invalidateAll();
       await get().fetchWishlistItems();
-      // Возможные анлоки: A2
-      detectAchievementUnlocks();
+      // Возможные анлоки: A2. Debounce: серия добавлений → один запрос ачивок.
+      detectAchievementUnlocksDebounced();
     });
   },
 
@@ -1056,7 +1147,7 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
       await api.addToWishlistByRecordId(recordId);
       useCacheStore.getState().invalidateAll();
       await get().fetchWishlistItems();
-      detectAchievementUnlocks();
+      detectAchievementUnlocksDebounced();
     });
   },
 
@@ -1099,7 +1190,18 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
       await get().fetchCollections();
     }
 
-    if (!skipRefetch) await get().fetchCollectionItems();
+    // Сет владения после удаления пересчитать локально нельзя (page-1 не видит
+    // остальные копии) — один дешёвый рефетч owned-ids вместо рефетча на
+    // каждый фокус сканера.
+    get().fetchOwnedIds();
+
+    if (!skipRefetch) {
+      await get().fetchCollectionItems();
+    } else {
+      // Инвалидация: caller сам управляет списком — следующий фокус-рефетч
+      // не должен доверять протухшему стору.
+      set({ collectionFetchedAt: 0 });
+    }
   },
 
   removeFromWishlist: async (itemId, skipRefetch = false) => {
@@ -1110,6 +1212,8 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
         get().fetchWishlistItems(),
         get().fetchWishlistFolders(),
       ]);
+    } else {
+      set({ wishlistFetchedAt: 0 });
     }
   },
 
@@ -1131,6 +1235,8 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
         fetchCollectionItems(),
         fetchWishlistItems(),
       ]);
+      // Перенос меняет владение — сет owned-ids сам этого не узнает.
+      get().fetchOwnedIds();
 
       // Перенос в коллекцию может открыть C-серию (коллекционка/лимитка),
       // scale, genres, eras, geo. Бэкенд анлокает синхронно до ответа 200,
@@ -1732,6 +1838,12 @@ export const useGiftStore = create<GiftStore>((set) => ({
  * (его сбрасывает сам caller — login/logout reducer).
  */
 export function resetUserStores(): void {
+  // Отложенный рефетч серии добавлений не должен пережить logout — иначе
+  // выстрелит под новым (или уже отсутствующим) пользователем.
+  if (collectionRefetchTimer) {
+    clearTimeout(collectionRefetchTimer);
+    collectionRefetchTimer = null;
+  }
   useSearchStore.setState({
     query: '',
     filters: {},
@@ -1755,6 +1867,9 @@ export function resetUserStores(): void {
     collectionItems: [],
     ownedDiscogsIds: new Set<string>(),
     ownedRecordIds: new Set<string>(),
+    ownedIdsLoaded: false,
+    collectionFetchedAt: 0,
+    wishlistFetchedAt: 0,
     collectionPage: 1,
     collectionHasMore: false,
     isLoadingMore: false,

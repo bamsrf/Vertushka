@@ -696,7 +696,25 @@ export function initMessagesRealtime(): void {
           conversationsRequests: updateList(s.conversationsRequests),
         };
       });
-      useMessagesStore.getState().refreshUnread();
+      // Локальный инкремент вместо полного рефетча на каждое входящее
+      // WS-сообщение: папку знаем из уже загруженных списков. Сверка с
+      // сервером остаётся на reconnect (onConnected ниже) и markRead.
+      if (me && e.message.sender_id !== me.id) {
+        const st = useMessagesStore.getState();
+        const inPrimary = st.conversationsPrimary.some((c) => c.id === e.conversation_id);
+        const inRequests = st.conversationsRequests.some((c) => c.id === e.conversation_id);
+        if (inPrimary || inRequests) {
+          useMessagesStore.setState((s) => ({
+            unread: inRequests
+              ? { ...s.unread, requests: s.unread.requests + 1 }
+              : { ...s.unread, primary: s.unread.primary + 1 },
+          }));
+        } else {
+          // Диалог ещё не загружен (новый собеседник) — папку локально не
+          // узнать, это единственный случай, когда спрашиваем сервер.
+          st.refreshUnread();
+        }
+      }
     } else if (e.type === 'message.read') {
       useMessagesStore.setState((s) => ({
         conversationsPrimary: s.conversationsPrimary.map((c) =>
@@ -751,6 +769,12 @@ export function initMessagesRealtime(): void {
       }));
     }
     // 'typing' обрабатывается в экране треда через отдельный subscribe
+  });
+
+  // Сверка счётчика при (ре)коннекте: пока WS лежал, локальные инкременты не
+  // приходили — один рефетч приводит badge в соответствие с сервером.
+  messagesSocket.onConnected((connected) => {
+    if (connected) useMessagesStore.getState().refreshUnread();
   });
 
   messagesSocket.connect();

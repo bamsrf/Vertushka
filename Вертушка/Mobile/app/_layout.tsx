@@ -333,15 +333,16 @@ function RootLayout() {
 
     useNotificationsStore.getState().fetchUnreadCount();
 
-    // Глобальный polling: пока приложение активно, раз в 30с подтягиваем unreadCount,
+    // Глобальный polling: пока приложение активно, раз в 60с подтягиваем unreadCount,
     // чтобы красная точка на аватаре появлялась даже без push (например, события без
     // push'а или quiet hours). При уходе в background — таймер останавливается.
+    // 60с вместо 30с: badge — не realtime-фича, а основной канал всё равно push.
     let pollTimer: ReturnType<typeof setInterval> | null = null;
     const startPolling = () => {
       if (pollTimer) return;
       pollTimer = setInterval(() => {
         useNotificationsStore.getState().fetchUnreadCount();
-      }, 30_000);
+      }, 60_000);
     };
     const stopPolling = () => {
       if (pollTimer) {

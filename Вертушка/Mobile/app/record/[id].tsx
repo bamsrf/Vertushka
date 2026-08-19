@@ -280,9 +280,9 @@ export default function RecordDetailScreen() {
     moveToCollection,
     collectionItems,
     wishlistItems,
-    fetchCollectionItems,
-    fetchWishlistItems,
     fetchCollections,
+    ensureCollectionFresh,
+    ensureWishlistFresh,
     addItemsToFolder,
     isOwned,
   } = useCollectionStore();
@@ -291,14 +291,14 @@ export default function RecordDetailScreen() {
     loadRecord();
   }, [id]);
 
-  // Загружаем и обновляем коллекцию/вишлист при фокусе (включая первый mount)
+  // Коллекция/вишлист при фокусе — из стора, сеть только если данные старше
+  // TTL или инвалидированы мутацией. Карточку открывают десятки раз за сессию,
+  // и безусловный рефетч давал 3 запроса на каждый фокус.
   useFocusEffect(
     useCallback(() => {
-      fetchCollections()
-        .then(() => fetchCollectionItems())
-        .catch(() => {});
-      fetchWishlistItems().catch(() => {});
-    }, [fetchCollections, fetchCollectionItems, fetchWishlistItems])
+      ensureCollectionFresh().catch(() => {});
+      ensureWishlistFresh().catch(() => {});
+    }, [ensureCollectionFresh, ensureWishlistFresh])
   );
 
   // Возврат с /radar после «Радар заполнен» → переоткрываем ту же шторку порога,
@@ -415,12 +415,9 @@ export default function RecordDetailScreen() {
     // Если пластинка уже в вишлисте - переносим атомарно
     if (recordStatus.status === 'in_wishlist' && recordStatus.wishlistItemId) {
       try {
+        // moveToCollection сам await'ит рефетч обоих списков — вторая пара
+        // fetch'ей здесь была чистым дублем (copy-paste) на каждый перенос.
         await moveToCollection(recordStatus.wishlistItemId);
-        // Немедленно обновляем UI - критически важно для правильного отображения кнопок
-        await Promise.all([
-          fetchCollectionItems(),
-          fetchWishlistItems(),
-        ]);
         toast.success('Винил перенесён в коллекцию');
       } catch (error: any) {
         const message = error?.response?.data?.detail || error?.message || 'Не удалось перенести в коллекцию';

@@ -9,6 +9,7 @@ import {
   StyleSheet,
   Pressable,
   Dimensions,
+  PixelRatio,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -20,7 +21,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { Colors, Typography, BorderRadius, Shadows, Spacing, Gradients } from '../constants/theme';
 import { RecordSearchResult, VinylRecord, MasterSearchResult, ReleaseSearchResult, PublicProfileRecord } from '../lib/types';
-import { getCoverUrl } from '../lib/api';
+import { getCoverUrl, sizedCoverUrl } from '../lib/api';
 import { ms } from '../lib/responsive';
 import { cleanArtistName } from '../lib/format';
 import { RarityAura, TierCoverEffects, TierLabel, pickRarityTier, RarityContext, RarityFlags, RARITY_TIERS } from './RarityAura';
@@ -150,15 +151,23 @@ function RecordCardComponent({
         ? 'inStock'
         : null
     : null;
-  const imageUrl = getCoverUrl(record);
+  const artistDisplay = cleanArtistName(record.artist);
+  const cardWidth = size === 'large' ? width - Spacing.md * 2 : CARD_WIDTH;
+  // Нарезка под фактический слот вместо мастера: list-строка 56pt, grid —
+  // полуэкранная ячейка. sizedCoverUrl округлит вверх до ступени 320/640 и не
+  // тронет внешние (Discogs/store) URL — оборачивать безопасно. Слот шире
+  // последней ступени (size='large' на 3x) сам откатится на мастер.
+  const coverSlotPt = variant === 'list' ? 56 : cardWidth;
+  const imageUrl = sizedCoverUrl(
+    getCoverUrl(record),
+    Math.ceil(coverSlotPt * PixelRatio.get())
+  );
   // Битый URL (протухший Deezer/store-хотлинк, мёртвое зеркало) → откат на
   // иконку пластинки вместо пустого квадрата. Сброс при смене обложки
   // (FlatList переиспользует инстансы карточек).
   const [imgFailed, setImgFailed] = useState(false);
   useEffect(() => setImgFailed(false), [imageUrl]);
   const showImage = !!imageUrl && !imgFailed;
-  const artistDisplay = cleanArtistName(record.artist);
-  const cardWidth = size === 'large' ? width - Spacing.md * 2 : CARD_WIDTH;
   const imageHeight = size === 'large' ? cardWidth * 0.8 : CARD_WIDTH;
   const rarityTier = pickRarityTier(record as RarityFlags, rarityContext);
   const auraTier = noRarityAura ? null : rarityTier;

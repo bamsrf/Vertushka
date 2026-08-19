@@ -375,9 +375,12 @@ class ApiClient {
 
         if ((status === 503 || status === 429) && originalRequest._retryCount < 3) {
           originalRequest._retryCount += 1;
-          const retryAfter = status === 429
+          const baseDelay = status === 429
             ? parseInt(String(error.response?.headers?.['retry-after'] || '5'), 10) * 1000
             : Math.pow(2, originalRequest._retryCount - 1) * 1000;
+          // Джиттер ×(0.5..1.5): клиенты, поймавшие 503/429 одновременно
+          // (деплой, пиковый залп), не возвращаются синхронной волной.
+          const retryAfter = baseDelay * (0.5 + Math.random());
 
           await new Promise((resolve) => setTimeout(resolve, retryAfter));
           return this.client(originalRequest);
@@ -441,6 +444,33 @@ class ApiClient {
       return response.data.access_token;
     } catch {
       return null;
+    }
+  }
+
+  /**
+   * Принудительное обновление access-токена вне HTTP-интерцептора — для
+   * WS-клиента, которому сервер закрыл соединение по протухшему токену.
+   * Уважает тот же single-flight, что и интерцептор: если refresh уже летит,
+   * просто ждём его результат.
+   *
+   * null НЕ означает «разлогинить»: refreshToken() глотает и сетевые ошибки,
+   * поэтому принудительный logout здесь устроил бы выход из аккаунта на любом
+   * обрыве сети. Решение о logout остаётся за 401-веткой интерцептора.
+   */
+  async ensureFreshAccessToken(): Promise<string | null> {
+    if (this.isRefreshing) {
+      return new Promise((resolve) => {
+        this.refreshSubscribers.push((token) => resolve(token));
+      });
+    }
+    this.isRefreshing = true;
+    try {
+      const newToken = await this.refreshToken();
+      this.refreshSubscribers.forEach((cb) => cb(newToken));
+      this.refreshSubscribers = [];
+      return newToken;
+    } finally {
+      this.isRefreshing = false;
     }
   }
 

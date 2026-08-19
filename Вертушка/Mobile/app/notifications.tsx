@@ -77,7 +77,6 @@ export default function NotificationsScreen() {
     snoozePersonal,
     pendingNew,
     clearPending,
-    fetchUnreadCount,
   } = useNotificationsStore();
   const sectionListRef = useRef<SectionList<NotificationItemType> | null>(null);
   const socialSectionListRef = useRef<SectionList<SocialFeedItem> | null>(null);
@@ -141,14 +140,9 @@ export default function NotificationsScreen() {
     }
   }, [tab, socialItems.length, loadSocial]);
 
-  // Пока экран открыт — каждые 30с подтягиваем unread, чтобы pendingNew рос
-  // даже если push не пришёл (например, события без push-уведомления).
-  useEffect(() => {
-    const interval = setInterval(() => {
-      fetchUnreadCount();
-    }, 30_000);
-    return () => clearInterval(interval);
-  }, [fetchUnreadCount]);
+  // Свой интервал unread у экрана убран: глобальный поллинг в app/_layout.tsx
+  // уже тикает пока приложение активно — второй таймер на том же endpoint'e
+  // просто удваивал трафик, стоило открыть уведомления.
 
   const handleShowNew = useCallback(async () => {
     clearPending();
