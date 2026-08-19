@@ -315,6 +315,39 @@ async def generate_profile_og_image(
     """
     covers, avatar = await _fetch_all(cover_urls, avatar_url)
 
+    # Вся отрисовка — чистый CPU (PIL): фон, тени с GaussianBlur, ресайзы,
+    # PNG-optimize — суммарно сотни миллисекунд. Прод живёт на одном
+    # uvicorn-воркере, синхронный рендер в async-роуте морозил event loop
+    # целиком (все запросы, не только og-image). to_thread уводит его в пул.
+    return await asyncio.to_thread(
+        _render_og_image,
+        username=username,
+        display_name=display_name,
+        collection_count=collection_count,
+        covers=covers,
+        avatar=avatar,
+        custom_title=custom_title,
+        wishlist_count=wishlist_count,
+        collection_value_rub=collection_value_rub,
+        monthly_delta=monthly_delta,
+        fun_stats=fun_stats,
+    )
+
+
+def _render_og_image(
+    *,
+    username: str,
+    display_name: str | None,
+    collection_count: int,
+    covers: list,
+    avatar: Image.Image | None,
+    custom_title: str | None,
+    wishlist_count: int,
+    collection_value_rub: float | None,
+    monthly_delta: float | None,
+    fun_stats: list[dict] | None,
+) -> io.BytesIO:
+    """Синхронный PIL-рендер. Вызывается ТОЛЬКО через asyncio.to_thread."""
     base = _background().convert("RGBA")
 
     # === Правый блок: коллаж обложек ===

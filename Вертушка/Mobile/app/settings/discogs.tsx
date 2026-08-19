@@ -30,7 +30,7 @@ import { analytics } from '../../lib/analytics';
 import { useCollectionStore } from '../../lib/store';
 import { setDiscogsConnected } from '../../lib/onboardingProgress';
 import { Colors, Spacing, BorderRadius, Typography } from '../../constants/theme';
-import type { DiscogsPriceJobStatus } from '../../lib/types';
+import type { DiscogsImportPhase, DiscogsPriceJobStatus } from '../../lib/types';
 
 const REDIRECT = 'vertushka://discogs-callback';
 
@@ -85,6 +85,79 @@ export default function DiscogsSettings() {
 
   useEffect(() => stopPolling, [stopPolling]);
 
+  // Гард для await-циклов: экран могли закрыть, пока импорт шёл, — setState
+  // после анмаунта не нужен, а сам импорт живёт на бэкенде и не пострадает.
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  /**
+   * Ждёт финала фонового импорта (поле `import` статус-ручки), поллинг раз
+   * в 3 секунды. null — экран закрыт или статус потерян (рестарт бэкенда).
+   */
+  const waitImportFinished = useCallback(async (): Promise<DiscogsImportPhase | null> => {
+    for (;;) {
+      await new Promise((resolve) => setTimeout(resolve, 3000));
+      if (!mountedRef.current) return null;
+      try {
+        const s = await api.getDiscogsImportStatus();
+        const phase = s.import;
+        // idle после старта = бэкенд перезапустился и потерял задачу.
+        if (!phase || phase.status === 'idle') return null;
+        if (phase.status === 'done' || phase.status === 'failed') return phase;
+      } catch {
+        // Сеть моргнула — следующий тик попробует снова.
+      }
+    }
+  }, []);
+
+  /** Общий финал импорта: аналитика, рефетч полки, поллинг цен, алерт. */
+  const finishImport = useCallback(
+    async (imported: number, skipped: number, total: number) => {
+      analytics.importCompleted({ imported, skipped, total });
+      // Экран коллекции грузится один раз на маунте и остаётся
+      // смонтированным, поэтому сам импорт он бы не заметил: до
+      // pull-to-refresh полка выглядела бы пустой, а чеклист —
+      // сломанным сразу после главного действия онбординга.
+      await useCollectionStore.getState().fetchCollections();
+      await useCollectionStore.getState().fetchCollectionItems();
+      // Импорт — массовая смена владения: owned-ids теперь обновляются
+      // только по мутациям, а не прицепом к fetchCollectionItems.
+      useCollectionStore.getState().fetchOwnedIds();
+
+      // Цены приезжают отдельно и минутами позже — без этого юзер видел бы
+      // полку с прочерками вместо стоимости и считал бы это поломкой импорта.
+      let pricesPending = 0;
+      try {
+        const s = await api.getDiscogsImportStatus();
+        if (s.status === 'pending' || s.status === 'running') {
+          pricesPending = s.total;
+          setPriceJob(s);
+          startPolling();
+        }
+      } catch {
+        // Статус цен — не повод портить финал импорта.
+      }
+
+      // Alert, а не toast: итог импорта — это три числа плюс приписка
+      // про фоновые цены, такое не влезает в плашку и его хочется
+      // прочитать не спеша. (Тост тут теперь виден — корневой хост
+      // живёт в RootOverlay, см. components/ToastHost.tsx.)
+      Alert.alert(
+        'Импорт завершён',
+        `Добавлено: ${imported}, пропущено: ${skipped} из ${total}` +
+          (pricesPending > 0
+            ? `.\n\nЦены подтягиваются в фоне — это займёт несколько минут.`
+            : '')
+      );
+    },
+    [startPolling]
+  );
+
   const loadStatus = useCallback(async () => {
     try {
       const s = await api.getDiscogsStatus();
@@ -94,12 +167,25 @@ export default function DiscogsSettings() {
       // подключении только в следующую сессию.
       setDiscogsConnected(s.connected);
 
-      // Дозагрузка могла остаться с прошлого захода: юзер импортнул, вышел из
-      // экрана и вернулся. Задача живёт в БД, поэтому подхватываем прогресс.
+      // Импорт/дозагрузка могли остаться с прошлого захода: юзер импортнул,
+      // вышел из экрана и вернулся. Подхватываем прогресс обоих.
       if (s.connected) {
         try {
           const job = await api.getDiscogsImportStatus();
-          if (job.status === 'pending' || job.status === 'running') {
+          if (job.import?.status === 'running') {
+            // Сам импорт ещё идёт — досиживаем его, финал покажем как обычно.
+            setImporting(true);
+            waitImportFinished()
+              .then(async (phase) => {
+                if (!mountedRef.current) return;
+                if (phase && phase.status === 'done') {
+                  await finishImport(phase.imported, phase.skipped, phase.total);
+                }
+              })
+              .finally(() => {
+                if (mountedRef.current) setImporting(false);
+              });
+          } else if (job.status === 'pending' || job.status === 'running') {
             setPriceJob(job);
             startPolling();
           }
@@ -112,7 +198,7 @@ export default function DiscogsSettings() {
     } finally {
       setLoading(false);
     }
-  }, [startPolling]);
+  }, [startPolling, waitImportFinished, finishImport]);
 
   useEffect(() => {
     loadStatus();
@@ -159,55 +245,35 @@ export default function DiscogsSettings() {
             setImporting(true);
             try {
               const r = await api.importDiscogsCollection();
-              analytics.importCompleted({
-                imported: r.imported,
-                skipped: r.skipped,
-                total: r.total,
-              });
-              // Экран коллекции грузится один раз на маунте и остаётся
-              // смонтированным, поэтому сам импорт он бы не заметил: до
-              // pull-to-refresh полка выглядела бы пустой, а чеклист —
-              // сломанным сразу после главного действия онбординга.
-              await useCollectionStore.getState().fetchCollections();
-              await useCollectionStore.getState().fetchCollectionItems();
-              // Импорт — массовая смена владения: owned-ids теперь обновляются
-              // только по мутациям, а не прицепом к fetchCollectionItems.
-              useCollectionStore.getState().fetchOwnedIds();
 
-              // Цены приезжают отдельно и минутами позже — без этой строчки
-              // юзер видел бы полку с прочерками вместо стоимости и считал бы
-              // это поломкой импорта.
-              if (r.prices_pending > 0) {
-                setPriceJob({
-                  status: 'pending',
-                  total: r.prices_pending,
-                  processed: 0,
-                  updated: 0,
-                });
-                startPolling();
+              if (r.status === 'started') {
+                // Импорт ушёл в фон (202) — ждём финал через статус-ручку,
+                // спиннер «Импортируем…» крутится всё это время.
+                const phase = await waitImportFinished();
+                if (!mountedRef.current) return;
+                if (!phase || phase.status !== 'done') {
+                  Alert.alert(
+                    'Не удалось импортировать',
+                    phase?.error || 'Попробуйте позже'
+                  );
+                  return;
+                }
+                await finishImport(phase.imported, phase.skipped, phase.total);
+                return;
               }
 
-              // Alert, а не toast: итог импорта — это три числа плюс приписка
-              // про фоновые цены, такое не влезает в плашку и его хочется
-              // прочитать не спеша. (Тост тут теперь виден — корневой хост
-              // живёт в RootOverlay, см. components/ToastHost.tsx.)
-              Alert.alert(
-                'Импорт завершён',
-                `Добавлено: ${r.imported}, пропущено: ${r.skipped} из ${r.total}` +
-                  (r.prices_pending > 0
-                    ? `.\n\nЦены подтягиваются в фоне — это займёт несколько минут.`
-                    : '')
-              );
+              // Старый бэкенд: результат пришёл синхронно, прежний путь.
+              await finishImport(r.imported, r.skipped, r.total);
             } catch (e: any) {
               Alert.alert('Не удалось импортировать', e?.response?.data?.detail || 'Попробуйте позже');
             } finally {
-              setImporting(false);
+              if (mountedRef.current) setImporting(false);
             }
           },
         },
       ]
     );
-  }, [startPolling]);
+  }, [finishImport, waitImportFinished]);
 
   const handleDisconnect = useCallback(() => {
     Alert.alert(

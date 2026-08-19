@@ -87,6 +87,12 @@ class WishlistResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     items: list[WishlistItemResponse] = []
+    # Пагинация опциональна (см. GET /wishlists/): поля заполняются только
+    # когда клиент прислал page/per_page. Дефолт None не ломает старый
+    # контракт — мобилка, не знающая про них, их просто не увидит.
+    items_total: int | None = None
+    page: int | None = None
+    per_page: int | None = None
 
 
 class WishlistPublicItemResponse(BaseModel):

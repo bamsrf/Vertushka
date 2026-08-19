@@ -48,31 +48,60 @@ router = APIRouter()
 
 @router.get("/", response_model=WishlistResponse)
 async def get_my_wishlist(
+    page: int | None = Query(None, ge=1),
+    per_page: int | None = Query(None, ge=1, le=200),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """Получение вишлиста текущего пользователя"""
+    """Получение вишлиста текущего пользователя.
+
+    page/per_page НЕОБЯЗАТЕЛЬНЫ: без них отдаётся весь вишлист разом — текущий
+    контракт мобилки, ломать его нельзя (полный переход клиента на страницы —
+    отдельная задача). С ними — страница + items_total в ответе. Сортировка
+    стабильная в обоих режимах: added_at DESC с тай-брейкером по id, иначе
+    OFFSET-пагинация дублирует строки между страницами (см. коллекции).
+    """
     result = await db.execute(
-        select(Wishlist)
-        .where(Wishlist.user_id == current_user.id)
-        .options(
-            selectinload(Wishlist.items)
-            .selectinload(WishlistItem.record),
-            selectinload(Wishlist.items)
-            .selectinload(WishlistItem.gift_booking)
-        )
+        select(Wishlist).where(Wishlist.user_id == current_user.id)
     )
     wishlist = result.scalar_one_or_none()
-    
+
     if not wishlist:
         # Создаём вишлист если его нет
         wishlist = Wishlist(user_id=current_user.id)
         db.add(wishlist)
         await db.commit()
         await db.refresh(wishlist)
-        wishlist.items = []
-    
+
+    paginated = page is not None or per_page is not None
+    page_num = page or 1
+    page_size = per_page or 50
+
+    items_query = (
+        select(WishlistItem)
+        .where(WishlistItem.wishlist_id == wishlist.id)
+        .options(
+            selectinload(WishlistItem.record),
+            selectinload(WishlistItem.gift_booking),
+        )
+        .order_by(WishlistItem.added_at.desc(), WishlistItem.id)
+    )
+    if paginated:
+        items_query = items_query.offset((page_num - 1) * page_size).limit(page_size)
+    items = (await db.execute(items_query)).scalars().all()
+
+    if paginated:
+        items_total = await db.scalar(
+            select(func.count(WishlistItem.id))
+            .where(WishlistItem.wishlist_id == wishlist.id)
+        ) or 0
+    else:
+        items_total = len(items)
+
     return WishlistResponse(
+        items_total=items_total,
+        page=page_num if paginated else None,
+        per_page=page_size if paginated else None,
         id=wishlist.id,
         user_id=wishlist.user_id,
         share_token=wishlist.share_token,
@@ -108,7 +137,7 @@ async def get_my_wishlist(
                 status=item.gift_booking.status,
                 booked_at=item.gift_booking.booked_at
             ) if item.gift_booking else None
-        ) for item in wishlist.items]
+        ) for item in items]
     )
 
 

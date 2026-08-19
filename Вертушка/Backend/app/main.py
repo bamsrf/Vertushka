@@ -374,6 +374,22 @@ async def health_metrics_middleware(request: Request, call_next):
     return response
 
 
+# Переполнение интерактивной очереди к Discogs (семафор/лимитер в
+# services/discogs.py). Это штатная защита пула БД, а не авария: отдаём 503 c
+# Retry-After, клиент повторит. Отдельный handler, чтобы такие случаи не
+# падали в глобальный 500-обработчик с алармом в Telegram.
+from app.services.discogs import DiscogsOverloadedError  # noqa: E402
+
+
+@app.exception_handler(DiscogsOverloadedError)
+async def discogs_overloaded_handler(request: Request, exc: DiscogsOverloadedError):
+    return JSONResponse(
+        status_code=503,
+        content={"detail": "Discogs сейчас перегружен, попробуйте через пару секунд"},
+        headers={"Retry-After": "5"},
+    )
+
+
 # Глобальный exception handler — не возвращаем стектрейсы клиенту
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):

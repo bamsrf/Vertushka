@@ -1344,6 +1344,21 @@ async def scan_cover(
     )
 
 
+# ── Suggest: минимальная длина и кэш ─────────────────────────────────────────
+# 4 символа, а не 3: трёхбуквенные префиксы — самые частые и самые «широкие»
+# (ILIKE '%abc%' по дампу дороже всего именно на них), а полезность подсказки
+# на трёх буквах минимальна. Запросы короче отвечаем пустым списком, НЕ 422 —
+# мобилка шлёт от 2 символов, менять её контракт нельзя.
+_SUGGEST_MIN_LEN = 4
+# Локальный ответ по нормализованному префиксу шарится между юзерами: горячие
+# префиксы («pink f», «кино») набирает каждый второй. 15 минут достаточно —
+# дамп-индекс меняется раз в месяцы.
+_TTL_SUGGEST_LOCAL = 900
+# Маркер «локально не нашлось»: кэшируем и промах, иначе каждый повтор пустого
+# префикса заново гонял бы trgm-запрос перед уходом в Discogs.
+_SUGGEST_LOCAL_MISS = {"__miss__": True}
+
+
 async def _suggest_local(db: AsyncSession, q: str) -> dict | None:
     """Автодополнение по локальным данным, без Discogs API.
 
@@ -1353,7 +1368,7 @@ async def _suggest_local(db: AsyncSession, q: str) -> dict | None:
     caller уходит в Discogs API.
     """
     qs = q.strip()
-    if len(qs) < 3:
+    if len(qs) < _SUGGEST_MIN_LEN:
         return None
     pat = f"%{qs}%"
 
@@ -1450,14 +1465,33 @@ async def suggest(
     Автодополнение: local-first (dump-индекс + records), fallback на Discogs.
 
     Suggest — самый горячий путь к Discogs API (вызов на каждую паузу набора),
-    локальный путь снимает его с rate-limit бюджета целиком.
+    локальный путь снимает его с rate-limit бюджета целиком, а Redis-кэш по
+    нормализованному префиксу — ещё и с БД (trgm-скан дампа не бесплатный).
     """
-    try:
-        local = await _suggest_local(db, q)
-        if local is not None:
-            return local
-    except Exception:
-        logger.warning("local suggest failed, fallback to API", exc_info=True)
+    qs = q.strip().lower()
+    if len(qs) < _SUGGEST_MIN_LEN:
+        # Пустой ответ, а не 422: см. комментарий к _SUGGEST_MIN_LEN.
+        return {"artists": [], "masters": []}
+
+    # Нормализованный префикс: lower+strip — «Pink F» и «pink f » один ключ.
+    cache_key = qs
+    cached = await cache.get("suggest_local", cache_key)
+    if cached is not None and not cached.get("__miss__"):
+        return cached
+
+    if cached is None:
+        # В кэше ничего — пробуем локальный путь и кэшируем результат
+        # (включая промах, см. _SUGGEST_LOCAL_MISS).
+        try:
+            local = await _suggest_local(db, q)
+            if local is not None:
+                await cache.set("suggest_local", cache_key, local, ttl=_TTL_SUGGEST_LOCAL)
+                return local
+            await cache.set(
+                "suggest_local", cache_key, _SUGGEST_LOCAL_MISS, ttl=_TTL_SUGGEST_LOCAL,
+            )
+        except Exception:
+            logger.warning("local suggest failed, fallback to API", exc_info=True)
 
     discogs = DiscogsService()
     try:

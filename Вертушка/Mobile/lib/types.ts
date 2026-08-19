@@ -1154,18 +1154,32 @@ export interface AppConfig {
 /**
  * Импорт коллекции из Discogs и дозагрузка цен.
  *
- * Discogs отдаёт в списке коллекции только `basic_information` — каталожные
- * поля без цен. Цена доступна лишь поштучно, через marketplace-API, поэтому
- * импорт возвращается сразу, а цены докапываются фоновой задачей под личным
- * OAuth-токеном юзера. См. Backend/app/services/price_backfill.py.
+ * Импорт целиком фоновый: POST /import/discogs отвечает 202 со status:
+ * 'started' и нулями, а реальный прогресс/итог приезжает в поле `import`
+ * статус-ручки. Discogs отдаёт в списке коллекции только `basic_information` —
+ * каталожные поля без цен. Цена доступна лишь поштучно, через marketplace-API,
+ * поэтому после импорта цены докапываются ещё одной фоновой задачей под личным
+ * OAuth-токеном юзера. См. Backend/app/api/collections.py и
+ * Backend/app/services/price_backfill.py.
  */
 export interface DiscogsImportResult {
+  /** 'started' — импорт ушёл в фон; числа ниже нули, итог — в статус-ручке. */
+  status?: string;
   imported: number;
   skipped: number;
   total: number;
   /** Сколько пластинок ушло в фоновую дозагрузку цен. 0 — добирать нечего. */
   prices_pending: number;
 }
+
+/** Фаза самого импорта (фонового) — поле `import` статус-ручки. */
+export type DiscogsImportPhase = {
+  status: 'idle' | 'running' | 'done' | 'failed';
+  imported: number;
+  skipped: number;
+  total: number;
+  error?: string | null;
+};
 
 export type DiscogsPriceJobStatus = {
   /** idle — задачи нет; failed — Discogs отключён, цены доедут ночным проходом. */
@@ -1174,4 +1188,6 @@ export type DiscogsPriceJobStatus = {
   processed: number;
   updated: number;
   error?: string | null;
+  /** Отсутствует на старом бэкенде — трактовать как idle. */
+  import?: DiscogsImportPhase;
 };

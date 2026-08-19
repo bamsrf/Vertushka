@@ -17,6 +17,7 @@ from sqlalchemy.orm import joinedload, selectinload
 
 from app.database import get_db
 from app.config import get_settings
+from app.services.cache import cache
 from app.models.user import User
 from app.models.record import Record
 from app.models.collection import Collection, CollectionItem
@@ -320,6 +321,63 @@ async def support_page(request: Request):
     })
 
 
+# ── Кэш публичного профиля ──────────────────────────────────────────────────
+# Страница собирается из полутора десятков запросов (стоимость, рейлы,
+# fun stats, офферы) — на популярном профиле это заметная доля бюджета пула БД.
+# Кэшируем готовый HTML в Redis: TTL короткий, поэтому инвалидация не нужна —
+# правки владельца доезжают максимум через 2 минуты.
+_PROFILE_HTML_NS = "web_profile_html"
+_PROFILE_HTML_TTL = 120
+_PROFILE_VIEWS_NS = "profile_views"
+_PROFILE_VIEWS_FLUSH_EVERY = 10
+
+
+async def _bump_profile_views(db: AsyncSession, username: str) -> None:
+    """Счётчик просмотров без UPDATE+COMMIT на каждый заход.
+
+    Раньше каждый просмотр публичной страницы коммитил инкремент — то есть
+    занимал соединение пула и (через onupdate у updated_at) заодно бампал
+    метку, по которой версионируется OG-картинка. Теперь копим в Redis и
+    сбрасываем в БД раз в _PROFILE_VIEWS_FLUSH_EVERY просмотров. Гонка между
+    INCR и DELETE может потерять пару просмотров, а рестарт Redis — хвост
+    батча: счётчик оценочный (ачивки K5/K6 и так скрыты и перепроверяются
+    ночным DAILY_TICK), это приемлемо. Redis недоступен — пишем сразу, как
+    раньше.
+    """
+    pending = await cache.incr(_PROFILE_VIEWS_NS, username, ttl=86400)
+    if pending is None:
+        flush = 1
+    elif pending >= _PROFILE_VIEWS_FLUSH_EVERY:
+        await cache.delete(_PROFILE_VIEWS_NS, username)
+        flush = pending
+    else:
+        return
+
+    result = await db.execute(
+        select(ProfileShare)
+        .join(User, User.id == ProfileShare.user_id)
+        .where(User.username == username)
+    )
+    profile = result.scalar_one_or_none()
+    if profile is None:
+        return
+    profile.view_count += flush
+    await db.commit()
+
+    # Эмиссия события ачивок (K5/K6) — раз на батч, а не на просмотр.
+    try:
+        from app.services.achievements import emit_event
+        from app.services.achievements.events import PROFILE_VIEW
+        await emit_event(
+            db,
+            profile.user_id,
+            PROFILE_VIEW,
+            {"view_count": profile.view_count},
+        )
+    except Exception:  # noqa: BLE001
+        pass  # web-страница не должна падать из-за ачивок
+
+
 @router.get("/@{username}", response_class=HTMLResponse)
 async def public_profile_page(
     request: Request,
@@ -328,6 +386,15 @@ async def public_profile_page(
     db: AsyncSession = Depends(get_db)
 ):
     """Публичная страница профиля с OG-тегами"""
+    active_tab = tab if tab in ("collection", "wishlist") else "collection"
+
+    cache_key = f"{username}:{active_tab}"
+    cached_html = await cache.get(_PROFILE_HTML_NS, cache_key)
+    if cached_html is not None:
+        # Просмотр учитываем и на кэш-хите — иначе счётчик замрёт на TTL кэша.
+        await _bump_profile_views(db, username)
+        return HTMLResponse(cached_html)
+
     # Получаем пользователя с ProfileShare
     result = await db.execute(
         select(User)
@@ -343,22 +410,9 @@ async def public_profile_page(
     if not profile or not profile.is_active:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Профиль не активирован")
 
-    # Инкремент просмотров
-    profile.view_count += 1
-    await db.commit()
-
-    # Эмиссия события ачивок (K5/K6)
-    try:
-        from app.services.achievements import emit_event
-        from app.services.achievements.events import PROFILE_VIEW
-        await emit_event(
-            db,
-            user.id,
-            PROFILE_VIEW,
-            {"view_count": profile.view_count},
-        )
-    except Exception:  # noqa: BLE001
-        pass  # web-страница не должна падать из-за ачивок
+    # Инкремент — только после проверок: несуществующие/скрытые профили
+    # (боты перебирают юзернеймы) не должны копить ключи в Redis.
+    await _bump_profile_views(db, username)
 
     # === Статистика ===
     # Считаем уникальные пластинки (distinct record_id), чтобы не дублировать
@@ -555,7 +609,7 @@ async def public_profile_page(
             return []
         return offers_by_record.get(record.id, [])
 
-    return templates.TemplateResponse("public_profile.html", {
+    response = templates.TemplateResponse("public_profile.html", {
         "request": request,
         "user": user,
         "profile": profile,
@@ -571,7 +625,7 @@ async def public_profile_page(
         "highlights": highlights,
         "collection_items": collection_items,
         "wishlist_items": wishlist_items,
-        "active_tab": tab if tab in ("collection", "wishlist") else "collection",
+        "active_tab": active_tab,
         "og_description": og_description,
         "og_image_url": _og_image_url(user.username, profile),
         "base_url": BASE_URL,
@@ -586,9 +640,23 @@ async def public_profile_page(
         "support_plans_url": settings.support_plans_url,
     })
 
+    # TemplateResponse рендерит тело в конструкторе — body уже готов.
+    # Кэшируем только успешный рендер; исключения выше сюда не доходят.
+    await cache.set(
+        _PROFILE_HTML_NS, cache_key, response.body.decode("utf-8"),
+        ttl=_PROFILE_HTML_TTL,
+    )
+    return response
+
 
 @router.get("/@{username}/og-image.png")
+# Картинка стоит десятка DB-запросов + до 5 внешних фетчей + PIL-рендер в
+# треде. Ответ кэшируется в nginx на час (см. nginx.conf, web-блок), поэтому
+# до приложения долетают только промахи — а их живому краулеру больше
+# 10/мин с одного адреса не нужно. Перебор юзернеймов ботом режется здесь.
+@limiter.limit("10/minute")
 async def profile_og_image(
+    request: Request,
     username: str,
     db: AsyncSession = Depends(get_db)
 ):

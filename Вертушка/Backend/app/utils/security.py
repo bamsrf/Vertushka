@@ -1,6 +1,7 @@
 """
 Утилиты безопасности: хэширование паролей, JWT токены
 """
+import asyncio
 import secrets
 from datetime import datetime, timedelta
 from uuid import UUID
@@ -52,6 +53,25 @@ def hash_password(password: str) -> str:
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Проверка пароля"""
     return pwd_context.verify(plain_password, hashed_password)
+
+
+# bcrypt — это ~200-300мс чистого CPU. Прод крутится на ОДНОМ uvicorn-воркере
+# (CLIP живёт в том же процессе), поэтому синхронный вызов из async-роута
+# замораживает весь event loop: на время хэширования встают ВСЕ запросы, а не
+# только логин. to_thread уводит расчёт в thread pool — GIL bcrypt отпускает
+# внутри C-кода, loop продолжает крутиться. В async-коде использовать ТОЛЬКО
+# эти обёртки; синхронные версии выше — для CLI-скриптов и module-level
+# констант (см. _DUMMY_RESET_HASH в api/auth.py).
+
+
+async def hash_password_async(password: str) -> str:
+    """Хэширование пароля без блокировки event loop."""
+    return await asyncio.to_thread(hash_password, password)
+
+
+async def verify_password_async(plain_password: str, hashed_password: str) -> bool:
+    """Проверка пароля без блокировки event loop."""
+    return await asyncio.to_thread(verify_password, plain_password, hashed_password)
 
 
 def create_access_token(user_id: UUID, token_version: int = 0) -> str:

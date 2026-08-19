@@ -1,7 +1,9 @@
 """
 API для работы с коллекциями
 """
+import asyncio
 import logging
+import time
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
@@ -12,7 +14,7 @@ from sqlalchemy.orm import selectinload
 
 logger = logging.getLogger(__name__)
 
-from app.database import get_db
+from app.database import get_db, async_session_maker
 from app.models.user import User
 from app.models.record import Record
 from app.models.collection import Collection, CollectionItem
@@ -83,49 +85,107 @@ def _item_record_brief(item: CollectionItem) -> "Record | RecordBrief":
 router = APIRouter()
 
 
-@router.post("/recalculate-prices")
+# ── Фоновые задачи API-процесса ──────────────────────────────────────────────
+# Сильные ссылки обязательны (паттерн _mirror_tasks из api/covers.py): asyncio
+# держит задачи weakref'ом, и bare create_task в обработчике, который сразу
+# отвечает 202, может быть собран GC до фактического запуска.
+_bg_tasks: set[asyncio.Task] = set()
+
+
+def _spawn_bg(coro) -> asyncio.Task:
+    task = asyncio.create_task(coro)
+    _bg_tasks.add(task)
+    task.add_done_callback(_bg_tasks.discard)
+    return task
+
+
+# Пересчёты цен, идущие прямо сейчас, — не больше одного на юзера.
+_price_recalc_running: set[UUID] = set()
+
+_RECALC_MAX_RECORDS = 50
+
+
+@router.post("/recalculate-prices", status_code=status.HTTP_202_ACCEPTED)
 async def recalculate_prices(
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
 ):
-    """Пересчёт цен: перезапрашивает lowest_price из Discogs (в USD) и пересчитывает рубли.
-    Ограничен до 50 уникальных записей за вызов. Для полного обновления используйте
-    фоновую задачу update_prices_batch (ежедневно в 4:00).
+    """Пересчёт цен — фоном: перезапрашивает lowest_price из Discogs (в USD)
+    и пересчитывает рубли. До 50 уникальных записей за вызов; полное
+    обновление делает фоновая задача update_prices_batch (каждые 30 минут).
+
+    Раньше до 50 последовательных Discogs-вызовов шли прямо в запросе:
+    соединение пула БД висело минуты, клиент ждал. Теперь 202 сразу, а свежие
+    цены приезжают обычным рефетчем коллекции. Смена контракта безопасна:
+    мобилка этот эндпоинт не вызывает (проверено по Mobile/lib/api.ts).
     """
+    if current_user.id in _price_recalc_running:
+        return {"status": "already_running", "max_records_per_call": _RECALC_MAX_RECORDS}
+
+    _price_recalc_running.add(current_user.id)
+    task = _spawn_bg(_recalculate_prices_background(current_user.id))
+    task.add_done_callback(
+        lambda _t, uid=current_user.id: _price_recalc_running.discard(uid)
+    )
+    return {"status": "started", "max_records_per_call": _RECALC_MAX_RECORDS}
+
+
+async def _recalculate_prices_background(user_id: UUID) -> None:
+    """Тело пересчёта. Сессии БД открываются точечно: список id — до похода в
+    Discogs, запись результатов — после. Между ними (минуты под rate-limiter)
+    ни одно соединение пула не занято."""
     from app.services.discogs import DiscogsService
 
-    MAX_RECORDS = 50
+    try:
+        async with async_session_maker() as db:
+            ids_result = await db.execute(
+                select(Record.discogs_id)
+                .join(CollectionItem, CollectionItem.record_id == Record.id)
+                .join(Collection, CollectionItem.collection_id == Collection.id)
+                .where(
+                    Collection.user_id == user_id,
+                    Record.discogs_id.isnot(None),
+                )
+                .distinct()
+                .limit(_RECALC_MAX_RECORDS)
+            )
+            discogs_ids = list(ids_result.scalars().all())
 
-    # Элементы коллекций ТЕКУЩЕГО пользователя
-    items_result = await db.execute(
-        select(CollectionItem)
-        .join(Collection, CollectionItem.collection_id == Collection.id)
-        .where(Collection.user_id == current_user.id)
-        .options(selectinload(CollectionItem.record))
-    )
-    items = items_result.scalars().all()
+        # Discogs — без открытой сессии.
+        discogs = DiscogsService()
+        stats_by_id: dict[str, dict] = {}
+        for discogs_id in discogs_ids:
+            try:
+                stats = await discogs._get_price_stats(discogs_id)
+                if stats:
+                    stats_by_id[discogs_id] = stats
+            except Exception:
+                continue
 
-    if not items:
-        return {"updated": 0, "total": 0}
+        settings = get_settings()
+        usd_rub = await get_usd_rub_rate()
+        params = PricingParams.from_settings(settings)
 
-    settings = get_settings()
-    usd_rub = await get_usd_rub_rate()
-    discogs = DiscogsService()
+        async with async_session_maker() as db:
+            items_result = await db.execute(
+                select(CollectionItem)
+                .join(Collection, CollectionItem.collection_id == Collection.id)
+                .where(Collection.user_id == user_id)
+                .options(selectinload(CollectionItem.record))
+            )
+            items = items_result.scalars().all()
+            if not items:
+                return
 
-    # Группируем по discogs_id, лимитируем до MAX_RECORDS
-    records_map: dict[str, Record] = {}
-    for item in items:
-        if item.record and item.record.discogs_id:
-            records_map[item.record.discogs_id] = item.record
-            if len(records_map) >= MAX_RECORDS:
-                break
-
-    # Перезапрашиваем цены из Discogs (в USD)
-    updated_records = 0
-    for discogs_id, record in records_map.items():
-        try:
-            stats = await discogs._get_price_stats(discogs_id)
-            if stats:
+            updated_records = 0
+            seen: set[str] = set()
+            for item in items:
+                record = item.record
+                if not record or not record.discogs_id:
+                    continue
+                stats = stats_by_id.get(record.discogs_id)
+                if stats is None or record.discogs_id in seen:
+                    continue
+                seen.add(record.discogs_id)
                 # Раньше здесь брался только lowest_price, и запись, у которой
                 # живых лотов нет, а история продаж есть, уходила ни с чем:
                 # median просто выбрасывался. Теперь пишем всё, что дал Discogs.
@@ -138,29 +198,22 @@ async def recalculate_prices(
                     record.estimated_price_max = highest
                     record.price_currency = "USD"
                     updated_records += 1
-        except Exception:
-            continue
 
-    # Пересчитываем рубли во всех CollectionItem
-    params = PricingParams.from_settings(settings)
-    updated_items = 0
-    for item in items:
-        record = item.record
-        if record and record_usd(record) is not None:
-            item.estimated_price_rub = _record_rub(record, usd_rub, params)
-            updated_items += 1
-        else:
-            item.estimated_price_rub = None
+            # Пересчитываем рубли во всех CollectionItem
+            for item in items:
+                record = item.record
+                if record and record_usd(record) is not None:
+                    item.estimated_price_rub = _record_rub(record, usd_rub, params)
+                else:
+                    item.estimated_price_rub = None
 
-    await db.commit()
-
-    return {
-        "updated_records": updated_records,
-        "updated_items": updated_items,
-        "total_items": len(items),
-        "max_records_per_call": MAX_RECORDS,
-        "usd_rub_rate": usd_rub,
-    }
+            await db.commit()
+            logger.info(
+                "recalculate_prices: user=%s records=%d items=%d",
+                user_id, updated_records, len(items),
+            )
+    except Exception:
+        logger.exception("recalculate_prices background failed for %s", user_id)
 
 
 @router.get("/owned-ids")
@@ -897,16 +950,34 @@ def _record_from_basic_information(basic: dict) -> Record:
     )
 
 
-@router.post("/import/discogs")
+# Статус фонового импорта коллекции Discogs, по user_id. In-memory сознательно:
+# задача живёт в этом же процессе (прод = 1 uvicorn-воркер), падение процесса
+# убивает и задачу, и статус — рассинхрона «статус running без задачи» не
+# бывает. Финальные статусы вычищаются по TTL при обращении к status-ручке.
+_discogs_imports: dict[UUID, dict] = {}
+_IMPORT_STATUS_TTL = 3600.0
+_IMPORT_WRITE_CHUNK = 200
+
+
+def _idle_import_state() -> dict:
+    return {"status": "idle", "imported": 0, "skipped": 0, "total": 0, "error": None}
+
+
+@router.post("/import/discogs", status_code=status.HTTP_202_ACCEPTED)
 async def import_discogs_collection(
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
 ):
-    """One-time импорт коллекции из Discogs в основную коллекцию юзера.
+    """One-time импорт коллекции из Discogs в основную коллекцию юзера — фоном.
 
     Требует подключённого Discogs (свой OAuth-токен). Идёт под токеном юзера —
-    его лимит 60/min. Дедуп по discogs_id: уже добавленные пропускаются."""
-    from app.services.discogs import DiscogsService
+    его лимит 60/min. Дедуп по discogs_id: уже добавленные пропускаются.
+
+    Раньше скачивание коллекции (под лимитом 60/min — минуты на больших
+    коллекциях) и запись в БД шли прямо в запросе: соединение пула висело всё
+    это время, а большие импорты упирались в таймаут запроса. Теперь 202
+    сразу; прогресс и итог мобилка читает из /import/discogs/status (поле
+    `import`), дозагрузка цен — там же, как и раньше.
+    """
     from app.services.discogs_oauth import user_creds
 
     creds = user_creds(current_user)
@@ -916,90 +987,210 @@ async def import_discogs_collection(
             detail="Сначала подключите Discogs в настройках",
         )
 
+    state = _discogs_imports.get(current_user.id)
+    if state and state["status"] == "running":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Импорт уже идёт — дождитесь завершения",
+        )
+
+    _discogs_imports[current_user.id] = {
+        "status": "running",
+        "imported": 0,
+        "skipped": 0,
+        "total": 0,
+        "error": None,
+        "finished_at": None,
+    }
+    _spawn_bg(_import_discogs_background(
+        current_user.id, current_user.discogs_username, creds,
+    ))
+    # Ключи ответа совпадают со старым контрактом (мобилка читала эти числа);
+    # реальные значения теперь приезжают через /import/discogs/status.
+    return {
+        "status": "started",
+        "imported": 0,
+        "skipped": 0,
+        "total": 0,
+        "prices_pending": 0,
+    }
+
+
+async def _import_discogs_background(
+    user_id: UUID, discogs_username: str, creds: tuple[str, str],
+) -> None:
+    """Фоновое тело импорта. Сеть — ДО открытия сессии БД: коллекция качается
+    минутами под личным лимитом юзера, и держать соединение пула всё это
+    время нельзя."""
+    from app.services.discogs import DiscogsService
+
+    state = _discogs_imports[user_id]
+    try:
+        discogs = DiscogsService()
+        releases = await discogs.get_collection_releases(discogs_username, creds)
+        state["total"] = len(releases)
+
+        async with async_session_maker() as db:
+            await _write_imported_releases(db, user_id, releases, state)
+
+            # Импорт был единственным путём добавления пластинок, который не
+            # эмитил событие: коллекция появлялась, а система ачивок об этом
+            # не узнавала. Часть серий (A1, эпохи, дискографии) слушает только
+            # это событие и без него не открылась бы никогда.
+            if state["imported"]:
+                from app.services.achievements import emit_event
+                from app.services.achievements.events import COLLECTION_ITEM_ADDED
+
+                await emit_event(db, user_id, COLLECTION_ITEM_ADDED, {"bulk": True})
+
+            # Цены Discogs отдаёт только поштучно, через marketplace-API — в
+            # списке коллекции их нет, в локальном дампе тоже. Ставим фоновую
+            # задачу: она пройдёт по записям без цены под личным токеном юзера.
+            await enqueue_price_job(db, user_id)
+            await db.commit()
+
+        state["status"] = "done"
+        logger.info(
+            "discogs import done: user=%s imported=%d skipped=%d total=%d",
+            user_id, state["imported"], state["skipped"], state["total"],
+        )
+    except Exception:
+        logger.exception("discogs import failed for %s", user_id)
+        state["status"] = "failed"
+        state["error"] = "Не удалось импортировать коллекцию. Попробуйте позже."
+    finally:
+        state["finished_at"] = time.monotonic()
+
+
+async def _write_imported_releases(
+    db: AsyncSession, user_id: UUID, releases: list[dict], state: dict,
+) -> None:
+    """Записывает релизы в основную коллекцию. Дедуп по discogs_id.
+
+    Записи резолвятся батчами WHERE discogs_id IN (...) — раньше шёл SELECT
+    на каждый релиз, и импорт на 1000 пластинок делал 1000 запросов. Коммит
+    почанково: транзакция не разрастается под statement_timeout, а прогресс
+    в `state` виден мобилке по ходу дела. Повторный запуск безопасен —
+    existing_record_ids отсекает уже добавленное.
+    """
     # Основная коллекция юзера (первая по порядку).
     result = await db.execute(
         select(Collection)
-        .where(Collection.user_id == current_user.id)
+        .where(Collection.user_id == user_id)
         .order_by(Collection.sort_order, Collection.created_at)
     )
     collection = result.scalars().first()
     if not collection:
-        collection = Collection(user_id=current_user.id, name="Моя коллекция")
+        collection = Collection(user_id=user_id, name="Моя коллекция")
         db.add(collection)
-        await db.flush()
-
-    discogs = DiscogsService()
-    try:
-        releases = await discogs.get_collection_releases(
-            current_user.discogs_username, creds
-        )
-    except Exception:
-        logger.exception("Discogs collection fetch failed for %s", current_user.discogs_username)
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="Не удалось получить коллекцию из Discogs. Попробуйте позже.",
-        )
+        await db.commit()
+    # Плоский UUID, а не ORM-атрибут: rollback в fallback-ветке ниже expire'ит
+    # объекты, и ленивый refresh атрибута в async-сессии падает MissingGreenlet.
+    collection_id = collection.id
 
     # Какие record_id уже в этой коллекции — чтобы не плодить дубли.
     existing_result = await db.execute(
         select(CollectionItem.record_id).where(
-            CollectionItem.collection_id == collection.id
+            CollectionItem.collection_id == collection_id
         )
     )
     existing_record_ids = set(existing_result.scalars().all())
 
     # Курс и параметры считаем один раз — чтобы проставить рублёвую стоимость
     # тем записям, у которых уже есть цена (estimated_price_min). Свежие slim-
-    # записи без цены получат её из фоновой задачи update_prices_batch (4:00)
-    # или через ручной /recalculate-prices.
+    # записи без цены получат её из фоновой дозагрузки (enqueue_price_job) или
+    # из update_prices_batch.
     settings = get_settings()
     usd_rub = await get_usd_rub_rate()
     params = PricingParams.from_settings(settings)
 
-    imported = 0
-    skipped = 0
-    created_discogs_ids: list[str] = []
+    # Дедуп релизов по discogs_id (в коллекции Discogs бывают копии одного
+    # прессинга — нам хватит одной строки CollectionItem, как и раньше).
+    basics_by_id: dict[str, dict] = {}
     for basic in releases:
         discogs_id = str(basic.get("id"))
-        if not discogs_id or discogs_id == "None":
-            continue
+        if discogs_id and discogs_id != "None" and discogs_id not in basics_by_id:
+            basics_by_id[discogs_id] = basic
 
+    all_ids = list(basics_by_id.keys())
+    created_discogs_ids: list[str] = []
+
+    for start in range(0, len(all_ids), _IMPORT_WRITE_CHUNK):
+        chunk_ids = all_ids[start:start + _IMPORT_WRITE_CHUNK]
+
+        # Один SELECT на чанк вместо SELECT на релиз.
         rec_result = await db.execute(
-            select(Record).where(Record.discogs_id == discogs_id)
+            select(Record).where(Record.discogs_id.in_(chunk_ids))
         )
-        record = rec_result.scalar_one_or_none()
-        if record is None:
-            record = _record_from_basic_information(basic)
-            db.add(record)
-            created_discogs_ids.append(discogs_id)
+        records_by_did: dict[str, Record] = {
+            r.discogs_id: r for r in rec_result.scalars().all()
+        }
+
+        missing = [did for did in chunk_ids if did not in records_by_did]
+        new_records = {
+            did: _record_from_basic_information(basics_by_id[did])
+            for did in missing
+        }
+        for rec in new_records.values():
+            db.add(rec)
+        if new_records:
             try:
                 await db.flush()
+                records_by_did.update(new_records)
+                created_discogs_ids.extend(new_records.keys())
             except IntegrityError:
-                # Параллельная вставка того же discogs_id — читаем существующую.
+                # Гонка: параллельная вставка тех же discogs_id (drip-задачи,
+                # чужой импорт). Откатываем чанк и добираем штучно — путь
+                # редкий, скорость здесь не важна.
                 await db.rollback()
                 rec_result = await db.execute(
-                    select(Record).where(Record.discogs_id == discogs_id)
+                    select(Record).where(Record.discogs_id.in_(chunk_ids))
                 )
-                record = rec_result.scalar_one_or_none()
-                if record is None:
-                    continue
+                records_by_did = {
+                    r.discogs_id: r for r in rec_result.scalars().all()
+                }
+                for did in chunk_ids:
+                    if did in records_by_did:
+                        continue
+                    record = _record_from_basic_information(basics_by_id[did])
+                    db.add(record)
+                    try:
+                        # commit, а не flush: rollback у следующей строки не
+                        # должен утянуть за собой уже вставленные (flush без
+                        # commit'а откатился бы вместе с ними).
+                        await db.commit()
+                        records_by_did[did] = record
+                        created_discogs_ids.append(did)
+                    except IntegrityError:
+                        await db.rollback()
+                        rec_res = await db.execute(
+                            select(Record).where(Record.discogs_id == did)
+                        )
+                        existing = rec_res.scalar_one_or_none()
+                        if existing is not None:
+                            records_by_did[did] = existing
 
-        if record.id in existing_record_ids:
-            skipped += 1
-            continue
+        for did in chunk_ids:
+            record = records_by_did.get(did)
+            if record is None:
+                continue
+            if record.id in existing_record_ids:
+                state["skipped"] += 1
+                continue
+            price_rub = (
+                _record_rub(record, usd_rub, params)
+                if record.estimated_price_min
+                else None
+            )
+            db.add(CollectionItem(
+                collection_id=collection_id,
+                record_id=record.id,
+                estimated_price_rub=price_rub,
+            ))
+            existing_record_ids.add(record.id)
+            state["imported"] += 1
 
-        price_rub = (
-            _record_rub(record, usd_rub, params)
-            if record.estimated_price_min
-            else None
-        )
-        db.add(CollectionItem(
-            collection_id=collection.id,
-            record_id=record.id,
-            estimated_price_rub=price_rub,
-        ))
-        existing_record_ids.add(record.id)
-        imported += 1
+        await db.commit()
 
     # Достраиваем «тонкие» записи из локального дампа. basic_information не
     # содержит country, а он идёт в estimate_rub() страновой наценкой — без
@@ -1013,32 +1204,7 @@ async def import_discogs_collection(
                 "discogs import: enriched %d/%d new records from dump",
                 enriched, len(created_discogs_ids),
             )
-
-    await db.commit()
-
-    # Импорт был единственным путём добавления пластинок, который не эмитил
-    # событие: коллекция появлялась, а система ачивок об этом не узнавала.
-    # Часть серий (A1, эпохи, дискографии) слушает только это событие и без
-    # него не открылась бы никогда — ночной daily_tick их не перепроверяет.
-    if imported:
-        from app.services.achievements import emit_event
-        from app.services.achievements.events import COLLECTION_ITEM_ADDED
-
-        await emit_event(db, current_user.id, COLLECTION_ITEM_ADDED, {"bulk": True})
-
-    # Цены Discogs отдаёт только поштучно, через marketplace-API — в списке
-    # коллекции их нет, в локальном дампе тоже (там только каталожные поля).
-    # Ставим фоновую задачу: она пройдёт по записям без цены под личным
-    # токеном юзера. Прогресс мобилка забирает через /import/discogs/status.
-    price_job = await enqueue_price_job(db, current_user.id)
-    await db.commit()
-
-    return {
-        "imported": imported,
-        "skipped": skipped,
-        "total": len(releases),
-        "prices_pending": price_job.total if price_job else 0,
-    }
+        await db.commit()
 
 
 @router.get("/import/discogs/status")
@@ -1046,20 +1212,42 @@ async def import_discogs_status(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Прогресс дозагрузки цен после импорта — для поллинга из мобилки.
+    """Прогресс импорта и дозагрузки цен — для поллинга из мобилки.
 
-    Отдельный эндпоинт, а не поле в ответе импорта: сама дозагрузка идёт
-    минутами после того, как импорт уже ответил.
+    Верхний уровень — прежний контракт (job дозагрузки цен), поле `import` —
+    фаза самого импорта (он теперь фоновый). Отдельный эндпоинт, а не поле в
+    ответе импорта: и импорт, и дозагрузка идут минутами после 202.
     """
+    # Финальные статусы старше TTL вычищаем, чтобы дикт не рос вечно.
+    now = time.monotonic()
+    for uid in [
+        uid for uid, s in _discogs_imports.items()
+        if s.get("finished_at") is not None and now - s["finished_at"] > _IMPORT_STATUS_TTL
+    ]:
+        _discogs_imports.pop(uid, None)
+
+    import_state = _discogs_imports.get(current_user.id)
+    if import_state is None:
+        import_payload = _idle_import_state()
+    else:
+        import_payload = {
+            k: import_state[k]
+            for k in ("status", "imported", "skipped", "total", "error")
+        }
+
     job = await get_price_job(db, current_user.id)
     if job is None:
-        return {"status": "idle", "total": 0, "processed": 0, "updated": 0}
+        return {
+            "status": "idle", "total": 0, "processed": 0, "updated": 0,
+            "import": import_payload,
+        }
     return {
         "status": job.status,
         "total": job.total,
         "processed": job.processed,
         "updated": job.updated,
         "error": job.error,
+        "import": import_payload,
     }
 
 

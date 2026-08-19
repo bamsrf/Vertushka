@@ -77,6 +77,31 @@ class CircuitOpenError(Exception):
     """Raised when Discogs circuit breaker is OPEN — fast-fail без похода в сеть."""
 
 
+class DiscogsOverloadedError(Exception):
+    """Интерактивная очередь к Discogs переполнена — отдать 503 с Retry-After.
+
+    Ловится глобальным handler'ом в app.main; call-sites, которые сами
+    оборачивают вызов в try/except Exception → 503, менять не пришлось.
+    """
+
+
+# ── Защита пула БД от удержания через Discogs ────────────────────────────────
+# Каждый интерактивный запрос (SEARCH/DETAIL/SCAN) приходит из request path и
+# держит за собой соединение пула БД (Depends(get_db) отдаёт его на весь
+# запрос). Лимитер Discogs — 60 req/min, то есть при наплыве очередь к нему
+# растёт быстрее, чем разгребается, и десяток ждущих корутин исчерпывал пул
+# (pool_size+overflow). Семафор ограничивает число одновременных
+# «Discogs-bound» интерактивных запросов, а короткий таймаут превращает
+# вечное ожидание в честный 503: клиент ретраит, соединение освобождается.
+# Фоновые пути (ENRICHMENT/BATCH — шедулер, дозагрузки) живут без семафора и
+# с прежним длинным таймаутом: им спешить некуда, а пул они не держат.
+_INTERACTIVE_MAX_CONCURRENT = 8
+_INTERACTIVE_SEMAPHORE_TIMEOUT = 5.0   # ожидание слота семафора
+_INTERACTIVE_ACQUIRE_TIMEOUT = 5.0     # ожидание слота rate-limiter'а
+_BACKGROUND_ACQUIRE_TIMEOUT = 30.0
+_interactive_semaphore = asyncio.Semaphore(_INTERACTIVE_MAX_CONCURRENT)
+
+
 class _CircuitBreaker:
     """Circuit breaker для Discogs.
 
@@ -207,6 +232,49 @@ class DiscogsService:
         priority: int = Priority.DETAIL,
         creds: "tuple[str, str] | None" = None,
     ) -> dict:
+        """GET к Discogs. Интерактивные приоритеты — через глобальный семафор
+        и с коротким таймаутом лимитера (см. комментарий к _interactive_semaphore):
+        переполнение очереди превращается в DiscogsOverloadedError (503), а не
+        в удержание соединения БД на десятки секунд.
+        """
+        if priority > Priority.SCAN:
+            # Фоновый путь (ENRICHMENT/BATCH): без семафора, длинный таймаут.
+            return await self._get_inner(
+                url, params, headers, priority, creds,
+                acquire_timeout=_BACKGROUND_ACQUIRE_TIMEOUT,
+            )
+
+        try:
+            await asyncio.wait_for(
+                _interactive_semaphore.acquire(),
+                timeout=_INTERACTIVE_SEMAPHORE_TIMEOUT,
+            )
+        except asyncio.TimeoutError:
+            raise DiscogsOverloadedError(
+                "интерактивная очередь Discogs переполнена"
+            ) from None
+        try:
+            return await self._get_inner(
+                url, params, headers, priority, creds,
+                acquire_timeout=_INTERACTIVE_ACQUIRE_TIMEOUT,
+            )
+        except asyncio.TimeoutError:
+            # Таймаут лимитера (или сети после ретраев): юзеру честный 503
+            # с Retry-After вместо зависшего запроса.
+            raise DiscogsOverloadedError("rate limiter Discogs насыщен") from None
+        finally:
+            _interactive_semaphore.release()
+
+    async def _get_inner(
+        self,
+        url: str,
+        params: dict | None = None,
+        headers: dict | None = None,
+        priority: int = Priority.DETAIL,
+        creds: "tuple[str, str] | None" = None,
+        *,
+        acquire_timeout: float = _BACKGROUND_ACQUIRE_TIMEOUT,
+    ) -> dict:
         """GET с token bucket rate limiter, circuit breaker и retry при 429/503.
 
         creds=(oauth_token, oauth_token_secret) — запрос идёт от имени юзера:
@@ -228,7 +296,9 @@ class DiscogsService:
 
         last_response = None
         for attempt in range(3):
-            await get_limiter(limiter_key).acquire(priority=priority, timeout=30.0)
+            await get_limiter(limiter_key).acquire(
+                priority=priority, timeout=acquire_timeout,
+            )
             try:
                 last_response = await client.get(
                     url,
@@ -846,6 +916,9 @@ class DiscogsService:
         page = 1
         out: list[dict] = []
         while True:
+            # BATCH, а не DETAIL: импорт идёт фоновой задачей (никто не ждёт
+            # ответа в запросе), и занимать им слоты интерактивного семафора
+            # на минуты нельзя. Лимит всё равно личный — токен юзера.
             data = await self._get(
                 f"{self.BASE_URL}/users/{username}/collection/folders/0/releases",
                 params={
@@ -854,7 +927,7 @@ class DiscogsService:
                     "sort": "added",
                     "sort_order": "desc",
                 },
-                priority=Priority.DETAIL,
+                priority=Priority.BATCH,
                 creds=creds,
             )
             releases = data.get("releases", [])

@@ -10,6 +10,7 @@
 Проверка двусторонняя намеренно: неважно, кто кого заблокировал — контакта не
 должно быть ни в одну сторону.
 """
+from collections.abc import Iterable
 from uuid import UUID
 
 from sqlalchemy import and_, or_, select
@@ -37,3 +38,27 @@ async def is_user_blocked(db: AsyncSession, a_id: UUID, b_id: UUID) -> bool:
         .limit(1)
     )
     return row.scalar_one_or_none() is not None
+
+
+async def blocked_partner_ids(
+    db: AsyncSession, user_id: UUID, partner_ids: Iterable[UUID],
+) -> set[UUID]:
+    """Кто из partner_ids в блокировке с user_id (в любую сторону) — одним
+    запросом. Для списков (диалоги, подписчики): вызов is_user_blocked на
+    каждый элемент — это N запросов на экран, здесь их схлопывает один IN.
+    """
+    ids = {pid for pid in partner_ids if pid != user_id}
+    if not ids:
+        return set()
+    rows = await db.execute(
+        select(UserBlock.blocker_id, UserBlock.blocked_id).where(
+            or_(
+                and_(UserBlock.blocker_id == user_id, UserBlock.blocked_id.in_(ids)),
+                and_(UserBlock.blocked_id == user_id, UserBlock.blocker_id.in_(ids)),
+            )
+        )
+    )
+    blocked: set[UUID] = set()
+    for blocker_id, blocked_id in rows.all():
+        blocked.add(blocked_id if blocker_id == user_id else blocker_id)
+    return blocked

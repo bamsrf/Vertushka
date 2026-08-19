@@ -37,7 +37,8 @@ from app.services.email import send_reset_code_email
 from app.services.secret_crypto import encrypt_secret
 from app.utils.security import (
     hash_password,
-    verify_password,
+    hash_password_async,
+    verify_password_async,
     create_access_token,
     create_refresh_token,
     verify_token_type,
@@ -339,7 +340,8 @@ async def register(
     user = User(
         email=user_data.email,
         username=user_data.username,
-        password_hash=hash_password(user_data.password),
+        # async-обёртка: bcrypt в треде, event loop не встаёт (см. utils/security.py)
+        password_hash=await hash_password_async(user_data.password),
         display_name=user_data.display_name or user_data.username,
         signup_source="email",
     )
@@ -422,7 +424,7 @@ async def login(
             detail="Неверный логин или пароль"
         )
 
-    if not verify_password(credentials.password, user.password_hash):
+    if not await verify_password_async(credentials.password, user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Неверный логин или пароль"
@@ -786,7 +788,7 @@ async def forgot_password(
 
     if user and user.is_active:
         code = _generate_reset_code()
-        user.reset_code_hash = hash_password(code)
+        user.reset_code_hash = await hash_password_async(code)
         user.reset_code_expires_at = datetime.utcnow() + timedelta(minutes=RESET_CODE_TTL_MINUTES)
         user.reset_code_attempts = 0
         # Новый код обесценивает ранее выданный reset_token (§S12).
@@ -798,7 +800,7 @@ async def forgot_password(
         asyncio.create_task(_send_reset_code_safely(data.email, code))
     else:
         # Уравниваем стоимость: та же операция bcrypt, что и в ветке выше.
-        verify_password("timing-equaliser-not-a-real-code", _DUMMY_RESET_HASH)
+        await verify_password_async("timing-equaliser-not-a-real-code", _DUMMY_RESET_HASH)
 
     return {"message": "Если аккаунт существует, код отправлен на email"}
 
@@ -836,7 +838,7 @@ async def verify_reset_code(
 
     if not user or not user.reset_code_hash or not user.reset_code_expires_at:
         # Уравниваем стоимость с веткой, где код есть и считается bcrypt.
-        verify_password(data.code, _DUMMY_RESET_HASH)
+        await verify_password_async(data.code, _DUMMY_RESET_HASH)
         raise _reject()
 
     # Проверка TTL
@@ -858,7 +860,7 @@ async def verify_reset_code(
         raise _reject()
 
     # Проверка кода
-    if not verify_password(data.code, user.reset_code_hash):
+    if not await verify_password_async(data.code, user.reset_code_hash):
         user.reset_code_attempts += 1
         await db.commit()
         raise _reject()
@@ -929,7 +931,7 @@ async def reset_password(
             detail="Недействительный или просроченный токен сброса"
         )
 
-    user.password_hash = hash_password(data.new_password)
+    user.password_hash = await hash_password_async(data.new_password)
     user.last_login_at = datetime.utcnow()
     user.reset_token_jti = None
     # Инвалидируем все ранее выданные сессии (украденный/старый токен умирает).

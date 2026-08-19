@@ -237,6 +237,33 @@ async def list_conversations(
     )
     partner_parts_by_conv = {pp.conversation_id: pp for pp in partner_parts_q.scalars().all()}
 
+    # unread по всем диалогам одним GROUP BY. Раньше count_unread_in_conversation
+    # звался на каждый диалог — 2×N запросов на экран списка (вместе с
+    # блокировками), у активного юзера это десятки round-trip'ов к БД.
+    # last_read_at у каждого диалога свой, поэтому per-conversation условие
+    # собирается в OR — запрос один, план по индексу (conversation_id, created_at).
+    unread_conds = []
+    for p in parts:
+        cond = Message.conversation_id == p.conversation_id
+        if p.last_read_at is not None:
+            cond = and_(cond, Message.created_at > p.last_read_at)
+        unread_conds.append(cond)
+    unread_rows = await db.execute(
+        select(Message.conversation_id, func.count(Message.id))
+        .where(
+            Message.sender_id != current_user.id,
+            Message.deleted_at.is_(None),
+            or_(*unread_conds),
+        )
+        .group_by(Message.conversation_id)
+    )
+    unread_by_conv = {conv_id: int(n) for conv_id, n in unread_rows.all()}
+
+    # Блокировки всех собеседников — одним IN-запросом.
+    from app.services.blocking import blocked_partner_ids
+
+    blocked_ids = await blocked_partner_ids(db, current_user.id, partner_ids)
+
     items: list[ConversationRead] = []
     for p in parts:
         conv = convs.get(p.conversation_id)
@@ -245,12 +272,15 @@ async def list_conversations(
         partner = partners.get(partner_id_of(conv, current_user.id))
         if not partner:
             continue
-        unread = await count_unread_in_conversation(
-            db, conv.id, current_user.id, p.last_read_at
-        )
-        blocked = await is_user_blocked(db, current_user.id, partner.id)
         items.append(
-            _conv_to_read(conv, partner, p, partner_parts_by_conv.get(conv.id), unread, blocked)
+            _conv_to_read(
+                conv,
+                partner,
+                p,
+                partner_parts_by_conv.get(conv.id),
+                unread_by_conv.get(conv.id, 0),
+                partner.id in blocked_ids,
+            )
         )
 
     # Сначала закреплённые (Telegram-style), внутри секции — по last_message_at desc
