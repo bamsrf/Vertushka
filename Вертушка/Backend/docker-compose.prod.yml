@@ -61,6 +61,25 @@ services:
     # space left on device» — при живых 4.6 ГБ на диске. Тем же местом рискуют
     # параллельные планы обычных запросов (экран артиста собирается в 3 воркера).
     shm_size: 512mb
+    # Дефолты Postgres рассчитаны на машину 90-х: shared_buffers 128MB при базе
+    # 12.4 ГБ (13M-строчный trgm-индекс) = вечное чтение с диска. Применение
+    # требует пересоздания контейнера db (короткий даунтайм); данные в volume
+    # postgres_data пересоздание не трогает. max_connections 60: api 10+20 +
+    # scheduler 10+20 + запас; mem_limit чтобы OOM-киллер хоста (4 ГБ) не
+    # выбирал самый жирный процесс вслепую.
+    command:
+      - postgres
+      - -c
+      - shared_buffers=512MB
+      - -c
+      - effective_cache_size=2GB
+      - -c
+      - max_connections=60
+      - -c
+      - work_mem=16MB
+      - -c
+      - random_page_cost=1.1
+    mem_limit: 1500m
     environment:
       POSTGRES_USER: ${DB_USER}
       POSTGRES_PASSWORD: ${DB_PASSWORD}
@@ -81,6 +100,10 @@ services:
     container_name: vertushka_redis
     restart: always
     command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+    # maxmemory лимитирует только данные; сам процесс + оверхед аллокатора
+    # живут сверху. 384m = 256 данных + честный запас, дальше пусть падает
+    # контейнер (restart: always), а не сосед по OOM-рулетке.
+    mem_limit: 384m
     volumes:
       - redis_data:/data
     healthcheck:

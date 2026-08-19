@@ -28,8 +28,26 @@ echo "$(date): Начинаю бэкап базы данных..."
 # pipefail чтобы поймать сбой pg_dump через pipe в gzip.
 set -o pipefail
 
+# Справочники Discogs/MusicBrainz (97% объёма БД) в дамп не тащим: они
+# восстановимы из исходных дампов (см. memory vertushka-discogs-dump-refresh
+# и docs/plans). Схема таблиц в бэкапе остаётся — исключаются только данные.
+# discogs_dump_state исключён сознательно: иначе после restore система считала
+# бы дампы загруженными при пустых таблицах. discogs_price_jobs НЕ исключать —
+# это пользовательская очередь, не справочник. Оговорка: releases_index копит
+# URL, найденные живым резолвом обложек, — после restore они переисчислятся
+# сами (negative-cache + лестница источников).
+EXCLUDE_REF_TABLES=(
+  discogs_releases_index discogs_release_formats discogs_release_tracklists
+  discogs_artists discogs_artist_names discogs_master_covers
+  discogs_dump_state mb_discogs_map mb_barcode_covers
+)
+EXCLUDE_ARGS=()
+for t in "${EXCLUDE_REF_TABLES[@]}"; do
+  EXCLUDE_ARGS+=(--exclude-table-data="$t")
+done
+
 # Создать бэкап и сжать
-docker exec $CONTAINER_NAME pg_dump -U $DB_USER $DB_NAME | gzip > $BACKUP_FILE
+docker exec $CONTAINER_NAME pg_dump -U $DB_USER "${EXCLUDE_ARGS[@]}" $DB_NAME | gzip > $BACKUP_FILE
 DUMP_EXIT=$?
 
 if [ $DUMP_EXIT -ne 0 ] || [ ! -s "$BACKUP_FILE" ]; then

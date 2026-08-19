@@ -19,6 +19,9 @@ DB_PASS="${RESTORE_DRILL_PASS:-drill}"
 PG_IMAGE="${PG_IMAGE:-postgres:16}"
 DRILL_CONTAINER="vertushka_restore_drill"
 # Ключевые таблицы, на которых ждём непустой результат после restore.
+# Справочные таблицы Discogs/MB в бэкапе пустые (backup.sh --exclude-table-data):
+# после реального restore их нужно перезалить из исходных дампов отдельной
+# процедурой. Sanity-проверка ниже осознанно смотрит только пользовательские.
 SANITY_TABLES=(users records collections wishlists)
 
 GREEN='\033[0;32m'; RED='\033[0;31m'; YELLOW='\033[0;33m'; NC='\033[0m'

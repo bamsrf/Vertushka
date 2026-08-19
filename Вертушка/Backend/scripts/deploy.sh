@@ -10,6 +10,25 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m'
 
+# Битый nginx.conf роняет все 5 доменов разом: свежепересозданный контейнер с
+# невалидным конфигом не стартует вовсе (в отличие от reload, который просто
+# не применяется). Поэтому любой путь, способный ПЕРЕСОЗДАТЬ nginx, обязан
+# сначала прогнать конфиг в одноразовом контейнере — с теми же include/сертами,
+# что и боевой mount (см. volumes сервиса nginx в docker-compose.prod.yml).
+validate_nginx_conf() {
+    echo "🔎 Валидирую nginx.conf одноразовым контейнером..."
+    if ! docker run --rm \
+        -v "$PWD/nginx/nginx.conf:/etc/nginx/nginx.conf:ro" \
+        -v "$PWD/nginx/active_upstream.conf:/etc/nginx/active_upstream.conf:ro" \
+        -v "$PWD/certbot/conf:/etc/letsencrypt:ro" \
+        -v /home/deploy/dashboard/.htpasswd:/etc/nginx/money.htpasswd:ro \
+        -v /home/deploy/dashboard/auth.conf:/etc/nginx/money_auth.conf:ro \
+        nginx:alpine nginx -t; then
+        echo -e "${YELLOW}❌ nginx.conf не прошёл валидацию — деплой прерван, контейнеры не тронуты.${NC}"
+        exit 1
+    fi
+}
+
 echo -e "${YELLOW}🚀 Начинаю деплой Вертушка API...${NC}"
 
 # Перейти в директорию проекта
@@ -109,6 +128,7 @@ if docker inspect vertushka_api >/dev/null 2>&1; then
         exit 1
     fi
     echo "blue" > "$STATE_FILE"
+    validate_nginx_conf
     echo "🔁 Пересоздаю nginx (подхватить mount active_upstream.conf)..."
     $COMPOSE up -d --force-recreate nginx
     echo "🗑  Сношу легаси-контейнер vertushka_api..."
@@ -121,7 +141,9 @@ else
     echo "🎯 Активен: $ACTIVE → поднимаю новый цвет: $TARGET"
 
     # Поднимаем зависимости на случай, если что-то легло (db/redis/nginx/scheduler).
-    # Цвета profile-gated → этот `up -d` их не трогает.
+    # Цвета profile-gated → этот `up -d` их не трогает. Но при изменении
+    # nginx-секции compose он ПЕРЕСОЗДАСТ nginx — валидируем конфиг до.
+    validate_nginx_conf
     $COMPOSE up -d
 
     $COMPOSE --profile "$TARGET" up -d --no-deps --force-recreate "api-$TARGET"

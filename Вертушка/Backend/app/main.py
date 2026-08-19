@@ -162,6 +162,14 @@ async def lifespan(app: FastAPI):
             from app.tasks.disk_tasks import check_disk_space
             scheduler.add_job(check_disk_space, 'interval', minutes=30,
                               id='disk_space_guard', max_instances=1, coalesce=True)
+            # Heartbeat: disk guard и все ночные джобы живут в этом процессе —
+            # если он умер или в крэш-лупе, снаружи не видно (autoheal при
+            # постоянных рестартах молчит, алёрты слать некому). Ключ с TTL
+            # 5 мин; api-процесс показывает возраст в /health/covers.
+            async def _scheduler_heartbeat():
+                await cache.set("health", "scheduler_heartbeat", int(time.time()), ttl=300)
+            scheduler.add_job(_scheduler_heartbeat, 'interval', minutes=1,
+                              id='scheduler_heartbeat', max_instances=1, coalesce=True)
             # Метрика покрытия обложек (§4.2): 6:15, после ночного прогрева/enrichment.
             scheduler.add_job(report_cover_coverage, 'cron', hour=6, minute=15, id='cover_coverage_report', max_instances=1, coalesce=True)
             scheduler.add_job(enrich_market_covers, 'interval', hours=2, id='enrich_market_covers')
@@ -554,6 +562,15 @@ async def cover_coverage_snapshot(
     snapshot["discogs_img_today"] = {
         "used": await discogs_img_used_today(),
         "budget": settings.discogs_img_daily_budget,
+    }
+
+    # Живость шедулера — только в теле ответа. На статус-код НЕ влияет:
+    # /health смотрят docker healthcheck и autoheal, и мёртвый scheduler
+    # не повод рестартить api-контейнер.
+    hb = await cache.get("health", "scheduler_heartbeat")
+    snapshot["scheduler"] = {
+        "alive": hb is not None,
+        "heartbeat_age_seconds": (int(time.time()) - int(hb)) if hb is not None else None,
     }
     return snapshot
 
