@@ -11,8 +11,10 @@
   - отказ гасит вопрос навсегда;
   - когда брони нет, старое поведение сохраняется — пункт уезжает из вишлиста.
 """
+import asyncio
+
 import pytest
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.models.collection import CollectionItem
 from app.models.gift_booking import GiftBooking, GiftStatus
@@ -185,6 +187,61 @@ async def test_double_booking_is_rejected(client, make_record, wishlist_item):
         },
     )
     assert response.status_code in (400, 409), response.text
+
+
+async def test_concurrent_booking_only_one_wins(
+    client, db, make_record, wishlist_item
+):
+    """Гонка: два дарителя ПАРАЛЛЕЛЬНО бронируют один пункт вишлиста.
+
+    Последовательный случай ловит Python-проверка `if item.gift_booking`
+    (см. test_double_booking_is_rejected). Параллельный она пропускает: оба
+    запроса успевают прочитать «брони ещё нет» до любого commit'а. Единственный
+    барьер тогда — UNIQUE-индекс ix_gift_bookings_wishlist_item_id: у второго
+    commit падает с IntegrityError, и эндпоинт отдаёт 409. Именно ради этого
+    индекса и заведена baseline-миграция 20260820_wishlist_gift_baseline —
+    раньше он держался только на давно отключённом create_all и ничем не был
+    гарантирован.
+
+    У дарителей разные email — чтобы отсечь помеху per-email rate-limit и
+    оставить в игре ровно защиту от двойной брони.
+    """
+    record = await make_record()
+    item = await wishlist_item(record)
+
+    async def attempt(email: str):
+        return await client.post(
+            "/gifts/book",
+            json={
+                "wishlist_item_id": str(item.id),
+                "gifter_name": email,
+                "gifter_email": email,
+            },
+        )
+
+    first, second = await asyncio.gather(
+        attempt("racer-a@example.com"),
+        attempt("racer-b@example.com"),
+    )
+
+    statuses = [first.status_code, second.status_code]
+    # Ровно один 201; проигравший — 409 (гонка на commit'е) либо 400 (его SELECT
+    # успел уже после чужого commit'а). И то и другое — корректный отказ.
+    assert statuses.count(201) == 1, (statuses, first.text, second.text)
+    loser = second if first.status_code == 201 else first
+    assert loser.status_code in (400, 409), loser.text
+
+    # В базе — ровно одна бронь на этот пункт: проигравший откатился, дубля нет.
+    count = await db.scalar(
+        select(func.count(GiftBooking.id)).where(
+            GiftBooking.wishlist_item_id == item.id
+        )
+    )
+    assert count == 1
+    survivor = await db.scalar(
+        select(GiftBooking).where(GiftBooking.wishlist_item_id == item.id)
+    )
+    assert survivor.status in (GiftStatus.BOOKED, GiftStatus.PENDING)
 
 
 async def test_owner_does_not_see_who_booked_the_gift(
