@@ -9,7 +9,7 @@ from uuid import UUID
 logger = logging.getLogger(__name__)
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from sqlalchemy import func, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -488,6 +488,10 @@ async def confirm_booking(
     # PENDING → BOOKED + полный 60-дневный срок от момента подтверждения
     booking.status = GiftStatus.BOOKED
     booking.expires_at = datetime.utcnow() + timedelta(days=60)
+    # Владение email доказано кликом по ссылке из письма. Только после этого
+    # бронь можно матчить к аккаунту по gifter_email в «Я дарю» — иначе
+    # произвольная строка из формы открывала бы cancel_token и получателя.
+    booking.verified_at = datetime.utcnow()
     # verify_token больше не нужен — обнуляем чтобы повторно не использовать
     booking.verify_token = None
     await db.commit()
@@ -594,10 +598,19 @@ async def get_given_bookings(
         .where(
             or_(
                 GiftBooking.booked_by_user_id == current_user.id,
-                # Регистр не важен: бронь с сайта могли оформить как Ivan@Mail.ru,
-                # а в аккаунте лежит ivan@mail.ru — при точном сравнении такой
-                # подарок просто не появлялся в разделе «Я дарю».
-                func.lower(GiftBooking.gifter_email) == (current_user.email or "").strip().lower(),
+                # Анонимные брони с сайта матчим по email, но только с
+                # подтверждённым владением (verified_at из PUT /confirm):
+                # gifter_email — произвольная строка из публичной формы, и без
+                # проверки спуф чужого адреса подсовывал жертве фантомные
+                # «подарки» с cancel_token (отмена чужой брони) и личностью
+                # получателя. Регистр не важен: бронь могли оформить как
+                # Ivan@Mail.ru при аккаунте ivan@mail.ru.
+                and_(
+                    GiftBooking.booked_by_user_id.is_(None),
+                    GiftBooking.verified_at.is_not(None),
+                    func.lower(GiftBooking.gifter_email)
+                    == (current_user.email or "").strip().lower(),
+                ),
             ),
             GiftBooking.status.in_([GiftStatus.BOOKED, GiftStatus.COMPLETED]),
             # Раньше здесь стояло wishlist_item_id IS NOT NULL, и вручённые

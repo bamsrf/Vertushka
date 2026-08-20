@@ -112,6 +112,16 @@ class GiftBooking(Base):
         index=True,
     )
 
+    # Когда даритель подтвердил владение email (PENDING → BOOKED по verify_token).
+    # NULL = email не проверялся. Важно для «Я дарю»: анонимные брони матчатся
+    # к аккаунту по gifter_email, а это произвольная строка из формы — без
+    # подтверждения она не должна открывать cancel_token и получателя
+    # (иначе спуф чужого email подсовывает жертве фантомные «подарки»).
+    verified_at: Mapped[datetime | None] = mapped_column(
+        DateTime,
+        nullable=True,
+    )
+
     # Анти-фрод метки (заполняются на /book)
     gifter_ip: Mapped[str | None] = mapped_column(
         String(45),  # IPv6 max length
