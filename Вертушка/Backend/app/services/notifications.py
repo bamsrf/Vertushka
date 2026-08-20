@@ -308,6 +308,42 @@ async def send_wishlist_item_removed_to_gifter(
     await _send_email(gifter_email, subject, html_body)
 
 
+async def send_booking_rejected_to_gifter(
+    gifter_email: str,
+    gifter_name: str,
+    record_title: str,
+    owner_name: str,
+):
+    """
+    Письмо дарителю, когда владелец вишлиста отклонил его бронь.
+    Формулировка нейтральная: не «тебя забанили», а «бронь снята, пункт свободен».
+    """
+    subject = "Бронь подарка снята"
+    html_body = f"""
+    <div style="font-family:'Helvetica Neue',Arial,sans-serif;max-width:520px;margin:0 auto;background:#F4EEE6;border-radius:16px;overflow:hidden;">
+      <div style="background:#1B1D26;padding:28px 32px;">
+        <span style="color:#ffffff;font-size:18px;font-weight:700;letter-spacing:-0.3px;">Вертушка</span>
+      </div>
+      <div style="padding:32px;">
+        <h2 style="margin:0 0 8px;color:#1B1D26;font-size:22px;font-weight:700;">Бронь снята</h2>
+        <p style="margin:0 0 24px;color:#6B7080;font-size:15px;">Привет, {gifter_name}!</p>
+        <div style="background:#ffffff;border-radius:12px;padding:20px 24px;margin-bottom:24px;border:1px solid rgba(27,29,38,0.08);">
+          <div style="font-size:17px;color:#1B1D26;font-weight:600;">{record_title}</div>
+          <div style="font-size:13px;color:#6B7080;margin-top:6px;">для {owner_name}</div>
+        </div>
+        <p style="color:#6B7080;font-size:14px;line-height:1.6;margin-bottom:0;">
+          {owner_name} снял(а) эту бронь со своей стороны — покупать ничего не нужно.
+          Если это недоразумение, свяжись с получателем напрямую.
+        </p>
+      </div>
+      <div style="padding:16px 32px 24px;border-top:1px solid rgba(27,29,38,0.08);">
+        <p style="margin:0;color:#9096A6;font-size:12px;">Вертушка — твоя коллекция винила</p>
+      </div>
+    </div>
+    """
+    await _send_email(gifter_email, subject, html_body)
+
+
 async def send_booking_reminder_email(booking: GiftBooking):
     """
     Напоминание дарителю: бронирование истекает через 7 дней.

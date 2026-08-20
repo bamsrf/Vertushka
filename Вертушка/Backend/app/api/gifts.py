@@ -105,13 +105,16 @@ async def _check_rate_limits(
                 ),
             )
 
-    # Per-email: ≤ M активных одновременно (только BOOKED, не считая PENDING)
+    # Per-email: ≤ M активных одновременно. Считаем и BOOKED, и PENDING: при
+    # включённой email-верификации бронь сначала висит PENDING и держит пункт до
+    # verification_window_hours. Если бы PENDING не учитывались, лимит per-email
+    # тривиально обходился — набронировал пачку неподтверждённых и занял пункты.
     if settings.gift_booking_per_email_active_limit > 0:
         active_count = await db.scalar(
             select(func.count(GiftBooking.id))
             .where(
                 func.lower(GiftBooking.gifter_email) == email.strip().lower(),
-                GiftBooking.status == GiftStatus.BOOKED,
+                GiftBooking.status.in_([GiftStatus.BOOKED, GiftStatus.PENDING]),
             )
         ) or 0
         if active_count >= settings.gift_booking_per_email_active_limit:
@@ -234,7 +237,15 @@ async def book_gift(
         )
     else:
         booking_status = GiftStatus.BOOKED
-        booking_expires_at = datetime.utcnow() + timedelta(days=60)
+        # Анонимная бронь (без аккаунта) на публичном вишлисте — основной вектор
+        # griefing'а: держит пункт 60 дней. Если включён короткий holding-TTL,
+        # такой брони даём укороченный срок; истёкшую снимет auto_release. Честный
+        # зарегистрированный даритель и опция 0 (дефолт) сохраняют прежние 60 дней.
+        anon_hold_days = settings.gift_booking_anon_hold_days
+        if current_user is None and anon_hold_days > 0:
+            booking_expires_at = datetime.utcnow() + timedelta(days=anon_hold_days)
+        else:
+            booking_expires_at = datetime.utcnow() + timedelta(days=60)
 
     booking = GiftBooking(
         wishlist_item_id=item.id,
@@ -920,6 +931,123 @@ async def complete_booking_with_record(
         db=db,
         existing_collection_item=collection_item,
     )
+
+
+@router.put("/me/received/{booking_id}/reject")
+async def reject_booking(
+    booking_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Отклонение брони владельцем вишлиста (анти-griefing).
+
+    До этого снять бронь мог только сам даритель (по cancel_token) или
+    авто-экспирация. У владельца не было рычага против «занятых» пунктов —
+    griefer с ротацией email мог заблокировать весь публичный вишлист.
+
+    Переводит PENDING/BOOKED → CANCELLED (reason='rejected_by_owner'),
+    обнуляет wishlist_item_id (пункт снова свободен) и шлёт дарителю письмо.
+    Идемпотентно на CANCELLED, 400 на COMPLETED. Доступ — только владельцу:
+    по recipient_user_id (проставлен на /book) либо по владельцу пункта вишлиста.
+    """
+    result = await db.execute(
+        select(GiftBooking)
+        .where(GiftBooking.id == booking_id)
+        .options(
+            selectinload(GiftBooking.record),
+            selectinload(GiftBooking.wishlist_item).selectinload(WishlistItem.record),
+            selectinload(GiftBooking.wishlist_item)
+            .selectinload(WishlistItem.wishlist)
+            .selectinload(Wishlist.user),
+        )
+    )
+    booking = result.scalar_one_or_none()
+
+    if not booking:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Бронирование не найдено"
+        )
+
+    # Доступ владельца: денормализованный recipient_user_id (надёжен даже после
+    # обнуления связи с пунктом) ИЛИ прямое владение пунктом вишлиста.
+    item = booking.wishlist_item
+    is_owner = booking.recipient_user_id == current_user.id or (
+        item is not None
+        and item.wishlist is not None
+        and item.wishlist.user_id == current_user.id
+    )
+    if not is_owner:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Нет доступа"
+        )
+
+    if booking.status == GiftStatus.COMPLETED:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Нельзя отклонить уже вручённый подарок"
+        )
+
+    if booking.status == GiftStatus.CANCELLED:
+        return {"status": "cancelled"}
+
+    # Снимок для письма — до обнуления связи с пунктом.
+    record_title = None
+    if booking.record is not None:
+        record_title = booking.record.title
+    elif item is not None and item.record is not None:
+        record_title = item.record.title
+    gifter_email = booking.gifter_email
+    gifter_name = booking.gifter_name
+    owner_name = current_user.display_name or current_user.username
+
+    booking.status = GiftStatus.CANCELLED
+    booking.cancelled_at = datetime.utcnow()
+    booking.cancellation_reason = "rejected_by_owner"
+    booking.wishlist_item_id = None  # освобождаем пункт — иначе уникальный индекс держит его «занятым»
+    booking.verify_token = None  # неподтверждённую бронь тоже закрываем начисто
+    await db.commit()
+
+    logger.info(
+        "gift_rejected_by_owner",
+        extra={"booking_id": str(booking.id), "owner_id": str(current_user.id)},
+    )
+
+    # Письмо дарителю — бронь снята владельцем, пункт свободен.
+    if gifter_email and record_title:
+        try:
+            from app.services.notifications import send_booking_rejected_to_gifter
+            await send_booking_rejected_to_gifter(
+                gifter_email=gifter_email,
+                gifter_name=gifter_name,
+                record_title=record_title,
+                owner_name=owner_name,
+            )
+        except Exception:
+            logger.exception("Failed to send gift rejection email to gifter")
+
+    # In-app + push зарегистрированному дарителю (анонимный получит только письмо).
+    if booking.booked_by_user_id is not None and record_title:
+        try:
+            from app.services.notification_service import create_notification
+            await create_notification(
+                db,
+                user_id=booking.booked_by_user_id,
+                actor_id=None,
+                type="gift_rejected",
+                entity_type="gift_booking",
+                entity_id=str(booking.id),
+                data={"record_title": record_title},
+                push_title="Бронь подарка снята",
+                push_body=f"«{record_title}» снова свободна для брони",
+            )
+            await db.commit()
+        except Exception:
+            logger.exception("Failed to create gift_rejected notification")
+
+    return {"status": "cancelled"}
 
 
 @router.put("/me/received/{booking_id}/dismiss-match")
