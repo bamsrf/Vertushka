@@ -25,6 +25,7 @@ from app.services.achievements.events import (
     VINYL_SPUN_33,
 )
 from app.services.achievements.evaluator import emit_event
+from app.services.achievements.evidence import evidence_text
 from app.services.achievements.levels import counts_toward_level, weight_for_code
 from app.schemas.achievement import (
     AchievementItem,
@@ -217,6 +218,9 @@ def _build_item(
             if is_unlocked and ua is not None and ua.xp_awarded is not None
             else weight_for_code(defn.code)
         ),
+        evidence_text=(
+            evidence_text(ua.ach_metadata) if is_unlocked and ua is not None else None
+        ),
     )
 
 
@@ -253,6 +257,26 @@ _NO_ART_CODES: frozenset[str] = frozenset({
     "R_time_machine_50",
     "R_type_iv",
 })
+
+
+def _count_random_unlocked(
+    defs: Iterable[AchievementDefinition],
+    by_code: dict[str, UserAchievement],
+) -> int:
+    """Сколько пасхалок открыто — ровно тех, что реально попадут в выдачу.
+
+    Считается здесь, а не по месту, потому что счётчик обязан совпадать с
+    длиной списка из `/me/random`: разошлись — и юзер видит «3 открыто» над
+    двумя пинами. Любой новый фильтр добавлять сюда и туда одновременно.
+    """
+    return sum(
+        1
+        for d in defs
+        if d.series == "random"
+        and d.code not in _NO_ART_CODES
+        and by_code.get(d.code)
+        and by_code[d.code].is_unlocked
+    )
 
 
 def _group_series(
@@ -369,11 +393,7 @@ async def get_my_achievements(
     )
     total = sum(s.total for s in series)
     unlocked = sum(s.unlocked for s in series)
-    random_unlocked = sum(
-        1
-        for d in defs
-        if d.series == "random" and by_code.get(d.code) and by_code[d.code].is_unlocked
-    )
+    random_unlocked = _count_random_unlocked(defs, by_code)
     return MyAchievementsResponse(
         total=total,
         unlocked=unlocked,
@@ -543,11 +563,7 @@ async def get_achievements_by_username(
     )
     total = sum(s.total for s in series)
     unlocked = sum(s.unlocked for s in series)
-    random_unlocked = sum(
-        1
-        for d in defs
-        if d.series == "random" and by_code.get(d.code) and by_code[d.code].is_unlocked
-    )
+    random_unlocked = _count_random_unlocked(defs, by_code)
     return MyAchievementsResponse(
         total=total,
         unlocked=unlocked,
