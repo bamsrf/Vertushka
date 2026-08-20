@@ -7,8 +7,12 @@
 грабли с бокс-сетами и семьёй CD). Запись может попасть сразу в два семейства:
 бокс из четырёх винилов — и винил, и бокс.
 
-Анти-фарм — как в scale.py: только ОСНОВНАЯ коллекция и только записи старше
-24 часов. Иначе «добавил 25 кассет, забрал ачивку, удалил» проходит на ура.
+Анти-фарм — как в scale.py: только ОСНОВНАЯ коллекция, и АНЛОК — только по
+записям старше 24 часов. Иначе «добавил 25 кассет, забрал ачивку, удалил»
+проходит на ура. Прогресс для UI при этом живой, без cooldown: новичок,
+импортировавший кассеты сегодня, должен видеть заполняющийся бар, а не 0/10.
+Живой счёт может уменьшаться после удалений, но _persist в evaluator.py пишет
+progress только при росте — значение замрёт на пике; это осознанно.
 
 Серии T / CD / BX показываются в приложении не сразу: пока у юзера нет ни одной
 единицы формата, серия не приходит в /achievements/me вообще (фильтр в
@@ -75,10 +79,12 @@ _META_MIN_PER_FAMILY = 10
 
 
 async def _load_media(db: AsyncSession, user_id: UUID) -> list:
-    """Носители всех «отлежавшихся» записей основной коллекции юзера.
+    """Пары (носитель, отлежался ли) всех записей основной коллекции юзера.
 
-    Тянем два текстовых поля на запись: разбирать описания приходится в Python
-    (бокс-сет опознаётся по подстроке в описании, в SQL это нечитаемо).
+    Один запрос на оба среза: «отлежавшиеся» (старше 24 часов, для анлока)
+    вычисляются флагом в Python. Тянем два текстовых поля на запись: разбирать
+    описания приходится в Python (бокс-сет опознаётся по подстроке в описании,
+    в SQL это нечитаемо).
     """
     cutoff = datetime.utcnow() - ANTIFARM_COOLDOWN
     default_collection_id = (
@@ -89,15 +95,15 @@ async def _load_media(db: AsyncSession, user_id: UUID) -> list:
         .scalar_subquery()
     )
     rows = await db.execute(
-        select(Record.format_type, Record.format_description)
+        select(Record.format_type, Record.format_description, CollectionItem.added_at)
         .join(CollectionItem, CollectionItem.record_id == Record.id)
-        .where(
-            CollectionItem.collection_id == default_collection_id,
-            CollectionItem.added_at <= cutoff,
-        )
+        .where(CollectionItem.collection_id == default_collection_id)
         .distinct(Record.id)
     )
-    return [parse_media(ft, fd) for ft, fd in rows.all()]
+    return [
+        (parse_media(ft, fd), added_at is not None and added_at <= cutoff)
+        for ft, fd, added_at in rows.all()
+    ]
 
 
 def _counts(media: list) -> dict[str, int]:
@@ -106,6 +112,13 @@ def _counts(media: list) -> dict[str, int]:
         for family in info.families:
             counts[family] += 1
     return counts
+
+
+def _split_counts(media: list) -> tuple[dict[str, int], dict[str, int]]:
+    """(живые, отлежавшиеся) счётчики по семействам носителей."""
+    live = _counts([info for info, _ in media])
+    aged = _counts([info for info, is_aged in media if is_aged])
+    return live, aged
 
 
 def _make_family_threshold(family: str, threshold: int):
@@ -117,10 +130,10 @@ def _make_family_threshold(family: str, threshold: int):
         payload: dict[str, Any],
         unlocked_now: set[str],
     ) -> EvalResult:
-        count = _counts(await _load_media(db, user_id))[family]
+        live, aged = _split_counts(await _load_media(db, user_id))
         return EvalResult(
-            unlocked=count >= threshold,
-            progress=min(count, threshold),
+            unlocked=aged[family] >= threshold,
+            progress=min(live[family], threshold),
             progress_target=threshold,
         )
 
@@ -136,11 +149,12 @@ def _make_distinct_families(target: int):
         payload: dict[str, Any],
         unlocked_now: set[str],
     ) -> EvalResult:
-        counts = _counts(await _load_media(db, user_id))
-        distinct = sum(1 for family in FAMILIES if counts[family] > 0)
+        live, aged = _split_counts(await _load_media(db, user_id))
+        distinct_live = sum(1 for family in FAMILIES if live[family] > 0)
+        distinct_aged = sum(1 for family in FAMILIES if aged[family] > 0)
         return EvalResult(
-            unlocked=distinct >= target,
-            progress=min(distinct, target),
+            unlocked=distinct_aged >= target,
+            progress=min(distinct_live, target),
             progress_target=target,
         )
 
@@ -154,9 +168,14 @@ async def _evaluate_beyond_vinyl(
     unlocked_now: set[str],
 ) -> EvalResult:
     """Первый не-винил: кассета, CD или бокс."""
-    counts = _counts(await _load_media(db, user_id))
-    non_vinyl = sum(counts[f] for f in FAMILIES if f != VINYL)
-    return EvalResult(unlocked=non_vinyl > 0, progress=min(non_vinyl, 1), progress_target=1)
+    live, aged = _split_counts(await _load_media(db, user_id))
+    non_vinyl_live = sum(live[f] for f in FAMILIES if f != VINYL)
+    non_vinyl_aged = sum(aged[f] for f in FAMILIES if f != VINYL)
+    return EvalResult(
+        unlocked=non_vinyl_aged > 0,
+        progress=min(non_vinyl_live, 1),
+        progress_target=1,
+    )
 
 
 async def _evaluate_meta_formats(
@@ -177,11 +196,12 @@ async def _evaluate_meta_formats(
     if unlocked != _FMT_CODES:
         return EvalResult(progress=len(unlocked), progress_target=len(_FMT_CODES))
 
-    counts = _counts(await _load_media(db, user_id))
-    deep = sum(1 for family in FAMILIES if counts[family] >= _META_MIN_PER_FAMILY)
+    live, aged = _split_counts(await _load_media(db, user_id))
+    deep_live = sum(1 for family in FAMILIES if live[family] >= _META_MIN_PER_FAMILY)
+    deep_aged = sum(1 for family in FAMILIES if aged[family] >= _META_MIN_PER_FAMILY)
     return EvalResult(
-        unlocked=deep == len(FAMILIES),
-        progress=deep,
+        unlocked=deep_aged == len(FAMILIES),
+        progress=deep_live,
         progress_target=len(FAMILIES),
     )
 
