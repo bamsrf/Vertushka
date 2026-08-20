@@ -95,6 +95,9 @@ async def _emit_impl(
             )
             continue
 
+        if result.unlocked:
+            await _attach_evidence(db, user_id, defn.code, payload, result)
+
         await _persist(db, user_id, defn, ua, result)
         if result.unlocked:
             unlocked_now.add(defn.code)
@@ -162,6 +165,38 @@ async def _emit_impl(
                 pass
 
     return sorted(unlocked_now)
+
+
+async def _attach_evidence(
+    db: AsyncSession,
+    user_id: UUID,
+    code: str,
+    payload: dict[str, Any],
+    result: EvalResult,
+) -> None:
+    """Кладёт в metadata улику «за какую музыку» — замороженный снапшот анлока.
+
+    Мержим поверх рабочего состояния evaluator-а (стрики и т.п.), не затирая
+    его. Ошибка билдера не должна стоить юзеру ачивки — глотаем и логируем.
+    """
+    from app.services.achievements.evidence import get_evidence_builder
+
+    builder = get_evidence_builder(code)
+    if builder is None:
+        return
+    try:
+        evidence = await builder(db, user_id, payload)
+    except Exception:  # noqa: BLE001
+        logger.exception(
+            "achievement_evidence_failed",
+            extra={"user_id": str(user_id), "code": code},
+        )
+        return
+    if not evidence:
+        return
+    merged = dict(result.metadata or {})
+    merged["evidence"] = evidence
+    result.metadata = merged
 
 
 async def _notify_level_up(

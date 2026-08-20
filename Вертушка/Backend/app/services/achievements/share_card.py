@@ -153,6 +153,7 @@ def render_share_card(
     username: str,
     unlocked_at: datetime | None = None,
     size: ShareCardSize = SIZE_STORIES,
+    evidence_text: str | None = None,
 ) -> bytes:
     """Рендерит PNG share-card. Возвращает bytes для возврата в API."""
     top, bottom = TIER_BG_COLORS[defn.tier]
@@ -192,6 +193,19 @@ def render_share_card(
         fill=(230, 230, 235),
     )
 
+    # Улика «за какую музыку» — короткая строка под тиром. Только музыка,
+    # без людей и цен (карточка уходит в публичные Stories).
+    if evidence_text:
+        ev_font = _load_font(int(size.width * 0.030))
+        _draw_text_centered(
+            draw,
+            evidence_text,
+            title_y + int(size.width * 0.16),
+            size.width,
+            ev_font,
+            fill=(210, 210, 220),
+        )
+
     # Нижний блок: username + домен
     bottom_font = _load_font(int(size.width * 0.038))
     bottom_y = size.height - int(size.height * 0.10)
@@ -217,6 +231,7 @@ def render_for_format(
     username: str,
     unlocked_at: datetime | None,
     fmt: str,
+    evidence_text: str | None = None,
 ) -> bytes:
     """fmt: 'stories' | 'feed' | 'portrait'."""
     size_map = {
@@ -225,4 +240,10 @@ def render_for_format(
         "portrait": SIZE_PORTRAIT,
     }
     size = size_map.get(fmt, SIZE_STORIES)
-    return render_share_card(defn, username=username, unlocked_at=unlocked_at, size=size)
+    return render_share_card(
+        defn,
+        username=username,
+        unlocked_at=unlocked_at,
+        size=size,
+        evidence_text=evidence_text,
+    )

@@ -1097,6 +1097,12 @@ export interface AchievementItem {
    * клиент падает на локальный вес тира (см. computeScore).
    */
   xp?: number;
+  /**
+   * «За какую музыку получено» — короткая улика, замороженная в момент анлока
+   * («Talk Talk — Laughing Stock · и ещё 24»). Только музыка, без людей.
+   * null/отсутствует — строка не рисуется.
+   */
+  evidence_text?: string | null;
 }
 
 export interface AchievementSeriesItem {

@@ -534,6 +534,9 @@ function DetailsSheet({
         {item.flavor_ru && !item.is_hidden && item.is_unlocked && (
           <Text style={styles.sheetFlavor}>«{item.flavor_ru}»</Text>
         )}
+        {item.is_unlocked && item.evidence_text && (
+          <Text style={styles.sheetEvidence}>♪ {item.evidence_text}</Text>
+        )}
 
         {/* Прогресс — для счётчиковых ачивок */}
         {item.progress_target > 0 && !item.is_unlocked && (
@@ -982,6 +985,14 @@ const styles = StyleSheet.create({
     color: Colors.textMuted,
     textAlign: 'center',
     marginTop: 10,
+    paddingHorizontal: Spacing.md,
+  },
+  // Улика «за какую музыку получено» — под flavor, тем же приглушённым тоном.
+  sheetEvidence: {
+    fontSize: ms(12),
+    color: Colors.textMuted,
+    textAlign: 'center',
+    marginTop: 8,
     paddingHorizontal: Spacing.md,
   },
   sheetProgressRow: {

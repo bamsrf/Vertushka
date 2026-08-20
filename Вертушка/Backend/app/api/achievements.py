@@ -527,6 +527,7 @@ async def get_share_card(
         username=current_user.username,
         unlocked_at=ua.unlocked_at,
         fmt=fmt,
+        evidence_text=evidence_text(ua.ach_metadata),
     )
     return Response(
         content=png_bytes,
