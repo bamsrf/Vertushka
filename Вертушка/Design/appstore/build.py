@@ -97,6 +97,7 @@ SLIDES = [
         "glow": "radial-gradient(1200px 980px at 90% 0%, rgba(150,124,240,.64), transparent 62%),"
                 "radial-gradient(1040px 940px at -10% 28%, rgba(42,75,215,.38), transparent 62%)",
         "pool": "rgba(232,180,192,.66),rgba(150,124,240,.20) 48%",
+        "mascot": True,
     },
     {
         "slug": "04-collection",
@@ -168,7 +169,10 @@ def html_for(slide: dict, faces: str) -> str:
     frame_w, frame_h = sw + BEZEL * 2, sh + BEZEL * 2
     pool_top = PHONE_TOP + frame_h - 300
     shot = data_uri(shot_path, "image/png")
-    mascot = data_uri(resample(MASCOT, MASCOT_W, "mascot.png"), "image/png")
+    mascot = (
+        f'<div class="mascot"><img src="{data_uri(resample(MASCOT, MASCOT_W, "mascot.png"), "image/png")}"></div>'
+        if slide.get("mascot") else ""
+    )
     P = PALETTE
     return f"""<meta charset="utf-8">
 <style>
@@ -234,7 +238,7 @@ p{{margin-top:34px;font-size:46px;line-height:62px;letter-spacing:-.4px;white-sp
     <p>{slide['sub']}</p>
   </div>
   <div class="phone"><div class="screen"><img src="{shot}"></div></div>
-  <div class="mascot"><img src="{mascot}"></div>
+  {mascot}
 </div>"""
 
 

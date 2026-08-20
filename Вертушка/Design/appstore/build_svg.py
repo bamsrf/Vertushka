@@ -205,12 +205,12 @@ def build(slide: dict) -> str:
         "</g>"
     )
 
-    mw = B.MASCOT_W
-    mh = round(mw * 2322 / 2322)
-    body.append(
-        f'<image id="Маскот" href="../../Logo/Статика/Vert_vpose1.png" '
-        f'x="-52" y="{n(B.H + 8 - mh)}" width="{mw}" height="{mh}"/>'
-    )
+    if slide.get("mascot"):
+        mw = mh = B.MASCOT_W          # исходник маскота квадратный, 2322x2322
+        body.append(
+            f'<image id="Маскот" href="../../Logo/Статика/Vert_vpose1.png" '
+            f'x="-52" y="{n(B.H + 8 - mh)}" width="{mw}" height="{mh}"/>'
+        )
 
     return (
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{B.W}" height="{B.H}" '
