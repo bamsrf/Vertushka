@@ -62,6 +62,12 @@ const SERIES_PLACEHOLDERS: Record<string, ImageSourcePropType> = {
   community: require('../assets/achievements/placeholders/community.png'),
   contribution: require('../assets/achievements/placeholders/Contribution.png'),
   discography: require('../assets/achievements/placeholders/discography.png'),
+  formats: require('../assets/achievements/placeholders/formats.png'),
+  cassettes: require('../assets/achievements/placeholders/cassettes.png'),
+  cds: require('../assets/achievements/placeholders/cds.png'),
+  boxsets: require('../assets/achievements/placeholders/boxsets.png'),
+  market: require('../assets/achievements/placeholders/market.png'),
+  value: require('../assets/achievements/placeholders/value.png'),
   gifts: PLACEHOLDER_GIFT,
   // «Истоки» (Первая сотня): серия гейтится на бэке и приходит только тем,
   // у кого пин уже открыт, — locked-заглушка почти недостижима, но пусть будет.

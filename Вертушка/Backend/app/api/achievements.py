@@ -220,6 +220,41 @@ def _build_item(
     )
 
 
+#: Ачивки без чистового пина — не показываем юзеру до релиза арта.
+#: Прогресс по ним считается и пишется в БД как обычно: когда пин появится,
+#: достаточно убрать код отсюда, и уже открытая ачивка проявится с историей.
+#:
+#: Как обновлять: файл пина кладётся в `Mobile/assets/achievements/designs/`
+#: с именем `<icon_slug>.png` (= код в нижнем регистре, если не задан другой
+#: slug), после чего код удаляется из этого набора. Бэкенд не видит папку
+#: ассетов, поэтому список ведётся руками — сверяйся с ней, а не с памятью.
+_NO_ART_CODES: frozenset[str] = frozenset({
+    # Видимые в гриде
+    "C1_limited_x5",
+    "T3_tapes_x25",
+    "FMT2_multiformat",
+    "FMT3_all_formats",
+    "META_eras",
+    "OG1_first_hundred",
+    # Пасхалки: до анлока показывают яйцо, после — потребовали бы свой пин
+    "E_glass_eye",
+    "E_spin",
+    "R_cd_renaissance",
+    "R_friday_night",
+    "R_leap_day",
+    "R_limited_box",
+    "R_long_title",
+    "R_meta_vertushka",
+    "R_new_year",
+    "R_self_aware",
+    "R_seventy_eight",
+    "R_tabletop_giant",
+    "R_tapehead",
+    "R_time_machine_50",
+    "R_type_iv",
+})
+
+
 def _group_series(
     defs: Iterable[AchievementDefinition],
     by_code: dict[str, UserAchievement],
@@ -238,6 +273,9 @@ def _group_series(
             continue
         # Реферальной программы пока нет — серия «Глас наружу» скрыта из выдачи.
         if defn.series == "invitations":
+            continue
+        # Нет чистового пина — ачивки в гриде нет вообще, вместе со счётчиками.
+        if defn.code in _NO_ART_CODES:
             continue
         ua = by_code.get(defn.code)
         grouped.setdefault(defn.series, []).append((defn, ua))
@@ -355,6 +393,8 @@ async def get_my_random_unlocked(
     items: list[AchievementItem] = []
     for defn in all_definitions():
         if defn.series != "random":
+            continue
+        if defn.code in _NO_ART_CODES:
             continue
         ua = by_code.get(defn.code)
         if not ua or not ua.is_unlocked:
