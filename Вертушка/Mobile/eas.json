@@ -19,7 +19,8 @@
       "distribution": "store",
       "channel": "preview",
       "ios": {
-        "simulator": false
+        "simulator": false,
+        "image": "macos-sequoia-15.6-xcode-26.0"
       }
     },
     "production": {
@@ -28,6 +29,9 @@
       "autoIncrement": true,
       "env": {
         "SENTRY_ALLOW_FAILURE": "true"
+      },
+      "ios": {
+        "image": "macos-sequoia-15.6-xcode-26.0"
       }
     }
   },

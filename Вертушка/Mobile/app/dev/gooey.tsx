@@ -20,6 +20,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import * as Haptics from 'expo-haptics';
 import Svg, { Path, Circle } from 'react-native-svg';
+import { withDevOnly } from '../../components/DevOnly';
 import Animated, {
   useSharedValue,
   useAnimatedProps,
@@ -113,7 +114,7 @@ function metaballPath(
 
 // ─── Экран ───────────────────────────────────────────────────────────────────
 
-export default function GooeyPlayground() {
+function GooeyPlayground() {
   const insets = useSafeAreaInsets();
 
   // Геометрия: родитель — центр туллбара; почка едет вверх на `lift`.
@@ -277,3 +278,6 @@ const styles = StyleSheet.create({
     backgroundColor: COBALT,
   },
 });
+
+// В релизной сборке экран подменяется заглушкой: см. components/DevOnly.
+export default withDevOnly(GooeyPlayground);

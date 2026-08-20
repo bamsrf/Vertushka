@@ -16,6 +16,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Icon, type IconName, type IconColor, type IconSize, type IconVariant, type IconWeight } from '../../components/ui';
 import { Colors, Typography, Spacing, BorderRadius } from '../../constants/theme';
+import { withDevOnly } from '../../components/DevOnly';
 
 // ───────────────────────────────────────────────────────────────────────────
 // Группировка имён — одинакова с migration table B2.
@@ -64,7 +65,7 @@ const WEIGHTS: WeightChoice[] = ['auto', 'regular', 'duotone', 'fill'];
 
 // ───────────────────────────────────────────────────────────────────────────
 
-export default function IconsGalleryScreen() {
+function IconsGalleryScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const [size, setSize] = useState<IconSize>('md');
@@ -426,3 +427,6 @@ const styles = StyleSheet.create({
     color: Colors.deepNavy,
   },
 });
+
+// В релизной сборке экран подменяется заглушкой: см. components/DevOnly.
+export default withDevOnly(IconsGalleryScreen);

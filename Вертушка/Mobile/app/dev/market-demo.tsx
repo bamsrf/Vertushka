@@ -31,6 +31,7 @@ import MarketSection, {
 import HotStockTag from '../../components/HotStockTag';
 import { type MarketCarouselCardData } from '../../components/market/MarketCarouselCard';
 import { type MarketFilters, EMPTY_MARKET_FILTERS } from '../../lib/types';
+import { withDevOnly } from '../../components/DevOnly';
 
 // ────────────────────────────────────────────────────────────────────────
 // Mock data — реальные обложки берём из Discogs CDN (пока нет своих).
@@ -65,7 +66,7 @@ const MOCK_STORES: MarketStoreData[] = [
 
 // ────────────────────────────────────────────────────────────────────────
 
-export default function MarketDemoScreen() {
+function MarketDemoScreen() {
   const scrollY = useSharedValue(0);
   const scrollRef = useRef<Animated.ScrollView>(null);
 
@@ -224,3 +225,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
 });
+
+// В релизной сборке экран подменяется заглушкой: см. components/DevOnly.
+export default withDevOnly(MarketDemoScreen);

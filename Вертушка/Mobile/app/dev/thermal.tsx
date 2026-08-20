@@ -28,6 +28,7 @@ import {
   type ThermalEntry,
 } from '../../lib/deviceMetrics';
 import { Colors, Typography, Spacing, BorderRadius } from '../../constants/theme';
+import { withDevOnly } from '../../components/DevOnly';
 
 /** serious/critical означают, что система уже троттлит — это красная зона. */
 const STATE_COLOR: Record<ThermalState, string> = {
@@ -52,7 +53,7 @@ function formatTime(timestamp: number): string {
   return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 }
 
-export default function ThermalScreen() {
+function ThermalScreen() {
   const insets = useSafeAreaInsets();
   const available = isDeviceMetricsAvailable();
   const [state, setState] = useState<ThermalState>(() => getCurrentThermalState());
@@ -170,3 +171,6 @@ const styles = StyleSheet.create({
   metricKey: { ...Typography.caption, color: Colors.textSecondary, flex: 1 },
   metricValue: { ...Typography.caption, color: Colors.text, flex: 1, textAlign: 'right' },
 });
+
+// В релизной сборке экран подменяется заглушкой: см. components/DevOnly.
+export default withDevOnly(ThermalScreen);
