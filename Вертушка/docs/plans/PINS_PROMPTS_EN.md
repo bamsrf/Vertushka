@@ -37,57 +37,57 @@ Output: 1024×1024 PNG, transparent background. No text, no background, no frame
 ### `C1_limited_x5` — «Тираж ограничен» (Simple 💧)
 
 ```text
-Generate a soft enamel pin: five overprint stickers fanned out — the first stamp that says "not for everyone".
+Generate a soft enamel pin: a vinyl record torn off a roll like a ticket stub — the press run is finite and you took one of the few.
 
-Composition: five narrow rectangular promo stickers stacked in a loose fan from a single point at the bottom, each with two clipped corners like real record-sleeve hype stickers. The top sticker carries a raised oval seal drawn as a gold ring with a blank ember field inside — a stamp shape, no letters. Thin gold hairlines separate the overlapping cards.
+Composition: one bold record fills the pin, but its left edge is not round — it is a straight perforated tear line with a row of punched holes, as if the disc were ripped off a strip of tickets. A narrow sliver of the neighboring disc is still attached beyond the perforation, cut off by the frame. The record's center label carries a raised gold oval seal with a blank ember field inside — a stamp shape, no letters. Everything flat, no paper curl, no perspective.
 
-Palette: ivory #FBF5EA, ember #E85A2A, cobalt soft #5C7AE8, navy #0B1438, gold #D9A84E.
+Palette: vinyl black #1A1A2E (record), gold #D9A84E (grooves, perforation holes, seal), ember #E85A2A (label), ivory #FBF5EA (torn strip sliver), navy #0B1438 (outline).
 
-Style: soft enamel pin — raised gold contour #D9A84E with a 1px dark navy #0B1438 outline, recessed flat enamel, gold divider lines 1.5–2px, one thin white specular arc per large fill. No sparkles. Silhouette: the outermost stickers of the fan break past the left and right edges.
+Style: soft enamel pin — raised gold contour #D9A84E with a 1px dark navy #0B1438 outline, recessed flat enamel, gold divider lines 1.5–2px between color zones, one thin white specular arc per large fill. No sparkles. Silhouette: the perforated edge and the attached sliver break past the left edge.
 
-Output: 1024×1024 PNG, transparent background. No text, no letters, no background, no frame, no drop shadows.
+Output: 1024×1024 PNG, transparent background. No text, no numbers, no background, no frame, no drop shadows, no paper texture.
 ```
 
-### `C4_collectible_x5` — «Шкаф редкостей» (Rare 🌸)
+### `C4_collectible_x5` — «Энтомолог» (Rare 🌸)
 
 ```text
-Generate a soft enamel pin: a narrow museum vitrine holding five records that barely exist in the wild.
+Generate a soft enamel pin: five butterflies pinned in a specimen case, their wings cut from vinyl records — rarity as a captured species.
 
-Composition: a tall glass display cabinet seen straight on, two hinged glass doors with a slim gold frame. Inside, five shelves, one record shown face-on per shelf, each resting in a small gold cradle. A single long diagonal white streak crosses the glass to read as reflection. The cabinet is topped by a decorative gold cornice with a small finial.
+Composition: a shallow rectangular specimen case seen straight on, slim gold frame, glass front marked by one long diagonal white streak. Inside, five butterflies are mounted in a loose grid, each with its wings made from two half-discs of vinyl: the curved outer edge of the record forms the wing's outer edge, and the concentric grooves fan across the wings like markings. Every butterfly is impaled by a straight pin with a small round gold head, and the pins are the only rigid verticals in the composition. One butterfly is noticeably larger than the rest, centered.
 
-Palette: navy #0B1438, cobalt soft #5C7AE8 (glass, semi-transparent), vinyl black #1A1A2E, pink #E89AC0 (record labels), gold #D9A84E.
+Palette: vinyl black #1A1A2E (wings) with gold #D9A84E grooves, pink #E89AC0 (wing markings on the largest one), navy #0B1438 (case backing, bodies), ivory #FBF5EA (case mat), gold (frame, pin heads), cobalt soft #5C7AE8 (glass streak).
 
-Style: soft enamel pin — raised gold contour #D9A84E with a 1px dark navy #0B1438 outline, recessed flat enamel, gold divider lines 1.5–2px, one thin white specular arc per large fill. Rare tier: add 2 tiny gold four-point sparkles. Silhouette: the cornice and finial break past the top edge.
+Style: soft enamel pin — raised gold contour #D9A84E with a 1px dark navy #0B1438 outline, recessed flat enamel, gold divider lines 1.5–2px, one thin white specular arc per large fill. Rare tier: add 2 tiny gold four-point sparkles. Silhouette: the case frame breaks past both side edges, the largest butterfly's wingtips past the top.
 
-Output: 1024×1024 PNG, transparent background. No text, no background, no frame, no photographic reflections.
+Output: 1024×1024 PNG, transparent background. No text, no labels, no realistic insect anatomy, no background, no frame beyond the case itself.
 ```
 
 ### `C7_hot_in_collection` — «Тренд на полке» (Rare 🌸)
 
 ```text
-Generate a soft enamel pin: a shelf of records running hot — everyone wants these more than they own them.
+Generate a soft enamel pin: a frying pan flipping a vinyl record through the air like a pancake — this one is hot right now.
 
-Composition: a row of five record spines seen from the front, standing tight together on a flat base. Above them rises a flame of three tongues, but each tongue curls inward into a vinyl groove spiral instead of a normal flame tip. Three wavy heat lines rise from between the spines.
+Composition: a frying pan seen from the side in the lower left, its long handle running down to the lower-left corner, the pan's mouth tilted up and to the right as if it has just thrown. Above it, one vinyl record is caught mid-flip in the air, tipped to a steep angle so it reads as a disc in motion rather than a flat circle — its center label clearly visible. Two curved gold motion arcs trace the arc of the throw from the pan's lip up to the record. Three small heat wisps curl up from inside the empty pan.
 
-Palette: navy #0B1438, cobalt #2A4BD7, ivory #FBF5EA, ember #E85A2A (flame), gold #D9A84E (groove spirals, heat lines).
+Palette: navy #0B1438 (pan body and handle), gold #D9A84E (pan rim, motion arcs, grooves), vinyl black #1A1A2E (record), ember #E85A2A (center label, heat wisps), ivory #FBF5EA (one highlight streak on the pan).
 
-Style: soft enamel pin — raised gold contour #D9A84E with a 1px dark navy #0B1438 outline, recessed flat enamel, gold divider lines 1.5–2px, one thin white specular arc per large fill. Rare tier: add 2 tiny gold four-point sparkles. Silhouette: two flame tongues break past the top edge.
+Style: soft enamel pin — raised gold contour #D9A84E with a 1px dark navy #0B1438 outline, recessed flat enamel, gold divider lines 1.5–2px between color zones, one thin white specular arc per large fill. Rare tier: add 2 tiny gold four-point sparkles. Silhouette: the pan handle breaks past the lower-left corner, the flipping record past the top edge.
 
-Output: 1024×1024 PNG, transparent background. No text, no background, no frame, no realistic fire, no smoke.
+Output: 1024×1024 PNG, transparent background. No text, no food, no flames, no stove, no background, no frame, no motion blur.
 ```
 
 ### `META_rarity` — «Грааль» (Epic 🌌)
 
 ```text
-Generate a soft enamel pin: a collector's grail cup whose bowl is a vinyl record opened up.
+Generate a soft enamel pin: a tonearm driven into a stone like a sword — the grail goes to whoever can reach it, not whoever can pay.
 
-Composition: a tall chalice, centered and symmetrical. The bowl is a vinyl record stood upright and flared open so you see its inner profile with concentric gold groove lines; the inside of the bowl is deep indigo. The stem is a tonearm, its counterweight forming the round foot of the cup. Five straight gold rays of unequal length radiate upward out of the bowl's mouth.
+Composition: a rough boulder sits across the lower third of the pin, flat-topped and blocky. Rising vertically out of it, driven deep, is a tonearm standing in for the sword: its stylus buried in the rock, its slim shaft rising straight up, its counterweight forming the pommel at the top and the headshell forming the crossguard. Where the shaft meets the stone, a crack splits the rock and a wedge of light escapes. Behind the whole thing, five straight gold rays fan upward.
 
-Palette: vinyl black #1A1A2E, indigo #1B237D, navy #0B1438, gold #D9A84E.
+Palette: navy #0B1438 (stone) with gold #D9A84E facet lines, gold (tonearm, rays), indigo #1B237D (light in the crack), ember #E85A2A (a small jewel set in the counterweight), ivory #FBF5EA (one highlight face on the stone).
 
-Style: soft enamel pin — raised gold contour #D9A84E with a 1px dark navy #0B1438 outline, recessed flat enamel, gold divider lines 1.5–2px, one thin white specular arc per large fill. Epic tier: add 3 tiny gold four-point sparkles and one indigo accent inside the piece. Silhouette: the rays break past the top and both side edges.
+Style: soft enamel pin — raised gold contour #D9A84E with a 1px dark navy #0B1438 outline, recessed flat enamel, gold divider lines 1.5–2px, one thin white specular arc per large fill. Epic tier: add 3 tiny gold four-point sparkles and one indigo accent inside the piece. Silhouette: the counterweight pommel breaks past the top edge, the outer rays past both sides.
 
-Output: 1024×1024 PNG, transparent background. No text, no background, no frame, no religious iconography, no drop shadows.
+Output: 1024×1024 PNG, transparent background. No text, no actual sword blade, no background, no frame, no religious iconography.
 ```
 
 ---
@@ -125,15 +125,15 @@ Output: 1024×1024 PNG, transparent background. No text, no real world map, no b
 ### `D7_german_x10` — «Made in Germany» (Rare 🌸)
 
 ```text
-Generate a soft enamel pin: a caliper measuring the edge of a record — German pressing means engineering, not romance.
+Generate a soft enamel pin: a beer stein whose hinged lid is a vinyl record — Oktoberfest, where the German pressing is served by the litre.
 
-Composition: a technical vernier caliper shown flat, its two jaws clamped onto the rim of a vinyl record so the disc's edge sits precisely between them. The caliper's scale bar carries evenly spaced gold tick marks with one longer emphasized tick. Below the tool, a small rectangular maker's plate with three horizontal engraved notches instead of words.
+Composition: one tall beer stein dominates the pin, seen from the side, its handle curling out to the left. Its hinged pewter lid is a vinyl record — a black disc with gold grooves and a center label — tipped open on a gold thumb-lever so it reads as a lid, not a floating circle. A thick ivory foam head swells over the rim and one blob of it runs down the side. Leaning against the stein's foot, a soft pretzel whose twisted loops echo the curve of a groove.
 
-Palette: ivory #FBF5EA (caliper), vinyl black #1A1A2E (record), navy #0B1438 (plate), pink #E89AC0 (visible sliver of the record label), gold #D9A84E (scale, plate frame).
+Palette: cobalt #2A4BD7 (stein body) with an ivory #FBF5EA panel, ivory (foam), gold #D9A84E (lid hinge, thumb-lever, rim, grooves, pretzel), vinyl black #1A1A2E (record lid), ember #E85A2A (center label), navy #0B1438 (outline).
 
-Style: soft enamel pin — raised gold contour #D9A84E with a 1px dark navy #0B1438 outline, recessed flat enamel, gold divider lines 1.5–2px, one thin white specular arc per large fill. Rare tier: add 2 tiny gold four-point sparkles. Silhouette: the caliper jaws and scale break past the right edge.
+Style: soft enamel pin — raised gold contour #D9A84E with a 1px dark navy #0B1438 outline, recessed flat enamel, gold divider lines 1.5–2px between color zones, one thin white specular arc per large fill. Rare tier: add 2 tiny gold four-point sparkles. Silhouette: the open record-lid breaks past the top edge, the handle past the left, the pretzel past the bottom-right.
 
-Output: 1024×1024 PNG, transparent background. No text, no numbers, no flags, no background, no frame.
+Output: 1024×1024 PNG, transparent background. No text, no flags, no hats, no faces, no background, no frame, no liquid photorealism.
 ```
 
 ### `META_geography` — «Атлас» (Epic 🌌)
@@ -157,29 +157,29 @@ Output: 1024×1024 PNG, transparent background. No text, no letters, no backgrou
 ### `E6_decade_full` — «Десятилетие» (Epic 🌌)
 
 ```text
-Generate a soft enamel pin: a mechanical odometer bent into a vinyl groove — ten consecutive years, none missing.
+Generate a soft enamel pin: one full revolution of a record — a decade closed with no year skipped.
 
-Composition: ten narrow drums sit side by side in a gold housing, and that housing curves around into a closed ring so the row of drums becomes one continuous circular groove. Each drum shows a single blank digit plate. At the center of the ring sits a small record label with a spindle dot, ringed by one thin groove line.
+Composition: a record face-on, and around it a bold gold arrow that has traveled the entire circle and come back to where it began — its arrowhead almost touching its own tail, the gap deliberately tiny. Around the rim sit ten evenly spaced tick marks, every one of them struck through with a small gold bar, so the ring of ticks reads as complete. At the start point, one short flag marks where the turn began and ended.
 
-Palette: ivory #FBF5EA (drums), navy #0B1438 (digit plates), indigo #1B237D (field inside the ring), ember #E85A2A (center label), gold #D9A84E (housing, groove).
+Palette: vinyl black #1A1A2E (record), gold #D9A84E (revolution arrow, ticks, flag), indigo #1B237D (field inside the groove band), ember #E85A2A (center label), navy #0B1438 (outline).
 
-Style: soft enamel pin — raised gold contour #D9A84E with a 1px dark navy #0B1438 outline, recessed flat enamel, gold divider lines 1.5–2px, one thin white specular arc per large fill. Epic tier: add 3 tiny gold four-point sparkles. Silhouette: the ring is slightly wider than the frame and breaks past both side edges.
+Style: soft enamel pin — raised gold contour #D9A84E with a 1px dark navy #0B1438 outline, recessed flat enamel, gold divider lines 1.5–2px, one thin white specular arc per large fill. Epic tier: add 3 tiny gold four-point sparkles and one indigo accent inside the piece. Silhouette: the revolution arrow is wider than the record and breaks past both side edges.
 
-Output: 1024×1024 PNG, transparent background. No readable digits, no text, no background, no frame.
+Output: 1024×1024 PNG, transparent background. No digits, no text, no calendar, no background, no frame.
 ```
 
 ### `META_eras` — «Век винила» (Legend ⚫)
 
 ```text
-Generate a soft enamel pin: a geological core sample of a century of records — eight strata, each holding a disc.
+Generate a soft enamel pin: the phases of the moon, but every moon is a vinyl record — one object carried through eight decades.
 
-Composition: a vertical column, cut like a core sample, divided into eight horizontal strata of unequal thickness separated by 1px gold lines. Each stratum has one record embedded edge-on, visible as a thin ellipse with a gold rim. The strata grade from nearly black at the bottom to ivory at the top. A gold stylus spire caps the column.
+Composition: eight discs arranged in a wide arc across the pin, rising from the lower left, cresting at the top center, descending to the lower right. Each disc is a record, and each shows a different lunar phase: a thin crescent at the far left, waxing through half and gibbous, a full record at the crest of the arc with its grooves and center label fully visible, then waning back to a crescent at the far right. The lit part of every disc is rendered as vinyl with gold grooves; the dark part is flat and empty. The crest disc is the largest, the end ones smallest.
 
-Palette: bottom to top — #0A0A1A, navy #0B1438, cobalt #2A4BD7, cobalt soft #5C7AE8, ivory #FBF5EA; embedded discs vinyl black #1A1A2E; gold #D9A84E for rims, dividers and spire.
+Palette: lit vinyl black #1A1A2E with gold #D9A84E grooves, dark parts #0A0A1A, center label on the full disc ivory #FBF5EA, a thin gold rim on every disc, navy #0B1438 outline.
 
-Style: soft enamel pin — raised gold contour #D9A84E with a 1px dark navy #0B1438 outline, recessed flat enamel, gold divider lines 1.5–2px, one thin white specular arc per large fill. Legend tier: add 3 tiny gold four-point sparkles and a second gold rim tracing the whole silhouette. Silhouette: the spire breaks past the top edge, the column base past the bottom.
+Style: soft enamel pin — raised gold contour #D9A84E with a 1px dark navy #0B1438 outline, recessed flat enamel, gold divider lines 1.5–2px, one thin white specular arc per large fill. Legend tier: add 3 tiny gold four-point sparkles and a second gold rim tracing the whole silhouette. Silhouette: the end discs of the arc break past both side edges, the crest disc past the top.
 
-Output: 1024×1024 PNG, transparent background. No text, no background, no frame, no realistic rock texture.
+Output: 1024×1024 PNG, transparent background. No text, no dates, no stars, no sky, no background, no frame.
 ```
 
 ---
@@ -203,15 +203,15 @@ Output: 1024×1024 PNG, transparent background. No text, no background, no frame
 ### `F5_classical_x15` — «Классик» (Rare 🌸)
 
 ```text
-Generate a soft enamel pin: a conductor's baton over a record — a concert hall appeared on the shelf.
+Generate a soft enamel pin: a mechanical metronome whose swinging weight is a vinyl record — classical music keeps its own time.
 
-Composition: a record face-on fills the center. A slim baton lies across it diagonally from upper right to lower left. Above the baton, three short gold arc strokes trace a three-beat conducting gesture, each arc echoing the curve of a vinyl groove. Along the bottom edge, a compact row of five classical portico columns with a flat entablature.
+Composition: a classic pyramid metronome seen straight on, its tall tapering body filling the pin, front panel open. A slim pendulum rod rises from the base and tilts to the right; the sliding weight on that rod is a vinyl record, seen edge-tilted so its grooves and center label read clearly. Two faint gold arc strokes behind the rod show the swing it just made. The base is a plain plinth with a small gold winding key at the side.
 
-Palette: vinyl black #1A1A2E (record), pink #E89AC0 (record label), ivory #FBF5EA (baton) with a gold tip, navy #0B1438 (backing plate), gold #D9A84E (arcs, columns, grooves).
+Palette: navy #0B1438 (metronome body) with gold #D9A84E edge trim, ivory #FBF5EA (open front panel), vinyl black #1A1A2E (weight-record) with a pink #E89AC0 label, gold (rod, swing arcs, winding key, scale ticks on the panel).
 
-Style: soft enamel pin — raised gold contour #D9A84E with a 1px dark navy #0B1438 outline, recessed flat enamel, gold divider lines 1.5–2px, one thin white specular arc per large fill. Rare tier: add 2 tiny gold four-point sparkles. Silhouette: the baton breaks past the upper-right and lower-left corners.
+Style: soft enamel pin — raised gold contour #D9A84E with a 1px dark navy #0B1438 outline, recessed flat enamel, gold divider lines 1.5–2px, one thin white specular arc per large fill. Rare tier: add 2 tiny gold four-point sparkles. Silhouette: the pendulum rod with its record breaks past the top-right edge, the plinth past the bottom.
 
-Output: 1024×1024 PNG, transparent background. No text, no faces, no background, no frame.
+Output: 1024×1024 PNG, transparent background. No text, no numbers, no sheet music, no background, no frame.
 ```
 
 ### `F6_rock_x25` — «Громко» (Rare 🌸)
@@ -277,15 +277,15 @@ Output: 1024×1024 PNG, transparent background. No text, no background, no frame
 ### `FMT3_all_formats` — «Всеформатный» (Rare 🌸)
 
 ```text
-Generate a soft enamel pin: a four-lobed quatrefoil rosette, one media format per lobe.
+Generate a soft enamel pin: a pocket knife whose four blades are the four formats — one tool, every medium.
 
-Composition: a symmetrical four-petal quatrefoil. Each lobe holds one format face-on: a vinyl record, a compact cassette, a CD, a boxset. The lobes are separated by raised gold ridges, and at the exact center sits a small gold spindle star where all four meet.
+Composition: a folding multi-tool seen flat, its handle horizontal across the lower half of the pin, all four tools swung open and fanned upward from the same pivot. Instead of blades: a vinyl record on a short stem, a compact cassette, a compact disc, and a boxset — each one shaped as if it were a blade hinged at the handle. A single gold rivet marks the pivot where all four meet. The handle is plain and unadorned so the fan reads instantly.
 
-Palette: lobes alternate navy #0B1438, cobalt #2A4BD7, cobalt soft #5C7AE8, indigo #1B237D; media in ivory #FBF5EA and vinyl black #1A1A2E; one pink #E89AC0 record label; gold #D9A84E ridges and spindle.
+Palette: handle navy #0B1438 with gold #D9A84E bolsters and rivet; vinyl black #1A1A2E (record) with a pink #E89AC0 label; cobalt #2A4BD7 (cassette); ivory #FBF5EA (CD) with one thin ember #E85A2A arc; indigo #1B237D (boxset).
 
-Style: soft enamel pin — raised gold contour #D9A84E with a 1px dark navy #0B1438 outline, recessed flat enamel, gold divider lines 1.5–2px, one thin white specular arc per large fill. Rare tier: add 2 tiny gold four-point sparkles. Silhouette: all four lobes break past all four edges.
+Style: soft enamel pin — raised gold contour #D9A84E with a 1px dark navy #0B1438 outline, recessed flat enamel, gold divider lines 1.5–2px, one thin white specular arc per large fill. Rare tier: add 2 tiny gold four-point sparkles. Silhouette: the outer two blades break past the top-left and top-right edges, the handle past both sides.
 
-Output: 1024×1024 PNG, transparent background. No text, no background, no frame.
+Output: 1024×1024 PNG, transparent background. No text, no brand marks, no background, no frame.
 ```
 
 ### `META_formats` — «Без предрассудков» (Epic 🌌)
@@ -408,18 +408,18 @@ Style: soft enamel pin — raised gold contour #D9A84E with a 1px dark navy #0B1
 Output: 1024×1024 PNG, transparent background. No text, no background, no frame.
 ```
 
-### `CD4_cds_x250` — «Диско на 700 МБ» (Rare 🌸)
+### `CD4_cds_x250` — «Ярче павлина» (Rare 🌸)
 
 ```text
-Generate a soft enamel pin: a mirror ball built entirely out of compact discs.
+Generate a soft enamel pin: a peacock whose tail eyes are compact discs — the format everyone kept burying, standing there showing off.
 
-Composition: a hanging disco ball whose facets are round CD segments — each facet a small disc wedge with a visible center hole. Facets tile the sphere with gold seams between them. Eight short straight gold rays flash outward around the ball. A gold ring and hook hold it from above.
+Composition: a peacock seen from the front, its body small and low in the pin, its fanned tail filling everything above and behind it. The tail is a wide semicircular fan of slim feather stems, and at the tip of each stem sits a compact disc standing in for the eye of the feather — a pale silver circle with a visible center hole and one short rainbow arc across it. Nine discs sit along the fan, larger toward the center of the arc. The bird's body is a simple teardrop with a slender neck, a small crest of three thin plumes on its head, and no facial detail beyond one dot for the eye.
 
-Palette: facets alternate ivory #FBF5EA and pale blue #A5C8E1, with one pink #E89AC0 facet; seams and rays gold #D9A84E; inner shading indigo #1B237D; hook gold.
+Palette: cobalt #2A4BD7 (body and neck) with an indigo #1B237D shadow side, gold #D9A84E (feather stems, crest, disc rims, beak), ivory #FBF5EA with a pale blue #A5C8E1 sheen (discs), ember #E85A2A and pink #E89AC0 (short rainbow arcs on the discs), navy #0B1438 (outline).
 
-Style: soft enamel pin — raised gold contour #D9A84E with a 1px dark navy #0B1438 outline, recessed flat enamel, gold divider lines 1.5–2px, one thin white specular arc per large fill. Rare tier: add 2 tiny gold four-point sparkles. Silhouette: the hook breaks past the top edge, two rays past the sides.
+Style: soft enamel pin — raised gold contour #D9A84E with a 1px dark navy #0B1438 outline, recessed flat enamel, gold divider lines 1.5–2px between color zones, one thin white specular arc per large fill. Rare tier: add 2 tiny gold four-point sparkles. Silhouette: the outer feather stems break past both side edges, the crest past the top.
 
-Output: 1024×1024 PNG, transparent background. No text, no background, no frame, no realistic mirror reflections.
+Output: 1024×1024 PNG, transparent background. No text, no realistic feather barbs, no background, no frame, no photographic iridescence.
 ```
 
 ---

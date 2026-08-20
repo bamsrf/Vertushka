@@ -280,7 +280,7 @@ DEFINITIONS: list[AchievementDefinition] = [
         done="100 компактов в коллекции.",
     ),
     _fmt(
-        CD4_CODE, "Диско на 700 МБ", "Собери 250 компактов.",
+        CD4_CODE, "Ярче павлина", "Собери 250 компактов.",
         AchievementTier.RARE, _make_family_threshold(CD, 250),
         "Формат, который хоронили тридцать лет подряд.", "cd4_cds_x250", "cds",
         done="250 компактов в коллекции.",

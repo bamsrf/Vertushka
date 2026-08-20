@@ -216,7 +216,7 @@ Same enamel pin style as the previous Vertushka pins (gold contour, navy outline
 Output: 1024×1024 PNG, transparent background.
 ```
 
-#### `C4_collectible_x5` — Шкаф редкостей 🌸
+#### `C4_collectible_x5` — Энтомолог 🌸
 > Метафора: 5 коллекционок — кабинет редкостей со стеклянными дверьми.
 
 ```text
