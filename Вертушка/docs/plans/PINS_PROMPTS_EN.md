@@ -503,29 +503,29 @@ Output: 1024×1024 PNG, transparent background. No text, no faces, no background
 ### `J7_boomerang` — «Бумеранг» (Rare 🌸)
 
 ```text
-Generate a soft enamel pin: a boomerang carved from vinyl — the gift came back to you.
+Generate a soft enamel pin: a dog leaping to catch a vinyl record thrown like a frisbee — you throw it out, it comes back to you.
 
-Composition: a classic V-shaped boomerang where both arms are curved slices of a record, complete with concentric gold groove arcs; at the elbow of the V sits a record's center label. Around it, an open circular flight path drawn as a gold dashed line, ending in an arrowhead that points back to where it started.
+Composition: a dog in full mid-leap, shown in side profile facing right, body stretched out horizontally across the pin, all four legs off the ground, ears blown back, tail streaming behind. Its jaws are open and closing on a vinyl record caught edge-on at the top right — the disc tipped to a steep angle so its grooves and center label read clearly, still spinning. Behind the whole leap, a gold dashed flight path arcs from the lower left, sweeps up and over, and curves back toward the dog — an out-and-back trajectory, not a straight throw. Two short motion arcs trail the spinning disc.
 
-Palette: vinyl black #1A1A2E (boomerang) with gold #D9A84E grooves, pink #E89AC0 (elbow label), gold (dashed path), ember #E85A2A (arrowhead), navy #0B1438 (outline).
+Palette: navy #0B1438 (dog body) with an ivory #FBF5EA chest and muzzle patch, gold #D9A84E (collar, dashed flight path, motion arcs, grooves), vinyl black #1A1A2E (record), pink #E89AC0 (center label), ember #E85A2A (a small tag hanging from the collar).
 
-Style: soft enamel pin — raised gold contour #D9A84E with a 1px dark navy #0B1438 outline, recessed flat enamel, gold divider lines 1.5–2px, one thin white specular arc per large fill. Rare tier: add 2 tiny gold four-point sparkles. Silhouette: the arm tips break past the top and right edges, the path arc past the bottom.
+Style: soft enamel pin — raised gold contour #D9A84E with a 1px dark navy #0B1438 outline, recessed flat enamel, gold divider lines 1.5–2px between color zones, one thin white specular arc per large fill. Rare tier: add 2 tiny gold four-point sparkles. Silhouette: the record and the dog's muzzle break past the upper-right edge, the tail past the left, the flight path past the bottom.
 
-Output: 1024×1024 PNG, transparent background. No text, no background, no frame.
+Output: 1024×1024 PNG, transparent background. No text, no grass, no ground line, no realistic fur, no human figure, no background, no frame, no motion blur.
 ```
 
 ### `J8_loved` — «Любимчик» (Notable 🔵)
 
 ```text
-Generate a soft enamel pin: three ribbons arriving from three directions and tying into one knot.
+Generate a soft enamel pin: three Cupid's arrows struck into one record, and every arrow is a tonearm — three people dropped the needle on you.
 
-Composition: three flat ribbons enter from the left, the right and the top, converging at the exact center where they tie into a single knot; that knot is a record's center label with a white spindle dot. Each ribbon ends in a small bow of its own color. A thin gold ring haloes the knot.
+Composition: a vinyl record face-on fills the pin, its concentric grooves reading as the rings of a target. Three arrows have landed in it, arriving from three different directions — upper left, right, and lower left — all three buried in the same center label, clustered tight in the bullseye. Each arrow is a tonearm rather than a wooden shaft: a slim segmented arm ending in a fine stylus tip where it enters the label, a small counterweight partway along the shaft, and instead of feather fletching at the tail, one small heart. The arrows sit at different angles and one is slightly longer than the others, so they read as three separate shots rather than a decorative fan.
 
-Palette: ribbons cobalt #2A4BD7, ivory #FBF5EA, #E55B7A; knot label ember #E85A2A; ribbon edges and halo ring gold #D9A84E; outline navy #0B1438.
+Palette: vinyl black #1A1A2E (record) with gold #D9A84E grooves, ember #E85A2A (center label), gold (arrow shafts, counterweights, stylus tips), #E55B7A and pink #E89AC0 (the three hearts, not all the same shade), ivory #FBF5EA (one highlight arc on the disc), navy #0B1438 (outline).
 
-Style: soft enamel pin — raised gold contour #D9A84E with a 1px dark navy #0B1438 outline, recessed flat enamel, gold divider lines 1.5–2px, one thin white specular arc per large fill. No sparkles. Silhouette: all three ribbons break past their respective edges.
+Style: soft enamel pin — raised gold contour #D9A84E with a 1px dark navy #0B1438 outline, recessed flat enamel, gold divider lines 1.5–2px between color zones, one thin white specular arc per large fill. No sparkles. Silhouette: all three arrow tails with their hearts break past the frame — two past the left edge, one past the right.
 
-Output: 1024×1024 PNG, transparent background. No text, no background, no frame.
+Output: 1024×1024 PNG, transparent background. No text, no bow, no Cupid figure, no feather fletching, no background, no frame.
 ```
 
 ### `J9_santa` — «Дед Мороз» (Notable 🔵)
@@ -697,15 +697,17 @@ Output: 1024×1024 PNG, transparent background. No text, no background, no frame
 ### `R_sixty_nine` — «Шестьдесят девять» (Rare 🌸)
 
 ```text
-Generate a soft enamel pin: two records arranged so their tails read as a number that reads itself upside down.
+Generate a soft enamel pin: nothing but a face wearing a slow, knowing smirk — he knows exactly what the number is and he is not going to say it.
 
-Composition: two records placed tight against each other on a diagonal, each with a curled groove tail sweeping away from its body, so together the pair reads as a rotationally symmetric numeral pair — the composition must look identical when rotated 180 degrees. A thin gold dashed axis runs between them marking the symmetry.
+A reference image is attached. Use it ONLY for the expression — the uneven brows, the half-lidded eyes, the tight one-sided closed-mouth smile, the heavy jaw. Do not reproduce the person's identity or specific features; this is a generic stylized character, not a portrait of anyone.
 
-Palette: vinyl black #1A1A2E (records) with gold #D9A84E grooves, pink #E89AC0 (labels), gold (dashed axis), navy #0B1438 (outline).
+Composition: one head fills the entire pin, front view, cropped just below the chin and just past the ears — no shoulders, no body, no props, nothing else in the frame. The head is round and heavy with a soft double chin and full cheeks, a bald crown with a receding hairline, hair kept only at the temples. The whole pin is the expression, so it is built big and clean: one eyebrow noticeably higher than the other, both eyes small and half-lidded with a lazy downward lid line, and a closed-mouth smirk pulled up hard to one side, cheek bunching above it. Two short nose lines and one chin crease, nothing more.
 
-Style: soft enamel pin — raised gold contour #D9A84E with a 1px dark navy #0B1438 outline, recessed flat enamel, gold divider lines 1.5–2px, one thin white specular arc per large fill. Rare tier: add 2 tiny gold four-point sparkles. Silhouette: the upper record breaks past the upper-left corner, the lower past the lower-right.
+Palette: ivory #FBF5EA (face) with navy #0B1438 outline, cobalt soft #5C7AE8 (shading under the chin, cheek, and lids), warm brown #2A1E1A (hair), pink #E89AC0 (a soft blush on the smirking cheek), gold #D9A84E (contour).
 
-Output: 1024×1024 PNG, transparent background. No text, no digits, no background, no frame.
+Style: soft enamel pin — raised gold contour #D9A84E with a 1px dark navy #0B1438 outline, recessed flat enamel, gold divider lines 1.5–2px between color zones, one thin white specular arc per large fill. Rare tier: add 2 tiny gold four-point sparkles. Silhouette: the head is slightly wider than the frame and breaks past both side edges and the top.
+
+Output: 1024×1024 PNG, transparent background. No text, no digits, no teeth, no open mouth, no glasses, no hat, no record, no props, no shoulders, no photorealistic skin, no likeness of any real or famous person, no background, no frame.
 ```
 
 ### `R_seventy_eight` — «Семьдесят восемь» (Rare 🌸)
@@ -739,29 +741,29 @@ Output: 1024×1024 PNG, transparent background. No text, no digits, no backgroun
 ### `R_palindrome` — «Палиндром» (Rare 🌸)
 
 ```text
-Generate a soft enamel pin: a record split down the middle into two perfect mirror halves.
+Generate a soft enamel pin: one record played by two styli at once, each arriving from the opposite side — it reads the same either way.
 
-Composition: a record face-on, divided by a single vertical gold line through its exact center. The left and right halves are exact mirror images of each other, groove for groove. On the label sit four small abstract glyph plates arranged so the first mirrors the fourth and the second mirrors the third — shapes only, not readable digits.
+Composition: a vinyl record face-on, centered. Two tonearms reach in toward it, one from the upper left and one from the lower right, placed in exact rotational symmetry — turn the whole pin 180 degrees and the composition is identical. Each arm ends in a stylus resting in the grooves, one tracking inward and one tracking outward, their tips at mirrored positions on the same groove band. A thin gold axis line runs diagonally between them through the center label, marking the pivot the whole image turns around.
 
-Palette: vinyl black #1A1A2E (vinyl), gold #D9A84E (mirror axis, grooves), pink #E89AC0 (label), navy #0B1438 (glyph plates, outline).
+Palette: vinyl black #1A1A2E (record) with gold #D9A84E grooves, gold (both tonearms) with navy #0B1438 pivots, pink #E89AC0 (center label), ember #E85A2A (one small jewel on each counterweight), navy (outline).
 
-Style: soft enamel pin — raised gold contour #D9A84E with a 1px dark navy #0B1438 outline, recessed flat enamel, gold divider lines 1.5–2px, one thin white specular arc per large fill. Rare tier: add 2 tiny gold four-point sparkles. Silhouette: the record is wider than the frame and breaks past both side edges.
+Style: soft enamel pin — raised gold contour #D9A84E with a 1px dark navy #0B1438 outline, recessed flat enamel, gold divider lines 1.5–2px between color zones, one thin white specular arc per large fill. Rare tier: add 2 tiny gold four-point sparkles. Silhouette: both counterweights break past opposite corners — upper left and lower right.
 
-Output: 1024×1024 PNG, transparent background. No text, no readable numbers, no background, no frame.
+Output: 1024×1024 PNG, transparent background. No text, no digits, no mirror, no background, no frame.
 ```
 
 ### `R_self_aware` — «Самосознание» (Rare 🌸)
 
 ```text
-Generate a soft enamel pin: a record whose label shows the same record, three levels deep.
+Generate a soft enamel pin: a Möbius strip made of vinyl groove — a record that runs along itself and arrives back at itself.
 
-Composition: a record at a slight tilt, filling most of the pin. On its center label is drawn the same record in miniature; on that miniature's label, the same record again, smaller still; the fourth level collapses into a single gold dot. Groove rings are visible at every level that can hold them.
+Composition: one continuous ribbon twisted into a Möbius loop, standing upright and filling the pin. The ribbon is a strip of vinyl: its broad face carries fine parallel groove lines running along its whole length, and the single half-twist sits at the lower right where the strip turns over and you see it flip from face to back without a break. Riding the ribbon near the top, a small stylus sits in the grooves, pointed along the direction of travel — it will pass through the twist and come back to where it started on the other side. One thin gold arrow on the ribbon marks that direction.
 
-Palette: vinyl black #1A1A2E (all discs), labels stepping ember #E85A2A → pink #E89AC0 → ivory #FBF5EA, gold #D9A84E (grooves, final dot), navy #0B1438 (outline).
+Palette: vinyl black #1A1A2E (ribbon face) with gold #D9A84E groove lines, indigo #1B237D (the underside revealed at the twist), pink #E89AC0 (a thin edge line running the whole rim of the strip), gold (stylus, direction arrow), navy #0B1438 (outline).
 
-Style: soft enamel pin — raised gold contour #D9A84E with a 1px dark navy #0B1438 outline, recessed flat enamel, gold divider lines 1.5–2px, one thin white specular arc per large fill. Rare tier: add 2 tiny gold four-point sparkles. Silhouette: the outer record breaks past the top and bottom edges.
+Style: soft enamel pin — raised gold contour #D9A84E with a 1px dark navy #0B1438 outline, recessed flat enamel, gold divider lines 1.5–2px between color zones, one thin white specular arc per large fill. Rare tier: add 2 tiny gold four-point sparkles. Silhouette: the loop is wider than the frame and breaks past both side edges.
 
-Output: 1024×1024 PNG, transparent background. No text, no background, no frame.
+Output: 1024×1024 PNG, transparent background. No text, no infinity symbol, no snake, no background, no frame, no 3D rendering.
 ```
 
 ### `R_meta_vertushka` — «Вертушка» (Epic 🌌)
@@ -935,15 +937,15 @@ Output: 1024×1024 PNG, transparent background. No text, no numbers, no backgrou
 ### `R_hidden_track` — «Спрятанный трек» (Rare 🌸)
 
 ```text
-Generate a soft enamel pin: a record with one extra track hidden after the silence.
+Generate a soft enamel pin: a small door set into the grooves of a record, standing ajar with light coming out — there is a room in here nobody told you about.
 
-Composition: a record face-on. Its tracklist is shown as short radial tick marks around the outer band. After the last tick there is a conspicuous empty gap, and then — far inward, close to the label — one lone tick highlighted in gold and circled with a dashed ring. A tonearm reaches in from the right, its stylus resting exactly in that gap.
+Composition: a vinyl record face-on fills the pin. Cut into its groove band, in the lower right quadrant, sits a small arched door — a proper door with a frame, a panel line and a tiny round gold handle, scaled so it is clearly a doorway and not a sticker. It stands open a hand's width, hinged outward toward the viewer, and a narrow wedge of warm light spills out of the gap and falls across the grooves. The grooves interrupt cleanly at the door frame and pick up again on the other side, so the door reads as built into the record rather than laid on top of it.
 
-Palette: vinyl black #1A1A2E (vinyl) with gold #D9A84E grooves, navy #0B1438 (regular ticks), gold (hidden tick), pink #E89AC0 (dashed ring), ember #E85A2A (label), gold (tonearm).
+Palette: vinyl black #1A1A2E (record) with gold #D9A84E grooves, navy #0B1438 (door panel) with a gold frame and handle, ivory #FBF5EA (the wedge of light), pink #E89AC0 (center label), gold (outline of the light spill).
 
-Style: soft enamel pin — raised gold contour #D9A84E with a 1px dark navy #0B1438 outline, recessed flat enamel, gold divider lines 1.5–2px, one thin white specular arc per large fill. Rare tier: add 2 tiny gold four-point sparkles. Silhouette: the tonearm breaks past the right edge.
+Style: soft enamel pin — raised gold contour #D9A84E with a 1px dark navy #0B1438 outline, recessed flat enamel, gold divider lines 1.5–2px between color zones, one thin white specular arc per large fill. Rare tier: add 2 tiny gold four-point sparkles. Silhouette: the opened door leaf breaks past the lower-right edge of the disc and past the frame.
 
-Output: 1024×1024 PNG, transparent background. No text, no background, no frame.
+Output: 1024×1024 PNG, transparent background. No text, no keyhole, no stairs, no figure in the doorway, no background, no frame.
 ```
 
 ### `MX_night_crate` — «Ночной диггинг» (Rare 🌸)
@@ -1088,4 +1090,677 @@ Palette: gold #D9A84E (spiral arrow, tapering in width), vinyl black #1A1A2E (di
 Style: soft enamel pin — raised gold contour #D9A84E with a 1px dark navy #0B1438 outline, recessed flat enamel, gold divider lines 1.5–2px, one thin white specular arc per large fill. Rare tier: add 2 tiny gold four-point sparkles. Silhouette: the spiral's arrowhead breaks past the upper-right corner.
 
 Output: 1024×1024 PNG, transparent background. No text, no digits, no background, no frame.
+```
+
+---
+
+## Community — остальные (K)
+
+
+### `K1_following_x5` — «Зритель» (Simple 💧)
+
+```text
+Generate a soft enamel pin: a pair of opera glasses whose two lenses are records — you came to watch other people's collections.
+
+Composition: one pair of opera glasses held up front-on, filling the pin, with a slim gold handle angling down to the right. The two barrels are short and stout, and each eyepiece facing the viewer is a vinyl record: concentric grooves with a small center label at the middle, standing in for the lens. A gold bridge joins the barrels. Nothing else in frame.
+
+Palette: navy #0B1438 (barrels) with an ivory #FBF5EA band around each, gold #D9A84E (bridge, handle, rims, grooves), vinyl black #1A1A2E (lens faces), ember #E85A2A (center labels).
+
+Style: soft enamel pin — raised gold contour #D9A84E with a 1px dark navy #0B1438 outline, recessed flat enamel, gold divider lines 1.5–2px between color zones, one thin white specular arc per large fill. No sparkles. Silhouette: the handle breaks past the lower-right corner, the barrels past both sides.
+
+Output: 1024×1024 PNG, transparent background. No text, no eyes behind the lenses, no background, no frame.
+```
+
+### `K7_mutual_x10` — «Бэкстейдж» (Notable 🔵)
+
+```text
+Generate a soft enamel pin: a backstage laminate on a lanyard, and the pass itself is a record — the door swings both ways now.
+
+Composition: a rectangular laminate pass hanging front-on in the center of the pin, suspended from a lanyard whose two straps rise from its top corners and run off the top edge. Set into the pass, filling most of its face, is a vinyl record with grooves and a center label. A gold clip joins pass to lanyard, and one corner of the laminate is dog-eared from use. Behind the pass, the vertical edge of a heavy stage curtain enters from the left.
+
+Palette: cobalt #2A4BD7 (lanyard straps), ivory #FBF5EA (laminate), vinyl black #1A1A2E (record) with gold #D9A84E grooves, ember #E85A2A (center label), navy #0B1438 (curtain, outline), gold (clip).
+
+Style: soft enamel pin — raised gold contour #D9A84E with a 1px dark navy #0B1438 outline, recessed flat enamel, gold divider lines 1.5–2px between color zones, one thin white specular arc per large fill. No sparkles. Silhouette: the lanyard straps break past the top edge, the curtain past the left.
+
+Output: 1024×1024 PNG, transparent background. No text, no barcode, no faces, no background, no frame.
+```
+
+### `K8_contrib_x1` — «Стажёр» (Simple 💧)
+
+```text
+Generate a soft enamel pin: a rubber stamp coming down on a blank catalogue card — your first release just got approved.
+
+Composition: a wooden-handled rubber stamp caught mid-strike, angled from the upper right, its head about to meet a plain catalogue card lying flat below. On the card, already printed, sits one round ink impression showing a simple record disc. Three short motion dashes above the stamp show it dropping. The card's corner is clipped.
+
+Palette: navy #0B1438 (stamp handle) with a gold #D9A84E collar, vinyl black #1A1A2E (stamp head), ivory #FBF5EA (card), ember #E85A2A (the ink impression), gold (motion dashes, card edge).
+
+Style: soft enamel pin — raised gold contour #D9A84E with a 1px dark navy #0B1438 outline, recessed flat enamel, gold divider lines 1.5–2px between color zones, one thin white specular arc per large fill. No sparkles. Silhouette: the stamp handle breaks past the upper-right corner, the card past the bottom.
+
+Output: 1024×1024 PNG, transparent background. No text, no letters in the stamp impression, no hands, no background, no frame.
+```
+
+### `K9_contrib_x5` — «Поставщик» (Notable 🔵)
+
+```text
+Generate a soft enamel pin: a hand truck loaded with records — you are not a visitor here, you are the supply.
+
+Composition: a two-wheel hand truck seen from the side, tilted back on its wheel at a working angle, its long frame running up to the right. Stacked on its plate, a bundle of five record sleeves strapped together with one gold band. The truck's handle is bare and worn. One wheel is drawn as a plain dark circle, deliberately not a record, so the load reads as the cargo.
+
+Palette: navy #0B1438 (truck frame, wheel), gold #D9A84E (strap, frame joints, handle grip), ivory #FBF5EA and cobalt #2A4BD7 (alternating sleeve edges), ember #E85A2A (one sleeve spine).
+
+Style: soft enamel pin — raised gold contour #D9A84E with a 1px dark navy #0B1438 outline, recessed flat enamel, gold divider lines 1.5–2px between color zones, one thin white specular arc per large fill. No sparkles. Silhouette: the handle breaks past the upper-right corner, the wheel past the bottom-left.
+
+Output: 1024×1024 PNG, transparent background. No text, no delivery van, no figure pushing it, no background, no frame.
+```
+
+### `K10_contrib_x20` — «Да, шеф!» (Rare 🌸)
+
+```text
+Generate a soft enamel pin: a kitchen service bell struck hard, with a record plated up on the pass — twenty orders out, chef.
+
+Composition: a domed service bell sits centered on a small base, its striker button just pressed down, and three gold sound arcs ring out from its dome on both sides. Beside it on the same counter line, one vinyl record lies flat like a plated dish under a raised gold cloche rim. The bell is the hero and roughly twice the visual weight of the plate.
+
+Palette: ivory #FBF5EA (bell dome) with gold #D9A84E rim and striker, navy #0B1438 (base, counter line), vinyl black #1A1A2E (plated record) with gold grooves, ember #E85A2A (center label), gold (sound arcs).
+
+Style: soft enamel pin — raised gold contour #D9A84E with a 1px dark navy #0B1438 outline, recessed flat enamel, gold divider lines 1.5–2px between color zones, one thin white specular arc per large fill. Rare tier: add 2 tiny gold four-point sparkles. Silhouette: the outer sound arcs break past both side edges.
+
+Output: 1024×1024 PNG, transparent background. No text, no food, no chef figure, no background, no frame.
+```
+
+### `K11_msgs_x10` — «Есть контакт» (Simple 💧)
+
+```text
+Generate a soft enamel pin: two styli touching tip to tip with a spark jumping between them — contact established.
+
+Composition: two tonearms enter from the left and the right edges, angled toward each other, and their stylus tips almost meet at the exact center of the pin. In the tiny gap between the tips, one bright four-point spark flashes, ringed by two thin concentric shock rings. The arms are slim and symmetrical, each with a counterweight at its outer end.
+
+Palette: gold #D9A84E (tonearms, spark), navy #0B1438 (pivots, outline), ember #E85A2A (the spark core), cobalt soft #5C7AE8 (shock rings), ivory #FBF5EA (a highlight on each arm).
+
+Style: soft enamel pin — raised gold contour #D9A84E with a 1px dark navy #0B1438 outline, recessed flat enamel, gold divider lines 1.5–2px between color zones, one thin white specular arc per large fill. No sparkles. Silhouette: both counterweights break past the left and right edges.
+
+Output: 1024×1024 PNG, transparent background. No text, no lightning bolts, no background, no frame.
+```
+
+### `K12_msgs_x50` — «Продажник» (Notable 🔵)
+
+```text
+Generate a soft enamel pin: a coat held open to reveal records lining the inside — everything is for sale and you know it.
+
+Composition: a long coat shown front-on and empty of any wearer, both front panels swung wide open like wings. Pinned in rows down the exposed lining, six record sleeves hang neatly, each showing a disc edge peeking out. The coat's collar is turned up and its shoulders keep their shape, so the garment reads as worn by someone invisible.
+
+Palette: navy #0B1438 (coat outer) with gold #D9A84E buttons and seams, ember #E85A2A (lining), vinyl black #1A1A2E and ivory #FBF5EA (alternating sleeves), cobalt #2A4BD7 (two sleeves).
+
+Style: soft enamel pin — raised gold contour #D9A84E with a 1px dark navy #0B1438 outline, recessed flat enamel, gold divider lines 1.5–2px between color zones, one thin white specular arc per large fill. No sparkles. Silhouette: both open coat panels break past the left and right edges, the collar past the top.
+
+Output: 1024×1024 PNG, transparent background. No text, no face, no hands, no legs, no background, no frame.
+```
+
+### `K13_msgs_x200` — «Уолл-стрит» (Rare 🌸)
+
+```text
+Generate a soft enamel pin: a ticker-tape machine spilling a ribbon that is one long vinyl groove — two hundred deals and counting.
+
+Composition: a domed glass stock-ticker on a round base stands in the upper left of the pin. From its mouth a long paper ribbon pours out, loops once in the air and cascades down to the lower right, pooling in loose coils. The ribbon is not printed with numbers: instead it carries parallel groove lines running its full length, so it reads as an unwound record groove.
+
+Palette: cobalt soft #5C7AE8 (glass dome, semi-transparent), navy #0B1438 (ticker body, base), gold #D9A84E (base trim, groove lines), ivory #FBF5EA (ribbon), pink #E89AC0 (one thin edge stripe along the ribbon).
+
+Style: soft enamel pin — raised gold contour #D9A84E with a 1px dark navy #0B1438 outline, recessed flat enamel, gold divider lines 1.5–2px between color zones, one thin white specular arc per large fill. Rare tier: add 2 tiny gold four-point sparkles. Silhouette: the ticker dome breaks past the upper-left corner, the pooling ribbon past the bottom-right.
+
+Output: 1024×1024 PNG, transparent background. No text, no digits, no charts, no background, no frame.
+```
+
+### `K14_wanted_x1` — «Разыскивается» (Notable 🔵)
+
+```text
+Generate a soft enamel pin: a wanted poster nailed to a board, and the face in the portrait oval is one of your records.
+
+Composition: a single sheet of paper nailed at its top corners to a plank wall, curling slightly at the bottom, filling the pin. In the center of the sheet, a portrait oval framed in gold holds a vinyl record shown face-on — grooves and center label clearly visible, staring back like a mugshot. Below the oval, three blank ruled lines stand in for the notice text, and a small gold sheriff star sits at the top of the sheet. Two round nail heads pin the top corners.
+
+Palette: ivory #FBF5EA (poster) with warm brown #2A1E1A plank behind, gold #D9A84E (oval frame, star, nails, ruled lines), vinyl black #1A1A2E (record) with gold grooves, ember #E85A2A (center label), navy #0B1438 (outline).
+
+Style: soft enamel pin — raised gold contour #D9A84E with a 1px dark navy #0B1438 outline, recessed flat enamel, gold divider lines 1.5–2px between color zones, one thin white specular arc per large fill. No sparkles. Silhouette: the poster's curling bottom edge breaks past the bottom, the plank past both sides.
+
+Output: 1024×1024 PNG, transparent background. No text, no readable words on the ruled lines, no faces, no background, no frame.
+```
+
+### `K15_wanted_x5` — «Шоурум» (Rare 🌸)
+
+```text
+Generate a soft enamel pin: a velvet rope drawn around a single record on a plinth — your shelf became an exhibit.
+
+Composition: a low round plinth stands center, and on it one vinyl record is displayed upright in a slim gold cradle, face-on to the viewer. In front of the plinth, two short gold stanchions carry a heavy velvet rope that swags between them in a deep curve, cordoning the record off. The rope and stanchions sit clearly in front, overlapping the plinth's base.
+
+Palette: navy #0B1438 (plinth) with gold #D9A84E trim, vinyl black #1A1A2E (record) with gold grooves, pink #E89AC0 (center label), #E55B7A (velvet rope), gold (stanchions, cradle), ivory #FBF5EA (one highlight on the plinth).
+
+Style: soft enamel pin — raised gold contour #D9A84E with a 1px dark navy #0B1438 outline, recessed flat enamel, gold divider lines 1.5–2px between color zones, one thin white specular arc per large fill. Rare tier: add 2 tiny gold four-point sparkles. Silhouette: the stanchions break past both side edges, the rope swag past the bottom.
+
+Output: 1024×1024 PNG, transparent background. No text, no visitors, no museum wall, no background, no frame.
+```
+
+### `K16_wanted_x10` — «Личный Санта» (Rare 🌸)
+
+```text
+Generate a soft enamel pin: a mailbox bursting with wish letters addressed to you — ten of your records are on somebody's list.
+
+Composition: a classic post-mounted mailbox seen from the side, its front flap hanging open, crammed so full that envelopes fan out of the mouth and two have spilled past the frame. Each envelope carries a small heart wax seal instead of a stamp. From the middle of the pile, the edge of one vinyl record juts out among the letters. The raised signal flag on the mailbox is up, and its flag panel is a tiny record.
+
+Palette: cobalt #2A4BD7 (mailbox) with gold #D9A84E hinges and trim, ivory #FBF5EA (envelopes), #E55B7A (wax seals), vinyl black #1A1A2E (record edge, flag panel), navy #0B1438 (post, outline).
+
+Style: soft enamel pin — raised gold contour #D9A84E with a 1px dark navy #0B1438 outline, recessed flat enamel, gold divider lines 1.5–2px between color zones, one thin white specular arc per large fill. Rare tier: add 2 tiny gold four-point sparkles. Silhouette: two spilling envelopes break past the bottom-right, the raised flag past the top.
+
+Output: 1024×1024 PNG, transparent background. No text, no addresses, no Santa figure, no background, no frame.
+```
+
+### `META_community` — «Резидент» (Epic 🌌)
+
+```text
+Generate a soft enamel pin: a two-deck DJ booth with the house keys hanging off the mixer — you are not a guest here, you are resident.
+
+Composition: a DJ setup seen straight on and slightly from above: two turntables side by side, each with a record on the platter and a tonearm swung across it, and a narrow mixer standing between them with a row of faders and one crossfader. Hooked over the corner of the mixer, a small ring of keys hangs down. The whole rig sits on a plain counter line and is drawn flat and symmetrical.
+
+Palette: indigo #1B237D (decks, mixer) with gold #D9A84E faders, knobs and trim, vinyl black #1A1A2E (records) with gold grooves, ember #E85A2A (center labels), ivory #FBF5EA (one highlight along the mixer face), gold (keys).
+
+Style: soft enamel pin — raised gold contour #D9A84E with a 1px dark navy #0B1438 outline, recessed flat enamel, gold divider lines 1.5–2px between color zones, one thin white specular arc per large fill. Epic tier: add 3 tiny gold four-point sparkles and one indigo accent inside the piece. Silhouette: the outer edges of both turntables break past the side edges.
+
+Output: 1024×1024 PNG, transparent background. No text, no headphones, no DJ figure, no background, no frame.
+```
+
+
+---
+
+## Market — остальные (M)
+
+
+### `M1_first_drawer` — «Прицениться» (Simple 💧)
+
+```text
+Generate a soft enamel pin: a swing tag being lifted to peek at the price — look first, decide later.
+
+Composition: a vinyl record stands upright, filling the left two thirds of the pin, and from its top edge hangs a blank swing tag on a short string. Two simplified fingers enter from the right and pinch the tag's lower corner, tipping it up toward the viewer to read it. The tag's face is empty — no number, just a ruled line where one would be. One short motion arc shows the tag just lifted.
+
+Palette: vinyl black #1A1A2E (record) with gold #D9A84E grooves, ember #E85A2A (center label), ivory #FBF5EA (tag, fingers) with navy #0B1438 outline, gold (string, ruled line, motion arc).
+
+Style: soft enamel pin — raised gold contour #D9A84E with a 1px dark navy #0B1438 outline, recessed flat enamel, gold divider lines 1.5–2px between color zones, one thin white specular arc per large fill. No sparkles. Silhouette: the fingers break past the right edge, the record past the left and bottom.
+
+Output: 1024×1024 PNG, transparent background. No text, no digits, no currency symbols, no full hand or arm, no background, no frame.
+```
+
+### `M2_first_click` — «Первая вылазка» (Simple 💧)
+
+```text
+Generate a soft enamel pin: a shop door pushed open with its bell still ringing — the first step outside.
+
+Composition: a shop door standing ajar, hinged open toward the viewer, seen from the outside. Above it, a small brass shopkeeper's bell on a curved bracket swings sharply, with two gold sound arcs on each side of it. Through the open gap, the edge of one record sleeve is visible inside. On the threshold, a single footprint points inward.
+
+Palette: navy #0B1438 (door) with gold #D9A84E frame, handle and bell, ivory #FBF5EA (light in the gap), cobalt #2A4BD7 (visible sleeve edge), gold (sound arcs, footprint outline).
+
+Style: soft enamel pin — raised gold contour #D9A84E with a 1px dark navy #0B1438 outline, recessed flat enamel, gold divider lines 1.5–2px between color zones, one thin white specular arc per large fill. No sparkles. Silhouette: the open door leaf breaks past the right edge, the bell bracket past the top.
+
+Output: 1024×1024 PNG, transparent background. No text, no signage, no figure, no background, no frame.
+```
+
+### `M3_wishlist_hunter` — «Закрыл гештальт» (Notable 🔵)
+
+```text
+Generate a soft enamel pin: the exact record sliding into the exact gap it was missing from — the shape finally closes.
+
+Composition: a row of record spines stands packed on a shelf line, and one slot in the middle is empty, its void drawn as a clean gold outline of a missing sleeve. From the upper right, the matching record slides down into that slot at a slight angle, already halfway in, its silhouette exactly matching the outline. Two short gold motion lines trail it.
+
+Palette: navy #0B1438 and cobalt #2A4BD7 (shelf spines), gold #D9A84E (gap outline, motion lines, shelf line), vinyl black #1A1A2E (the arriving record) with an ember #E85A2A label, ivory #FBF5EA (its sleeve).
+
+Style: soft enamel pin — raised gold contour #D9A84E with a 1px dark navy #0B1438 outline, recessed flat enamel, gold divider lines 1.5–2px between color zones, one thin white specular arc per large fill. No sparkles. Silhouette: the arriving record breaks past the upper-right corner, the shelf past both sides.
+
+Output: 1024×1024 PNG, transparent background. No text, no hands, no background, no frame.
+```
+
+### `M4_deal_finder` — «Цена-огонь» (Rare 🌸)
+
+```text
+Generate a soft enamel pin: a stylus slashing clean through a price tag like a blade — the number never stood a chance.
+
+Composition: a large swing tag hangs at a slight tilt in the center of the pin, and a tonearm sweeps across it diagonally from upper right to lower left, its stylus cutting the tag clean in two. The tag's lower half is already falling away, tipping loose below the cut, and the cut edge glows hot. On the tag's face, a bold downward arrow instead of any number. Two short gold speed lines follow the arm.
+
+Palette: ivory #FBF5EA (tag) with navy #0B1438 outline, gold #D9A84E (tonearm, string, speed lines), ember #E85A2A (glowing cut edge, downward arrow), pink #E89AC0 (a thin border on the tag).
+
+Style: soft enamel pin — raised gold contour #D9A84E with a 1px dark navy #0B1438 outline, recessed flat enamel, gold divider lines 1.5–2px between color zones, one thin white specular arc per large fill. Rare tier: add 2 tiny gold four-point sparkles. Silhouette: the tonearm's counterweight breaks past the upper-right corner, the falling half of the tag past the bottom.
+
+Output: 1024×1024 PNG, transparent background. No text, no digits, no currency symbols, no flames, no background, no frame.
+```
+
+### `M5_regular` — «Завсегдатай» (Rare 🌸)
+
+```text
+Generate a soft enamel pin: a doormat worn through by your own footsteps, and the worn path is a vinyl groove.
+
+Composition: a rectangular doormat lies flat, seen from directly above, filling the pin at a slight angle. Its bristle texture is drawn as fine short strokes — except along one curved path where the mat is worn smooth and bare, and that worn path is a spiral groove winding in from the mat's edge toward its center. At the center of the spiral, where the wear is deepest, a small worn circle sits like a record's label. Two faint footprint outlines sit on the path.
+
+Palette: warm brown #2A1E1A (mat bristles), gold #D9A84E (worn spiral path, mat border), ivory #FBF5EA (the worn circle at center), pink #E89AC0 (footprint outlines), navy #0B1438 (outline).
+
+Style: soft enamel pin — raised gold contour #D9A84E with a 1px dark navy #0B1438 outline, recessed flat enamel, gold divider lines 1.5–2px between color zones, one thin white specular arc per large fill. Rare tier: add 2 tiny gold four-point sparkles. Silhouette: the mat's corners break past both side edges.
+
+Output: 1024×1024 PNG, transparent background. No text, no shoes, no doorway, no background, no frame.
+```
+
+### `META_market` — «Рыночный нюх» (Notable 🔵)
+
+```text
+Generate a soft enamel pin: a hound following a scent trail straight to a price tag — you smell the number before you see it.
+
+Composition: a dog's head and neck in side profile, facing right, filling the left half of the pin, nose lifted and working. From its nostril, a dashed gold scent trail loops and meanders through the air to the right, curling twice before ending at a small swing tag hanging in the lower right. On the tag's face sits a tiny vinyl record instead of a price. The dog wears a collar with a round gold tag.
+
+Palette: navy #0B1438 (dog) with an ivory #FBF5EA muzzle and brow patch, ember #E85A2A (nose), gold #D9A84E (collar, collar tag, scent trail, tag string), ivory (swing tag), vinyl black #1A1A2E (the record on the tag).
+
+Style: soft enamel pin — raised gold contour #D9A84E with a 1px dark navy #0B1438 outline, recessed flat enamel, gold divider lines 1.5–2px between color zones, one thin white specular arc per large fill. No sparkles. Silhouette: the dog's neck breaks past the left edge, the swing tag past the bottom-right.
+
+Output: 1024×1024 PNG, transparent background. No text, no digits, no full dog body, no background, no frame.
+```
+
+
+---
+
+## Collection value (MV)
+
+
+### `MV1_appraised` — «Оценено» (Simple 💧)
+
+```text
+Generate a soft enamel pin: an auction gavel coming down on a record — the shelf finally has a number.
+
+Composition: an auctioneer's gavel caught at the moment of impact, angled down from the upper right, its head striking a round sound block. Lying flat on that block, taking the strike, is a vinyl record seen face-on. Three short gold impact dashes burst from the contact point, and the record's grooves ripple outward in two arcs.
+
+Palette: warm brown #2A1E1A (gavel handle) with gold #D9A84E bands, navy #0B1438 (gavel head, sound block), vinyl black #1A1A2E (record) with gold grooves, ember #E85A2A (center label), gold (impact dashes).
+
+Style: soft enamel pin — raised gold contour #D9A84E with a 1px dark navy #0B1438 outline, recessed flat enamel, gold divider lines 1.5–2px between color zones, one thin white specular arc per large fill. No sparkles. Silhouette: the gavel handle breaks past the upper-right corner, the block past the bottom.
+
+Output: 1024×1024 PNG, transparent background. No text, no digits, no hands, no background, no frame.
+```
+
+### `MV2_50k` — «Полтинник» (Simple 💧)
+
+```text
+Generate a soft enamel pin: a piggy bank whose coin slot takes records instead of coins.
+
+Composition: a plump piggy bank in side profile facing left, filling most of the pin, standing on four stubby legs with a curled tail. Along its back, the slot is cut wide and rectangular — sized for a disc, not a coin — and one vinyl record is halfway in, tipped at an angle, its upper half still sticking out. The pig is drawn in clean flat shapes with one dot for the eye and a simple snout.
+
+Palette: cobalt #2A4BD7 (pig) with an ivory #FBF5EA belly and cobalt soft #5C7AE8 shading, gold #D9A84E (slot rim, hoof caps, grooves), vinyl black #1A1A2E (record) with an ember #E85A2A label, navy #0B1438 (outline).
+
+Style: soft enamel pin — raised gold contour #D9A84E with a 1px dark navy #0B1438 outline, recessed flat enamel, gold divider lines 1.5–2px between color zones, one thin white specular arc per large fill. No sparkles. Silhouette: the record breaks past the top edge, the pig's snout past the left.
+
+Output: 1024×1024 PNG, transparent background. No text, no digits, no coins, no background, no frame.
+```
+
+### `MV3_100k` — «Шестизнак» (Notable 🔵)
+
+```text
+Generate a soft enamel pin: a banded bundle of notes with a record pressed in as its seal.
+
+Composition: a thick brick of banknotes seen at a three-quarter angle, its many layered edges visible along the side, bound by one broad paper band across the middle. Where the band closes, a vinyl record sits pressed into it like a wax seal — face-on, grooves and label visible, overlapping the band's join. The note edges are drawn as fine stacked lines, texture rather than countable sheets.
+
+Palette: ivory #FBF5EA and cobalt soft #5C7AE8 (note edges), cobalt #2A4BD7 (paper band) with gold #D9A84E trim, vinyl black #1A1A2E (record seal) with gold grooves, ember #E85A2A (center label), navy #0B1438 (outline).
+
+Style: soft enamel pin — raised gold contour #D9A84E with a 1px dark navy #0B1438 outline, recessed flat enamel, gold divider lines 1.5–2px between color zones, one thin white specular arc per large fill. No sparkles. Silhouette: the bundle breaks past both side edges.
+
+Output: 1024×1024 PNG, transparent background. No text, no digits, no currency symbols, no faces on the notes, no background, no frame.
+```
+
+### `MV4_250k` — «Четверть лимона» (Rare 🌸)
+
+```text
+Generate a soft enamel pin: a lemon cut into quarters, and one quarter is a wedge of vinyl — a quarter of a million, literally.
+
+Composition: a whole lemon shown from above, sliced into four equal quarters that sit slightly apart with thin gaps between them. Three quarters are ordinary fruit, drawn flat with radiating segment lines and a pale rind. The fourth quarter, at the lower right, is cut from a vinyl record instead: same wedge shape, but filled with concentric groove arcs and a sliver of center label at its inner point. The swap is the whole joke, so that wedge is the darkest thing in the pin.
+
+Palette: gold #D9A84E (lemon rind), ivory #FBF5EA (fruit flesh) with pink #E89AC0 segment lines, vinyl black #1A1A2E (the vinyl quarter) with gold groove arcs, ember #E85A2A (center label sliver), navy #0B1438 (outline).
+
+Style: soft enamel pin — raised gold contour #D9A84E with a 1px dark navy #0B1438 outline, recessed flat enamel, gold divider lines 1.5–2px between color zones, one thin white specular arc per large fill. Rare tier: add 2 tiny gold four-point sparkles. Silhouette: the lemon is wider than the frame and breaks past both side edges.
+
+Output: 1024×1024 PNG, transparent background. No text, no digits, no leaves, no background, no frame.
+```
+
+### `MV5_500k` — «Сокровищница» (Epic 🌌)
+
+```text
+Generate a soft enamel pin: a treasure chest that overflows with records instead of gold.
+
+Composition: a banded wooden chest with a domed lid, seen from the front and thrown wide open, filling the pin. Out of it spill records — five or six discs tumbling over the front rim and down the chest's face, overlapping each other, one balanced on the edge mid-fall. Inside the open lid, a warm glow rises from the pile. The chest's iron bands and lock plate are heavy and gold.
+
+Palette: indigo #1B237D (chest) with gold #D9A84E bands, lock plate and corner caps, vinyl black #1A1A2E (records) with gold grooves, ember #E85A2A (center labels), ivory #FBF5EA (the glow inside the lid).
+
+Style: soft enamel pin — raised gold contour #D9A84E with a 1px dark navy #0B1438 outline, recessed flat enamel, gold divider lines 1.5–2px between color zones, one thin white specular arc per large fill. Epic tier: add 3 tiny gold four-point sparkles and one indigo accent inside the piece. Silhouette: the open lid breaks past the top edge, the spilling records past the bottom and right.
+
+Output: 1024×1024 PNG, transparent background. No text, no coins, no gems, no background, no frame.
+```
+
+### `MV6_million` — «Миллионер» (Legend ⚫)
+
+```text
+Generate a soft enamel pin: a whole lemon carved entirely from vinyl, wearing a small crown — the full million, not a quarter of it.
+
+Composition: one whole lemon standing upright and centered, filling the pin, its classic tapered oval shape unmistakable. Its entire surface is vinyl: concentric groove lines wrap the body following its curve, and a record's center label sits at the fruit's midpoint like a maker's mark. Balanced on its top nub, a small five-point crown. The form is clean and heavy, no leaves, no stem.
+
+Palette: vinyl black #1A1A2E (lemon body) with gold #D9A84E grooves, ember #E85A2A (center label), gold (crown), ivory #FBF5EA (one specular streak down the left side), navy #0B1438 (outline), indigo #1B237D (shadow side).
+
+Style: soft enamel pin — raised gold contour #D9A84E with a 1px dark navy #0B1438 outline, recessed flat enamel, gold divider lines 1.5–2px between color zones, one thin white specular arc per large fill. Legend tier: add 3 tiny gold four-point sparkles and a second gold rim tracing the whole silhouette. Silhouette: the crown breaks past the top edge, the lemon past both sides.
+
+Output: 1024×1024 PNG, transparent background. No text, no digits, no leaves, no background, no frame.
+```
+
+### `MV_crown_jewel` — «Жемчужина» (Rare 🌸)
+
+```text
+Generate a soft enamel pin: an oyster opened to reveal a pearl that is a record — one disc worth more than a whole shelf.
+
+Composition: an oyster shell seen from the front, hinged open wide, its two halves fanning up and down with deep radiating ridges along both. Cradled in the lower half, resting on the smooth nacre, sits a single vinyl record standing in for the pearl — face-on, grooves and center label visible, sized so it nearly fills the opening. A soft halo of three thin arcs rises behind it from inside the shell.
+
+Palette: navy #0B1438 (shell exterior) with gold #D9A84E ridge lines, ivory #FBF5EA (nacre interior), vinyl black #1A1A2E (record) with gold grooves, pink #E89AC0 (center label), gold (halo arcs).
+
+Style: soft enamel pin — raised gold contour #D9A84E with a 1px dark navy #0B1438 outline, recessed flat enamel, gold divider lines 1.5–2px between color zones, one thin white specular arc per large fill. Rare tier: add 2 tiny gold four-point sparkles. Silhouette: both shell halves break past the top and bottom edges.
+
+Output: 1024×1024 PNG, transparent background. No text, no water, no sand, no actual round pearl, no background, no frame.
+```
+
+
+---
+
+## Origins (OG)
+
+
+### `OG1_first_hundred` — «Первая сотня» (Epic 🌌)
+
+```text
+Generate a soft enamel pin: the Vertushka mascot hoisting a big 100 over its head — the app thanking the hundred people who showed up first.
+
+Composition: a cartoon character standing centered, front on. Its head is a large vinyl record: a full circle with concentric groove lines, a small center hole, and a simple face — two half-lidded eyes with heavy angled brows, two round blush patches, and a small confident closed smile. A tonearm lies diagonally across the upper head like a visor, its stylus end resting at the temple. The body is tiny next to the head: two tube arms raised straight overhead and two tube legs in chunky sneakers, one foot lifted mid-step. Held up in both raised hands, above the head, the numeral 100 in bold rounded display digits, sized so it is the second thing you read after the face.
+
+Palette: ivory #FBF5EA (record head) with gold #D9A84E grooves and navy #0B1438 face lines, pink #E89AC0 (cheek blush), cobalt #2A4BD7 (arms, legs, torso) with navy shadow sides, ivory (sneakers) with cobalt trim, gold (the numeral 100, tonearm), navy (outline). Flat fills only: no gradients and no halftone dot texture, even if the character is usually drawn with them.
+
+Style: soft enamel pin — raised gold contour #D9A84E with a 1px dark navy #0B1438 outline, recessed flat enamel, gold divider lines 1.5–2px between color zones, one thin white specular arc per large fill. Epic tier: add 3 tiny gold four-point sparkles and one indigo accent inside the piece. Silhouette: the numeral 100 breaks past the top edge, the lifted foot past the bottom-right.
+
+Output: 1024×1024 PNG, transparent background. No text other than the digits 100, no background, no frame, no gradients, no halftone, no drop shadows.
+```
+
+---
+
+## Locked-заглушки серий
+
+Отдельный визуальный язык, не эмаль: тёмный медальон с контурной иконкой и замком. Показывается, пока ачивка закрыта, и выбирается **по серии**, а не по коду ачивки — см. `SERIES_PLACEHOLDERS` в `Mobile/components/AchievementPin.tsx`.
+
+Промты ниже описывают весь набор целиком, включая уже нарисованные, — чтобы при перегенерации язык не разъехался. Иконки существующих серий описаны по факту того, что нарисовано сейчас.
+
+### `foundation` — «Первые шаги» (5)
+
+```text
+Generate a locked-achievement placeholder medallion for a vinyl collecting app. This is NOT an enamel pin — it is the dark "still locked" badge shown in the achievements grid.
+
+Composition: one perfect circle centered on a square canvas, filling almost the whole frame. The disc is deep navy with a soft radial gradient, lighter at the center and darkening toward the rim. Across its entire face run faint concentric groove rings, evenly spaced and barely brighter than the disc, like the grooves of a record. The rim carries two thin rings: an outer ring in cobalt blue, and just inside it a second ring in warm gold that fades from bright at the top-left to darker at the bottom-right. Dead center sits a single icon at roughly 40% of the disc width, drawn in OUTLINE ONLY with no fill, in a uniform rounded stroke of cool grey-blue: a young sprout with two leaves rising on a slender stem out of the center of a record — the disc drawn as a wide flat ellipse with a few groove rings and a small center label, the sprout growing straight up from it. Overlapping the disc's lower-right edge, a small circular badge filled with a warm gold gradient holds a dark navy padlock — a closed shackle above a rounded body with one keyhole dot.
+
+Palette: disc gradient #1B2138 at center to #0A0E1C at rim, groove rings #212A45, outer ring cobalt #2A4BD7, inner ring gold #D9A84E fading to #8A6A2F, center icon stroke #8B93A8, lock badge gold #F0CE86 to #C08A3E with a #0B1438 padlock.
+
+Style: flat vector, clean geometry, no texture, no noise, no photorealism. The center icon must read instantly as a silhouette at small size, so keep it to a few bold strokes and drop any small internal detail.
+
+Output: 1024×1024 PNG, transparent background outside the disc. No text, no numbers, no background, no frame, no drop shadow beyond the disc itself.
+```
+### `scale` — «Размер коллекции» (7)
+
+```text
+Generate a locked-achievement placeholder medallion for a vinyl collecting app. This is NOT an enamel pin — it is the dark "still locked" badge shown in the achievements grid.
+
+Composition: one perfect circle centered on a square canvas, filling almost the whole frame. The disc is deep navy with a soft radial gradient, lighter at the center and darkening toward the rim. Across its entire face run faint concentric groove rings, evenly spaced and barely brighter than the disc, like the grooves of a record. The rim carries two thin rings: an outer ring in cobalt blue, and just inside it a second ring in warm gold that fades from bright at the top-left to darker at the bottom-right. Dead center sits a single icon at roughly 40% of the disc width, drawn in OUTLINE ONLY with no fill, in a uniform rounded stroke of cool grey-blue: a tall stack of records seen in slight perspective, roughly ten flat ellipses layered one on another, the topmost one showing its center label as a small ellipse with a dot. Overlapping the disc's lower-right edge, a small circular badge filled with a warm gold gradient holds a dark navy padlock — a closed shackle above a rounded body with one keyhole dot.
+
+Palette: disc gradient #1B2138 at center to #0A0E1C at rim, groove rings #212A45, outer ring cobalt #2A4BD7, inner ring gold #D9A84E fading to #8A6A2F, center icon stroke #8B93A8, lock badge gold #F0CE86 to #C08A3E with a #0B1438 padlock.
+
+Style: flat vector, clean geometry, no texture, no noise, no photorealism. The center icon must read instantly as a silhouette at small size, so keep it to a few bold strokes and drop any small internal detail.
+
+Output: 1024×1024 PNG, transparent background outside the disc. No text, no numbers, no background, no frame, no drop shadow beyond the disc itself.
+```
+### `rarity` — «Охота за редкостями» (8)
+
+```text
+Generate a locked-achievement placeholder medallion for a vinyl collecting app. This is NOT an enamel pin — it is the dark "still locked" badge shown in the achievements grid.
+
+Composition: one perfect circle centered on a square canvas, filling almost the whole frame. The disc is deep navy with a soft radial gradient, lighter at the center and darkening toward the rim. Across its entire face run faint concentric groove rings, evenly spaced and barely brighter than the disc, like the grooves of a record. The rim carries two thin rings: an outer ring in cobalt blue, and just inside it a second ring in warm gold that fades from bright at the top-left to darker at the bottom-right. Dead center sits a single icon at roughly 40% of the disc width, drawn in OUTLINE ONLY with no fill, in a uniform rounded stroke of cool grey-blue: a cut gemstone seen face-on: a wide flat table at the top, angled crown facets below it, and a pointed pavilion tapering to a tip at the bottom, all as clean straight-edged facet lines. Overlapping the disc's lower-right edge, a small circular badge filled with a warm gold gradient holds a dark navy padlock — a closed shackle above a rounded body with one keyhole dot.
+
+Palette: disc gradient #1B2138 at center to #0A0E1C at rim, groove rings #212A45, outer ring cobalt #2A4BD7, inner ring gold #D9A84E fading to #8A6A2F, center icon stroke #8B93A8, lock badge gold #F0CE86 to #C08A3E with a #0B1438 padlock.
+
+Style: flat vector, clean geometry, no texture, no noise, no photorealism. The center icon must read instantly as a silhouette at small size, so keep it to a few bold strokes and drop any small internal detail.
+
+Output: 1024×1024 PNG, transparent background outside the disc. No text, no numbers, no background, no frame, no drop shadow beyond the disc itself.
+```
+### `geography` — «География» (8)
+
+```text
+Generate a locked-achievement placeholder medallion for a vinyl collecting app. This is NOT an enamel pin — it is the dark "still locked" badge shown in the achievements grid.
+
+Composition: one perfect circle centered on a square canvas, filling almost the whole frame. The disc is deep navy with a soft radial gradient, lighter at the center and darkening toward the rim. Across its entire face run faint concentric groove rings, evenly spaced and barely brighter than the disc, like the grooves of a record. The rim carries two thin rings: an outer ring in cobalt blue, and just inside it a second ring in warm gold that fades from bright at the top-left to darker at the bottom-right. Dead center sits a single icon at roughly 40% of the disc width, drawn in OUTLINE ONLY with no fill, in a uniform rounded stroke of cool grey-blue: a globe: a circle crossed by continent outlines, with the record's groove rings showing through the sphere as its parallels so the world and the disc read as the same object. Overlapping the disc's lower-right edge, a small circular badge filled with a warm gold gradient holds a dark navy padlock — a closed shackle above a rounded body with one keyhole dot.
+
+Palette: disc gradient #1B2138 at center to #0A0E1C at rim, groove rings #212A45, outer ring cobalt #2A4BD7, inner ring gold #D9A84E fading to #8A6A2F, center icon stroke #8B93A8, lock badge gold #F0CE86 to #C08A3E with a #0B1438 padlock.
+
+Style: flat vector, clean geometry, no texture, no noise, no photorealism. The center icon must read instantly as a silhouette at small size, so keep it to a few bold strokes and drop any small internal detail.
+
+Output: 1024×1024 PNG, transparent background outside the disc. No text, no numbers, no background, no frame, no drop shadow beyond the disc itself.
+```
+### `eras` — «Эпохи» (7)
+
+Существующая версия сильно детальнее (два кольца подписей, шестерни). Здесь описан упрощённый вариант — при 64 px мелкие подписи всё равно схлопываются в шум.
+
+```text
+Generate a locked-achievement placeholder medallion for a vinyl collecting app. This is NOT an enamel pin — it is the dark "still locked" badge shown in the achievements grid.
+
+Composition: one perfect circle centered on a square canvas, filling almost the whole frame. The disc is deep navy with a soft radial gradient, lighter at the center and darkening toward the rim. Across its entire face run faint concentric groove rings, evenly spaced and barely brighter than the disc, like the grooves of a record. The rim carries two thin rings: an outer ring in cobalt blue, and just inside it a second ring in warm gold that fades from bright at the top-left to darker at the bottom-right. Dead center sits a single icon at roughly 40% of the disc width, drawn in OUTLINE ONLY with no fill, in a uniform rounded stroke of cool grey-blue: an ornate clock face: an outer ring of tick marks, an inner ring of roman numerals, two hands set at an angle, and a small toothed gear tucked behind the dial at the lower right. Overlapping the disc's lower-right edge, a small circular badge filled with a warm gold gradient holds a dark navy padlock — a closed shackle above a rounded body with one keyhole dot.
+
+Palette: disc gradient #1B2138 at center to #0A0E1C at rim, groove rings #212A45, outer ring cobalt #2A4BD7, inner ring gold #D9A84E fading to #8A6A2F, center icon stroke #8B93A8, lock badge gold #F0CE86 to #C08A3E with a #0B1438 padlock.
+
+Style: flat vector, clean geometry, no texture, no noise, no photorealism. The center icon must read instantly as a silhouette at small size, so keep it to a few bold strokes and drop any small internal detail.
+
+Output: 1024×1024 PNG, transparent background outside the disc. No text, no numbers, no background, no frame, no drop shadow beyond the disc itself.
+```
+### `genres` — «Жанры» (7)
+
+```text
+Generate a locked-achievement placeholder medallion for a vinyl collecting app. This is NOT an enamel pin — it is the dark "still locked" badge shown in the achievements grid.
+
+Composition: one perfect circle centered on a square canvas, filling almost the whole frame. The disc is deep navy with a soft radial gradient, lighter at the center and darkening toward the rim. Across its entire face run faint concentric groove rings, evenly spaced and barely brighter than the disc, like the grooves of a record. The rim carries two thin rings: an outer ring in cobalt blue, and just inside it a second ring in warm gold that fades from bright at the top-left to darker at the bottom-right. Dead center sits a single icon at roughly 40% of the disc width, drawn in OUTLINE ONLY with no fill, in a uniform rounded stroke of cool grey-blue: a treble clef on the left standing beside a row of five vertical equalizer bars of uneven height on the right, joined by one horizontal baseline running through both. Overlapping the disc's lower-right edge, a small circular badge filled with a warm gold gradient holds a dark navy padlock — a closed shackle above a rounded body with one keyhole dot.
+
+Palette: disc gradient #1B2138 at center to #0A0E1C at rim, groove rings #212A45, outer ring cobalt #2A4BD7, inner ring gold #D9A84E fading to #8A6A2F, center icon stroke #8B93A8, lock badge gold #F0CE86 to #C08A3E with a #0B1438 padlock.
+
+Style: flat vector, clean geometry, no texture, no noise, no photorealism. The center icon must read instantly as a silhouette at small size, so keep it to a few bold strokes and drop any small internal detail.
+
+Output: 1024×1024 PNG, transparent background outside the disc. No text, no numbers, no background, no frame, no drop shadow beyond the disc itself.
+```
+### `community` — «Сообщество» (11)
+
+```text
+Generate a locked-achievement placeholder medallion for a vinyl collecting app. This is NOT an enamel pin — it is the dark "still locked" badge shown in the achievements grid.
+
+Composition: one perfect circle centered on a square canvas, filling almost the whole frame. The disc is deep navy with a soft radial gradient, lighter at the center and darkening toward the rim. Across its entire face run faint concentric groove rings, evenly spaced and barely brighter than the disc, like the grooves of a record. The rim carries two thin rings: an outer ring in cobalt blue, and just inside it a second ring in warm gold that fades from bright at the top-left to darker at the bottom-right. Dead center sits a single icon at roughly 40% of the disc width, drawn in OUTLINE ONLY with no fill, in a uniform rounded stroke of cool grey-blue: a human head in profile facing right, drawn as one continuous outline, with a row of five vertical equalizer bars of uneven height inside the skull where a brain would be. Overlapping the disc's lower-right edge, a small circular badge filled with a warm gold gradient holds a dark navy padlock — a closed shackle above a rounded body with one keyhole dot.
+
+Palette: disc gradient #1B2138 at center to #0A0E1C at rim, groove rings #212A45, outer ring cobalt #2A4BD7, inner ring gold #D9A84E fading to #8A6A2F, center icon stroke #8B93A8, lock badge gold #F0CE86 to #C08A3E with a #0B1438 padlock.
+
+Style: flat vector, clean geometry, no texture, no noise, no photorealism. The center icon must read instantly as a silhouette at small size, so keep it to a few bold strokes and drop any small internal detail.
+
+Output: 1024×1024 PNG, transparent background outside the disc. No text, no numbers, no background, no frame, no drop shadow beyond the disc itself.
+```
+### `contribution` — «Вклад» (6)
+
+```text
+Generate a locked-achievement placeholder medallion for a vinyl collecting app. This is NOT an enamel pin — it is the dark "still locked" badge shown in the achievements grid.
+
+Composition: one perfect circle centered on a square canvas, filling almost the whole frame. The disc is deep navy with a soft radial gradient, lighter at the center and darkening toward the rim. Across its entire face run faint concentric groove rings, evenly spaced and barely brighter than the disc, like the grooves of a record. The rim carries two thin rings: an outer ring in cobalt blue, and just inside it a second ring in warm gold that fades from bright at the top-left to darker at the bottom-right. Dead center sits a single icon at roughly 40% of the disc width, drawn in OUTLINE ONLY with no fill, in a uniform rounded stroke of cool grey-blue: an open hand rising from the bottom, palm up, holding a record above it; above the disc a short upward arrow and one small four-point sparkle. Overlapping the disc's lower-right edge, a small circular badge filled with a warm gold gradient holds a dark navy padlock — a closed shackle above a rounded body with one keyhole dot.
+
+Palette: disc gradient #1B2138 at center to #0A0E1C at rim, groove rings #212A45, outer ring cobalt #2A4BD7, inner ring gold #D9A84E fading to #8A6A2F, center icon stroke #8B93A8, lock badge gold #F0CE86 to #C08A3E with a #0B1438 padlock.
+
+Style: flat vector, clean geometry, no texture, no noise, no photorealism. The center icon must read instantly as a silhouette at small size, so keep it to a few bold strokes and drop any small internal detail.
+
+Output: 1024×1024 PNG, transparent background outside the disc. No text, no numbers, no background, no frame, no drop shadow beyond the disc itself.
+```
+### `discography` — «Дискография» (6)
+
+```text
+Generate a locked-achievement placeholder medallion for a vinyl collecting app. This is NOT an enamel pin — it is the dark "still locked" badge shown in the achievements grid.
+
+Composition: one perfect circle centered on a square canvas, filling almost the whole frame. The disc is deep navy with a soft radial gradient, lighter at the center and darkening toward the rim. Across its entire face run faint concentric groove rings, evenly spaced and barely brighter than the disc, like the grooves of a record. The rim carries two thin rings: an outer ring in cobalt blue, and just inside it a second ring in warm gold that fades from bright at the top-left to darker at the bottom-right. Dead center sits a single icon at roughly 40% of the disc width, drawn in OUTLINE ONLY with no fill, in a uniform rounded stroke of cool grey-blue: a square record sleeve seen face-on with a row of equalizer bars inside it, set over a second square rotated 45 degrees behind it so the corners peek out as a star. Overlapping the disc's lower-right edge, a small circular badge filled with a warm gold gradient holds a dark navy padlock — a closed shackle above a rounded body with one keyhole dot.
+
+Palette: disc gradient #1B2138 at center to #0A0E1C at rim, groove rings #212A45, outer ring cobalt #2A4BD7, inner ring gold #D9A84E fading to #8A6A2F, center icon stroke #8B93A8, lock badge gold #F0CE86 to #C08A3E with a #0B1438 padlock.
+
+Style: flat vector, clean geometry, no texture, no noise, no photorealism. The center icon must read instantly as a silhouette at small size, so keep it to a few bold strokes and drop any small internal detail.
+
+Output: 1024×1024 PNG, transparent background outside the disc. No text, no numbers, no background, no frame, no drop shadow beyond the disc itself.
+```
+### `gifts` — «Дарящая рука» (9)
+
+Сейчас нарисована в эмалевом стиле на квадратной подложке 2048×2048 — самая выбивающаяся из набора.
+
+```text
+Generate a locked-achievement placeholder medallion for a vinyl collecting app. This is NOT an enamel pin — it is the dark "still locked" badge shown in the achievements grid.
+
+Composition: one perfect circle centered on a square canvas, filling almost the whole frame. The disc is deep navy with a soft radial gradient, lighter at the center and darkening toward the rim. Across its entire face run faint concentric groove rings, evenly spaced and barely brighter than the disc, like the grooves of a record. The rim carries two thin rings: an outer ring in cobalt blue, and just inside it a second ring in warm gold that fades from bright at the top-left to darker at the bottom-right. Dead center sits a single icon at roughly 40% of the disc width, drawn in OUTLINE ONLY with no fill, in a uniform rounded stroke of cool grey-blue: a gift box seen at a three-quarter angle: a cube with a separate lid line across the top and a wide ribbon bow with two loops sitting on the lid, ribbon bands running down the front faces. Overlapping the disc's lower-right edge, a small circular badge filled with a warm gold gradient holds a dark navy padlock — a closed shackle above a rounded body with one keyhole dot.
+
+Palette: disc gradient #1B2138 at center to #0A0E1C at rim, groove rings #212A45, outer ring cobalt #2A4BD7, inner ring gold #D9A84E fading to #8A6A2F, center icon stroke #8B93A8, lock badge gold #F0CE86 to #C08A3E with a #0B1438 padlock.
+
+Style: flat vector, clean geometry, no texture, no noise, no photorealism. The center icon must read instantly as a silhouette at small size, so keep it to a few bold strokes and drop any small internal detail.
+
+Output: 1024×1024 PNG, transparent background outside the disc. No text, no numbers, no background, no frame, no drop shadow beyond the disc itself.
+```
+### `origins` — «Истоки» (1)
+
+Сейчас отдаёт общий трофей вместе с мета-ачивками. Своя иконка отделит «Истоки» от меты.
+
+```text
+Generate a locked-achievement placeholder medallion for a vinyl collecting app. This is NOT an enamel pin — it is the dark "still locked" badge shown in the achievements grid.
+
+Composition: one perfect circle centered on a square canvas, filling almost the whole frame. The disc is deep navy with a soft radial gradient, lighter at the center and darkening toward the rim. Across its entire face run faint concentric groove rings, evenly spaced and barely brighter than the disc, like the grooves of a record. The rim carries two thin rings: an outer ring in cobalt blue, and just inside it a second ring in warm gold that fades from bright at the top-left to darker at the bottom-right. Dead center sits a single icon at roughly 40% of the disc width, drawn in OUTLINE ONLY with no fill, in a uniform rounded stroke of cool grey-blue: a small pennant flag on a straight pole, planted upright in the center of a record — the disc as a wide flat ellipse with a few groove rings, the flag streaming to the right. Overlapping the disc's lower-right edge, a small circular badge filled with a warm gold gradient holds a dark navy padlock — a closed shackle above a rounded body with one keyhole dot.
+
+Palette: disc gradient #1B2138 at center to #0A0E1C at rim, groove rings #212A45, outer ring cobalt #2A4BD7, inner ring gold #D9A84E fading to #8A6A2F, center icon stroke #8B93A8, lock badge gold #F0CE86 to #C08A3E with a #0B1438 padlock.
+
+Style: flat vector, clean geometry, no texture, no noise, no photorealism. The center icon must read instantly as a silhouette at small size, so keep it to a few bold strokes and drop any small internal detail.
+
+Output: 1024×1024 PNG, transparent background outside the disc. No text, no numbers, no background, no frame, no drop shadow beyond the disc itself.
+```
+### `value` — «Стоимость коллекции» (7)
+
+```text
+Generate a locked-achievement placeholder medallion for a vinyl collecting app. This is NOT an enamel pin — it is the dark "still locked" badge shown in the achievements grid.
+
+Composition: one perfect circle centered on a square canvas, filling almost the whole frame. The disc is deep navy with a soft radial gradient, lighter at the center and darkening toward the rim. Across its entire face run faint concentric groove rings, evenly spaced and barely brighter than the disc, like the grooves of a record. The rim carries two thin rings: an outer ring in cobalt blue, and just inside it a second ring in warm gold that fades from bright at the top-left to darker at the bottom-right. Dead center sits a single icon at roughly 40% of the disc width, drawn in OUTLINE ONLY with no fill, in a uniform rounded stroke of cool grey-blue: three coins stacked one on top of another, seen slightly from the side, the front coin marked with one small concentric circle so it reads as a record. Overlapping the disc's lower-right edge, a small circular badge filled with a warm gold gradient holds a dark navy padlock — a closed shackle above a rounded body with one keyhole dot.
+
+Palette: disc gradient #1B2138 at center to #0A0E1C at rim, groove rings #212A45, outer ring cobalt #2A4BD7, inner ring gold #D9A84E fading to #8A6A2F, center icon stroke #8B93A8, lock badge gold #F0CE86 to #C08A3E with a #0B1438 padlock.
+
+Style: flat vector, clean geometry, no texture, no noise, no photorealism. The center icon must read instantly as a silhouette at small size, so keep it to a few bold strokes and drop any small internal detail.
+
+Output: 1024×1024 PNG, transparent background outside the disc. No text, no numbers, no background, no frame, no drop shadow beyond the disc itself.
+```
+### `market` — «Рыночный нюх» (6)
+
+```text
+Generate a locked-achievement placeholder medallion for a vinyl collecting app. This is NOT an enamel pin — it is the dark "still locked" badge shown in the achievements grid.
+
+Composition: one perfect circle centered on a square canvas, filling almost the whole frame. The disc is deep navy with a soft radial gradient, lighter at the center and darkening toward the rim. Across its entire face run faint concentric groove rings, evenly spaced and barely brighter than the disc, like the grooves of a record. The rim carries two thin rings: an outer ring in cobalt blue, and just inside it a second ring in warm gold that fades from bright at the top-left to darker at the bottom-right. Dead center sits a single icon at roughly 40% of the disc width, drawn in OUTLINE ONLY with no fill, in a uniform rounded stroke of cool grey-blue: a swing price tag — a rectangle with one clipped corner and a small hole, hanging from a short looped string, with one concentric circle on its face. Overlapping the disc's lower-right edge, a small circular badge filled with a warm gold gradient holds a dark navy padlock — a closed shackle above a rounded body with one keyhole dot.
+
+Palette: disc gradient #1B2138 at center to #0A0E1C at rim, groove rings #212A45, outer ring cobalt #2A4BD7, inner ring gold #D9A84E fading to #8A6A2F, center icon stroke #8B93A8, lock badge gold #F0CE86 to #C08A3E with a #0B1438 padlock.
+
+Style: flat vector, clean geometry, no texture, no noise, no photorealism. The center icon must read instantly as a silhouette at small size, so keep it to a few bold strokes and drop any small internal detail.
+
+Output: 1024×1024 PNG, transparent background outside the disc. No text, no numbers, no background, no frame, no drop shadow beyond the disc itself.
+```
+### `formats` — «Форматы» (4)
+
+```text
+Generate a locked-achievement placeholder medallion for a vinyl collecting app. This is NOT an enamel pin — it is the dark "still locked" badge shown in the achievements grid.
+
+Composition: one perfect circle centered on a square canvas, filling almost the whole frame. The disc is deep navy with a soft radial gradient, lighter at the center and darkening toward the rim. Across its entire face run faint concentric groove rings, evenly spaced and barely brighter than the disc, like the grooves of a record. The rim carries two thin rings: an outer ring in cobalt blue, and just inside it a second ring in warm gold that fades from bright at the top-left to darker at the bottom-right. Dead center sits a single icon at roughly 40% of the disc width, drawn in OUTLINE ONLY with no fill, in a uniform rounded stroke of cool grey-blue: three overlapping media shapes fanned in a row: a circle, an upright rectangle, and a square, each just an outline, the circle in front. Overlapping the disc's lower-right edge, a small circular badge filled with a warm gold gradient holds a dark navy padlock — a closed shackle above a rounded body with one keyhole dot.
+
+Palette: disc gradient #1B2138 at center to #0A0E1C at rim, groove rings #212A45, outer ring cobalt #2A4BD7, inner ring gold #D9A84E fading to #8A6A2F, center icon stroke #8B93A8, lock badge gold #F0CE86 to #C08A3E with a #0B1438 padlock.
+
+Style: flat vector, clean geometry, no texture, no noise, no photorealism. The center icon must read instantly as a silhouette at small size, so keep it to a few bold strokes and drop any small internal detail.
+
+Output: 1024×1024 PNG, transparent background outside the disc. No text, no numbers, no background, no frame, no drop shadow beyond the disc itself.
+```
+### `cassettes` — «Кассеты» (4)
+
+```text
+Generate a locked-achievement placeholder medallion for a vinyl collecting app. This is NOT an enamel pin — it is the dark "still locked" badge shown in the achievements grid.
+
+Composition: one perfect circle centered on a square canvas, filling almost the whole frame. The disc is deep navy with a soft radial gradient, lighter at the center and darkening toward the rim. Across its entire face run faint concentric groove rings, evenly spaced and barely brighter than the disc, like the grooves of a record. The rim carries two thin rings: an outer ring in cobalt blue, and just inside it a second ring in warm gold that fades from bright at the top-left to darker at the bottom-right. Dead center sits a single icon at roughly 40% of the disc width, drawn in OUTLINE ONLY with no fill, in a uniform rounded stroke of cool grey-blue: a compact cassette seen face-on: a rounded rectangle shell with a wide window across the middle and two circles inside it for the reels. Overlapping the disc's lower-right edge, a small circular badge filled with a warm gold gradient holds a dark navy padlock — a closed shackle above a rounded body with one keyhole dot.
+
+Palette: disc gradient #1B2138 at center to #0A0E1C at rim, groove rings #212A45, outer ring cobalt #2A4BD7, inner ring gold #D9A84E fading to #8A6A2F, center icon stroke #8B93A8, lock badge gold #F0CE86 to #C08A3E with a #0B1438 padlock.
+
+Style: flat vector, clean geometry, no texture, no noise, no photorealism. The center icon must read instantly as a silhouette at small size, so keep it to a few bold strokes and drop any small internal detail.
+
+Output: 1024×1024 PNG, transparent background outside the disc. No text, no numbers, no background, no frame, no drop shadow beyond the disc itself.
+```
+### `cds` — «Компакт-диски» (4)
+
+```text
+Generate a locked-achievement placeholder medallion for a vinyl collecting app. This is NOT an enamel pin — it is the dark "still locked" badge shown in the achievements grid.
+
+Composition: one perfect circle centered on a square canvas, filling almost the whole frame. The disc is deep navy with a soft radial gradient, lighter at the center and darkening toward the rim. Across its entire face run faint concentric groove rings, evenly spaced and barely brighter than the disc. The rim carries two thin rings: an outer ring in cobalt blue, and just inside it a second ring in warm gold that fades from bright at the top-left to darker at the bottom-right. Overlapping the disc's lower-right edge, a small circular badge filled with a warm gold gradient holds a dark navy padlock — a closed shackle above a rounded body with one keyhole dot.
+
+CENTER ICON — read this carefully, it is the part that usually fails. Dead center of the medallion sits one icon at roughly 45% of the disc width, drawn in OUTLINE ONLY with no fill, in a uniform rounded stroke of cool grey-blue. The icon is a CD jewel case with the disc sliding out of it: a SQUARE with slightly rounded corners, tilted about 10 degrees off upright, and emerging from behind its right edge the right two-thirds of a compact disc, drawn as a circle with a small ring at its middle for the center hole. The square overlaps and hides the left third of the circle. A single short crescent stroke on the exposed part of the disc suggests a sheen.
+
+The square is mandatory and must dominate the icon: a bare circle would vanish into the round grooved medallion behind it, which is the failure to avoid. The icon must NOT be concentric with the medallion — the whole group sits centered, but the disc inside it is pushed to the right of the square, so nothing in the icon shares a center point with the background disc. No ring of the icon may run parallel to the medallion's groove rings.
+
+Palette: disc gradient #1B2138 at center to #0A0E1C at rim, groove rings #212A45, outer ring cobalt #2A4BD7, inner ring gold #D9A84E fading to #8A6A2F, center icon stroke #8B93A8, lock badge gold #F0CE86 to #C08A3E with a #0B1438 padlock.
+
+Style: flat vector, clean geometry, no texture, no noise, no photorealism. The icon must read instantly as a silhouette at 64 px: bold strokes, no small internal detail.
+
+Output: 1024×1024 PNG. The area outside the medallion is transparent; the medallion face itself is fully opaque — do not punch a transparent hole through the center or anywhere inside the disc. No text, no numbers, no background, no frame, no drop shadow beyond the disc itself.
+```
+### `boxsets` — «Бокс-сеты» (3)
+
+```text
+Generate a locked-achievement placeholder medallion for a vinyl collecting app. This is NOT an enamel pin — it is the dark "still locked" badge shown in the achievements grid.
+
+Composition: one perfect circle centered on a square canvas, filling almost the whole frame. The disc is deep navy with a soft radial gradient, lighter at the center and darkening toward the rim. Across its entire face run faint concentric groove rings, evenly spaced and barely brighter than the disc, like the grooves of a record. The rim carries two thin rings: an outer ring in cobalt blue, and just inside it a second ring in warm gold that fades from bright at the top-left to darker at the bottom-right. Dead center sits a single icon at roughly 40% of the disc width, drawn in OUTLINE ONLY with no fill, in a uniform rounded stroke of cool grey-blue: a boxset seen at a slight angle: a thick rectangular slab with a separate lid line across the top and two narrow sleeve edges poking out of the opening. Overlapping the disc's lower-right edge, a small circular badge filled with a warm gold gradient holds a dark navy padlock — a closed shackle above a rounded body with one keyhole dot.
+
+Palette: disc gradient #1B2138 at center to #0A0E1C at rim, groove rings #212A45, outer ring cobalt #2A4BD7, inner ring gold #D9A84E fading to #8A6A2F, center icon stroke #8B93A8, lock badge gold #F0CE86 to #C08A3E with a #0B1438 padlock.
+
+Style: flat vector, clean geometry, no texture, no noise, no photorealism. The center icon must read instantly as a silhouette at small size, so keep it to a few bold strokes and drop any small internal detail.
+
+Output: 1024×1024 PNG, transparent background outside the disc. No text, no numbers, no background, no frame, no drop shadow beyond the disc itself.
+```
+### `invitations` — «Приглашения» (7)
+
+```text
+Generate a locked-achievement placeholder medallion for a vinyl collecting app. This is NOT an enamel pin — it is the dark "still locked" badge shown in the achievements grid.
+
+Composition: one perfect circle centered on a square canvas, filling almost the whole frame. The disc is deep navy with a soft radial gradient, lighter at the center and darkening toward the rim. Across its entire face run faint concentric groove rings, evenly spaced and barely brighter than the disc, like the grooves of a record. The rim carries two thin rings: an outer ring in cobalt blue, and just inside it a second ring in warm gold that fades from bright at the top-left to darker at the bottom-right. Dead center sits a single icon at roughly 40% of the disc width, drawn in OUTLINE ONLY with no fill, in a uniform rounded stroke of cool grey-blue: an envelope seen face-on, flap closed and pointing down as a wide V, with one small circle centered on the flap where a wax seal would be. Overlapping the disc's lower-right edge, a small circular badge filled with a warm gold gradient holds a dark navy padlock — a closed shackle above a rounded body with one keyhole dot.
+
+Palette: disc gradient #1B2138 at center to #0A0E1C at rim, groove rings #212A45, outer ring cobalt #2A4BD7, inner ring gold #D9A84E fading to #8A6A2F, center icon stroke #8B93A8, lock badge gold #F0CE86 to #C08A3E with a #0B1438 padlock.
+
+Style: flat vector, clean geometry, no texture, no noise, no photorealism. The center icon must read instantly as a silhouette at small size, so keep it to a few bold strokes and drop any small internal detail.
+
+Output: 1024×1024 PNG, transparent background outside the disc. No text, no numbers, no background, no frame, no drop shadow beyond the disc itself.
+```
+
+---
+
+## Locked-заглушки особых состояний
+
+Эти две не привязаны к серии: `egg` отдаётся любой скрытой пасхалке до анлока, `trophy` — любой мета-ачивке.
+
+### `egg` — «Пасхалка (скрытая)»
+
+```text
+Generate a locked-achievement placeholder medallion for a vinyl collecting app. This is NOT an enamel pin — it is the dark "still locked" badge shown in the achievements grid.
+
+Composition: one perfect circle centered on a square canvas, filling almost the whole frame. The disc is deep navy with a soft radial gradient, lighter at the center and darkening toward the rim. Across its entire face run faint concentric groove rings, evenly spaced and barely brighter than the disc, like the grooves of a record. The rim carries two thin rings: an outer ring in cobalt blue, and just inside it a second ring in warm gold that fades from bright at the top-left to darker at the bottom-right. Dead center sits a single icon at roughly 40% of the disc width, drawn in OUTLINE ONLY with no fill, in a uniform rounded stroke of cool grey-blue: an egg standing upright, its outline a clean oval tapering at the top, split down the middle by a jagged lightning-shaped crack running from the top edge to the bottom. Overlapping the disc's lower-right edge, a small circular badge filled with a warm gold gradient holds a dark navy padlock — a closed shackle above a rounded body with one keyhole dot.
+
+Palette: disc gradient #1B2138 at center to #0A0E1C at rim, groove rings #212A45, outer ring cobalt #2A4BD7, inner ring gold #D9A84E fading to #8A6A2F, center icon stroke #8B93A8, lock badge gold #F0CE86 to #C08A3E with a #0B1438 padlock.
+
+Style: flat vector, clean geometry, no texture, no noise, no photorealism. The center icon must read instantly as a silhouette at small size, so keep it to a few bold strokes and drop any small internal detail.
+
+Output: 1024×1024 PNG, transparent background outside the disc. No text, no numbers, no background, no frame, no drop shadow beyond the disc itself.
+```
+### `trophy` — «Мета-ачивка»
+
+```text
+Generate a locked-achievement placeholder medallion for a vinyl collecting app. This is NOT an enamel pin — it is the dark "still locked" badge shown in the achievements grid.
+
+Composition: one perfect circle centered on a square canvas, filling almost the whole frame. The disc is deep navy with a soft radial gradient, lighter at the center and darkening toward the rim. Across its entire face run faint concentric groove rings, evenly spaced and barely brighter than the disc, like the grooves of a record. The rim carries two thin rings: an outer ring in cobalt blue, and just inside it a second ring in warm gold that fades from bright at the top-left to darker at the bottom-right. Dead center sits a single icon at roughly 40% of the disc width, drawn in OUTLINE ONLY with no fill, in a uniform rounded stroke of cool grey-blue: a two-handled trophy cup on a stepped base: a wide bowl tapering to a short stem, one curled handle on each side, standing on a small plinth. Overlapping the disc's lower-right edge, a small circular badge filled with a warm gold gradient holds a dark navy padlock — a closed shackle above a rounded body with one keyhole dot.
+
+Palette: disc gradient #1B2138 at center to #0A0E1C at rim, groove rings #212A45, outer ring cobalt #2A4BD7, inner ring gold #D9A84E fading to #8A6A2F, center icon stroke #8B93A8, lock badge gold #F0CE86 to #C08A3E with a #0B1438 padlock.
+
+Style: flat vector, clean geometry, no texture, no noise, no photorealism. The center icon must read instantly as a silhouette at small size, so keep it to a few bold strokes and drop any small internal detail.
+
+Output: 1024×1024 PNG, transparent background outside the disc. No text, no numbers, no background, no frame, no drop shadow beyond the disc itself.
 ```
