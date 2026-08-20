@@ -19,6 +19,7 @@ from app.models.gift_booking import GiftBooking, GiftStatus
 from app.api.auth import get_current_user, get_current_user_optional
 from app.services.cover_storage import ensure_cover_cached
 from app.services.alt_media_match import alt_media_ok
+from app.services.profile_cache import invalidate_profile_html_cache
 from app.services.radar_threshold import baseline_prices, effective_threshold
 from app.schemas.wishlist import (
     WishlistResponse,
@@ -533,6 +534,9 @@ async def add_to_wishlist(
     await db.commit()
     await db.refresh(item)
 
+    # Новый пункт должен появиться на публичной странице сразу, а не через TTL
+    await invalidate_profile_html_cache(current_user.username)
+
     # Запускаем фоновое скачивание обложки (если ещё не скачана)
     if record.discogs_id:
         await ensure_cover_cached(record.discogs_id, record.cover_image_url, db)
@@ -739,6 +743,10 @@ async def remove_from_wishlist(
 
     await db.delete(item)
     await db.commit()
+
+    # Пункт (возможно, вместе с бейджем «Забронировано») исчез — публичная
+    # страница не должна отдавать его из кэша ещё до 2 минут.
+    await invalidate_profile_html_cache(current_user.username)
 
     if pending_email_payload:
         try:
@@ -953,6 +961,12 @@ async def update_wishlist_settings(
 
     await db.commit()
 
+    # Сам HTML публичного профиля этих полей сейчас не рендерит (сетка гейтится
+    # ProfileShare.show_wishlist, бронь анонимна), но is_public меняет то, что
+    # гость может сделать со страницей, — сбрасываем кэш, чтобы страница и
+    # правила брони не расходились дольше, чем на один запрос.
+    await invalidate_profile_html_cache(current_user.username)
+
     return {"status": "ok"}
 
 
@@ -1105,6 +1119,10 @@ async def move_to_collection(
         await db.delete(item)
         await db.commit()
         await db.refresh(collection_item)
+
+    # Пункт уехал из вишлиста в коллекцию — обе вкладки публичного профиля
+    # изменились, сбрасываем кэшированный HTML.
+    await invalidate_profile_html_cache(current_user.username)
 
     # Ачивки коллекции (C-серия редкости, scale, genres, eras, geo). Прямое
     # добавление в коллекцию эмитит это событие; перенос вишлист→коллекция
