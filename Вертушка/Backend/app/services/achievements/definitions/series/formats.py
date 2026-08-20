@@ -64,10 +64,13 @@ BX2_CODE = "BX2_boxes_x5"
 BX3_CODE = "BX3_boxes_x15"
 
 #: Серии, у которых первая ачивка открывает саму полку в UI.
+#: «Истоки» гейтятся собственным пином: у тех, кто не в первой сотне,
+#: полка не показывается вовсе (литерал, чтобы не плодить импорт origins).
 GATE_CODE_BY_SERIES = {
     "cassettes": T1_CODE,
     "cds": CD1_CODE,
     "boxsets": BX1_CODE,
+    "origins": "OG1_first_hundred",
 }
 
 _FMT_CODES = {FMT1_CODE, FMT2_CODE, FMT3_CODE}

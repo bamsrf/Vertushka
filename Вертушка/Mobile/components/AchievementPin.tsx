@@ -63,6 +63,9 @@ const SERIES_PLACEHOLDERS: Record<string, ImageSourcePropType> = {
   contribution: require('../assets/achievements/placeholders/Contribution.png'),
   discography: require('../assets/achievements/placeholders/discography.png'),
   gifts: PLACEHOLDER_GIFT,
+  // «Истоки» (Первая сотня): серия гейтится на бэке и приходит только тем,
+  // у кого пин уже открыт, — locked-заглушка почти недостижима, но пусть будет.
+  origins: PLACEHOLDER_TROPHY,
 };
 
 type PinSize = 56 | 72 | 96 | 140;

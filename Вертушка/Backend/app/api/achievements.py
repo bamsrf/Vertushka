@@ -79,6 +79,11 @@ _SERIES_META: dict[str, dict[str, str]] = {
         "description_ru": "Базовые возможности.",
         "icon_emoji": "🌱",
     },
+    "origins": {
+        "title_ru": "Истоки",
+        "description_ru": "Те, кто был с самого начала.",
+        "icon_emoji": "🏁",
+    },
     "scale": {
         "title_ru": "Размер коллекции",
         "description_ru": "Рост коллекции.",

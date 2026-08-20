@@ -118,6 +118,7 @@ def reset_registry() -> None:
 def _load_definitions() -> None:
     # Импорты внутри функции, чтобы избежать циклов и регистрировать в нужном порядке.
     from app.services.achievements.definitions.series import foundation as _foundation
+    from app.services.achievements.definitions.series import origins as _origins
     from app.services.achievements.definitions.series import scale as _scale
     from app.services.achievements.definitions.series import gifts as _gifts
     from app.services.achievements.definitions.series import community as _community
@@ -135,6 +136,7 @@ def _load_definitions() -> None:
 
     # Реальная логика (Phase 0 / Phase 1)
     register(*_foundation.DEFINITIONS)
+    register(*_origins.DEFINITIONS)
     register(*_scale.DEFINITIONS)
     register(*_gifts.DEFINITIONS)
     register(*_community.DEFINITIONS)
