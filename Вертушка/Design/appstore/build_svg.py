@@ -73,13 +73,12 @@ def build(slide: dict) -> str:
     body: list[str] = []
 
     # ── фон ────────────────────────────────────────────────────────────
-    x1, y1, x2, y2 = css_angle_line(172, B.W, B.H)
+    P = B.PALETTE
+    x1, y1, x2, y2 = css_angle_line(P["angle"], B.W, B.H)
+    stops = "".join(f'<stop offset="{n(off)}" stop-color="{col}"/>' for off, col in P["stops"])
     defs.append(
         f'<linearGradient id="gBase" gradientUnits="userSpaceOnUse" '
-        f'x1="{n(x1)}" y1="{n(y1)}" x2="{n(x2)}" y2="{n(y2)}">'
-        '<stop offset="0" stop-color="#122159"/><stop offset=".32" stop-color="#1C3688"/>'
-        '<stop offset=".70" stop-color="#2E51DE"/><stop offset="1" stop-color="#1E3490"/>'
-        "</linearGradient>"
+        f'x1="{n(x1)}" y1="{n(y1)}" x2="{n(x2)}" y2="{n(y2)}">{stops}</linearGradient>'
     )
     bg = [f'<rect id="Фон-градиент" x="0" y="0" width="{B.W}" height="{B.H}" fill="url(#gBase)"/>']
 
@@ -100,8 +99,8 @@ def build(slide: dict) -> str:
     defs.append(
         f'<radialGradient id="gVign" gradientUnits="userSpaceOnUse" cx="645" cy="1286" r="{n(vry)}" '
         f'gradientTransform="translate({n(645 * (1 - sx))},0) scale({n(sx)},1)">'
-        '<stop offset=".56" stop-color="#05081A" stop-opacity="0"/>'
-        '<stop offset="1" stop-color="#05081A" stop-opacity=".38"/>'
+        f'<stop offset=".56" stop-color="{P["vignette"][0]}" stop-opacity="0"/>'
+        f'<stop offset="1" stop-color="{P["vignette"][0]}" stop-opacity="{P["vignette"][1]}"/>'
         "</radialGradient>"
     )
     bg.append(f'<rect id="Виньетка" x="0" y="0" width="{B.W}" height="{B.H}" fill="url(#gVign)"/>')
@@ -112,8 +111,9 @@ def build(slide: dict) -> str:
     for r in range(17, 647, 17):
         t = r / 850
         mask = 1.0 if t <= .30 else (1 - (t - .30) / .30 * .65 if t <= .60 else max(0.0, .35 * (1 - (t - .60) / .16)))
-        rings.append(f'<circle cx="1000" cy="430" r="{r}" stroke="#fff" stroke-opacity="{n(.30 * mask)}" fill="none"/>')
-    body.append('<g id="Канавки" opacity=".55" stroke-width="1.5">' + "".join(rings) + "</g>")
+        rings.append(f'<circle cx="1000" cy="430" r="{r}" stroke="{P["groove"]}" '
+                     f'stroke-opacity="{n(P["grooveAlpha"] * mask)}" fill="none"/>')
+    body.append(f'<g id="Канавки" opacity="{P["grooveGroup"]}" stroke-width="1.5">' + "".join(rings) + "</g>")
 
     # ── свечения ───────────────────────────────────────────────────────
     defs.append(
@@ -123,7 +123,7 @@ def build(slide: dict) -> str:
     )
     body.append(f'<ellipse id="Гало" cx="645" cy="{n(halo_cy)}" rx="560" ry="450" fill="url(#gHalo)"/>')
 
-    e = EMBER_RE.search(slide["ember"])
+    e = EMBER_RE.search(slide["pool"])
     r1, g1, b1, a1, r2, g2, b2, a2, mid = e.groups()
     defs.append(
         '<radialGradient id="gEmber">'
@@ -131,20 +131,23 @@ def build(slide: dict) -> str:
         f'<stop offset="{int(mid)/100}" stop-color="rgb({r2},{g2},{b2})" stop-opacity="{a2}"/>'
         f'<stop offset=".78" stop-color="rgb({r2},{g2},{b2})" stop-opacity="0"/></radialGradient>'
     )
-    body.append(f'<ellipse id="Ember-свечение" cx="645" cy="{n(ember_cy)}" rx="710" ry="330" fill="url(#gEmber)"/>')
+    body.append(f'<ellipse id="Пятно-под-мокапом" cx="645" cy="{n(ember_cy)}" rx="710" ry="330" fill="url(#gEmber)"/>')
 
     # ── текст ──────────────────────────────────────────────────────────
     p, tag = geo["pill"], geo["tag"]
+    tag_bg, tag_bg_a = P["tagBg"]
+    tag_br, tag_br_a = P["tagBorder"]
+    tag_ink, ink, sub_a = P["tagInk"], P["ink"], P["subAlpha"]
     txt = [
         f'<rect id="Плашка-фон" x="{n(p["x"])}" y="{n(p["y"])}" width="{n(p["w"])}" height="{n(p["h"])}" '
-        f'rx="{n(p["h"] / 2)}" fill="#E85A2A" fill-opacity=".22" stroke="#FFA984" stroke-opacity=".45" stroke-width="1.5"/>',
+        f'rx="{n(p["h"] / 2)}" fill="{tag_bg}" fill-opacity="{tag_bg_a}" stroke="{tag_br}" stroke-opacity="{tag_br_a}" stroke-width="1.5"/>',
         f'<text id="Плашка-текст" x="{n(tag["x"])}" y="{n(tag["y"])}" font-family="Rubik Mono One" '
-        f'font-size="{M.TAG["size"]}" letter-spacing="{M.TAG["track"]}" fill="#FFD9C8">{esc(slide["tag"])}</text>',
+        f'font-size="{M.TAG["size"]}" letter-spacing="{M.TAG["track"]}" fill="{tag_ink}">{esc(slide["tag"])}</text>',
     ]
     for i, (line, box) in enumerate(zip(slide["title"].split("\n"), geo["h1"]), 1):
         txt.append(
             f'<text id="Заголовок-{i}" x="{n(box["x"])}" y="{n(box["y"])}" font-family="Inter" font-weight="800" '
-            f'font-size="{M.H1["size"]}" letter-spacing="{M.H1["track"]}" fill="#FFFFFF">{esc(line)}</text>'
+            f'font-size="{M.H1["size"]}" letter-spacing="{M.H1["track"]}" fill="{ink}">{esc(line)}</text>'
         )
     defs.append(
         '<linearGradient id="gRule" x1="0" y1="0" x2="1" y2="0">'
@@ -158,7 +161,7 @@ def build(slide: dict) -> str:
     for i, (line, box) in enumerate(zip(slide["sub"].split("\n"), geo["sub"]), 1):
         txt.append(
             f'<text id="Подпись-{i}" x="{n(box["x"])}" y="{n(box["y"])}" font-family="Inter" font-weight="500" '
-            f'font-size="{M.SUB["size"]}" letter-spacing="{M.SUB["track"]}" fill="#FFFFFF" fill-opacity=".8">{esc(line)}</text>'
+            f'font-size="{M.SUB["size"]}" letter-spacing="{M.SUB["track"]}" fill="{ink}" fill-opacity="{sub_a}">{esc(line)}</text>'
         )
     body.append('<g id="Текст">' + "".join(txt) + "</g>")
 
@@ -202,6 +205,13 @@ def build(slide: dict) -> str:
         "</g>"
     )
 
+    mw = B.MASCOT_W
+    mh = round(mw * 2322 / 2322)
+    body.append(
+        f'<image id="Маскот" href="../../Logo/Статика/Vert_vpose1.png" '
+        f'x="-52" y="{n(B.H + 8 - mh)}" width="{mw}" height="{mh}"/>'
+    )
+
     return (
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{B.W}" height="{B.H}" '
         f'viewBox="0 0 {B.W} {B.H}" fill="none">\n'
@@ -212,6 +222,9 @@ def build(slide: dict) -> str:
 def main() -> None:
     OUT.mkdir(parents=True, exist_ok=True)
     for slide in B.SLIDES:
+        if not (B.SRC / slide["shot"]).exists():
+            print(f"— {slide['slug']}: нет src/{slide['shot']}, пропускаю")
+            continue
         out = OUT / f"{slide['slug']}.svg"
         out.write_text(build(slide), encoding="utf-8")
         print(f"✓ {out.relative_to(B.REPO)}  {out.stat().st_size // 1024} КБ")
