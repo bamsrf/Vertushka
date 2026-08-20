@@ -174,6 +174,17 @@ _TRANSLIT: dict[str, str] = {
 }
 
 
+def _prepend_qty(format_desc: str | None, qty_raw) -> str | None:
+    """«Vinyl, LP» + qty=10 → «10× Vinyl, LP». qty ≤ 1 ничего не меняет."""
+    try:
+        qty = int(qty_raw) if qty_raw is not None else 0
+    except (TypeError, ValueError):
+        return format_desc
+    if qty <= 1:
+        return format_desc
+    return f"{qty}× {format_desc}" if format_desc else f"{qty}×"
+
+
 def _transliterate(text: str) -> str | None:
     """Транслитерирует кириллицу → латиницу. Возвращает None если кириллицы нет."""
     if not _CYRILLIC_RE.search(text):
@@ -799,6 +810,11 @@ class DiscogsService:
         formats = data.get("formats", [])
         format_type = formats[0].get("name") if formats else None
         format_desc = ", ".join(formats[0].get("descriptions", [])) if formats else None
+        # qty («10» у бокса на 10 дисков) Discogs отдаёт отдельным атрибутом.
+        # Дописываем его в описание паттерном «N×» — его ждут media_format
+        # (пасхалка «Гигант на столе») и pricing. Из дампа qty не восстановить,
+        # поэтому единственный источник — этот парсер.
+        format_desc = _prepend_qty(format_desc, formats[0].get("qty") if formats else None)
         vinyl_color_raw = formats[0].get("text") if formats else None
 
         # Извлекаем штрихкоды

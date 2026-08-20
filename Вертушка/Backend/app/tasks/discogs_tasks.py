@@ -571,3 +571,84 @@ async def _process_price_backfill_batch(
     return processed, updated, remaining
 
 
+# --- Ночной sweep: полный payload для записей коллекций ---------------------
+
+#: Записей за один ночной прогон. Каждая — один detail-вызов Discogs с
+#: приоритетом ENRICHMENT: не конкурируем с живыми юзерами, 400/сутки — капля
+#: от лимита app-токена (86 400/сутки).
+COLLECTION_PAYLOAD_BATCH = 400
+
+
+def _collection_payload_candidates_stmt(limit: int):
+    """Записи коллекций без полного Discogs-payload.
+
+    Стаб из dump-индекса, который юзер добавил в коллекцию, но карточку не
+    открывал: rarity-флаги (is_collectible/is_hot — рыночные, из дампа не
+    восстановить) у него не появятся, пока payload не подтянут. Ключ проверки —
+    'is_collectible' в discogs_data: его кладёт только полный get_release.
+    Свежедобавленные — первыми.
+    """
+    return (
+        select(Record.id)
+        .join(CollectionItem, CollectionItem.record_id == Record.id)
+        .where(
+            Record.discogs_id.isnot(None),
+            Record.discogs_data.is_(None)
+            | ~Record.discogs_data.has_key("is_collectible"),
+        )
+        .group_by(Record.id)
+        .order_by(func.max(CollectionItem.added_at).desc())
+        .limit(limit)
+    )
+
+
+async def enrich_collection_records():
+    """Дообогащение записей коллекций полным Discogs-payload (флаги, формат).
+
+    Идёт до daily_tick ачивок (6:00), чтобы довыдача случилась тем же утром.
+    Каждая запись — в своей сессии: ошибка одной не валит прогон.
+    """
+    from app.services.rate_limiter import Priority
+
+    async with async_session_maker() as db:
+        rows = await db.execute(
+            _collection_payload_candidates_stmt(COLLECTION_PAYLOAD_BATCH)
+        )
+        record_ids = [row[0] for row in rows.all()]
+
+    if not record_ids:
+        logger.info("enrich_collection_records: кандидатов нет")
+        return
+
+    enriched = 0
+    failed = 0
+    for record_id in record_ids:
+        try:
+            # Импорт из api-модуля намеренный (как _enrich_stub_bg): вся логика
+            # применения payload живёт там, дублировать её здесь нельзя.
+            from app.api.records import (
+                _ensure_record_discogs_payload,
+                _ensure_record_price_data,
+            )
+
+            async with async_session_maker() as db:
+                rec = await db.scalar(select(Record).where(Record.id == record_id))
+                if rec is None:
+                    continue
+                await _ensure_record_discogs_payload(
+                    rec, db, priority=Priority.ENRICHMENT
+                )
+                await _ensure_record_price_data(rec, db)
+            enriched += 1
+        except Exception:  # noqa: BLE001
+            failed += 1
+            logger.exception(
+                "enrich_collection_records: запись %s не обогатилась", record_id
+            )
+
+    logger.info(
+        "enrich_collection_records: обогащено %d, ошибок %d (кандидатов %d)",
+        enriched, failed, len(record_ids),
+    )
+
+

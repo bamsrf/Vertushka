@@ -455,7 +455,9 @@ async def _ensure_record_artist_data(record: Record, db: AsyncSession) -> None:
         logger.exception("Failed to get artist thumb for artist %s", artist_id)
 
 
-async def _ensure_record_discogs_payload(record: Record, db: AsyncSession) -> None:
+async def _ensure_record_discogs_payload(
+    record: Record, db: AsyncSession, *, priority: int = Priority.DETAIL
+) -> None:
     """
     Подтягивает полный Discogs-release payload, если запись минтилась без него.
 
@@ -488,7 +490,7 @@ async def _ensure_record_discogs_payload(record: Record, db: AsyncSession) -> No
 
     try:
         discogs = DiscogsService()
-        data = await discogs.get_release(record.discogs_id, priority=Priority.DETAIL)
+        data = await discogs.get_release(record.discogs_id, priority=priority)
     except Exception:
         logger.exception("Failed to enrich record %s with Discogs payload", record.discogs_id)
         return
@@ -534,6 +536,17 @@ async def _apply_discogs_release(record: Record, data: dict, db: AsyncSession) -
     if not record.format_type and data.get("format"):
         record.format_type = data["format"]
         changed = True
+    if not record.format_description and data.get("format_description"):
+        record.format_description = data["format_description"]
+        changed = True
+    # Rarity-флаги — снапшот на момент знакомства с полным payload'ом
+    # (живого пересчёта is_hot/is_collectible осознанно нет: want/have дрейфует,
+    # но открытые ачивки ядро всё равно не отбирает). Только False→True:
+    # True мог прийти от более свежих данных, его не затираем.
+    for _flag in ("is_limited", "is_collectible", "is_hot"):
+        if data.get(_flag) and not getattr(record, _flag):
+            setattr(record, _flag, True)
+            changed = True
     # Обложка — ключевое поле для UI. Записи из dump-индекса создаются с NULL,
     # здесь добираем из полного Discogs payload (cover_image / thumb_image).
     if not record.cover_image_url and data.get("cover_image"):
@@ -705,6 +718,7 @@ async def get_or_create_record_by_discogs_id(
         genre=record_data.get("genre"),
         style=record_data.get("style"),
         format_type=record_data.get("format"),
+        format_description=record_data.get("format_description"),
         barcode=record_data.get("barcode"),
         cover_image_url=record_data.get("cover_image"),
         thumb_image_url=record_data.get("thumb_image"),
@@ -2163,6 +2177,7 @@ async def get_record_by_discogs_id(
             genre=record_data.get("genre"),
             style=record_data.get("style"),
             format_type=record_data.get("format"),
+            format_description=record_data.get("format_description"),
             barcode=record_data.get("barcode"),
             cover_image_url=record_data.get("cover_image"),
             thumb_image_url=record_data.get("thumb_image"),

@@ -110,7 +110,7 @@ async def lifespan(app: FastAPI):
         if AsyncIOScheduler is not None:
           try:
             from app.tasks.booking_tasks import send_booking_reminders, auto_release_expired_bookings, auto_cancel_unverified_bookings
-            from app.tasks.discogs_tasks import cleanup_search_cache, enrich_records_artist_data, update_prices_batch, enrich_market_covers, refresh_market_store_stats, refresh_new_releases, run_price_backfill_jobs
+            from app.tasks.discogs_tasks import cleanup_search_cache, enrich_records_artist_data, update_prices_batch, enrich_market_covers, refresh_market_store_stats, refresh_new_releases, run_price_backfill_jobs, enrich_collection_records
             from app.tasks.valuation_tasks import record_daily_snapshots
             from app.tasks.achievements_tasks import daily_tick_achievements
             from app.tasks.notification_tasks import (
@@ -140,6 +140,10 @@ async def lifespan(app: FastAPI):
             scheduler.add_job(auto_cancel_unverified_bookings, 'interval', minutes=5, id='booking_auto_cancel_unverified')
             scheduler.add_job(cleanup_search_cache, 'interval', hours=1, id='search_cache_cleanup')
             scheduler.add_job(enrich_records_artist_data, 'cron', hour=5, minute=0, id='enrich_artist_data')
+            # Полный payload (rarity-флаги, формат) для записей коллекций,
+            # добавленных без открытия карточки. До daily_tick ачивок (6:00),
+            # чтобы довыдача случилась тем же утром.
+            scheduler.add_job(enrich_collection_records, 'cron', hour=4, minute=30, id='enrich_collection_records', max_instances=1, coalesce=True)
             # Каждые 30 минут, а не раз в ночь: пачка в 50 записей в сутки на
             # всю базу означала, что импортированная коллекция заполняется
             # ценами неделями. 200 × 48 прогонов даёт ~9600/сутки при лимите
