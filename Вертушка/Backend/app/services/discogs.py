@@ -174,6 +174,26 @@ _TRANSLIT: dict[str, str] = {
 }
 
 
+def _parse_release_tracklist(data: dict) -> list[dict]:
+    """Треки релиза без служебных строк.
+
+    Discogs кладёт в tracklist и heading/index-строки (заголовки сторон,
+    секции «Bonus Tracks», названия сюит) — у них type_ != "track" и пустая
+    позиция. Без фильтра они попадали в Record.tracklist и ловились пасхалкой
+    «Спрятанный трек» как «ненумерованный трек» — на любом переиздании с
+    заголовками. Мастер-путь (_parse внутри get_master) фильтрует так же.
+    """
+    return [
+        {
+            "position": track.get("position"),
+            "title": track.get("title"),
+            "duration": track.get("duration"),
+        }
+        for track in data.get("tracklist", [])
+        if track.get("type_", "track") == "track"
+    ]
+
+
 def _prepend_qty(format_desc: str | None, qty_raw) -> str | None:
     """«Vinyl, LP» + qty=10 → «10× Vinyl, LP». qty ≤ 1 ничего не меняет."""
     try:
@@ -834,13 +854,7 @@ class DiscogsService:
             thumb_image = images[0].get("uri150")
 
         # Извлекаем треклист
-        tracklist = []
-        for track in data.get("tracklist", []):
-            tracklist.append({
-                "position": track.get("position"),
-                "title": track.get("title"),
-                "duration": track.get("duration")
-            })
+        tracklist = _parse_release_tracklist(data)
 
         # Получаем ценовую статистику — к этому моменту уже должна быть готова
         price_min = None

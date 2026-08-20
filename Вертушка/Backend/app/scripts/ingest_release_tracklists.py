@@ -65,6 +65,11 @@ def parse(dump: str, ids_path: str, out: str) -> None:
                             continue
                         pos = (tr.findtext("position") or "").strip()
                         dur = (tr.findtext("duration") or "").strip()
+                        # Heading-строка (заголовок стороны/секции): ни позиции,
+                        # ни длительности. Это не трек — пасхалка «Спрятанный
+                        # трек» ловила бы её как ненумерованный скрытый.
+                        if not pos and not dur:
+                            continue
                         tl.append({"position": pos, "title": title, "duration": dur or None})
                 if tl:
                     w.writerow([rid, json.dumps(tl, ensure_ascii=False)])

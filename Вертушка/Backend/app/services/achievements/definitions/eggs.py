@@ -55,9 +55,11 @@ R_HIDDEN_TRACK = "R_hidden_track"
 MX_NIGHT_CRATE = "MX_night_crate"
 
 #: Маркеры скрытого трека в названии. Ненумерованный трек ловится отдельно.
+#: «bonus» здесь не место: обычный пронумерованный бонус-трек переиздания —
+#: это не скрытый трек, а токен матчил бы половину каталога.
 _HIDDEN_TITLE_TOKENS = (
-    "hidden", "untitled", "secret", "bonus",
-    "скрыт", "без названия", "бонус",
+    "hidden", "untitled", "secret",
+    "скрыт", "без названия",
 )
 
 EXACT_COUNT_COOLDOWN = timedelta(hours=24)
@@ -222,9 +224,16 @@ async def _evaluate_hidden_track(db, user_id, payload, unlocked_now) -> EvalResu
 
     План предлагал сравнивать «число треков > заявленного», но заявленного
     количества в данных нет — Discogs отдаёт только сам треклист. Зато скрытый
-    трек виден по форме записи: у него ПУСТАЯ позиция при непустом названии
+    трек виден по форме записи: у него ПУСТАЯ позиция при НЕПУСТОЙ длительности
     (ненумерованный трек), либо название прямо помечено как hidden/untitled.
     Именно так лежат ранние прессы, где бонус спрятан в конце последней стороны.
+
+    Длительность обязательна не случайно: в исторических Record.tracklist (и в
+    дамповой таблице треклистов) лежат heading-строки Discogs — заголовки
+    сторон и секций. У них позиция тоже пустая, но длительности нет, а у
+    настоящего ненумерованного трека она обычно проставлена. Новые обогащения
+    heading-строки уже фильтруют на парсе (см. discogs._parse_release_tracklist),
+    но старые данные никто не перечитает — эвристика держит и их.
     """
     for record, _added in await _main_collection_items(db, user_id):
         for track in record.tracklist or []:
@@ -234,7 +243,8 @@ async def _evaluate_hidden_track(db, user_id, payload, unlocked_now) -> EvalResu
             if not title:
                 continue
             position = (track.get("position") or "").strip()
-            if not position:
+            duration = (track.get("duration") or "").strip()
+            if not position and duration:
                 return EvalResult(unlocked=True)
             low = title.lower()
             if any(token in low for token in _HIDDEN_TITLE_TOKENS):
