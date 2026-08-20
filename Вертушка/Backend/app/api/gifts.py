@@ -1036,6 +1036,10 @@ async def reject_booking(
     booking.verify_token = None  # неподтверждённую бронь тоже закрываем начисто
     await db.commit()
 
+    # Пункт снова свободен — публичная страница владельца не должна
+    # держать «Забронировано» из кэша.
+    await invalidate_profile_html_cache(current_user.username)
+
     logger.info(
         "gift_rejected_by_owner",
         extra={"booking_id": str(booking.id), "owner_id": str(current_user.id)},
