@@ -220,6 +220,13 @@ class Settings(BaseSettings):
     # Email-верификация дарителя (под флагом — включать только когда SMTP стабилен)
     gift_booking_require_email_verification: bool = Field(default=False, alias="GIFT_BOOKING_REQUIRE_EMAIL_VERIFICATION")
     gift_booking_verification_window_hours: int = Field(default=24, alias="GIFT_BOOKING_VERIFICATION_WINDOW_HOURS")
+    # Короткий стартовый holding-TTL (в днях) для АНОНИМНОЙ неподтверждённой брони
+    # (booked_by_user_id IS NULL, verification OFF). 0 = выключено = прежние 60 дней.
+    # Смысл: griefer с ротацией email держит пункт не 60 дней, а N — истёкшую бронь
+    # снимает почасовой auto_release_expired_bookings. Зарегистрированные дарители и
+    # флоу с email-верификацией не затрагиваются. Дефолт безопасный (0), чтобы не
+    # ломать честный «подарил без регистрации»; на проде включать осознанно (напр. 14).
+    gift_booking_anon_hold_days: int = Field(default=0, alias="GIFT_BOOKING_ANON_HOLD_DAYS")
 
     # ── Remote config: force-update gate ────────────────────────────────────
     # Дефолт для GET /api/config. Поднимается на лету через
