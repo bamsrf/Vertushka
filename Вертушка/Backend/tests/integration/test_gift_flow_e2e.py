@@ -11,6 +11,8 @@
   - отказ гасит вопрос навсегда;
   - когда брони нет, старое поведение сохраняется — пункт уезжает из вишлиста.
 """
+from uuid import UUID
+
 import pytest
 from sqlalchemy import select
 
@@ -33,6 +35,29 @@ async def book(client, item_id) -> dict:
     )
     assert response.status_code == 201, response.text
     return response.json()
+
+
+async def verify_email(client, db, booking_id: str) -> None:
+    """Подтверждает владение email через реальный PUT /confirm.
+
+    Флаг gift_booking_require_email_verification в тестах выключен, поэтому
+    бронь создаётся сразу BOOKED без verify_token. Эмулируем включённую
+    верификацию: возвращаем бронь в PENDING с токеном и подтверждаем через
+    эндпоинт — именно он проставляет verified_at, по которому «Я дарю»
+    матчит анонимные брони к аккаунту по gifter_email.
+    """
+    booking = await db.scalar(
+        select(GiftBooking).where(GiftBooking.id == UUID(booking_id))
+    )
+    token = f"tok-{booking_id[:8]}"
+    booking.status = GiftStatus.PENDING
+    booking.verify_token = token
+    await db.commit()
+
+    response = await client.put(
+        f"/gifts/{booking_id}/confirm", params={"token": token}
+    )
+    assert response.status_code == 200, response.text
 
 
 async def add_to_collection(client, collection_id, record) -> dict:
@@ -218,6 +243,8 @@ async def test_given_list_survives_completion(
     wished = await make_record(master="m1", year=2023)
     item = await wishlist_item(wished)
     booked = await book(client, item.id)
+    # Анонимная бронь попадает в «Я дарю» по email только после подтверждения.
+    await verify_email(client, db, booked["id"])
 
     # Пока бронь активна, даритель видит забронированную версию.
     as_user(gifter)
@@ -257,6 +284,7 @@ async def test_manual_completion_also_keeps_the_record(
     record = await make_record()
     item = await wishlist_item(record)
     booked = await book(client, item.id)
+    await verify_email(client, db, booked["id"])
 
     done = await client.put(f"/gifts/me/received/{booked['id']}/complete")
     assert done.status_code == 200, done.text
@@ -266,3 +294,72 @@ async def test_manual_completion_also_keeps_the_record(
     assert len(rows) == 1
     assert rows[0]["status"] == "completed"
     assert rows[0]["record"]["id"] == str(record.id)
+
+
+async def test_spoofed_email_does_not_leak_booking_to_victim(
+    client, make_record, wishlist_item, gifter, as_user
+):
+    """Спуф чужого email в форме брони не подсовывает жертве фантомный подарок.
+
+    Атакующий бронирует анонимно, указав gifter_email жертвы. Раньше «Я дарю»
+    матчил по одной строке email — жертва видела чужую бронь целиком: личность
+    получателя и cancel_token (могла отменить бронь, а спуфер — засорять её
+    раздел). Непроверенный email-матч теперь скрыт полностью.
+    """
+    record = await make_record()
+    # book() шлёт gifter_email=gifter@example.com — это email «жертвы» gifter,
+    # владение которым никто не подтверждал.
+    await book(client, (await wishlist_item(record)).id)
+
+    as_user(gifter)
+    response = await client.get("/gifts/me/given")
+    assert response.status_code == 200, response.text
+    assert response.json() == [], "непроверенный email-матч не должен отдаваться"
+
+
+async def test_confirmed_email_booking_appears_in_given(
+    client, db, make_record, wishlist_item, owner, gifter, as_user
+):
+    """Цель email-ветки жива: подтверждённая анонимная бронь видна целиком."""
+    record = await make_record()
+    booked = await book(client, (await wishlist_item(record)).id)
+    await verify_email(client, db, booked["id"])
+
+    as_user(gifter)
+    rows = (await client.get("/gifts/me/given")).json()
+    assert [g["id"] for g in rows] == [booked["id"]]
+    assert rows[0]["cancel_token"] == booked["cancel_token"]
+    assert rows[0]["for_user"]["username"] == owner.username
+
+
+async def test_authenticated_booking_shows_fully_without_email_match(
+    client, make_record, wishlist_item, owner, gifter, as_user
+):
+    """Своя бронь (booked_by_user_id) показывается полностью без email-ветки.
+
+    Даритель залогинен и указал в форме сторонний адрес — бронь всё равно
+    привязана к аккаунту и видна в «Я дарю» с cancel_token и получателем.
+    """
+    from app.api.auth import get_current_user_optional
+    from app.main import app
+
+    record = await make_record()
+    item = await wishlist_item(record)
+
+    app.dependency_overrides[get_current_user_optional] = lambda: gifter
+    response = await client.post(
+        "/gifts/book",
+        json={
+            "wishlist_item_id": str(item.id),
+            "gifter_name": "Даритель",
+            "gifter_email": "other-address@example.com",
+        },
+    )
+    assert response.status_code == 201, response.text
+    booked = response.json()
+
+    as_user(gifter)
+    rows = (await client.get("/gifts/me/given")).json()
+    assert [g["id"] for g in rows] == [booked["id"]]
+    assert rows[0]["cancel_token"] == booked["cancel_token"]
+    assert rows[0]["for_user"]["username"] == owner.username
