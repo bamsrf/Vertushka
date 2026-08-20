@@ -30,6 +30,7 @@ from app.schemas.wishlist import (
     GiftRecipientInfo,
 )
 from app.schemas.record import RecordBrief
+from app.services.profile_cache import invalidate_profile_html_cache
 from app.utils.security import generate_random_token
 
 router = APIRouter()
@@ -277,6 +278,13 @@ async def book_gift(
             detail="Этот подарок только что забронировал кто-то другой"
         )
 
+    # Бейдж «Забронировано» вшит в кэшированный HTML публичного профиля —
+    # сбрасываем сразу, иначе следующий гость до 2 минут видит пункт
+    # «свободным» и упирается в 400 при попытке брони. PENDING тоже держит
+    # пункт занятым (шаблон проверяет только наличие gift_booking).
+    if owner:
+        await invalidate_profile_html_cache(owner.username)
+
     logger.info(
         "gift_booked",
         extra={
@@ -507,6 +515,13 @@ async def confirm_booking(
     booking.verify_token = None
     await db.commit()
 
+    # Кэш публичного профиля владельца: статус брони изменился.
+    if booking.wishlist_item and booking.wishlist_item.wishlist \
+            and booking.wishlist_item.wishlist.user:
+        await invalidate_profile_html_cache(
+            booking.wishlist_item.wishlist.user.username
+        )
+
     # Сейчас можно уведомить владельца — ждали именно этого момента
     if booking.wishlist_item and booking.wishlist_item.wishlist and booking.wishlist_item.wishlist.user:
         try:
@@ -575,17 +590,23 @@ async def cancel_booking(
     # Снимок данных для письма владельцу — берём до обнуления связи
     item = booking.wishlist_item
     owner_email = None
+    owner_username = None
     record_title = None
     if item is not None:
         record_title = item.record.title if item.record else None
         if item.wishlist and item.wishlist.user:
             owner_email = item.wishlist.user.email
+            owner_username = item.wishlist.user.username
 
     booking.status = GiftStatus.CANCELLED
     booking.cancelled_at = datetime.utcnow()
     booking.cancellation_reason = "cancelled_by_gifter"
     booking.wishlist_item_id = None  # освобождаем пункт сразу — иначе уникальный индекс держит его «занятым»
     await db.commit()
+
+    # Пункт снова свободен — публичная страница не должна показывать
+    # «Забронировано» ещё 2 минуты из кэша.
+    await invalidate_profile_html_cache(owner_username)
 
     # Уведомляем владельца, что пункт снова свободен (анонимно)
     if owner_email and record_title:
@@ -838,6 +859,11 @@ async def _finalize_completion(
             logger.exception("Failed to create gift_confirmed notification")
 
     await db.commit()
+
+    # Пункт ушёл из вишлиста (и, возможно, пластинка появилась в коллекции) —
+    # сбрасываем кэшированный HTML публичного профиля получателя.
+    await invalidate_profile_html_cache(current_user.username)
+
     await send_pending_gift_email(collection_item)
 
     # Ачивки серии «Дарящая рука» + сезонные (после commit, в своей транзакции)

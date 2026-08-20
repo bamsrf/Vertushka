@@ -18,6 +18,7 @@ from sqlalchemy.orm import joinedload, selectinload
 from app.database import get_db
 from app.config import get_settings
 from app.services.cache import cache
+from app.services.profile_cache import PROFILE_HTML_NS, PROFILE_HTML_TTL
 from app.models.user import User
 from app.models.record import Record
 from app.models.collection import Collection, CollectionItem
@@ -324,10 +325,13 @@ async def support_page(request: Request):
 # ── Кэш публичного профиля ──────────────────────────────────────────────────
 # Страница собирается из полутора десятков запросов (стоимость, рейлы,
 # fun stats, офферы) — на популярном профиле это заметная доля бюджета пула БД.
-# Кэшируем готовый HTML в Redis: TTL короткий, поэтому инвалидация не нужна —
-# правки владельца доезжают максимум через 2 минуты.
-_PROFILE_HTML_NS = "web_profile_html"
-_PROFILE_HTML_TTL = 120
+# Кэшируем готовый HTML в Redis. Косметические правки владельца доезжают через
+# TTL (максимум 2 минуты), а всё, что меняет состояние брони/пунктов вишлиста
+# (бейдж «Забронировано» вшит в HTML), сбрасывает кэш немедленно через
+# app.services.profile_cache.invalidate_profile_html_cache — иначе гость
+# кликал бы по «свободному» пункту и получал «уже забронировано».
+_PROFILE_HTML_NS = PROFILE_HTML_NS
+_PROFILE_HTML_TTL = PROFILE_HTML_TTL
 _PROFILE_VIEWS_NS = "profile_views"
 _PROFILE_VIEWS_FLUSH_EVERY = 10
 
