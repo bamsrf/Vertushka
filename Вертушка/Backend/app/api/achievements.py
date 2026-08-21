@@ -239,7 +239,6 @@ _NO_ART_CODES: frozenset[str] = frozenset({
     "FMT2_multiformat",
     "FMT3_all_formats",
     "META_eras",
-    "OG1_first_hundred",
     # Пасхалки: до анлока показывают яйцо, после — потребовали бы свой пин
     "E_glass_eye",
     "E_spin",

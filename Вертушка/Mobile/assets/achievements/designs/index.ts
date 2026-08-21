@@ -107,6 +107,7 @@ export const DESIGN_PNGS: Record<string, ImageSourcePropType> = {
   mv6_million: require('./mv6_million.png'),
   mv_crown_jewel: require('./mv_crown_jewel.png'),
   mx_night_crate: require('./mx_night_crate.png'),
+  og1_first_hundred: require('./og1_first_hundred.png'),
   r_hidden_track: require('./r_hidden_track.png'),
   r_palindrome: require('./r_palindrome.png'),
   r_pi: require('./r_pi.png'),
