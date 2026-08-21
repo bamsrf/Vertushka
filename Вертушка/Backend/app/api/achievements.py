@@ -25,7 +25,6 @@ from app.services.achievements.events import (
     VINYL_SPUN_33,
 )
 from app.services.achievements.evaluator import emit_event
-from app.services.achievements.evidence import evidence_text
 from app.services.achievements.levels import counts_toward_level, weight_for_code
 from app.schemas.achievement import (
     AchievementItem,
@@ -217,9 +216,6 @@ def _build_item(
             ua.xp_awarded
             if is_unlocked and ua is not None and ua.xp_awarded is not None
             else weight_for_code(defn.code)
-        ),
-        evidence_text=(
-            evidence_text(ua.ach_metadata) if is_unlocked and ua is not None else None
         ),
     )
 
