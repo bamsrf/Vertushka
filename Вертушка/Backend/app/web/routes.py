@@ -302,6 +302,26 @@ async def terms_of_service(request: Request):
     return templates.TemplateResponse("terms.html", {"request": request})
 
 
+@router.get("/admin/reports", response_class=HTMLResponse, include_in_schema=False)
+async def admin_reports_page(request: Request):
+    """Разбор жалоб на UGC — единственный интерфейс модерации.
+
+    Каркас отдаётся кому угодно: данные и действия живут за require_staff в
+    /api/reports, страница только рисует ответы. Своей аутентификации у неё
+    нет намеренно — cookie-сессия означала бы второй путь входа и CSRF, а
+    здесь достаточно того же JWT, что у мобилки.
+
+    Отдаётся с того же origin, что и API: CORS пускает только основной домен,
+    и страница, открытая с файла или чужого хоста, молча умирала бы на
+    preflight.
+    """
+    return templates.TemplateResponse(
+        "admin_reports.html",
+        {"request": request},
+        headers={"X-Robots-Tag": "noindex, nofollow"},
+    )
+
+
 @router.get("/support", response_class=HTMLResponse)
 async def support_page(request: Request):
     """Страница «Поддержать проект».
