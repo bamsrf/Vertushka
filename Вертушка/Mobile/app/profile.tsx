@@ -687,8 +687,8 @@ export default function ProfileScreen() {
             style={styles.settingsItem}
             onPress={() => Linking.openURL('mailto:support@vinyl-vertushka.store')}
           >
-            <Icon name="help-circle-outline" size={24} color={Colors.royalBlue} />
-            <Text style={styles.settingsItemText}>Помощь</Text>
+            <Icon name="paper-plane-outline" size={24} color={Colors.royalBlue} />
+            <Text style={styles.settingsItemText}>Напишите нам</Text>
           </TouchableOpacity>
 
           {/* DEV: галерея иконок B2 — убрать перед релизом */}

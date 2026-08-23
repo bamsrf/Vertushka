@@ -120,7 +120,7 @@ DEFINITIONS: list[AchievementDefinition] = [
         is_hidden=False,
         triggers=(COLLECTION_ITEM_ADDED, DAILY_TICK),
         evaluator=_evaluate_first_hundred,
-        flavor_ru="Ты был здесь, когда полки только начинались.",
+        flavor_ru="Первый тираж. Его не допечатают.",
         icon_slug="og1_first_hundred",
     ),
 ]
