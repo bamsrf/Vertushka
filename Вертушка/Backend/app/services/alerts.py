@@ -52,11 +52,16 @@ def _should_send(key: str) -> tuple[bool, int]:
     return True, _suppressed.pop(key, 0)
 
 
-async def send_alert(key: str, title: str, body: str = "") -> None:
+async def send_alert(
+    key: str, title: str, body: str = "", emoji: str = "🔴"
+) -> None:
     """Отправить аларм. Никогда не бросает исключение наружу.
 
     key — идентификатор класса проблемы («http_500:/api/records»), по нему
-    работает троттлинг. title/body — что показать человеку.
+    работает троттлинг. title/body — что показать человеку. emoji — маркер
+    в начале строки: дефолтный 🔴 для поломок, но канал возят и события,
+    которые не являются авариями (новый UGC), а красный кружок на них
+    обесценивает красный кружок на настоящей пятисотке.
     """
     if not _enabled():
         return
@@ -66,7 +71,7 @@ async def send_alert(key: str, title: str, body: str = "") -> None:
         return
 
     settings = get_settings()
-    text = f"🔴 <b>{html.escape(title)}</b>"
+    text = f"{emoji} <b>{html.escape(title)}</b>"
     if body:
         text += f"\n\n<pre>{html.escape(body[:1500])}</pre>"
     if suppressed:
@@ -94,7 +99,9 @@ async def send_alert(key: str, title: str, body: str = "") -> None:
         logger.warning("Ошибка отправки Telegram alert", exc_info=True)
 
 
-def fire_and_forget(key: str, title: str, body: str = "") -> None:
+def fire_and_forget(
+    key: str, title: str, body: str = "", emoji: str = "🔴"
+) -> None:
     """Отправить аларм, не дожидаясь результата.
 
     Для вызова из обработчиков запросов: пользователь не должен ждать,
@@ -103,7 +110,7 @@ def fire_and_forget(key: str, title: str, body: str = "") -> None:
     if not _enabled():
         return
     try:
-        task = asyncio.create_task(send_alert(key, title, body))
+        task = asyncio.create_task(send_alert(key, title, body, emoji))
         # Держим ссылку, иначе GC может забрать таску до завершения.
         _background_tasks.add(task)
         task.add_done_callback(_background_tasks.discard)

@@ -24,7 +24,7 @@ from app.models.user import User
 from app.models.record import Record
 from app.api.auth import get_current_user, get_current_user_optional
 from app.api.app_config import require_flag
-from app.services import quota
+from app.services import alerts, quota
 from app.services.cover_quality import is_thumb_grade
 from app.utils.rate_limit import limiter
 from app.services.exchange import get_usd_rub_rate
@@ -1903,6 +1903,29 @@ async def create_user_submitted_record(
         current_user.id,
         COLLECTION_ITEM_ADDED,
         {"record_id": rec.id, "record": rec},
+    )
+
+    # Аларм в Telegram. Премодерации у ручных релизов нет (§6, revised
+    # 2026-06-17): запись создаётся сразу approved и видна всем. Значит
+    # единственный сигнал о плохом контенте — жалоба, то есть кто-то уже
+    # успел его увидеть. Аларм на публикацию даёт ленту «что залили» до
+    # того, как это станет жалобой. Ключ троттлинга общий: всплеск заливок
+    # схлопнется в одно сообщение со счётчиком.
+    alerts.fire_and_forget(
+        key="user_record_created",
+        title="Новый ручной релиз",
+        emoji="💿",
+        body="\n".join(
+            filter(
+                None,
+                [
+                    f"{rec.artist} — {rec.title}",
+                    f"id: {rec.id}",
+                    f"автор: @{current_user.username}",
+                    f"формат: {rec.format_type}" if rec.format_type else None,
+                ],
+            )
+        ),
     )
 
     return RecordResponse.model_validate(rec)
