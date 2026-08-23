@@ -82,6 +82,7 @@ import {
   GoogleLogoIcon,
   EnvelopeIcon,
   MapTrifoldIcon,
+  PaperPlaneTiltIcon,
   ScanIcon,
   SlidersIcon,
   PencilIcon,
@@ -226,6 +227,7 @@ const REGISTRY = {
   'cloud-slash':         CloudSlashIcon,
   'lock-open':           LockOpenIcon,
   'question':            QuestionIcon,
+  'paper-plane-tilt':    PaperPlaneTiltIcon,
   'keyhole':             KeyholeIcon,
 
   // UI Control
@@ -350,6 +352,8 @@ const IONICON_ALIASES = {
   'cloud-offline-outline':  'cloud-slash',
   'lock-open-outline':      'lock-open',
   'help-circle-outline':    'question',
+  'paper-plane-outline':    'paper-plane-tilt',
+  'send-outline':           'paper-plane-tilt',
   'keypad-outline':         'keyhole',
 
   // UI Control
