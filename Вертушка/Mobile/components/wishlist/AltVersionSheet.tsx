@@ -8,11 +8,12 @@ import React, { forwardRef, useImperativeHandle, useRef, useState, useCallback }
 import { StyleSheet, Text, View, TouchableOpacity, Image } from 'react-native';
 import {
   BottomSheetModal,
-  BottomSheetView,
+  BottomSheetScrollView,
   BottomSheetBackdrop,
   type BottomSheetBackdropProps,
 } from '@gorhom/bottom-sheet';
 import { useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, Typography } from '../../constants/theme';
 import { useCollectionStore } from '../../lib/store';
@@ -47,6 +48,7 @@ const fmt = (n: number) => Math.round(n).toLocaleString('ru-RU');
 
 export const AltVersionSheet = forwardRef<AltVersionSheetRef, Props>(({ onConfirm }, ref) => {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const sheetRef = useRef<BottomSheetModal>(null);
   const [data, setData] = useState<AltVersionSheetData | null>(null);
   const setAcceptAlt = useCollectionStore((s) => s.setWishlistAcceptAlt);
@@ -148,12 +150,19 @@ export const AltVersionSheet = forwardRef<AltVersionSheetRef, Props>(({ onConfir
     <BottomSheetModal
       ref={sheetRef}
       enableDynamicSizing
+      topInset={insets.top + 8}
       onDismiss={runPending}
       backdropComponent={renderBackdrop}
       handleIndicatorStyle={styles.handle}
       backgroundStyle={styles.sheetBg}
     >
-      <BottomSheetView style={styles.container}>
+      {/* Скроллящийся контент, а не BottomSheetView. Содержимое здесь высокое
+          (обложка, четыре строки текста, цена, карточка отличий, ссылка и две
+          кнопки), и на компактных экранах оно перерастало высоту листа. Дети,
+          вылезшие за границы контейнера, на iOS продолжают РИСОВАТЬСЯ, но
+          hit-test их отбрасывает: кнопка видна и не нажимается. Ровно та же
+          болезнь, что была у «Сохранить» в шторке порога. */}
+      <BottomSheetScrollView contentContainerStyle={styles.container}>
         <TouchableOpacity
           onPress={onOpenRelease}
           disabled={!canOpen}
@@ -209,7 +218,8 @@ export const AltVersionSheet = forwardRef<AltVersionSheetRef, Props>(({ onConfir
             <Text style={styles.secondaryTxt}>{accepted ? 'Нет, только моя версия' : 'Нет'}</Text>
           </TouchableOpacity>
         </View>
-      </BottomSheetView>
+        <View style={{ height: Math.max(insets.bottom, 12) }} />
+      </BottomSheetScrollView>
     </BottomSheetModal>
   );
 });
@@ -220,7 +230,7 @@ export default AltVersionSheet;
 const styles = StyleSheet.create({
   sheetBg: { backgroundColor: Colors.surface, borderRadius: 28 },
   handle: { backgroundColor: '#D3D7E6', width: 40 },
-  container: { alignItems: 'center', paddingHorizontal: 24, paddingBottom: 34, paddingTop: 4 },
+  container: { alignItems: 'center', paddingHorizontal: 24, paddingBottom: 12, paddingTop: 4 },
   cover: { width: 76, height: 76, borderRadius: 16, marginBottom: 16, borderWidth: 2, borderColor: '#F4A06A' },
   coverPlaceholder: { backgroundColor: Colors.surfaceHover },
   title: { ...Typography.h2, color: Colors.text, textAlign: 'center' },
