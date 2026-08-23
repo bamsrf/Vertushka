@@ -179,6 +179,9 @@ class RecordSearchResult(BaseModel):
     is_hot: bool = False
     # Визуальная близость фото к обложке (косинус CLIP, 0..1). None если re-rank не делался.
     match_score: float | None = None
+    # Скан по штрихкоду: True — релиз действительно несёт отсканированный код,
+    # False — издание-сиблинг того же мастера (другой год/страна/пресс).
+    is_exact_match: bool = False
 
 
 class RecordSearchResponse(BaseModel):
