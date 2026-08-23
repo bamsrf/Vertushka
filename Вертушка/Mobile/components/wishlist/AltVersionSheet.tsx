@@ -52,6 +52,21 @@ export const AltVersionSheet = forwardRef<AltVersionSheetRef, Props>(({ onConfir
   const setAcceptAlt = useCollectionStore((s) => s.setWishlistAcceptAlt);
   const rejectAlt = useCollectionStore((s) => s.rejectWishlistAlt);
 
+  // Побочные эффекты запускаем строго ПОСЛЕ того, как шит закрылся. Раньше они
+  // шли сразу за dismiss(), и родительский setState (перезагрузка радара) или
+  // навигация перерисовывали дерево во время анимации закрытия — она обрывалась,
+  // и шит оставался висеть. Копим колбэк здесь, выполняем по onDismiss.
+  const pendingRef = useRef<(() => void) | null>(null);
+  const closeThen = useCallback((fn?: () => void) => {
+    pendingRef.current = fn ?? null;
+    sheetRef.current?.dismiss();
+  }, []);
+  const runPending = useCallback(() => {
+    const fn = pendingRef.current;
+    pendingRef.current = null;
+    fn?.();
+  }, []);
+
   const present = useCallback((d: AltVersionSheetData) => {
     setData(d);
     sheetRef.current?.present();
@@ -69,30 +84,41 @@ export const AltVersionSheet = forwardRef<AltVersionSheetRef, Props>(({ onConfir
   const accepted = data?.accepted === true;
 
   const onYes = () => {
-    sheetRef.current?.dismiss();
-    if (!data) return;
-    if (accepted) { onConfirm?.(data); return; }
-    setAcceptAlt(data.itemId, true)
-      .then(() => { toast.success('Следим и за этой версией'); onConfirm?.(data); })
-      .catch(() => toast.error('Не удалось сохранить'));
+    if (!data) { closeThen(); return; }
+    // «Продолжить следить» при уже принятом аналоге ничего не меняет — это
+    // чистое подтверждение. Просто закрываемся: дёргать onConfirm (а он
+    // перезагружает радар) тут не за чем, и именно этот лишний setState рвал
+    // анимацию закрытия.
+    if (accepted) { closeThen(); return; }
+    closeThen(() => {
+      setAcceptAlt(data.itemId, true)
+        .then(() => { toast.success('Следим и за этой версией'); onConfirm?.(data); })
+        .catch(() => toast.error('Не удалось сохранить'));
+    });
   };
 
   // «Нет» — явный отказ: этот прессинг больше не предлагаем, радар снова
   // ищет ровно ту версию, которая в вишлисте.
   const onNo = () => {
-    sheetRef.current?.dismiss();
-    if (!data) return;
-    if (!data.altRecordId) {
-      if (accepted) {
-        setAcceptAlt(data.itemId, false)
-          .then(() => { toast.success('Следим только за своей версией'); onConfirm?.(data); })
-          .catch(() => toast.error('Не удалось сохранить'));
-      }
+    if (!data) { closeThen(); return; }
+    const { itemId, altRecordId } = data;
+    if (!altRecordId) {
+      closeThen(
+        accepted
+          ? () => {
+              setAcceptAlt(itemId, false)
+                .then(() => { toast.success('Следим только за своей версией'); onConfirm?.(data); })
+                .catch(() => toast.error('Не удалось сохранить'));
+            }
+          : undefined,
+      );
       return;
     }
-    rejectAlt(data.itemId, data.altRecordId)
-      .then(() => { toast.success('Больше не предлагаем эту версию'); onConfirm?.(data); })
-      .catch(() => toast.error('Не удалось сохранить'));
+    closeThen(() => {
+      rejectAlt(itemId, altRecordId)
+        .then(() => { toast.success('Больше не предлагаем эту версию'); onConfirm?.(data); })
+        .catch(() => toast.error('Не удалось сохранить'));
+    });
   };
 
   // Открыть карточку самого прессинга: до этого решение «следить / не следить»
@@ -105,8 +131,8 @@ export const AltVersionSheet = forwardRef<AltVersionSheetRef, Props>(({ onConfir
     if (data.altCoverUrl) params.set('previewCover', data.altCoverUrl);
     if (data.altYear) params.set('previewYear', String(data.altYear));
     const qs = params.toString();
-    sheetRef.current?.dismiss();
-    router.push(`/record/${data.altRecordId}${qs ? `?${qs}` : ''}` as any);
+    const href = `/record/${data.altRecordId}${qs ? `?${qs}` : ''}`;
+    closeThen(() => router.push(href as any));
   };
 
   const cover = data?.altCoverUrl ?? null;
@@ -122,6 +148,7 @@ export const AltVersionSheet = forwardRef<AltVersionSheetRef, Props>(({ onConfir
     <BottomSheetModal
       ref={sheetRef}
       enableDynamicSizing
+      onDismiss={runPending}
       backdropComponent={renderBackdrop}
       handleIndicatorStyle={styles.handle}
       backgroundStyle={styles.sheetBg}
