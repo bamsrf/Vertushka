@@ -1,7 +1,7 @@
 /**
  * Экран сканера штрихкодов и распознавания обложки (центральный таб)
  */
-import { useState, useRef, useCallback, useMemo } from 'react';
+import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -68,6 +68,7 @@ export default function ScannerScreen() {
     isLoading,
     searchByBarcode,
     searchByCover,
+    refreshScanCovers,
     clearScan,
   } = useScannerStore();
   const { addToCollection, addToWishlist, collectionItems, wishlistItems, isOwned, fetchOwnedIds } = useCollectionStore();
@@ -79,6 +80,20 @@ export default function ScannerScreen() {
     if (!scanResults.some((r) => r.is_exact_match)) return -1;
     return scanResults.findIndex((r) => r.is_exact_match === false);
   }, [scanResults]);
+
+  // Cover-retry: сиблинги из dump-индекса при первом скане приходят без
+  // обложек — бэкенд дописывает их фоновым прогревом за секунды (тот же
+  // паттерн, что в artist/[id].tsx). Пока модалка открыта, до двух повторов
+  // подтягиваем только обложки; закрытие модалки снимает таймеры.
+  useEffect(() => {
+    if (!showResults || scanMode !== 'barcode') return;
+    if (!scanResults.some((r) => !r.cover_image_url && !r.thumb_image_url)) return;
+    const timers = [3000, 7000].map((delay) =>
+      setTimeout(() => { refreshScanCovers(); }, delay)
+    );
+    return () => timers.forEach(clearTimeout);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showResults]);
 
   const handleBarCodeScanned = async ({ data }: { data: string }) => {
     if (!isScanning || isLoading) return;

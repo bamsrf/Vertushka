@@ -78,7 +78,11 @@ def dump_row(discogs_id, year, master_id=None, fmt="Vinyl, LP"):
 def _mute_cover_warm(monkeypatch):
     from app.services import cover_warm
 
+    async def _noop_inline(ids, timeout):
+        return None
+
     monkeypatch.setattr(cover_warm, "schedule_warm_dump_covers", lambda ids: None)
+    monkeypatch.setattr(cover_warm, "warm_dump_covers_inline", _noop_inline)
 
 
 async def test_scan_returns_exact_matches_plus_master_siblings(monkeypatch):
@@ -95,14 +99,19 @@ async def test_scan_returns_exact_matches_plus_master_siblings(monkeypatch):
             dump_row("222", 1984),
             dump_row("333", 2011),
         ]},
+        # 4. перечитка обложек после инлайн-прогрева: 222 успел прогреться
+        {"rows": [{"discogs_id": "222", "cover_image_url": "https://caa/222.jpg"}]},
     )
 
     results = await scan_barcode(barcode="0093652", current_user=None, db=db)
 
     assert [r.discogs_id for r in results] == ["111", "222", "333"]
     assert [r.is_exact_match for r in results] == [True, False, False]
+    # Обложка, дописанная прогревом в индекс, вернулась прямо в ответе
+    assert results[1].cover_image_url == "https://caa/222.jpg"
+    assert results[2].cover_image_url is None
     # master_id взят из dump-строки — отдельный доисковый запрос не нужен
-    assert len(db.queries) == 3
+    assert len(db.queries) == 4
     assert "master_id = :mid" in db.queries[2]
 
 
@@ -142,6 +151,7 @@ async def test_scan_empty_falls_back_to_discogs_and_marks_exact(monkeypatch):
         {"rows": []},                       # dump по barcode пуст
         {"scalar": 555},                    # master_id найден по discogs_id 999
         {"rows": [dump_row("222", 1984)]},  # сиблинги мастера
+        {"rows": []},                       # перечитка обложек: ничего не успело
     )
 
     results = await scan_barcode(barcode="0093652", current_user=None, db=db)
@@ -162,6 +172,25 @@ async def test_scan_nothing_found_returns_empty(monkeypatch):
     db = FakeSession({"rows": []}, {"rows": []})
 
     assert await scan_barcode(barcode="0093652", current_user=None, db=db) == []
+
+
+async def test_inline_warm_times_out_but_task_survives(monkeypatch):
+    """Бюджет времени истёк → отдаём ответ, но прогрев НЕ отменяется."""
+    import asyncio
+
+    from app.services import cover_warm
+
+    done = asyncio.Event()
+
+    async def slow_warm(ids, budget=None):
+        await asyncio.sleep(0.2)
+        done.set()
+
+    monkeypatch.setattr(cover_warm, "warm_dump_covers", slow_warm)
+
+    await cover_warm.warm_dump_covers_inline(["1"], timeout=0.05)
+    assert not done.is_set()  # вернулись раньше, чем прогрев закончился
+    await asyncio.wait_for(done.wait(), timeout=1)  # но задача дожила в фоне
 
 
 def test_siblings_query_is_vinyl_only():

@@ -183,6 +183,25 @@ def schedule_warm_dump_covers(discogs_ids: list[str], discogs_budget: int | None
     _retain_warm(warm_dump_covers(discogs_ids, discogs_budget))
 
 
+async def warm_dump_covers_inline(discogs_ids: list[str], timeout: float) -> None:
+    """Прогрев с бюджетом времени — для единичных high-intent запросов (скан
+    штрихкода), где секунда ожидания дешевле заглушек в ответе.
+
+    Ждём до `timeout` сек, чтобы вызывающий успел перечитать индекс и вернуть
+    обложки прямо в ответе. Не успело — НЕ отменяем: задача удержана в
+    _warm_tasks и дописывает индекс в фоне (клиентский cover-retry подхватит).
+    """
+    if not discogs_ids:
+        return
+    task = asyncio.create_task(warm_dump_covers(discogs_ids))
+    _warm_tasks.add(task)
+    task.add_done_callback(_warm_tasks.discard)
+    try:
+        await asyncio.wait_for(asyncio.shield(task), timeout)
+    except asyncio.TimeoutError:
+        pass
+
+
 async def warm_artist_master_covers(artist_id: str, artist_name: str) -> None:
     """Batch-прогрев обложек ВСЕХ мастеров артиста: 1-3 вызова Search API
     (до 300 мастеров) → discogs_master_covers. Убивает заглушки первого
