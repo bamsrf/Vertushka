@@ -300,6 +300,9 @@ export interface RecordSearchResult {
   is_hot?: boolean;
   // Визуальная близость фото к обложке (косинус CLIP, 0..1) при скане по обложке
   match_score?: number | null;
+  // Скан по штрихкоду: true — релиз несёт отсканированный код,
+  // false — другое издание того же мастера (другой год/страна/пресс)
+  is_exact_match?: boolean;
 }
 
 export interface RecordSearchResponse {

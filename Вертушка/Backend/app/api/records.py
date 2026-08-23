@@ -1061,22 +1061,33 @@ async def scan_barcode(
 ):
     """
     Поиск пластинки по штрихкоду.
+
+    Отдаёт два слоя: точные совпадения по коду (is_exact_match=True) и,
+    если у релиза есть master_id в дамп-индексе, другие виниловые издания
+    того же мастера (is_exact_match=False, после точных, по году). Штрихкод
+    идентифицирует конкретный пресс, а юзер ждёт «как на Discogs» — все
+    издания альбома.
+
     Требует авторизации.
     """
-    # Сначала проверяем локальную БД. barcode НЕ уникален (store-native + user +
-    # пресс-дубли делят один код) → scalar_one_or_none() падал в
-    # MultipleResultsFound → 500 → клиент показывал «не найдено» (баг скана
-    # 602478091186). Берём один не-merged матч.
+    exact: list[RecordSearchResult] = []
+    seen_ids: set[str] = set()
+
+    # Локальная БД: barcode НЕ уникален (store-native + user + пресс-дубли
+    # делят один код) — берём ВСЕ не-merged матчи, не только первый.
     result = await db.execute(
         select(Record)
         .where(Record.barcode == barcode, Record.merged_into_id.is_(None))
-        .limit(1)
+        .limit(10)
     )
-    local_record = result.scalars().first()
-    
-    if local_record:
-        return [RecordSearchResult(
-            discogs_id=local_record.discogs_id or "",
+    for local_record in result.scalars().all():
+        rid = local_record.discogs_id or ""
+        if rid:
+            if rid in seen_ids:
+                continue
+            seen_ids.add(rid)
+        exact.append(RecordSearchResult(
+            discogs_id=rid,
             title=local_record.title,
             artist=local_record.artist,
             label=local_record.label,
@@ -1085,17 +1096,19 @@ async def scan_barcode(
             cover_image_url=local_record.cover_image_url,
             thumb_image_url=local_record.thumb_image_url,
             format_type=local_record.format_type,
-        )]
+            is_exact_match=True,
+        ))
 
-    # Dump-индекс по barcode_norm (btree) — закрывает скан без Discogs API.
-    # Нормализация та же, что при ingest: только цифры.
+    # Dump-индекс по barcode_norm (btree) — добирает прессы с тем же кодом
+    # без Discogs API. Нормализация та же, что при ingest: только цифры.
     barcode_norm = re.sub(r"\D+", "", barcode)
+    dump_rows = []
     if barcode_norm:
         try:
             dump_rows = (await db.execute(
                 text(
-                    "SELECT discogs_id::text AS discogs_id, artist, title, year, "
-                    "country, format_type, label, cover_image_url "
+                    "SELECT discogs_id::text AS discogs_id, master_id, artist, "
+                    "title, year, country, format_type, label, cover_image_url "
                     "FROM discogs_releases_index "
                     "WHERE barcode_norm = :bc LIMIT 10"
                 ),
@@ -1104,38 +1117,108 @@ async def scan_barcode(
         except Exception:
             logger.warning("dump barcode lookup failed", exc_info=True)
             dump_rows = []
-        if dump_rows:
-            from app.services.cover_warm import schedule_warm_dump_covers
-            schedule_warm_dump_covers(
-                [r["discogs_id"] for r in dump_rows if not r["cover_image_url"]]
-            )
-            return [
-                RecordSearchResult(
-                    discogs_id=row["discogs_id"],
-                    title=row["title"],
-                    artist=row["artist"],
-                    label=row["label"],
-                    year=row["year"],
-                    country=row["country"],
-                    cover_image_url=row["cover_image_url"],
-                    thumb_image_url=None,
-                    format_type=row["format_type"],
-                )
-                for row in dump_rows
-            ]
+    for row in dump_rows:
+        if row["discogs_id"] in seen_ids:
+            continue
+        seen_ids.add(row["discogs_id"])
+        exact.append(RecordSearchResult(
+            discogs_id=row["discogs_id"],
+            title=row["title"],
+            artist=row["artist"],
+            label=row["label"],
+            year=row["year"],
+            country=row["country"],
+            cover_image_url=row["cover_image_url"],
+            thumb_image_url=None,
+            format_type=row["format_type"],
+            is_exact_match=True,
+        ))
 
-    # Поиск в Discogs — последний resort. Короткий watchdog 7с (не дефолтные
-    # 30с лимитера): юзер в магазине не должен ждать полминуты и ловить 503.
-    # При таймауте/ошибке/пусто → возвращаем [] («не найдено, добавьте вручную»),
-    # а НЕ 503: клиент показывает пустой результат, а не «ошибку». Graceful
-    # деградация — критично для скана в оффлайн-полях при перегрузе Discogs.
-    discogs = DiscogsService()
-    try:
-        results = await asyncio.wait_for(discogs.search_by_barcode(barcode), timeout=7)
-        return results or []
-    except Exception:
-        logger.info("scan_barcode: Discogs fallback miss/slow for %s", barcode)
+    # Поиск в Discogs — последний resort, только если локально пусто.
+    # Короткий watchdog 7с (не дефолтные 30с лимитера): юзер в магазине не
+    # должен ждать полминуты и ловить 503. При таймауте/ошибке/пусто идём
+    # дальше с тем, что есть: клиент покажет пустой результат, а не «ошибку».
+    # Graceful деградация — критично для скана при перегрузе Discogs.
+    if not exact:
+        discogs = DiscogsService()
+        try:
+            api_results = await asyncio.wait_for(
+                discogs.search_by_barcode(barcode), timeout=7
+            ) or []
+        except Exception:
+            logger.info("scan_barcode: Discogs fallback miss/slow for %s", barcode)
+            api_results = []
+        for r in api_results:
+            if r.discogs_id in seen_ids:
+                continue
+            seen_ids.add(r.discogs_id)
+            r.is_exact_match = True
+            exact.append(r)
+
+    if not exact:
         return []
+
+    # Расширение до «всех изданий»: master_id берём из dump-строк точных
+    # совпадений, иначе доискиваем по их discogs_id.
+    master_id = next((row["master_id"] for row in dump_rows if row["master_id"]), None)
+    exact_int_ids = [int(i) for i in seen_ids if i.isdigit()]
+    if master_id is None and exact_int_ids:
+        try:
+            master_id = (await db.execute(
+                text(
+                    "SELECT master_id FROM discogs_releases_index "
+                    "WHERE discogs_id = ANY(:ids) AND master_id IS NOT NULL LIMIT 1"
+                ),
+                {"ids": exact_int_ids},
+            )).scalar()
+        except Exception:
+            logger.warning("dump master lookup failed", exc_info=True)
+
+    siblings: list[RecordSearchResult] = []
+    if master_id:
+        # Дамп-индекс хранит все форматы мастера (CD, кассеты) — сиблингов
+        # ограничиваем винилом.
+        try:
+            sib_rows = (await db.execute(
+                text(
+                    "SELECT discogs_id::text AS discogs_id, artist, title, year, "
+                    "country, format_type, label, cover_image_url "
+                    "FROM discogs_releases_index "
+                    "WHERE master_id = :mid AND format_type LIKE 'Vinyl%' "
+                    "ORDER BY year NULLS LAST LIMIT 30"
+                ),
+                {"mid": master_id},
+            )).mappings().all()
+        except Exception:
+            logger.warning("dump master versions lookup failed", exc_info=True)
+            sib_rows = []
+        for row in sib_rows:
+            if row["discogs_id"] in seen_ids:
+                continue
+            seen_ids.add(row["discogs_id"])
+            siblings.append(RecordSearchResult(
+                discogs_id=row["discogs_id"],
+                title=row["title"],
+                artist=row["artist"],
+                label=row["label"],
+                year=row["year"],
+                country=row["country"],
+                cover_image_url=row["cover_image_url"],
+                thumb_image_url=None,
+                format_type=row["format_type"],
+                is_exact_match=False,
+            ))
+        siblings = siblings[:20]
+
+    combined = exact + siblings
+    warm_ids = [
+        r.discogs_id for r in combined
+        if r.discogs_id and not r.cover_image_url
+    ]
+    if warm_ids:
+        from app.services.cover_warm import schedule_warm_dump_covers
+        schedule_warm_dump_covers(warm_ids)
+    return combined
 
 
 # Порог визуальной уверенности (косинус CLIP). Ниже — клиенту показать
