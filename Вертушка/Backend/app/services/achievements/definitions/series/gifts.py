@@ -30,6 +30,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.gift_booking import GiftBooking, GiftStatus
 from app.models.user_achievement import UserAchievement
+from app.services.achievements.definitions.eggs import MSK_UTC_OFFSET
 from app.services.achievements.events import (
     GIFT_BOOKED,
     GIFT_COMPLETED,
@@ -210,9 +211,14 @@ async def _evaluate_j9_santa(
     payload: dict[str, Any],
     unlocked_now: set[str],
 ) -> EvalResult:
-    """Подарок дошёл до адресата в новогоднее окно (25.12–14.01) по completed_at."""
-    m = extract("month", GiftBooking.completed_at)
-    d = extract("day", GiftBooking.completed_at)
+    """Подарок дошёл до адресата в новогоднее окно (25.12–14.01) по completed_at.
+
+    Границы окна считаем по МСК (completed_at в БД — naive UTC): та же логика
+    «настенного» времени, что и у временных пасхалок в eggs.py.
+    """
+    completed_msk = GiftBooking.completed_at + MSK_UTC_OFFSET
+    m = extract("month", completed_msk)
+    d = extract("day", completed_msk)
     winter = or_(and_(m == 12, d >= 25), and_(m == 1, d <= 14))
     has = await db.scalar(
         select(

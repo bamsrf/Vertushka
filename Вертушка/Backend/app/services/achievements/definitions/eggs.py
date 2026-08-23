@@ -65,6 +65,18 @@ TAPEHEAD_MIN = 10
 CD_RENAISSANCE_MIN = 50
 GIANT_BOX_DISCS = 10
 
+#: Московское время: UTC+3, без сезонных переходов с 2014 года — фиксированный
+#: сдвиг корректен для всех данных приложения. Девайс-таймзону юзера мы не
+#: храним, аудитория — Россия, поэтому «настенные» условия пасхалок (куранты,
+#: пятничный вечер, ночной час) осознанно считаются по МСК, а не по UTC.
+#: Таймстемпы в БД (added_at, created_at, completed_at) — naive UTC.
+MSK_UTC_OFFSET = timedelta(hours=3)
+
+
+def _utc_to_msk(dt: datetime) -> datetime:
+    """Наивный UTC-таймстемп из БД → наивное московское время."""
+    return dt + MSK_UTC_OFFSET
+
 
 async def _main_collection_items(db: AsyncSession, user_id: UUID, *, limit: int = 3000):
     """Записи основной коллекции: (record, added_at). Дедуп по record_id."""
@@ -136,18 +148,25 @@ def _make_added_at_rule(predicate):
     return evaluator
 
 
-def _is_new_year_moment(dt: datetime) -> bool:
+# Предикаты получают added_at как naive UTC и сами переводят его в МСК:
+# обещания в текстах ачивок («под куранты», «поздним вечером пятницы»,
+# «29 февраля») — про часы на стене у юзера, а не про UTC на сервере.
+
+def _is_new_year_moment(added_at_utc: datetime) -> bool:
+    dt = _utc_to_msk(added_at_utc)
     return dt.month == 1 and dt.day == 1 and dt.hour == 0 and dt.minute < 30
 
 
-def _is_friday_night(dt: datetime) -> bool:
-    # Пятница 22:00–23:59 либо ночь субботы 00:00–01:59.
+def _is_friday_night(added_at_utc: datetime) -> bool:
+    # Пятница 22:00–23:59 либо ночь субботы 00:00–01:59 по МСК.
+    dt = _utc_to_msk(added_at_utc)
     if dt.weekday() == 4 and dt.hour >= 22:
         return True
     return dt.weekday() == 5 and dt.hour < 2
 
 
-def _is_leap_day(dt: datetime) -> bool:
+def _is_leap_day(added_at_utc: datetime) -> bool:
+    dt = _utc_to_msk(added_at_utc)
     return dt.month == 2 and dt.day == 29
 
 
@@ -245,16 +264,23 @@ async def _evaluate_hidden_track(db, user_id, payload, unlocked_now) -> EvalResu
 # --- Маркет ------------------------------------------------------------------
 
 async def _evaluate_night_crate(db, user_id, payload, unlocked_now) -> EvalResult:
-    """Переход в магазин между 03:00 и 04:00 — ночной диггинг."""
-    hit = await db.scalar(
-        select(func.count())
-        .select_from(OfferClick)
-        .where(
-            OfferClick.user_id == user_id,
-            func.extract("hour", OfferClick.created_at) == 3,
+    """Переход в магазин между 03:00 и 04:00 МСК — ночной диггинг.
+
+    Час проверяем в Python, а не через SQL `extract(hour)`: created_at лежит
+    в naive UTC, и сдвиг в МСК должен идти через общий `_utc_to_msk`.
+    Кликов у одного юзера немного, выборка дешёвая.
+    """
+    rows = await db.execute(
+        select(OfferClick.created_at)
+        .where(OfferClick.user_id == user_id)
+        .limit(5000)
+    )
+    return EvalResult(
+        unlocked=any(
+            created_at is not None and _utc_to_msk(created_at).hour == 3
+            for created_at in rows.scalars().all()
         )
     )
-    return EvalResult(unlocked=bool(hit))
 
 
 _ADD_TRIGGERS = (COLLECTION_ITEM_ADDED, DAILY_TICK)
