@@ -64,7 +64,7 @@ const STEPS: WelcomeStep[] = [
     icon: 'scan-outline',
     eyebrow: 'Каталог 15M+ релизов',
     title: 'Найди что угодно',
-    body: 'Наведи камеру на штрихкод или обложку — или ищи по базе Discogs руками',
+    body: 'Наведи камеру на штрихкод или обложку, а можно искать по базе Discogs руками',
   },
   {
     icon: 'gift-outline',
@@ -87,14 +87,14 @@ const START_OPTIONS: StartOption[] = [
   {
     icon: 'scan-outline',
     title: 'Отсканировать пластинку',
-    subtitle: 'Штрихкод или обложка — определим за секунду',
+    subtitle: 'По штрихкоду или обложке определим за секунду',
     route: '/(tabs)',
     analyticsId: 'scan',
   },
   {
     icon: 'disc-outline',
     title: 'Перенести коллекцию из Discogs',
-    subtitle: 'Подключи аккаунт — заберём всё разом',
+    subtitle: 'Подключи аккаунт, и заберём всё разом',
     route: '/settings/discogs',
     analyticsId: 'discogs_import',
   },
