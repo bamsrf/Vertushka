@@ -1,7 +1,7 @@
 /**
  * Экран сканера штрихкодов и распознавания обложки (центральный таб)
  */
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -71,6 +71,14 @@ export default function ScannerScreen() {
     clearScan,
   } = useScannerStore();
   const { addToCollection, addToWishlist, collectionItems, wishlistItems, isOwned, fetchOwnedIds } = useCollectionStore();
+
+  // Скан по штрихкоду: точные совпадения идут первыми, дальше — другие
+  // издания того же мастера. Индекс первого сиблинга = место разделителя.
+  // -1 — разделитель не нужен (все точные, все сиблинги или режим обложки).
+  const firstSiblingIndex = useMemo(() => {
+    if (!scanResults.some((r) => r.is_exact_match)) return -1;
+    return scanResults.findIndex((r) => r.is_exact_match === false);
+  }, [scanResults]);
 
   const handleBarCodeScanned = async ({ data }: { data: string }) => {
     if (!isScanning || isLoading) return;
@@ -403,16 +411,21 @@ export default function ScannerScreen() {
             data={scanResults}
             keyExtractor={(item) => item.discogs_id}
             contentContainerStyle={styles.resultsList}
-            renderItem={({ item }) => (
-              <RecordCard
-                record={item}
-                size="large"
-                variant="compact"
-                onPress={() => handleRecordPress(item)}
-                onAddToCollection={() => handleAddToCollection(item)}
-                onAddToWishlist={() => handleAddToWishlist(item)}
-                showActions
-              />
+            renderItem={({ item, index }) => (
+              <>
+                {index === firstSiblingIndex && (
+                  <Text style={styles.sectionLabel}>Другие издания этого альбома</Text>
+                )}
+                <RecordCard
+                  record={item}
+                  size="large"
+                  variant="compact"
+                  onPress={() => handleRecordPress(item)}
+                  onAddToCollection={() => handleAddToCollection(item)}
+                  onAddToWishlist={() => handleAddToWishlist(item)}
+                  showActions
+                />
+              </>
             )}
             ListEmptyComponent={
               <View style={styles.emptyResults}>
@@ -635,6 +648,14 @@ const styles = StyleSheet.create({
   },
   resultsList: {
     padding: Spacing.md,
+  },
+  sectionLabel: {
+    ...Typography.caption,
+    color: Colors.textSecondary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginTop: Spacing.sm,
+    marginBottom: Spacing.xs,
   },
   emptyResults: {
     padding: Spacing.xl,
