@@ -265,7 +265,8 @@ async def compute_fun_stats(user_id: UUID, db: AsyncSession) -> list[dict]:
         # Новых за последние 7 дней
         week_ago = now_utc_naive - timedelta(days=7)
         new_this_week = await db.scalar(
-            select(func.count(CollectionItem.id))
+            # DISTINCT: копия в папке не делает пластинку «новой» дважды.
+            select(func.count(func.distinct(CollectionItem.record_id)))
             .join(Collection, Collection.id == CollectionItem.collection_id)
             .where(
                 Collection.user_id == user_id,

@@ -49,9 +49,12 @@ async def _is_profile_private(db: AsyncSession, user_id: UUID) -> bool:
 
 
 async def _collection_size(db: AsyncSession, user_id: UUID) -> int:
-    """Сколько пластинок в коллекции — для body социальных пушей."""
+    """Сколько пластинок в коллекции — для body социальных пушей.
+
+    DISTINCT record_id: папки — это копии записей основной коллекции,
+    count(id) по всем коллекциям задваивал счёт."""
     total = await db.scalar(
-        select(func.count(CollectionItem.id))
+        select(func.count(func.distinct(CollectionItem.record_id)))
         .join(Collection, CollectionItem.collection_id == Collection.id)
         .where(Collection.user_id == user_id)
     )
@@ -129,7 +132,8 @@ async def search_users(
         .label("following_count")
     )
     collection_sub = (
-        select(func.count(CollectionItem.id))
+        # DISTINCT record_id: папки дублируют записи, count(id) врал в поиске.
+        select(func.count(func.distinct(CollectionItem.record_id)))
         .join(Collection, CollectionItem.collection_id == Collection.id)
         .where(Collection.user_id == User.id)
         .correlate(User)
@@ -235,7 +239,8 @@ async def get_user_by_username(
         select(func.count(Follow.id)).where(Follow.follower_id == user.id)
     )
     collection_count = await db.scalar(
-        select(func.count(CollectionItem.id))
+        # DISTINCT record_id: папки дублируют записи основной коллекции.
+        select(func.count(func.distinct(CollectionItem.record_id)))
         .join(Collection)
         .where(Collection.user_id == user.id)
     )
@@ -818,7 +823,8 @@ async def get_user_profile(
         select(func.count(Follow.id)).where(Follow.follower_id == user.id)
     )
     collection_count = await db.scalar(
-        select(func.count(CollectionItem.id))
+        # DISTINCT record_id: папки дублируют записи основной коллекции.
+        select(func.count(func.distinct(CollectionItem.record_id)))
         .join(Collection)
         .where(Collection.user_id == user.id)
     )

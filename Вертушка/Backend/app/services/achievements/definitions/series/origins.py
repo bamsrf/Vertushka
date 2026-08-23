@@ -42,7 +42,7 @@ OG1_CODE = "OG1_first_hundred"
 
 #: Живые бета-аккаунты, которые входят в «первую сотню» независимо от даты
 #: регистрации. Сравнение по lower(username).
-FOUNDER_ALLOWLIST = frozenset({"hhbbbgcdc7", "genia_pazla", "andrei"})
+FOUNDER_ALLOWLIST = frozenset({"hhbbbgcdc7", "genia_pazla", "andrei", "xenon"})
 
 #: Аккаунты, созданные с этого момента (UTC), попадают в зачёт автоматически.
 #: Перед релизом в сторе можно сдвинуть на дату релиза — но помни: любой
