@@ -76,3 +76,21 @@ def test_hide_record_not_offered_for_user_reports():
     block = block[: block.index("]")]
     assert "hide_record" not in block
     assert "ban_user" in block
+
+
+def test_cover_is_rendered_for_record_reports():
+    """Ради обложки жалобу и открывают: жалуются на то, что залито вместо
+    обложки, а не на подпись «артист — тайтл»."""
+    assert "d.cover_url" in TEMPLATE
+    assert "className = 'cover'" in TEMPLATE
+
+
+def test_cover_url_is_never_interpolated_into_markup():
+    """URL приходит из БД, куда его положил загрузивший файл: только .src,
+    никакой сборки разметки строкой (её стережёт тест выше)."""
+    assert "img.src = d.cover_url" in TEMPLATE
+
+
+def test_detail_fields_go_through_textcontent():
+    """Лейбл и формат у user-записи вводит сам пользователь."""
+    assert "createTextNode(pair[1])" in TEMPLATE

@@ -48,6 +48,23 @@ class RecordCreate(RecordBase):
     tracklist: list | None = None
 
 
+def build_cover_url(
+    local_path: str | None, cached_at: datetime | None
+) -> str | None:
+    """URL зеркалированной обложки: /uploads/-путь плюс метка перезалива.
+
+    Cache-bust по cover_cached_at обязателен: перезалив меняет файл по тому
+    же пути, и без метки клиент (expo-image disk / nginx expires 7d) показал
+    бы старую картинку.
+    """
+    if not local_path:
+        return None
+    base = local_path if local_path.startswith("/") else f"/uploads/{local_path}"
+    if cached_at:
+        base = f"{base}?v={int(cached_at.timestamp())}"
+    return base
+
+
 class RecordResponse(BaseModel):
     """Полная схема пластинки"""
     model_config = ConfigDict(from_attributes=True)
@@ -108,15 +125,10 @@ class RecordResponse(BaseModel):
 
     @model_validator(mode="after")
     def _populate_cover_url(self) -> "RecordResponse":
-        if self.cover_local_path and not self.cover_url:
-            lp = self.cover_local_path
-            base = lp if lp.startswith("/") else f"/uploads/{lp}"
-            # cache-bust по cover_cached_at: перезалив обложки меняет метку →
-            # новый URL → клиент (expo-image disk / nginx expires 7d) грузит
-            # СВЕЖЕЕ фото, а не старое кэшированное по стабильному пути.
-            if self.cover_cached_at:
-                base = f"{base}?v={int(self.cover_cached_at.timestamp())}"
-            self.cover_url = base
+        if not self.cover_url:
+            self.cover_url = build_cover_url(
+                self.cover_local_path, self.cover_cached_at
+            )
         return self
 
 
@@ -150,12 +162,10 @@ class RecordBrief(BaseModel):
 
     @model_validator(mode="after")
     def _populate_cover_url(self) -> "RecordBrief":
-        if self.cover_local_path and not self.cover_url:
-            lp = self.cover_local_path
-            base = lp if lp.startswith("/") else f"/uploads/{lp}"
-            if self.cover_cached_at:
-                base = f"{base}?v={int(self.cover_cached_at.timestamp())}"
-            self.cover_url = base
+        if not self.cover_url:
+            self.cover_url = build_cover_url(
+                self.cover_local_path, self.cover_cached_at
+            )
         return self
 
 
