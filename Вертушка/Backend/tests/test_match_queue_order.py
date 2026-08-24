@@ -111,7 +111,8 @@ def test_quota_block_does_not_stamp_attempt():
     кулдаун, ни разу про них не спросив — и мы даже не узнаем.
     """
     src = inspect.getsource(listing_matcher.match_unmatched_batch)
-    assert "if ok or not _quota_blocked.get():" in src
+    # 2026-08-23: к квоте добавился инфра-флаг — оба держат листинг в очереди.
+    assert "if ok or not (_quota_blocked.get() or _infra_blocked.get()):" in src
     assert "attempted_ids" in src
     # UPDATE идёт по отобранным id, а не по всему батчу.
     assert "StoreListing.id.in_(attempted_ids)" in src
