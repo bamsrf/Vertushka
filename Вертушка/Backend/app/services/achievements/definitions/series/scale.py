@@ -2,10 +2,16 @@
 
 Phase 1: B1 (10) → B2 (50) → B3 (100) → B4 (250) → B5 (500) → B6 (1000) + META_scale.
 
-Анти-фарм: считаем COUNT(DISTINCT record_id) ТОЛЬКО для записей старше 24 часов.
-Это защищает от паттерна «накачал 50 пластинок и удалил часть ради ачивки».
-Если юзер реально набрал N уникальных и подождал сутки — ачивка дойдёт через
-ближайший daily_tick или при следующем добавлении.
+Анти-фарм: АНЛОК считаем по COUNT(DISTINCT record_id) ТОЛЬКО для записей старше
+24 часов. Это защищает от паттерна «накачал 50 пластинок и удалил часть ради
+ачивки». Если юзер реально набрал N уникальных и подождал сутки — ачивка дойдёт
+через ближайший daily_tick или при следующем добавлении.
+
+Прогресс для UI — отдельно: живой COUNT(DISTINCT record_id) без cooldown.
+Иначе новичок, импортировавший 50 пластинок, видит «Десятка 0/10» и думает,
+что прогресс-бар сломан. Живой счёт может и уменьшаться после удалений, но
+_persist в evaluator.py пишет progress только при росте — значение просто
+замрёт на пике, отката в UI не будет; это осознанно.
 """
 from __future__ import annotations
 
@@ -13,7 +19,7 @@ from datetime import datetime, timedelta
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.collection import Collection, CollectionItem
@@ -38,8 +44,12 @@ SCALE_CODES = {B1_CODE, B2_CODE, B3_CODE, B4_CODE, B5_CODE, B6_CODE}
 ANTIFARM_COOLDOWN = timedelta(hours=24)
 
 
-async def _count_aged_unique_records(db: AsyncSession, user_id: UUID) -> int:
-    """COUNT(DISTINCT record_id) в ОСНОВНОЙ коллекции юзера старше 24 часов.
+async def _count_unique_records(db: AsyncSession, user_id: UUID) -> tuple[int, int]:
+    """(живой, отлежавшийся) COUNT(DISTINCT record_id) в ОСНОВНОЙ коллекции.
+
+    Живой — все записи, отлежавшийся — только старше 24 часов (анти-фарм).
+    Один запрос на оба счёта: aged-подмножество считается через CASE, NULL
+    в COUNT(DISTINCT ...) не попадает.
 
     Папки — это отдельные Collection с большим sort_order; пластинки в них
     копируются из основной коллекции. Считаем только основную коллекцию
@@ -53,14 +63,19 @@ async def _count_aged_unique_records(db: AsyncSession, user_id: UUID) -> int:
         .limit(1)
         .scalar_subquery()
     )
-    count = await db.scalar(
-        select(func.count(func.distinct(CollectionItem.record_id)))
-        .where(
-            CollectionItem.collection_id == default_collection_id,
-            CollectionItem.added_at <= cutoff,
+    row = await db.execute(
+        select(
+            func.count(func.distinct(CollectionItem.record_id)),
+            func.count(
+                func.distinct(
+                    case((CollectionItem.added_at <= cutoff, CollectionItem.record_id))
+                )
+            ),
         )
+        .where(CollectionItem.collection_id == default_collection_id)
     )
-    return int(count or 0)
+    live, aged = row.one()
+    return int(live or 0), int(aged or 0)
 
 
 def _make_threshold_evaluator(threshold: int):
@@ -70,10 +85,12 @@ def _make_threshold_evaluator(threshold: int):
         payload: dict[str, Any],
         unlocked_now: set[str],
     ) -> EvalResult:
-        count = await _count_aged_unique_records(db, user_id)
-        if count >= threshold:
-            return EvalResult(unlocked=True, progress=count, progress_target=threshold)
-        return EvalResult(progress=count, progress_target=threshold)
+        live, aged = await _count_unique_records(db, user_id)
+        if aged >= threshold:
+            return EvalResult(unlocked=True, progress=live, progress_target=threshold)
+        # Живой счёт может дойти до порога раньше aged — бар покажет 10/10
+        # ещё закрытым; ачивка догонит в течение суток.
+        return EvalResult(progress=min(live, threshold), progress_target=threshold)
     return evaluator
 
 
