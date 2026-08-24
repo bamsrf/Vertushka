@@ -21,7 +21,7 @@ from collections import defaultdict
 from datetime import datetime, timedelta
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import ARRAY, all_, any_, func, literal, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -48,6 +48,12 @@ from app.services.radar_threshold import baseline_prices, effective_threshold
 logger = logging.getLogger(__name__)
 
 # Окно: новые/изменённые listing'и за последние N минут (с запасом перед интервалом запуска).
+# TODO: окно по updated_at — хрупкий источник событий: чекпоинта нет, поэтому
+# упавший/пропущенный прогон теряет уведомления безвозвратно, а обход краулера,
+# бампающий updated_at всему маркету (~54k листингов), вбирает в окно весь
+# каталог разом. Правильный источник — listing_price_history с водяным знаком
+# (последний обработанный captured_at); это архитектурная переделка и она
+# сознательно НЕ в этом фиксе.
 RECENT_WINDOW_MINUTES = 20
 
 # Минимальное падение цены, которое считаем значимым (10%) — шум мелких колебаний
@@ -104,6 +110,31 @@ def _threshold_gap(price: float | None, threshold: float | None) -> tuple[float 
     return gap, gap <= threshold * NEAR_THRESHOLD_RATIO
 
 
+def _id_filter(col, ids, *, dialect: str, negate: bool = False):
+    """Фильтр «col ∈ ids» без взрыва bind-параметров.
+
+    `col.in_(python_list)` разворачивается в отдельный параметр на каждый
+    элемент. После обхода краулера окно «recent» вбирает весь маркет, и
+    запрос alt-версий собирал 48 961 бинд при лимите asyncpg 32 767 —
+    задача падала после каждого обхода (02:00 и 14:00).
+
+    На PostgreSQL шлём ОДИН array-бинд: `col = ANY(:ids)` /
+    `col != ALL(:ids)` (семантика NOT IN для non-null значений). На прочих
+    диалектах (SQLite в тестах) — прежние in_/not_in: там ANY/ALL по массиву
+    не поддерживаются, а списки маленькие.
+    """
+    values = list(ids)
+    if dialect == "postgresql":
+        arr = literal(values, type_=ARRAY(col.type))
+        return col != all_(arr) if negate else col == any_(arr)
+    return col.not_in(values) if negate else col.in_(values)
+
+
+def _dialect_name(db: AsyncSession) -> str:
+    """Имя диалекта живой сессии — чтобы _id_filter выбрал форму запроса."""
+    return db.get_bind().dialect.name
+
+
 async def emit_wishlist_in_stock_notifications() -> None:
     """Идемпотентная фоновая задача — вызывается из APScheduler каждые 15 минут."""
     try:
@@ -134,12 +165,13 @@ async def _run(db: AsyncSession) -> None:
     if not listings:
         return
 
+    dialect = _dialect_name(db)
     record_ids = list({l.matched_record_id for l in listings if l.matched_record_id})
     wishlist_items = (
         await db.execute(
             select(WishlistItem)
             .join(Wishlist)
-            .where(WishlistItem.record_id.in_(record_ids))
+            .where(_id_filter(WishlistItem.record_id, record_ids, dialect=dialect))
             .options(
                 selectinload(WishlistItem.wishlist),
                 selectinload(WishlistItem.record),
@@ -215,43 +247,48 @@ async def _run(db: AsyncSession) -> None:
             push_title = push_body = None
 
         try:
-            notif, is_new = await upsert_notification(
-                db,
-                user_id=owner_id,
-                type="wishlist_in_stock",
-                dedup_key=dedup_key,
-                entity_type="record",
-                entity_id=str(record.id),
-                data={
-                    "record_id": str(record.id),
-                    "record_title": record.title,
-                    "record_artist": getattr(record, "artist", None),
-                    "cover_url": getattr(record, "cover_image_url", None),
-                    "price_rub": min_price,
-                    "min_price_rub": min_price,
-                    "store_count": 1,
-                    "stores": [store_payload],
-                    "store": store_payload,  # для merge_data_fn в bump-path
-                    "on_radar": subscribed,
-                    "radar_status": radar_status if subscribed else None,
-                    "threshold_rub": (float(threshold) if threshold is not None else None),
-                    "to_threshold_rub": gap_rub,
-                    "near_threshold": near_threshold,
-                },
-                push_title=push_title,
-                push_body=push_body,
-                push_image=(getattr(record, "cover_image_url", None) if push_now else None),
-                push_cap_key=(f"wl_item:{record.id}" if push_now else None),
-                priority=PRIORITY_PUSH if push_now else PRIORITY_QUIET,
-                merge_data_fn=merge_wishlist_stores,
-                should_resurface=_resurface_on_price_improvement,
-            )
+            # Savepoint на айтем: не-IntegrityError ошибка БД (гонки внутри
+            # upsert_notification закрыты его собственным begin_nested, но
+            # любая другая — нет) без savepoint переводит сессию в
+            # failed-состояние, и весь прогон умирает на следующем запросе.
+            async with db.begin_nested():
+                notif, is_new = await upsert_notification(
+                    db,
+                    user_id=owner_id,
+                    type="wishlist_in_stock",
+                    dedup_key=dedup_key,
+                    entity_type="record",
+                    entity_id=str(record.id),
+                    data={
+                        "record_id": str(record.id),
+                        "record_title": record.title,
+                        "record_artist": getattr(record, "artist", None),
+                        "cover_url": getattr(record, "cover_image_url", None),
+                        "price_rub": min_price,
+                        "min_price_rub": min_price,
+                        "store_count": 1,
+                        "stores": [store_payload],
+                        "store": store_payload,  # для merge_data_fn в bump-path
+                        "on_radar": subscribed,
+                        "radar_status": radar_status if subscribed else None,
+                        "threshold_rub": (float(threshold) if threshold is not None else None),
+                        "to_threshold_rub": gap_rub,
+                        "near_threshold": near_threshold,
+                    },
+                    push_title=push_title,
+                    push_body=push_body,
+                    push_image=(getattr(record, "cover_image_url", None) if push_now else None),
+                    push_cap_key=(f"wl_item:{record.id}" if push_now else None),
+                    priority=PRIORITY_PUSH if push_now else PRIORITY_QUIET,
+                    merge_data_fn=merge_wishlist_stores,
+                    should_resurface=_resurface_on_price_improvement,
+                )
+                # Хронология радара (только subscribed; дедуп внутри).
+                await record_radar_event(
+                    db, wi, radar_status, min_price, getattr(cheapest.store, "name", None)
+                )
             if notif is not None and is_new:
                 emitted_per_user[owner_id].append(notif)
-            # Хронология радара (только subscribed; дедуп внутри).
-            await record_radar_event(
-                db, wi, radar_status, min_price, getattr(cheapest.store, "name", None)
-            )
         except Exception:
             logger.exception(
                 "Failed to upsert wishlist_in_stock for user=%s record=%s",
@@ -259,10 +296,22 @@ async def _run(db: AsyncSession) -> None:
                 record.id,
             )
 
-    # Аналоги: другой прессинг того же мастера появился в продаже.
-    await _emit_alt_versions(db, listings, record_ids, emitted_per_user)
-
+    # Коммитим основной цикл ДО alt-шага. Push уже ушёл внутри
+    # upsert_notification (до коммита), и падение alt-шага не должно
+    # откатывать строки, на которые эти push'и ссылаются, — именно так после
+    # каждого обхода краулера терялись все уведомления прогона.
     await db.commit()
+
+    # Аналоги: другой прессинг того же мастера появился в продаже.
+    # Best-effort: своё исключение и свой commit — основные уведомления уже
+    # в базе, исход alt-шага их не трогает.
+    try:
+        await _emit_alt_versions(db, listings, record_ids, emitted_per_user)
+        await db.commit()
+    except Exception:
+        logger.exception("emit_wishlist_in_stock: alt-versions step failed")
+        await db.rollback()
+
     total = sum(len(v) for v in emitted_per_user.values())
     if total:
         logger.info(
@@ -298,14 +347,22 @@ async def _emit_alt_versions(
     if not masters:
         return
 
+    # После обхода краулера masters/instock_record_ids — почти весь маркет;
+    # array-бинды вместо in_/not_in, иначе asyncpg упирается в лимит 32 767.
+    dialect = _dialect_name(db)
     alt_items = (
         await db.execute(
             select(WishlistItem)
             .join(Wishlist)
             .join(Record, WishlistItem.record_id == Record.id)
             .where(
-                Record.discogs_master_id.in_(masters),
-                WishlistItem.record_id.not_in(instock_record_ids),
+                _id_filter(Record.discogs_master_id, masters, dialect=dialect),
+                _id_filter(
+                    WishlistItem.record_id,
+                    instock_record_ids,
+                    dialect=dialect,
+                    negate=True,
+                ),
             )
             .options(
                 selectinload(WishlistItem.wishlist),
@@ -375,42 +432,45 @@ async def _emit_alt_versions(
             alt_push_title = alt_push_body = None
 
         try:
-            notif, is_new = await upsert_notification(
-                db,
-                user_id=wi.wishlist.user_id,
-                type="wishlist_in_stock_alt",
-                dedup_key=f"wishlist_in_stock_alt:{wanted.id}",
-                entity_type="record",
-                entity_id=str(wanted.id),
-                data={
-                    "record_id": str(wanted.id),
-                    "record_title": wanted.title,
-                    "record_artist": getattr(wanted, "artist", None),
-                    "cover_url": getattr(wanted, "cover_image_url", None),
-                    "alt_record_id": str(alt_record.id) if alt_record else None,
-                    "alt_record_title": getattr(alt_record, "title", None),
-                    "alt_cover_url": getattr(alt_record, "cover_image_url", None),
-                    "price_rub": min_price,
-                    "min_price_rub": min_price,
-                    "store_count": 1,
-                    "stores": [store_payload],
-                    "store": store_payload,
-                    "on_radar": subscribed,
-                    "radar_status": "alt" if subscribed else None,
-                },
-                push_title=alt_push_title,
-                push_body=alt_push_body,
-                push_image=(getattr(alt_record, "cover_image_url", None) if push_now else None),
-                push_cap_key=(f"wl_alt:{wanted.id}" if push_now else None),
-                priority=PRIORITY_PUSH if push_now else PRIORITY_QUIET,
-                merge_data_fn=merge_wishlist_stores,
-                should_resurface=_resurface_on_price_improvement,
-            )
+            # Savepoint — как в основном цикле: ошибка БД по одному айтему не
+            # должна оставлять сессию в failed-состоянии для остальных.
+            async with db.begin_nested():
+                notif, is_new = await upsert_notification(
+                    db,
+                    user_id=wi.wishlist.user_id,
+                    type="wishlist_in_stock_alt",
+                    dedup_key=f"wishlist_in_stock_alt:{wanted.id}",
+                    entity_type="record",
+                    entity_id=str(wanted.id),
+                    data={
+                        "record_id": str(wanted.id),
+                        "record_title": wanted.title,
+                        "record_artist": getattr(wanted, "artist", None),
+                        "cover_url": getattr(wanted, "cover_image_url", None),
+                        "alt_record_id": str(alt_record.id) if alt_record else None,
+                        "alt_record_title": getattr(alt_record, "title", None),
+                        "alt_cover_url": getattr(alt_record, "cover_image_url", None),
+                        "price_rub": min_price,
+                        "min_price_rub": min_price,
+                        "store_count": 1,
+                        "stores": [store_payload],
+                        "store": store_payload,
+                        "on_radar": subscribed,
+                        "radar_status": "alt" if subscribed else None,
+                    },
+                    push_title=alt_push_title,
+                    push_body=alt_push_body,
+                    push_image=(getattr(alt_record, "cover_image_url", None) if push_now else None),
+                    push_cap_key=(f"wl_alt:{wanted.id}" if push_now else None),
+                    priority=PRIORITY_PUSH if push_now else PRIORITY_QUIET,
+                    merge_data_fn=merge_wishlist_stores,
+                    should_resurface=_resurface_on_price_improvement,
+                )
+                await record_radar_event(
+                    db, wi, "alt", min_price, getattr(cheapest.store, "name", None)
+                )
             if notif is not None and is_new:
                 emitted_per_user[wi.wishlist.user_id].append(notif)
-            await record_radar_event(
-                db, wi, "alt", min_price, getattr(cheapest.store, "name", None)
-            )
         except Exception:
             logger.exception(
                 "Failed to upsert wishlist_in_stock_alt for user=%s record=%s",
@@ -611,6 +671,7 @@ async def _run_price_drop(db: AsyncSession) -> None:
             best_drop[record_id] = (old, new)
 
     record_ids = list(best_drop.keys())
+    dialect = _dialect_name(db)
 
     # HIGH-сигнал: исторический минимум цены. Берём min(price) по истории in-stock
     # снапшотов СТРОГО ДО текущего окна: `new` уже записан в историю, и если его не
@@ -624,7 +685,7 @@ async def _run_price_drop(db: AsyncSession) -> None:
                 func.min(ListingPriceHistory.price_rub),
             )
             .where(
-                ListingPriceHistory.record_id.in_(record_ids),
+                _id_filter(ListingPriceHistory.record_id, record_ids, dialect=dialect),
                 ListingPriceHistory.status == ListingStatus.IN_STOCK,
                 ListingPriceHistory.price_rub.is_not(None),
                 ListingPriceHistory.captured_at < window_start,
@@ -640,7 +701,7 @@ async def _run_price_drop(db: AsyncSession) -> None:
         await db.execute(
             select(WishlistItem)
             .join(Wishlist)
-            .where(WishlistItem.record_id.in_(record_ids))
+            .where(_id_filter(WishlistItem.record_id, record_ids, dialect=dialect))
             .options(
                 selectinload(WishlistItem.wishlist),
                 selectinload(WishlistItem.record),
@@ -779,6 +840,7 @@ async def _run_absent(db: AsyncSession) -> None:
         return
 
     record_ids = list({l.matched_record_id for l in gone if l.matched_record_id})
+    dialect = _dialect_name(db)
 
     # Записи, у которых ещё остался хоть один in-stock листинг, — не «пропали».
     still_instock = set(
@@ -786,7 +848,7 @@ async def _run_absent(db: AsyncSession) -> None:
             await db.execute(
                 select(StoreListing.matched_record_id)
                 .where(
-                    StoreListing.matched_record_id.in_(record_ids),
+                    _id_filter(StoreListing.matched_record_id, record_ids, dialect=dialect),
                     StoreListing.status == ListingStatus.IN_STOCK,
                 )
                 .distinct()
@@ -807,7 +869,7 @@ async def _run_absent(db: AsyncSession) -> None:
         await db.execute(
             select(WishlistItem)
             .join(Wishlist)
-            .where(WishlistItem.record_id.in_(truly_gone))
+            .where(_id_filter(WishlistItem.record_id, truly_gone, dialect=dialect))
             .options(
                 selectinload(WishlistItem.wishlist),
                 selectinload(WishlistItem.record),
