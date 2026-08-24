@@ -47,3 +47,7 @@ ACHIEVEMENTS_OPENED = "achievements_opened"  # открыл экран «Ачи�
 
 # Периодика
 DAILY_TICK = "daily_tick"
+# Ежечасный тик для пасхалок, которым нужна «тишина» (ровно N пластинок и сутки
+# без пополнений). COLLECTION_ITEM_ADDED их выдать не может — добавление само
+# обнуляет кулдаун, — а DAILY_TICK ловит момент с задержкой до 48 часов.
+COOLDOWN_TICK = "cooldown_tick"
