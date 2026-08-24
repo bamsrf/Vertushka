@@ -234,9 +234,11 @@ export default function RadarScreen() {
 
   const onCoverPress = (item: RadarItem) => {
     Haptics.selectionAsync().catch(() => {});
-    // Шит открывается и для принятого аналога (accept_alt) — чтобы решение
-    // можно было отменить и вернуться к поиску своей версии.
-    if (item.alt && (item.status === 'alt' || item.accept_alt)) {
+    // Шит подтверждения — ТОЛЬКО для нерешённого предложения. Принятый аналог
+    // ведёт в шторку цены, как обычная «в продаже»: раньше он открывал этот же
+    // шит и при каждом тапе переспрашивал «считать подходящим?», хотя юзер уже
+    // согласился. Отмена решения теперь живёт внутри шторки цены.
+    if (item.alt && item.status === 'alt' && !item.accept_alt) {
       altRef.current?.present({
         itemId: item.wishlist_item_id,
         altRecordId: item.alt.record_id,
@@ -250,7 +252,6 @@ export default function RadarScreen() {
         altCountry: item.alt.country ?? null,
         altFormat: item.alt.format ?? null,
         altPrice: item.alt.price_rub ?? null,
-        accepted: item.accept_alt === true,
       });
       return;
     }
@@ -263,6 +264,9 @@ export default function RadarScreen() {
       currentPrice: item.lowest_price_rub,
       threshold: item.threshold_rub,
       thresholdPct: item.threshold_pct ?? null,
+      isAcceptedAlt: item.accept_alt === true && !!item.alt,
+      altTitle: item.alt?.title ?? null,
+      rejectedAltCount: item.rejected_alt_count ?? 0,
       status: item.status,
       buyUrl: item.buy_url ?? null,
       buyListingId: item.buy_listing_id ?? null,
@@ -436,7 +440,13 @@ export default function RadarScreen() {
         </View>
       ) : null}
 
-      <PriceHistorySheet ref={historyRef} onEditThreshold={onEditThreshold} onOpenStore={onOpenStore} onRemoved={() => load()} />
+      <PriceHistorySheet
+        ref={historyRef}
+        onEditThreshold={onEditThreshold}
+        onOpenStore={onOpenStore}
+        onRemoved={() => load()}
+        onAltChanged={() => load()}
+      />
       <AltVersionSheet ref={altRef} onConfirm={() => load()} />
       <ThresholdSheet ref={thresholdRef} onSaved={() => load()} />
     </View>

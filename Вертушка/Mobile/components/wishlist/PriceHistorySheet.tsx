@@ -45,6 +45,17 @@ export interface PriceHistorySheetData {
   /** discogs_id записи — нужен родителю для offer_click в аналитике. */
   discogsId?: string | null;
   offersCount?: number;
+  /**
+   * Цена и наличие относятся к ДРУГОМУ прессингу, принятому юзером как
+   * подходящий (accept_alt). Раньше принятый аналог вёл в шит подтверждения и
+   * при каждом тапе переспрашивал «считать подходящим?», хотя решение уже
+   * принято. Теперь ведёт сюда, а отмена решения — строкой внутри.
+   */
+  isAcceptedAlt?: boolean;
+  /** Название принятого прессинга — чтобы было видно, за чем следим. */
+  altTitle?: string | null;
+  /** Сколько версий скрыто через «не предлагать» (путь назад из бана). */
+  rejectedAltCount?: number;
 }
 
 export interface PriceHistorySheetRef {
@@ -55,6 +66,8 @@ interface Props {
   onOpenStore?: (data: PriceHistorySheetData) => void;
   onEditThreshold?: (data: PriceHistorySheetData) => void;
   onRemoved?: () => void;
+  /** Решение по аналогу изменилось — родителю надо перезагрузить радар. */
+  onAltChanged?: () => void;
 }
 
 const fmt = (n: number) => Math.round(n).toLocaleString('ru-RU');
@@ -72,10 +85,23 @@ const STATUS_PILL: Record<RadarStatus, { label: string; color: string; bg: strin
 };
 
 export const PriceHistorySheet = forwardRef<PriceHistorySheetRef, Props>(
-  ({ onOpenStore, onEditThreshold, onRemoved }, ref) => {
+  ({ onOpenStore, onEditThreshold, onRemoved, onAltChanged }, ref) => {
     const sheetRef = useRef<BottomSheetModal>(null);
     const router = useRouter();
     const removeRadar = useCollectionStore((s) => s.removeWishlistRadar);
+    const setAcceptAlt = useCollectionStore((s) => s.setWishlistAcceptAlt);
+    // Побочные эффекты — только после закрытия шита: перерисовка родителя во
+    // время анимации dismiss её обрывает (ловили это на шите аналога).
+    const pendingRef = useRef<(() => void) | null>(null);
+    const closeThen = useCallback((fn?: () => void) => {
+      pendingRef.current = fn ?? null;
+      sheetRef.current?.dismiss();
+    }, []);
+    const runPending = useCallback(() => {
+      const fn = pendingRef.current;
+      pendingRef.current = null;
+      fn?.();
+    }, []);
     const [data, setData] = useState<PriceHistorySheetData | null>(null);
     const [history, setHistory] = useState<PriceHistoryResponse | null>(null);
     const [radarEvents, setRadarEvents] = useState<RadarEvent[]>([]);
@@ -110,20 +136,44 @@ export const PriceHistorySheet = forwardRef<PriceHistorySheetRef, Props>(
           {
             text: 'Убрать',
             style: 'destructive',
-            onPress: async () => {
-              try {
-                await removeRadar(data.itemId);
-                sheetRef.current?.dismiss();
-                toast.success('Убрали с радара');
-                onRemoved?.();
-              } catch {
-                toast.error('Не удалось убрать радар');
-              }
+            onPress: () => {
+              closeThen(() => {
+                removeRadar(data.itemId)
+                  .then(() => { toast.success('Убрали с радара'); onRemoved?.(); })
+                  .catch(() => toast.error('Не удалось убрать радар'));
+              });
             },
           },
         ],
       );
     }, [data, removeRadar, onRemoved]);
+
+    // «Только моя версия»: снимаем accept_alt и НЕ баним прессинг. Раньше это
+    // делалось через reject, который заносил версию в rejected_alt_record_ids
+    // навсегда — айтем падал в absent, хотя аналог остался в продаже, и пути
+    // назад из интерфейса не было вовсе. Теперь аналог просто возвращается в
+    // статус «альтернатива», и его можно принять снова.
+    const onOwnVersionOnly = useCallback(() => {
+      if (!data) return;
+      const { itemId } = data;
+      closeThen(() => {
+        setAcceptAlt(itemId, false)
+          .then(() => { toast.success('Следим только за своей версией'); onAltChanged?.(); })
+          .catch(() => toast.error('Не удалось сохранить'));
+      });
+    }, [data, closeThen, setAcceptAlt, onAltChanged]);
+
+    // Путь назад из «не предлагать»: возвращаем все скрытые прессинги.
+    const onRestoreHidden = useCallback(() => {
+      if (!data) return;
+      const { itemId } = data;
+      closeThen(() => {
+        api
+          .updateWishlistItem(itemId, { restore_rejected_alts: true })
+          .then(() => { toast.success('Скрытые версии возвращены'); onAltChanged?.(); })
+          .catch(() => toast.error('Не удалось вернуть'));
+      });
+    }, [data, closeThen, onAltChanged]);
 
     const renderBackdrop = useCallback(
       (props: BottomSheetBackdropProps) => (
@@ -151,6 +201,7 @@ export const PriceHistorySheet = forwardRef<PriceHistorySheetRef, Props>(
       <BottomSheetModal
         ref={sheetRef}
         snapPoints={['82%']}
+        onDismiss={runPending}
         backdropComponent={renderBackdrop}
         handleIndicatorStyle={styles.handle}
         backgroundStyle={styles.sheetBg}
@@ -203,6 +254,29 @@ export const PriceHistorySheet = forwardRef<PriceHistorySheetRef, Props>(
                 ? `Самое дешёвое из ${data.offersCount} подходящих предложений`
                 : 'Самое дешёвое подходящее предложение'}
             </Text>
+          ) : null}
+
+          {data?.isAcceptedAlt ? (
+            <View style={styles.altCard}>
+              <Text style={styles.altTitle}>Следим за другой версией</Text>
+              <Text style={styles.altBody}>
+                {data.altTitle
+                  ? `Подходящим считается «${data.altTitle}» — другой прессинг этого альбома.`
+                  : 'Подходящим считается другой прессинг этого альбома.'}
+              </Text>
+              <TouchableOpacity style={styles.altBtn} onPress={onOwnVersionOnly} activeOpacity={0.7}>
+                <Text style={styles.altBtnTxt}>Следить только за своей версией</Text>
+              </TouchableOpacity>
+            </View>
+          ) : null}
+
+          {data?.rejectedAltCount ? (
+            <TouchableOpacity style={styles.hiddenRow} onPress={onRestoreHidden} activeOpacity={0.7}>
+              <Text style={styles.hiddenTxt}>
+                Скрыто версий: {data.rejectedAltCount}
+              </Text>
+              <Text style={styles.hiddenAction}>Вернуть</Text>
+            </TouchableOpacity>
           ) : null}
 
           {history && history.points.length > 0 ? (
@@ -281,6 +355,14 @@ const styles = StyleSheet.create({
   pill: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 7, paddingHorizontal: 12, borderRadius: 9999 },
   pillDot: { width: 7, height: 7, borderRadius: 9999 },
   pillTxt: { fontSize: 13, fontFamily: 'Inter_700Bold' },
+  altCard: { marginTop: 16, padding: 16, borderRadius: 16, backgroundColor: 'rgba(244,160,106,0.14)' },
+  altTitle: { ...Typography.bodyBold, color: '#8A5326' },
+  altBody: { fontSize: 13, lineHeight: 18, color: '#8A5326', marginTop: 4 },
+  altBtn: { marginTop: 12, paddingVertical: 12, borderRadius: 12, backgroundColor: '#fff', alignItems: 'center' },
+  altBtnTxt: { fontSize: 14, fontFamily: 'Inter_600SemiBold', color: '#8A5326' },
+  hiddenRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 14, paddingVertical: 12, paddingHorizontal: 14, borderRadius: 14, backgroundColor: Colors.surfaceHover },
+  hiddenTxt: { fontSize: 13, color: Colors.textSecondary },
+  hiddenAction: { fontSize: 14, fontFamily: 'Inter_600SemiBold', color: Colors.royalBlue },
   chartCard: { marginTop: 18, backgroundColor: '#fff', borderRadius: 14, paddingVertical: 4 },
   histBlock: { marginTop: 16 },
   histTitle: { ...Typography.bodyBold, color: Colors.text, marginBottom: 8 },

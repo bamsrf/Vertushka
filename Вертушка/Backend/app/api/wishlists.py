@@ -373,6 +373,7 @@ async def get_radar(
                 baseline_rub=baselines.get(rec.id),
                 conditions=accepted,
                 accept_alt=wi.accept_alt,
+                rejected_alt_count=len(wi.rejected_alt_record_ids or []),
                 radius=_radar_radius(status_v, lowest, threshold),
                 offers_count=(len(exact) if exact else (1 if status_v == "available" else 0)),
                 buy_url=buy_url,
@@ -651,6 +652,10 @@ async def update_wishlist_item(
         item.conditions = data.conditions
     if "accept_alt" in data.model_fields_set and data.accept_alt is not None:
         item.accept_alt = data.accept_alt
+    # Возврат скрытых версий — до обработки reject, чтобы в одном запросе
+    # «верни всё» и «скрой вот этот» дали предсказуемый порядок.
+    if data.restore_rejected_alts:
+        item.rejected_alt_record_ids = []
     if data.reject_alt_record_id is not None:
         # «Нет» на аналоге: запоминаем прессинг, чтобы радар его не предлагал.
         rejected = list(item.rejected_alt_record_ids or [])

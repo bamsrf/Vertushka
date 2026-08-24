@@ -1294,8 +1294,10 @@ class ApiClient {
   async updateWishlistItem(
     itemId: string,
     patch: Partial<Pick<WishlistItem, 'notify_mode' | 'price_threshold_rub' | 'threshold_pct' | 'conditions' | 'accept_alt' | 'priority' | 'notes'>> & {
-      // «Нет» на аналоге: этот прессинг больше не предлагать.
+      // «Не предлагать»: этот прессинг больше не показывать как аналог.
       reject_alt_record_id?: string;
+      // Вернуть все скрытые прессинги — путь назад из «не предлагать».
+      restore_rejected_alts?: boolean;
     },
   ): Promise<WishlistItem> {
     const response = await this.client.put<WishlistItem>(

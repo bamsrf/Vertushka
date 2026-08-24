@@ -8,11 +8,12 @@ import React, { forwardRef, useImperativeHandle, useRef, useState, useCallback }
 import { StyleSheet, Text, View, TouchableOpacity, Image } from 'react-native';
 import {
   BottomSheetModal,
-  BottomSheetView,
+  BottomSheetScrollView,
   BottomSheetBackdrop,
   type BottomSheetBackdropProps,
 } from '@gorhom/bottom-sheet';
 import { useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, Typography } from '../../constants/theme';
 import { useCollectionStore } from '../../lib/store';
@@ -31,8 +32,6 @@ export interface AltVersionSheetData {
   altCountry?: string | null;
   altFormat?: string | null;
   altPrice?: number | null;
-  // Аналог уже принят ранее (accept_alt=true) — шит работает как отмена.
-  accepted?: boolean;
 }
 
 export interface AltVersionSheetRef {
@@ -47,10 +46,26 @@ const fmt = (n: number) => Math.round(n).toLocaleString('ru-RU');
 
 export const AltVersionSheet = forwardRef<AltVersionSheetRef, Props>(({ onConfirm }, ref) => {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const sheetRef = useRef<BottomSheetModal>(null);
   const [data, setData] = useState<AltVersionSheetData | null>(null);
   const setAcceptAlt = useCollectionStore((s) => s.setWishlistAcceptAlt);
   const rejectAlt = useCollectionStore((s) => s.rejectWishlistAlt);
+
+  // Побочные эффекты запускаем строго ПОСЛЕ того, как шит закрылся. Раньше они
+  // шли сразу за dismiss(), и родительский setState (перезагрузка радара) или
+  // навигация перерисовывали дерево во время анимации закрытия — она обрывалась,
+  // и шит оставался висеть. Копим колбэк здесь, выполняем по onDismiss.
+  const pendingRef = useRef<(() => void) | null>(null);
+  const closeThen = useCallback((fn?: () => void) => {
+    pendingRef.current = fn ?? null;
+    sheetRef.current?.dismiss();
+  }, []);
+  const runPending = useCallback(() => {
+    const fn = pendingRef.current;
+    pendingRef.current = null;
+    fn?.();
+  }, []);
 
   const present = useCallback((d: AltVersionSheetData) => {
     setData(d);
@@ -66,33 +81,27 @@ export const AltVersionSheet = forwardRef<AltVersionSheetRef, Props>(({ onConfir
     [],
   );
 
-  const accepted = data?.accepted === true;
-
   const onYes = () => {
-    sheetRef.current?.dismiss();
-    if (!data) return;
-    if (accepted) { onConfirm?.(data); return; }
-    setAcceptAlt(data.itemId, true)
-      .then(() => { toast.success('Следим и за этой версией'); onConfirm?.(data); })
-      .catch(() => toast.error('Не удалось сохранить'));
+    if (!data) { closeThen(); return; }
+    closeThen(() => {
+      setAcceptAlt(data.itemId, true)
+        .then(() => { toast.success('Следим и за этой версией'); onConfirm?.(data); })
+        .catch(() => toast.error('Не удалось сохранить'));
+    });
   };
 
   // «Нет» — явный отказ: этот прессинг больше не предлагаем, радар снова
   // ищет ровно ту версию, которая в вишлисте.
   const onNo = () => {
-    sheetRef.current?.dismiss();
-    if (!data) return;
-    if (!data.altRecordId) {
-      if (accepted) {
-        setAcceptAlt(data.itemId, false)
-          .then(() => { toast.success('Следим только за своей версией'); onConfirm?.(data); })
-          .catch(() => toast.error('Не удалось сохранить'));
-      }
-      return;
-    }
-    rejectAlt(data.itemId, data.altRecordId)
-      .then(() => { toast.success('Больше не предлагаем эту версию'); onConfirm?.(data); })
-      .catch(() => toast.error('Не удалось сохранить'));
+    if (!data) { closeThen(); return; }
+    const { itemId, altRecordId } = data;
+    // Без id прессинга банить нечего — просто закрываемся.
+    if (!altRecordId) { closeThen(); return; }
+    closeThen(() => {
+      rejectAlt(itemId, altRecordId)
+        .then(() => { toast.success('Больше не предлагаем эту версию'); onConfirm?.(data); })
+        .catch(() => toast.error('Не удалось сохранить'));
+    });
   };
 
   // Открыть карточку самого прессинга: до этого решение «следить / не следить»
@@ -105,8 +114,8 @@ export const AltVersionSheet = forwardRef<AltVersionSheetRef, Props>(({ onConfir
     if (data.altCoverUrl) params.set('previewCover', data.altCoverUrl);
     if (data.altYear) params.set('previewYear', String(data.altYear));
     const qs = params.toString();
-    sheetRef.current?.dismiss();
-    router.push(`/record/${data.altRecordId}${qs ? `?${qs}` : ''}` as any);
+    const href = `/record/${data.altRecordId}${qs ? `?${qs}` : ''}`;
+    closeThen(() => router.push(href as any));
   };
 
   const cover = data?.altCoverUrl ?? null;
@@ -122,11 +131,19 @@ export const AltVersionSheet = forwardRef<AltVersionSheetRef, Props>(({ onConfir
     <BottomSheetModal
       ref={sheetRef}
       enableDynamicSizing
+      topInset={insets.top + 8}
+      onDismiss={runPending}
       backdropComponent={renderBackdrop}
       handleIndicatorStyle={styles.handle}
       backgroundStyle={styles.sheetBg}
     >
-      <BottomSheetView style={styles.container}>
+      {/* Скроллящийся контент, а не BottomSheetView. Содержимое здесь высокое
+          (обложка, четыре строки текста, цена, карточка отличий, ссылка и две
+          кнопки), и на компактных экранах оно перерастало высоту листа. Дети,
+          вылезшие за границы контейнера, на iOS продолжают РИСОВАТЬСЯ, но
+          hit-test их отбрасывает: кнопка видна и не нажимается. Ровно та же
+          болезнь, что была у «Сохранить» в шторке порога. */}
+      <BottomSheetScrollView contentContainerStyle={styles.container}>
         <TouchableOpacity
           onPress={onOpenRelease}
           disabled={!canOpen}
@@ -140,13 +157,9 @@ export const AltVersionSheet = forwardRef<AltVersionSheetRef, Props>(({ onConfir
             <View style={[styles.cover, styles.coverPlaceholder]} />
           )}
         </TouchableOpacity>
-        <Text style={styles.title}>
-          {accepted ? 'Следим за другой версией' : 'Другая версия в наличии'}
-        </Text>
+        <Text style={styles.title}>Другая версия в наличии</Text>
         <Text style={styles.body}>
-          {accepted
-            ? `Сейчас подходящим считается другой прессинг${data?.recordTitle ? ` «${data.recordTitle}»` : ''}. Вернуться к поиску только своей версии?`
-            : `В продаже другой прессинг${data?.recordTitle ? ` «${data.recordTitle}»` : ''}. Считать его подходящим?`}
+          {`В продаже другой прессинг${data?.recordTitle ? ` «${data.recordTitle}»` : ''}. Считать его подходящим?`}
         </Text>
 
         {data?.altPrice != null ? <Text style={styles.price}>{fmt(data.altPrice)} ₽</Text> : null}
@@ -176,13 +189,14 @@ export const AltVersionSheet = forwardRef<AltVersionSheetRef, Props>(({ onConfir
 
         <View style={[styles.btns, canOpen && styles.btnsTight]}>
           <TouchableOpacity style={styles.primaryBtn} onPress={onYes} activeOpacity={0.9}>
-            <Text style={styles.primaryTxt}>{accepted ? 'Продолжить следить' : 'Да, следить'}</Text>
+            <Text style={styles.primaryTxt}>Да, следить</Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.secondaryBtn} onPress={onNo} activeOpacity={0.7}>
-            <Text style={styles.secondaryTxt}>{accepted ? 'Нет, только моя версия' : 'Нет'}</Text>
+            <Text style={styles.secondaryTxt}>Не предлагать эту версию</Text>
           </TouchableOpacity>
         </View>
-      </BottomSheetView>
+        <View style={{ height: Math.max(insets.bottom, 12) }} />
+      </BottomSheetScrollView>
     </BottomSheetModal>
   );
 });
@@ -193,7 +207,7 @@ export default AltVersionSheet;
 const styles = StyleSheet.create({
   sheetBg: { backgroundColor: Colors.surface, borderRadius: 28 },
   handle: { backgroundColor: '#D3D7E6', width: 40 },
-  container: { alignItems: 'center', paddingHorizontal: 24, paddingBottom: 34, paddingTop: 4 },
+  container: { alignItems: 'center', paddingHorizontal: 24, paddingBottom: 12, paddingTop: 4 },
   cover: { width: 76, height: 76, borderRadius: 16, marginBottom: 16, borderWidth: 2, borderColor: '#F4A06A' },
   coverPlaceholder: { backgroundColor: Colors.surfaceHover },
   title: { ...Typography.h2, color: Colors.text, textAlign: 'center' },

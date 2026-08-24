@@ -574,6 +574,8 @@ export interface RadarItem {
   alt: RadarAlt | null;
   /** ISO-дата ухода в absent. null — статус не absent либо хронологии ещё нет. */
   absent_since?: string | null;
+  /** Сколько прессингов скрыто через «не предлагать» — чтобы дать путь назад. */
+  rejected_alt_count?: number;
   /** Задан → режим «дешевле обычного», threshold_rub посчитан от базы. */
   threshold_pct?: number | null;
   /** Медиана дневных минимумов за 90 дней. null — истории не хватило. */
