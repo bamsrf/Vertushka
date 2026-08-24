@@ -101,10 +101,17 @@ function median(xs: number[]): number | null {
 const fmt = (n: number) => (Number.isFinite(n) ? Math.round(n) : 0).toLocaleString('ru-RU');
 const roundTo = (n: number, step: number) => Math.max(0, Math.round(n / step) * step);
 const clamp = (n: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, n));
-// Цены с бэка могут приходить как NaN (absent-пластинки) — приводим к number|null,
-// т.к. `??` ловит только null/undefined и NaN протекал бы во все расчёты границ.
-const finite = (n: unknown): number | null =>
-  typeof n === 'number' && Number.isFinite(n) ? n : null;
+// Приводим к number|null. Два источника мусора:
+//  1) NaN у absent-пластинок — `??` ловит только null/undefined, и NaN протекал
+//     бы во все расчёты границ;
+//  2) СТРОКИ — Pydantic сериализует Decimal в JSON строкой, поэтому цена и
+//     порог из /wishlists/radar приходят как "5000.00". Гард пропускал только
+//     number, и сохранённый порог молча терялся: шторка открывалась со 100 ₽
+//     вместо зафиксированной суммы. Пустую строку не пускаем — Number('') = 0.
+const finite = (n: unknown): number | null => {
+  const v = typeof n === 'string' ? (n.trim() === '' ? NaN : Number(n)) : n;
+  return typeof v === 'number' && Number.isFinite(v) ? v : null;
+};
 
 // Группировка разрядов пробелом — worklet-safe (без toLocaleString в UI-потоке).
 function groupWorklet(n: number): string {
