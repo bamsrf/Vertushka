@@ -32,8 +32,6 @@ export interface AltVersionSheetData {
   altCountry?: string | null;
   altFormat?: string | null;
   altPrice?: number | null;
-  // Аналог уже принят ранее (accept_alt=true) — шит работает как отмена.
-  accepted?: boolean;
 }
 
 export interface AltVersionSheetRef {
@@ -83,15 +81,8 @@ export const AltVersionSheet = forwardRef<AltVersionSheetRef, Props>(({ onConfir
     [],
   );
 
-  const accepted = data?.accepted === true;
-
   const onYes = () => {
     if (!data) { closeThen(); return; }
-    // «Продолжить следить» при уже принятом аналоге ничего не меняет — это
-    // чистое подтверждение. Просто закрываемся: дёргать onConfirm (а он
-    // перезагружает радар) тут не за чем, и именно этот лишний setState рвал
-    // анимацию закрытия.
-    if (accepted) { closeThen(); return; }
     closeThen(() => {
       setAcceptAlt(data.itemId, true)
         .then(() => { toast.success('Следим и за этой версией'); onConfirm?.(data); })
@@ -104,18 +95,8 @@ export const AltVersionSheet = forwardRef<AltVersionSheetRef, Props>(({ onConfir
   const onNo = () => {
     if (!data) { closeThen(); return; }
     const { itemId, altRecordId } = data;
-    if (!altRecordId) {
-      closeThen(
-        accepted
-          ? () => {
-              setAcceptAlt(itemId, false)
-                .then(() => { toast.success('Следим только за своей версией'); onConfirm?.(data); })
-                .catch(() => toast.error('Не удалось сохранить'));
-            }
-          : undefined,
-      );
-      return;
-    }
+    // Без id прессинга банить нечего — просто закрываемся.
+    if (!altRecordId) { closeThen(); return; }
     closeThen(() => {
       rejectAlt(itemId, altRecordId)
         .then(() => { toast.success('Больше не предлагаем эту версию'); onConfirm?.(data); })
@@ -176,13 +157,9 @@ export const AltVersionSheet = forwardRef<AltVersionSheetRef, Props>(({ onConfir
             <View style={[styles.cover, styles.coverPlaceholder]} />
           )}
         </TouchableOpacity>
-        <Text style={styles.title}>
-          {accepted ? 'Следим за другой версией' : 'Другая версия в наличии'}
-        </Text>
+        <Text style={styles.title}>Другая версия в наличии</Text>
         <Text style={styles.body}>
-          {accepted
-            ? `Сейчас подходящим считается другой прессинг${data?.recordTitle ? ` «${data.recordTitle}»` : ''}. Вернуться к поиску только своей версии?`
-            : `В продаже другой прессинг${data?.recordTitle ? ` «${data.recordTitle}»` : ''}. Считать его подходящим?`}
+          {`В продаже другой прессинг${data?.recordTitle ? ` «${data.recordTitle}»` : ''}. Считать его подходящим?`}
         </Text>
 
         {data?.altPrice != null ? <Text style={styles.price}>{fmt(data.altPrice)} ₽</Text> : null}
@@ -212,10 +189,10 @@ export const AltVersionSheet = forwardRef<AltVersionSheetRef, Props>(({ onConfir
 
         <View style={[styles.btns, canOpen && styles.btnsTight]}>
           <TouchableOpacity style={styles.primaryBtn} onPress={onYes} activeOpacity={0.9}>
-            <Text style={styles.primaryTxt}>{accepted ? 'Продолжить следить' : 'Да, следить'}</Text>
+            <Text style={styles.primaryTxt}>Да, следить</Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.secondaryBtn} onPress={onNo} activeOpacity={0.7}>
-            <Text style={styles.secondaryTxt}>{accepted ? 'Нет, только моя версия' : 'Нет'}</Text>
+            <Text style={styles.secondaryTxt}>Не предлагать эту версию</Text>
           </TouchableOpacity>
         </View>
         <View style={{ height: Math.max(insets.bottom, 12) }} />

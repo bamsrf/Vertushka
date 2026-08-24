@@ -39,8 +39,12 @@ class WishlistItemUpdate(BaseModel):
     conditions: list[WishlistCondition] | None = None
     # Принять альт-прессинг как подходящий (радар: статус «в продаже», не «альтернатива»).
     accept_alt: bool | None = None
-    # «Нет» в шите радара: этот прессинг больше не предлагать как аналог.
+    # «Не предлагать» в шите радара: этот прессинг больше не предлагать как аналог.
     reject_alt_record_id: UUID | None = None
+    # Вернуть все ранее скрытые прессинги. Без этого «не предлагать» было
+    # необратимо из интерфейса: список только пополнялся, и юзер, отклонивший
+    # единственный живой аналог, терял его насовсем.
+    restore_rejected_alts: bool | None = None
 
 
 class GiftBookingInfo(BaseModel):
@@ -254,6 +258,9 @@ class RadarItem(BaseModel):
     baseline_rub: Decimal | None = None
     conditions: list[WishlistCondition] | None = None
     accept_alt: bool = False
+    # Сколько прессингов юзер скрыл через «не предлагать». Нужно, чтобы дать в
+    # UI путь назад — иначе решение необратимо и радар молча пустеет.
+    rejected_alt_count: int = 0
     radius: float  # 0..1: 0 = у центра (зона покупки), 1 = внешний край
     offers_count: int = 0       # сколько подходящих in_stock листингов
     buy_url: str | None = None  # ссылка на самый дешёвый листинг (прямой заказ)
