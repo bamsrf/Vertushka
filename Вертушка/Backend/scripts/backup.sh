@@ -31,6 +31,13 @@ set -o pipefail
 # Справочники Discogs/MusicBrainz (97% объёма БД) в дамп не тащим: они
 # восстановимы из исходных дампов (см. memory vertushka-discogs-dump-refresh
 # и docs/plans). Схема таблиц в бэкапе остаётся — исключаются только данные.
+# Исключение из правила «восстановимы из дампов» — discogs_release_tracklists:
+# повторный парсинг releases-дампа занимает часы и требует скачать ~12 ГБ,
+# которые прод сам не вытянет (Cloudflare). Recovery-путь: разовый дамп
+# ~/backups/ref_discogs_release_tracklists_YYYYMMDD.sql.gz (ротация его не
+# трогает — маска vertushka_*) либо tracklists.csv + \copy, см.
+# app/scripts/ingest_release_tracklists.py. После обновления Discogs-дампа
+# переснять: pg_dump --table=discogs_release_tracklists.
 # discogs_dump_state исключён сознательно: иначе после restore система считала
 # бы дампы загруженными при пустых таблицах. discogs_price_jobs НЕ исключать —
 # это пользовательская очередь, не справочник. Оговорка: releases_index копит
