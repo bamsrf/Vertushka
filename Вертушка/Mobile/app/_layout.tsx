@@ -467,7 +467,10 @@ function RootLayout() {
   }
 
   return (
-    <GestureHandlerRootView style={{ flex: 1 }}>
+    // Фон корневого view — тот же, что у splash и у контента: иначе в стыке
+    // «скрылся splash → смонтировался Stack» проглядывает белая подложка
+    // RN-окна и старт мигает.
+    <GestureHandlerRootView style={{ flex: 1, backgroundColor: Colors.background }}>
       <BottomSheetModalProvider>
         <SafeAreaProvider>
           <StatusBar style="dark" />

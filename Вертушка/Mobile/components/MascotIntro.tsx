@@ -15,20 +15,23 @@
  * не подгрузился — интро тихо пропускается (onFinish зовётся сразу), пользователь
  * просто попадает в приложение без заставки.
  *
- * Фон интро = INTRO_BACKDROP (#FAFAFA) — точный цвет фона кадров, чтобы квадрат
- * видео не проступал на подложке. Он же в паре пикселей от splash.backgroundColor
- * (#FAFBFF в app.json) и от фона приложения, так что на стыках ступеньки не видно.
+ * Фон интро = Colors.background — тот же цвет, что у splash.backgroundColor
+ * (app.json) и у контента приложения, и тот же, что у фона кадров ролика: он
+ * прибит к #FAFBFF скриптом scripts/normalize_intro_video.sh. Совпадать должны
+ * все трое, иначе видно либо квадрат видео на подложке, либо вспышку на стыке
+ * «splash → интро». Прогонять скрипт при каждой замене ролика.
  */
 import { useEffect, useRef, useState } from 'react';
 import { Animated, StyleSheet } from 'react-native';
 
+import { Colors } from '../constants/theme';
+
 /**
- * Фон кадров intro-mascot.mp4 — замерен по краю кадра (ffmpeg, crop по рамке):
- * ровно #FAFAFA и не плывёт по ходу ролика. Держать в паре с фоном кадров, иначе
- * квадрат видео проступает светлым прямоугольником поверх подложки — на чистом
- * белом это видно невооружённым глазом. При замене ролика замерять заново.
+ * Подложка под квадратом видео. Ровно фон приложения: фон кадров ролика приведён
+ * к нему же, так что край кадра на подложке не читается. Проверка после замены
+ * ролика — вывод scripts/normalize_intro_video.sh, там должно быть fafbff.
  */
-const INTRO_BACKDROP = '#FAFAFA';
+const INTRO_BACKDROP = Colors.background;
 /** Длительность intro-mascot.mp4 ≈ 5.7с. Safety-timeout берётся с запасом. */
 const INTRO_DURATION_MS = 5710;
 /** Затухание перед снятием интро — чтобы стык с UI приложения не мигал. */
@@ -78,6 +81,12 @@ function IntroVideo({
   const player = useVideoPlayer(INTRO_SOURCE, (p) => {
     p.loop = false;
     p.muted = true;
+    // Без явного mixWithOthers холодный старт ставит на паузу музыку в чужих
+    // приложениях: нативный дефолт audioMixingMode на iOS — doNotMix (вопреки
+    // доке expo-video, где обещан 'auto'), а он переводит AVAudioSession в
+    // .playback и активирует её даже для немого плеера. У ролика нет звуковой
+    // дорожки вовсе, так что уступать чужому звуку нам нечего.
+    p.audioMixingMode = 'mixWithOthers';
     p.play();
   });
 
