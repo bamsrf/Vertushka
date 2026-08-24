@@ -1,0 +1,94 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" overflow="visible">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#F2C770"></stop>
+      <stop offset=".5" stop-color="#D9A84E"></stop>
+      <stop offset="1" stop-color="#A87E32"></stop>
+    </linearGradient>
+    <path id="spark" d="M0 -3.4 Q.6 -.6 3.4 0 Q.6 .6 0 3.4 Q-.6 .6 -3.4 0 Q-.6 -.6 0 -3.4 Z"></path>
+    <g id="shoe">
+      <path d="M-9 -0.5 C-9 -5.5 -5.5 -8.5 -0.5 -8.5 C5 -8.5 9 -5 9 -1 C9 1.6 7.4 2.6 4 2.6 L-6 2.6 C-8 2.6 -9 1.6 -9 -0.5 Z" fill="#FBF5EA" stroke="#0B1438" stroke-width="3.2" stroke-linejoin="round"></path>
+      <path d="M-9 -0.5 C-9 -5.5 -5.5 -8.5 -0.5 -8.5 C5 -8.5 9 -5 9 -1 C9 1.6 7.4 2.6 4 2.6 L-6 2.6 C-8 2.6 -9 1.6 -9 -0.5 Z" fill="none" stroke="url(#g)" stroke-width="1.7" stroke-linejoin="round"></path>
+      <path d="M-8.7 0.4 L8.8 -0.6" fill="none" stroke="#2A4BD7" stroke-width="2.4" stroke-linecap="round"></path>
+      <path d="M-4.6 -7.4 C-2 -4.4 1.4 -2.4 5.6 -1.8" fill="none" stroke="#2A4BD7" stroke-width="1.8" stroke-linecap="round"></path>
+    </g>
+    <g id="shoe-rim">
+      <path d="M-9 -0.5 C-9 -5.5 -5.5 -8.5 -0.5 -8.5 C5 -8.5 9 -5 9 -1 C9 1.6 7.4 2.6 4 2.6 L-6 2.6 C-8 2.6 -9 1.6 -9 -0.5 Z" fill="none" stroke="url(#g)" stroke-width="5" stroke-linejoin="round"></path>
+    </g>
+  </defs>
+
+  <g id="legend-rim">
+    <circle cx="50" cy="52" r="22.6" fill="none" stroke="url(#g)" stroke-width="1.6" stroke-opacity=".9"></circle>
+  </g>
+
+  <g id="limbs">
+    <path d="M41 40 L32 24" fill="none" stroke="#0B1438" stroke-width="9" stroke-linecap="round"></path>
+    <path d="M59 40 L68 24" fill="none" stroke="#0B1438" stroke-width="9" stroke-linecap="round"></path>
+    <path d="M46 72 C45 79 44 83 43.5 86.5" fill="none" stroke="#0B1438" stroke-width="8.8" stroke-linecap="round"></path>
+    <path d="M55.5 72 C63 76 69 76.5 74.5 72.5" fill="none" stroke="#0B1438" stroke-width="8.8" stroke-linecap="round"></path>
+    <path d="M41 40 L32 24" fill="none" stroke="url(#g)" stroke-width="7.5" stroke-linecap="round"></path>
+    <path d="M59 40 L68 24" fill="none" stroke="url(#g)" stroke-width="7.5" stroke-linecap="round"></path>
+    <path d="M46 72 C45 79 44 83 43.5 86.5" fill="none" stroke="url(#g)" stroke-width="7.3" stroke-linecap="round"></path>
+    <path d="M55.5 72 C63 76 69 76.5 74.5 72.5" fill="none" stroke="url(#g)" stroke-width="7.3" stroke-linecap="round"></path>
+    <path d="M41 40 L32 24" fill="none" stroke="#2A4BD7" stroke-width="5.8" stroke-linecap="round"></path>
+    <path d="M59 40 L68 24" fill="none" stroke="#2A4BD7" stroke-width="5.8" stroke-linecap="round"></path>
+    <path d="M46 72 C45 79 44 83 43.5 86.5" fill="none" stroke="#2A4BD7" stroke-width="5.6" stroke-linecap="round"></path>
+    <path d="M55.5 72 C63 76 69 76.5 74.5 72.5" fill="none" stroke="#2A4BD7" stroke-width="5.6" stroke-linecap="round"></path>
+  </g>
+
+  <g id="shoes">
+    <use href="#shoe" transform="translate(43.5,88.5)"></use>
+    <use href="#shoe" transform="translate(80.5,68.5) rotate(-36)"></use>
+  </g>
+
+  <g id="head">
+    <circle cx="50" cy="52" r="20" fill="#FBF5EA" stroke="#0B1438" stroke-width="3.2"></circle>
+    <circle cx="50" cy="52" r="20" fill="none" stroke="url(#g)" stroke-width="1.7"></circle>
+    <circle cx="50" cy="52" r="16" fill="none" stroke="#D9A84E" stroke-width=".5" stroke-opacity=".6"></circle>
+    <circle cx="50" cy="52" r="13" fill="none" stroke="#D9A84E" stroke-width=".5" stroke-opacity=".6"></circle>
+    <circle cx="50" cy="52" r="10" fill="none" stroke="#D9A84E" stroke-width=".5" stroke-opacity=".6"></circle>
+    <path d="M35 45 A17 17 0 0 1 44 35.5" fill="none" stroke="#FFF" stroke-width="1.6" stroke-opacity=".85" stroke-linecap="round"></path>
+  </g>
+
+  <g id="face">
+    <circle cx="38.5" cy="57.5" r="3.2" fill="#E89AC0"></circle>
+    <circle cx="61.5" cy="57.5" r="3.2" fill="#E89AC0"></circle>
+    <path d="M39.4 50 A4.2 4.2 0 0 0 47.8 50 Z" fill="#0B1438"></path>
+    <path d="M52.2 50 A4.2 4.2 0 0 0 60.6 50 Z" fill="#0B1438"></path>
+    <path d="M38 44.4 L47.4 47.6" fill="none" stroke="#0B1438" stroke-width="2.5" stroke-linecap="round"></path>
+    <path d="M62 44.4 L52.6 47.6" fill="none" stroke="#0B1438" stroke-width="2.5" stroke-linecap="round"></path>
+    <circle cx="50" cy="54.6" r="1.6" fill="#0B1438"></circle>
+    <path d="M46 60.4 Q50 63.8 54 60.4" fill="none" stroke="#0B1438" stroke-width="1.9" stroke-linecap="round"></path>
+  </g>
+
+  <g id="tonearm">
+    <path d="M74 34.5 L41.5 42.5" fill="none" stroke="#0B1438" stroke-width="5.2" stroke-linecap="round"></path>
+    <path d="M74 34.5 L41.5 42.5" fill="none" stroke="url(#g)" stroke-width="2.9" stroke-linecap="round"></path>
+    <path d="M43 41.5 L40 42.3" fill="none" stroke="#0B1438" stroke-width="8.6" stroke-linecap="round"></path>
+    <path d="M43 41.5 L40 42.3" fill="none" stroke="url(#g)" stroke-width="6" stroke-linecap="round"></path>
+  </g>
+
+  <g id="numeral" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M32.4 8.8 L36.2 5.2 L36.2 17.4" fill="none" stroke="#0B1438" stroke-width="9.2"></path>
+    <rect x="47.5" y="6.4" width="5" height="9.2" rx="2.5" fill="none" stroke="#0B1438" stroke-width="9.2"></rect>
+    <rect x="60.5" y="6.4" width="5" height="9.2" rx="2.5" fill="none" stroke="#0B1438" stroke-width="9.2"></rect>
+    <path d="M32.4 8.8 L36.2 5.2 L36.2 17.4" fill="none" stroke="url(#g)" stroke-width="6"></path>
+    <rect x="47.5" y="6.4" width="5" height="9.2" rx="2.5" fill="none" stroke="url(#g)" stroke-width="6"></rect>
+    <rect x="60.5" y="6.4" width="5" height="9.2" rx="2.5" fill="none" stroke="url(#g)" stroke-width="6"></rect>
+  </g>
+
+  <g id="hands">
+    <circle cx="30" cy="21.5" r="5.2" fill="#2A4BD7" stroke="#0B1438" stroke-width="3.2"></circle>
+    <circle cx="30" cy="21.5" r="5.2" fill="none" stroke="url(#g)" stroke-width="1.7"></circle>
+    <path d="M26.8 19.1 A3.9 3.9 0 0 1 29.6 17.0" fill="none" stroke="#FFF" stroke-width="1.1" stroke-opacity=".6" stroke-linecap="round"></path>
+    <circle cx="70" cy="21.5" r="5.2" fill="#2A4BD7" stroke="#0B1438" stroke-width="3.2"></circle>
+    <circle cx="70" cy="21.5" r="5.2" fill="none" stroke="url(#g)" stroke-width="1.7"></circle>
+    <path d="M66.8 19.1 A3.9 3.9 0 0 1 69.6 17.0" fill="none" stroke="#FFF" stroke-width="1.1" stroke-opacity=".6" stroke-linecap="round"></path>
+  </g>
+
+  <g id="sparkles" fill="url(#g)">
+    <use href="#spark" transform="translate(15,32) scale(1.15)"></use>
+    <use href="#spark" transform="translate(86,50) scale(1.0)"></use>
+    <use href="#spark" transform="translate(20,80) scale(0.85)"></use>
+  </g>
+</svg>
