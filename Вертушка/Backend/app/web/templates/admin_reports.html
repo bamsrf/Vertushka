@@ -81,6 +81,21 @@
             letter-spacing: 0.04em; padding: 3px 8px; border-radius: 999px;
             background: rgba(58,75,224,0.1); color: var(--cobalt);
         }
+        .body { display: flex; gap: 14px; margin: 8px 0 2px; align-items: flex-start; }
+        .cover {
+            width: 104px; height: 104px; flex: none; border-radius: 12px;
+            object-fit: cover; background: rgba(27,29,38,0.05);
+            border: 1px solid var(--hairline); cursor: zoom-in;
+        }
+        .nocover {
+            width: 104px; height: 104px; flex: none; border-radius: 12px;
+            background: rgba(27,29,38,0.04); border: 1px dashed var(--hairline);
+            display: flex; align-items: center; justify-content: center;
+            font-size: 11px; color: var(--mute); text-align: center; padding: 6px;
+        }
+        .facts { min-width: 0; flex: 1; }
+        .fact { font-size: 13px; color: var(--slate); }
+        .fact b { font-weight: 600; color: var(--ink); }
         .empty { color: var(--slate); font-size: 15px; padding: 8px 0; }
         .note {
             font-size: 13px; color: var(--slate); background: rgba(196,55,47,0.06);
@@ -236,8 +251,49 @@
             box.appendChild(head);
 
             box.appendChild(node('div', 'preview', r.target_preview || '[объект удалён]'));
-            box.appendChild(node('div', 'reason', r.reason || 'Причина не указана.'));
-            box.appendChild(node('div', 'meta', 'id: ' + r.id));
+
+            var d = r.target_detail;
+            var body = node('div', 'body');
+
+            // Обложка — то, ради чего жалобу и открывают: смотрят на картинку,
+            // а не на подпись. Клик открывает оригинал в новой вкладке.
+            if (d && d.cover_url) {
+                var img = document.createElement('img');
+                img.className = 'cover';
+                img.src = d.cover_url;
+                img.alt = '';
+                img.addEventListener('click', function () {
+                    window.open(d.cover_url, '_blank', 'noopener');
+                });
+                body.appendChild(img);
+            } else if (r.target_type === 'record') {
+                body.appendChild(node('div', 'nocover', 'без обложки'));
+            }
+
+            var facts = node('div', 'facts');
+            facts.appendChild(node('div', 'reason', r.reason || 'Причина не указана.'));
+            if (d && d.author_username) {
+                var who = node('div', 'fact');
+                who.appendChild(node('b', null, 'Автор: '));
+                who.appendChild(document.createTextNode('@' + d.author_username));
+                facts.appendChild(who);
+            }
+            if (d && d.moderation_status) {
+                var mod = node('div', 'fact');
+                mod.appendChild(node('b', null, 'Модерация: '));
+                mod.appendChild(document.createTextNode(d.moderation_status));
+                facts.appendChild(mod);
+            }
+            (d && d.fields ? d.fields : []).forEach(function (pair) {
+                var row = node('div', 'fact');
+                row.appendChild(node('b', null, pair[0] + ': '));
+                row.appendChild(document.createTextNode(pair[1]));
+                facts.appendChild(row);
+            });
+            facts.appendChild(node('div', 'meta', 'id: ' + r.id));
+            body.appendChild(facts);
+
+            box.appendChild(body);
 
             if (r.status === 'open') {
                 var bar = node('div', 'row tight');
