@@ -119,6 +119,47 @@ async def test_dry_run_counts_but_changes_nothing(tmp_path, empty_record):
     assert (await _get(empty_record)).genre is None
 
 
+async def test_master_key_fills_every_pressing_of_the_album(tmp_path):
+    """Одна строка masters-CSV — все прессы альбома.
+
+    Ради этого режим и заведён: releases-дамп (10.4 ГБ) не качается без Range,
+    masters (593 МБ) берётся с первой попытки, а жанр у мастера тот же.
+    """
+    first = await _add(discogs_id="888001", discogs_master_id="55501")
+    second = await _add(discogs_id="888002", discogs_master_id="55501")
+    other = await _add(discogs_id="888003", discogs_master_id="55502")
+    path = _csv(tmp_path, [(55501, "Rock", "Indie Rock")])
+
+    counters = await load(path, dry_run=False, key="master")
+
+    assert counters["updated"] == 2
+    assert (await _get(first)).genre == "Rock"
+    assert (await _get(second)).genre == "Rock"
+    assert (await _get(other)).genre is None
+
+
+async def test_master_key_ignores_records_without_master_id(tmp_path):
+    rid = await _add(discogs_id="888004")
+    path = _csv(tmp_path, [(888004, "Rock", "Indie Rock")])
+
+    # В master-режиме ключ ищется в discogs_master_id — совпадение с
+    # discogs_id не должно ничего задеть.
+    counters = await load(path, dry_run=False, key="master")
+
+    assert counters["updated"] == 0
+    assert (await _get(rid)).genre is None
+
+
+async def test_master_dry_run_counts_records_not_pairs(tmp_path):
+    await _add(discogs_id="888005", discogs_master_id="55503")
+    await _add(discogs_id="888006", discogs_master_id="55503")
+    path = _csv(tmp_path, [(55503, "Jazz", "Bebop")])
+
+    counters = await load(path, dry_run=True, key="master")
+
+    assert counters["updated"] == 2
+
+
 async def test_malformed_rows_are_counted_not_fatal(tmp_path, empty_record):
     path = _csv(tmp_path, [
         ("not-an-id", "Rock", "Indie Rock"),
