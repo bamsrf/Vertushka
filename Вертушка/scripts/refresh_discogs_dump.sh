@@ -9,10 +9,11 @@
 # Что делает:
 #   1. находит свежайший releases-дамп на data.discogs.com;
 #   2. качает (~10.4 ГБ, ~40 мин), если ещё не скачан;
-#   3. читает водяной знак прошлого дампа (discogs_dump_state) и вытаскивает две выгрузки:
-#      formats_*.csv.gz (полные описания формата) и new_*.csv.gz (релизы,
-#      которых в индексе нет);
-#   4. заливает обе на прод и грузит;
+#   3. читает водяной знак прошлого дампа (discogs_dump_state), снимает с прода
+#      список записей без жанра и вытаскивает три выгрузки: formats_*.csv.gz
+#      (полные описания формата), new_*.csv.gz (релизы, которых в индексе нет)
+#      и genres_*.csv.gz (жанры/стили для records с пустым genre);
+#   4. заливает все на прод и грузит;
 #   5. чистит за собой.
 #
 # Каденс: раз в 2 месяца. Чаще смысла нет — дамп месячный, а дельта за месяц
@@ -119,12 +120,28 @@ SINCE_ID="$(ssh "$PROD" "$PSQL -c 'SELECT max(max_release_id) FROM discogs_dump_
 [[ "$SINCE_ID" =~ ^[0-9]+$ ]] || { echo "не смог прочитать водяной знак из discogs_dump_state: '$SINCE_ID' (миграция 20260814_dump_state применена?)" >&2; exit 1; }
 log "водяной знак прошлого дампа: $SINCE_ID"
 
+# Список записей, которым нужен жанр. Жанровые чипы Маркета фильтруют по
+# records.genre, а заполнялся он только живым Discogs API — у карточек, которые
+# кто-то открыл руками. Склад магазинов матчер создаёт из дампа, где колонок
+# genre/style нет вовсе, так что на 25.08.2026 жанр был у ~390 карточек из ~30
+# тысяч. Фильтруем выгрузку списком, а не тащим жанры всех 19M релизов: на
+# прод-диске свободно ~3 ГБ, полная таблица жанров (~0.9 ГБ) туда не влезет.
+IDS_FILE="$WORK_DIR/genre_ids_${STAMP}.txt"
+ssh "$PROD" "$PSQL -c \"SELECT discogs_id FROM records WHERE discogs_id ~ '^[0-9]+\$' AND merged_into_id IS NULL AND (genre IS NULL OR btrim(genre) = '');\"" > "$IDS_FILE"
+IDS_COUNT="$(wc -l < "$IDS_FILE" | tr -d '[:space:]')"
+log "записей без жанра на проде: $IDS_COUNT"
+
 log "парсю дамп (~15 мин)..."
+EXTRA_ARGS=()
+# Пустой список — не повод падать: жанры у всех, кого мы знаем, уже стоят.
+# Но и запускать выгрузку не надо, иначе extractor честно ругнётся на пустоту.
+[[ "$IDS_COUNT" -gt 0 ]] && EXTRA_ARGS+=(--ids-file "$IDS_FILE")
 (cd "$BACKEND" && python -m app.scripts.extract_release_formats \
-  --file "$WORK_DIR/$DUMP" --out-dir "$WORK_DIR" --dump-date "$ISO" --since-id "$SINCE_ID")
+  --file "$WORK_DIR/$DUMP" --out-dir "$WORK_DIR" --dump-date "$ISO" --since-id "$SINCE_ID" \
+  "${EXTRA_ARGS[@]}")
 
 # --- 4. заливаем -------------------------------------------------------------
-for f in "formats_${STAMP}.csv.gz" "new_${STAMP}.csv.gz"; do
+for f in "formats_${STAMP}.csv.gz" "new_${STAMP}.csv.gz" "genres_${STAMP}.csv.gz"; do
   [[ -s "$f" ]] || { log "нет $f — пропускаю"; continue; }
   log "загружаю $f ($(du -h "$f" | cut -f1))"
   # -O: macOS 15 гонит scp через sftp, и тот падает «no such directory» на
@@ -143,15 +160,25 @@ if ssh "$PROD" "docker exec $API_CONTAINER test -f /tmp/new_${STAMP}.csv.gz"; th
   ssh "$PROD" "docker exec $API_CONTAINER python -m app.scripts.load_new_releases \
     --file /tmp/new_${STAMP}.csv.gz --dump-date $ISO"
 fi
+# Жанры грузим ПОСЛЕ новых релизов: у только что приехавшей строки индекса
+# записи в records ещё нет, но если она появится следующим матчем — жанр ей
+# добудет уже следующий прогон. Порядок в обратную сторону не даёт ничего.
+if ssh "$PROD" "docker exec $API_CONTAINER test -f /tmp/genres_${STAMP}.csv.gz"; then
+  log "гружу жанры"
+  ssh "$PROD" "docker exec $API_CONTAINER python -m app.scripts.load_release_genres \
+    --file /tmp/genres_${STAMP}.csv.gz"
+fi
 
 # --- 5. уборка ---------------------------------------------------------------
-ssh "$PROD" "docker exec $API_CONTAINER sh -c 'rm -f /tmp/formats_*.csv.gz /tmp/new_*.csv.gz'"
+ssh "$PROD" "docker exec $API_CONTAINER sh -c 'rm -f /tmp/formats_*.csv.gz /tmp/new_*.csv.gz /tmp/genres_*.csv.gz'"
+rm -f "$IDS_FILE"
 # Обложки/классификация кэшируются — иначе свежие данные всплывут только через сутки.
 ssh "$PROD" "docker exec vertushka_redis redis-cli --scan --pattern 'artist_masters:*' \
   | xargs -r docker exec -i vertushka_redis redis-cli del" >/dev/null || true
 
 ssh "$PROD" "$PSQL -c \"SELECT 'релизов: ' || count(*) FROM discogs_releases_index;\" \
-  -c \"SELECT 'с полным форматом: ' || count(*) FROM discogs_release_formats;\""
+  -c \"SELECT 'с полным форматом: ' || count(*) FROM discogs_release_formats;\" \
+  -c \"SELECT 'записей с жанром: ' || count(*) FROM records WHERE btrim(coalesce(genre,'')) <> '';\""
 
 if [[ -z "${KEEP_DUMP:-}" ]]; then
   log "удаляю дамп"

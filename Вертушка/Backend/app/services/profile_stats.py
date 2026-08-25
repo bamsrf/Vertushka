@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.collection import Collection, CollectionItem
 from app.models.record import Record
+from app.services.genre_vocab import split_genres
 
 logger = logging.getLogger(__name__)
 
@@ -144,10 +145,11 @@ async def compute_fun_stats(user_id: UUID, db: AsyncSession) -> list[dict]:
         )
         genre_counter: dict[str, int] = {}
         for (genre_str,) in genre_rows:
-            for g in (genre_str or "").split(","):
-                g_clean = g.strip()
-                if g_clean:
-                    genre_counter[g_clean] = genre_counter.get(g_clean, 0) + 1
+            # split_genres, а не .split(","): «Folk, World, & Country» сам
+            # содержит запятые, и наивный сплит показывал бы юзеру «12 & country
+            # релизов» вместо фолка.
+            for g_clean in split_genres(genre_str):
+                genre_counter[g_clean] = genre_counter.get(g_clean, 0) + 1
         top_genre, top_genre_count = (None, 0)
         if genre_counter:
             top_genre, top_genre_count = max(genre_counter.items(), key=lambda kv: kv[1])

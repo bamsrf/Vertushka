@@ -55,47 +55,89 @@ NEW_RELEASE_LOOKBACK_YEARS = 1  # «свежий релиз»: год ≥ тек
 # ────────────────────────────────────────────────────────────────────────
 # Фасеты фильтров: жанр (data-driven) + особенности.
 #
-# Жанр — канонический ключ (что шлёт Mobile) → ILIKE-паттерны по r.genre.
-# Discogs кладёт в genre верхнеуровневые жанры («Rock», «Hip Hop», склеенные
-# «Electronic, Rock»), поэтому матч подстрокой ILIKE ANY, а не строгим `=`.
-# Порядок = порядок чипов в UI. Правишь тут — фронт подхватит через /facets.
+# Жанр — канонический ключ (что шлёт Mobile) → ILIKE-паттерны. Порядок списка
+# больше не диктует порядок чипов: /facets сортирует их по count DESC, чтобы
+# сверху лежало то, чего на складе реально много. Правишь тут — фронт
+# подхватит через /facets, клиент про ключи ничего не знает.
 # ────────────────────────────────────────────────────────────────────────
-# Паттерны матчатся и по r.genre (верхний уровень: «Hip Hop», «Rock»), и по
-# r.style (суб-жанр: «Boom Bap», «Techno», «Indie Rock»). Поэтому у каждого жанра
-# и его верхнее имя, и характерные стили — иначе `%hip hop%` не ловит запись с
-# genre='Electronic' + style='Trap'. Порядок = порядок чипов.
-GENRES: list[tuple[str, str, list[str]]] = [
-    ("rock",       "Rock",        ["%rock%", "%punk%", "%metal%", "%grunge%", "%shoegaze%", "%hardcore%"]),
-    ("electronic", "Electronic",  ["%electronic%", "%techno%", "%house%", "%ambient%", "%idm%",
-                                    "%drum%bass%", "%synth%", "%downtempo%", "%trance%", "%dubstep%", "%electro%"]),
-    ("hiphop",     "Hip Hop",     ["%hip hop%", "%hip-hop%", "%boom bap%", "%trap%", "%g-funk%",
-                                    "%gangsta%", "%conscious%", "%rap%"]),
-    ("jazz",       "Jazz",        ["%jazz%", "%bebop%", "%swing%", "%fusion%", "%bossa%"]),
-    ("pop",        "Pop",         ["%pop%", "%ballad%"]),
-    ("funk",       "Funk / Soul", ["%funk%", "%soul%", "%disco%", "%rhythm & blues%", "%r&b%"]),
-    ("classical",  "Classical",   ["%classical%", "%baroque%", "%opera%", "%romantic era%",
-                                    "%neo-classical%", "%neoclassical%", "%modern classical%",
-                                    "%contemporary classical%", "%choral%", "%symphon%"]),
-]
-_GENRE_PATTERNS: dict[str, list[str]] = {key: pats for key, _label, pats in GENRES}
-_GENRE_LABELS: dict[str, str] = {key: label for key, label, _pats in GENRES}
-
-# Жанры, которые матчим ТОЛЬКО по r.genre, без r.style.
+# ЖАНР МАТЧИМ ПО r.genre, СТИЛЬ — ТОЛЬКО КАК ЗАПАСНОЙ ВАРИАНТ.
 #
-# Дефолт «genre OR style» задуман для recall: запись с genre='Electronic' и
-# style='Trap' должна попадать в hiphop. Но у классики это работает наоборот —
-# суб-жанры классики Discogs почти всегда ставит вместе с верхним genre='Classical',
-# так что recall от style тут ничего не добавляет, зато тянет мусор: `%contemporary%`
-# ловил «Contemporary R&B», из-за чего в чипе Classical оказывались Beyoncé и
-# neo-soul. Паттерны выше уже сужены, флаг — вторая линия защиты.
-GENRE_STRICT: frozenset[str] = frozenset({"classical"})
+# Верхний уровень Discogs — закрытый словарь из 15 значений («Rock»,
+# «Folk, World, & Country», …), и в r.genre лежит именно он (склейка через
+# ", "). Внутри этого словаря ни одно имя не является подстрокой другого,
+# поэтому один ILIKE по r.genre разводит чипы без пересечений.
+#
+# Раньше матч шёл «genre OR style» ради recall на записях, у которых жанр не
+# заполнен. Ценой была протечка: `%pop%` ловил стили Pop Rock / Synth-pop и
+# затягивал в Pop половину рока, а `%contemporary%` приводил в Classical
+# Beyoncé. После бэкфилла жанров из дампа r.genre есть почти у всех, и recall
+# по стилю нужен только там, где жанра нет вовсе — туда он и убран.
+#
+# style_pats пустой список = у чипа нет запасного варианта (Classical: его
+# суб-жанры Discogs и так всегда ставит вместе с верхним «Classical», а вот
+# мусора стили тянут; это бывший GENRE_STRICT, выраженный данными).
+GENRES: list[tuple[str, str, list[str], list[str]]] = [
+    # key, label, genre_pats (по r.genre), style_pats (fallback, если жанра нет)
+    ("rock",       "Рок",              ["%rock%"],
+     ["%rock%", "%punk%", "%metal%", "%grunge%", "%shoegaze%", "%hardcore%"]),
+    ("electronic", "Электроника",      ["%electronic%"],
+     ["%electronic%", "%techno%", "%house%", "%ambient%", "%idm%", "%drum%bass%",
+      "%synth%", "%downtempo%", "%trance%", "%dubstep%", "%electro%"]),
+    ("pop",        "Поп",              ["%pop%"],
+     ["%pop%", "%ballad%"]),
+    ("hiphop",     "Хип-хоп",          ["%hip hop%", "%hip-hop%"],
+     ["%hip hop%", "%hip-hop%", "%boom bap%", "%trap%", "%g-funk%", "%gangsta%", "%rap%"]),
+    ("jazz",       "Джаз",             ["%jazz%"],
+     ["%jazz%", "%bebop%", "%swing%", "%fusion%", "%bossa%"]),
+    ("funk",       "Фанк / Соул",      ["%funk%", "%soul%"],
+     ["%funk%", "%soul%", "%disco%", "%rhythm & blues%", "%r&b%"]),
+    ("classical",  "Классика",         ["%classical%"],
+     []),
+    # Ниже — остальной верхний уровень Discogs. До бэкфилла жанров эти чипы
+    # почти пустые и /facets их просто не отдаёт (count > 0), поэтому завести
+    # их можно заранее: лишних чипов в UI не появится, а как только жанры
+    # приедут — распределение станет честным, без «прочего» на четверть склада.
+    ("folk",       "Фолк / Кантри",    ["%folk%", "%country%"],
+     ["%folk%", "%country%", "%bluegrass%", "%singer%songwriter%"]),
+    ("reggae",     "Регги",            ["%reggae%"],
+     ["%reggae%", "%dub%", "%ska%", "%rocksteady%", "%dancehall%"]),
+    ("blues",      "Блюз",             ["%blues%"],
+     ["%delta blues%", "%chicago blues%", "%electric blues%", "%country blues%"]),
+    ("latin",      "Латина",           ["%latin%"],
+     ["%salsa%", "%samba%", "%tango%", "%cumbia%", "%mambo%", "%son %"]),
+    ("soundtrack", "Саундтреки",       ["%stage%"],
+     ["%soundtrack%", "%score%", "%musical%", "%theme%"]),
+    ("children",   "Детское",          ["%children%"],
+     ["%nursery%", "%story%"]),
+    ("brass",      "Духовые / Марши",  ["%brass%", "%military%"],
+     ["%marches%", "%big band%"]),
+    ("nonmusic",   "Не музыка",        ["%non-music%"],
+     ["%spoken word%", "%comedy%", "%field recording%", "%poetry%"]),
+]
+_GENRE_PATTERNS: dict[str, list[str]] = {key: pats for key, _l, pats, _s in GENRES}
+_GENRE_STYLE_PATTERNS: dict[str, list[str]] = {key: pats for key, _l, _g, pats in GENRES}
+_GENRE_LABELS: dict[str, str] = {key: label for key, label, _g, _s in GENRES}
 
 
-def _genre_match_sql(key: str, param: str, genre_col: str = "r.genre", style_col: str = "r.style") -> str:
-    """Предикат «запись относится к жанру `key`» для одного набора паттернов."""
-    if key in GENRE_STRICT:
-        return f"{genre_col} ILIKE ANY(:{param})"
-    return f"({genre_col} ILIKE ANY(:{param}) OR {style_col} ILIKE ANY(:{param}))"
+def _genre_match_sql(
+    key: str,
+    param: str,
+    style_param: str,
+    genre_col: str = "r.genre",
+    style_col: str = "r.style",
+) -> str:
+    """Предикат «запись относится к жанру `key`».
+
+    Жанр заполнен → решает только он. Пусто → пробуем стиль (если у чипа есть
+    запасные паттерны). Две ветки взаимоисключающие, поэтому запись не может
+    попасть в чип и по жанру, и по стилю — двойного счёта в фасетах нет.
+    """
+    has_genre = f"({genre_col} IS NOT NULL AND {genre_col} <> '')"
+    by_genre = f"{has_genre} AND {genre_col} ILIKE ANY(:{param})"
+    if not _GENRE_STYLE_PATTERNS.get(key):
+        return f"({by_genre})"
+    by_style = f"NOT {has_genre} AND {style_col} ILIKE ANY(:{style_param})"
+    return f"(({by_genre}) OR ({by_style}))"
 
 # Особенности: ключ → (label, SQL-предикат). Предикаты — доверенные строки (не
 # пользовательский ввод), sql_color_family подставляет только имя колонки.
@@ -131,8 +173,8 @@ def _filters_clause(
     sql = ""
     params: dict = {}
     if genre:
-        # По жанру — OR предикатов, а не один общий массив паттернов: у строгих
-        # жанров (GENRE_STRICT) style не участвует, склеить их в один ILIKE ANY
+        # По жанру — OR предикатов, а не один общий массив паттернов: у каждого
+        # чипа свои наборы для genre и для style, склеить их в один ILIKE ANY
         # нельзя. Неизвестные ключи отсеиваются здесь же.
         preds: list[str] = []
         for key in genre:
@@ -140,8 +182,12 @@ def _filters_clause(
             if not pats:
                 continue
             param = f"genre_pats_{key}"
-            preds.append(_genre_match_sql(key, param))
+            style_param = f"style_pats_{key}"
+            preds.append(_genre_match_sql(key, param, style_param))
             params[param] = pats
+            style_pats = _GENRE_STYLE_PATTERNS.get(key)
+            if style_pats:
+                params[style_param] = style_pats
         if preds:
             sql += " AND (" + " OR ".join(preds) + ")"
     if colored:
@@ -159,7 +205,7 @@ def _filters_clause(
 # в Redis самотухнут по TTL, а свежие запросы сразу получают новую логику.
 CACHE_NS_STORES = "market_stores:v3"
 CACHE_NS_STORE_LISTINGS = "market_store_listings:v4"
-CACHE_NS_SEARCH = "market_search:v9"  # v9: offset-пагинация + стабильный tiebreaker
+CACHE_NS_SEARCH = "market_search:v10"  # v10: жанр матчится по r.genre, style — только fallback
 CACHE_TTL_STORES = 1800       # 30 мин — список магазинов меняется редко
 CACHE_TTL_LISTINGS = 600      # 10 мин — карусели чаще обновляем
 CACHE_TTL_SEARCH = 300        # 5 мин — поиск свежее
@@ -720,7 +766,7 @@ async def market_facets(
     чипы жанров, которых у него нет, и фильтр вёл бы в пустоту.
     """
     store_clause = " AND s.slug = :store" if store else ""
-    cache_key = f"facets:v3:{store or 'all'}"
+    cache_key = f"facets:v4:{store or 'all'}"
     cached = await cache.get(CACHE_NS_SEARCH, cache_key)
     if cached is not None:
         return MarketFacetsResponse.model_validate(cached)
@@ -730,10 +776,14 @@ async def market_facets(
     new_year = datetime.utcnow().year - NEW_RELEASE_LOOKBACK_YEARS
 
     genre_selects = ",\n            ".join(
-        f"count(*) FILTER (WHERE {_genre_match_sql(key, f'g_{key}', 'genre', 'style')}) AS g_{key}"
-        for key, _label, _pats in GENRES
+        f"count(*) FILTER (WHERE {_genre_match_sql(key, f'g_{key}', f's_{key}', 'genre', 'style')}) AS g_{key}"
+        for key, _label, _pats, _spats in GENRES
     )
-    genre_params = {f"g_{key}": pats for key, _label, pats in GENRES}
+    genre_params: dict = {}
+    for key, _label, pats, style_pats in GENRES:
+        genre_params[f"g_{key}"] = pats
+        if style_pats:
+            genre_params[f"s_{key}"] = style_pats
 
     sql = text(
         f"""
@@ -773,11 +823,20 @@ async def market_facets(
         sql_params["store"] = store
     row = (await db.execute(sql, sql_params)).mappings().one()
 
-    genres = [
-        MarketFacetItem(key=key, label=label, count=row[f"g_{key}"])
-        for key, label, _pats in GENRES
-        if (row[f"g_{key}"] or 0) > 0
-    ]
+    # Сортировка по count DESC, а не по порядку GENRES: чипов теперь 15 (весь
+    # верхний уровень Discogs), они не влезают в экран и скроллятся вбок —
+    # значит первым должно лежать то, чего на складе больше всего. Ключ
+    # сортировки дополняем `key`, иначе при равных count порядок между
+    # запросами плавал бы и чипы перескакивали. У `?store=` порядок свой —
+    # ровно то, что нужно: у джазовой лавки сверху джаз.
+    genres = sorted(
+        (
+            MarketFacetItem(key=key, label=label, count=row[f"g_{key}"])
+            for key, label, _pats, _spats in GENRES
+            if (row[f"g_{key}"] or 0) > 0
+        ),
+        key=lambda item: (-item.count, item.key),
+    )
     features = [
         MarketFacetItem(key=key, label=_FEATURE_LABELS[key], count=row[col])
         for key, col in (("colored", "f_colored"), ("limited", "f_limited"), ("new", "f_new"))
