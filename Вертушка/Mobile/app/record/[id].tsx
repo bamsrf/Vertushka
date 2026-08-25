@@ -1,7 +1,7 @@
 /**
  * Экран детальной информации о пластинке — Blue Gradient Edition
  */
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import {
   View,
   Text,
@@ -38,7 +38,7 @@ import { getForcedCoachMark } from '../../lib/coachMarks';
 import { countSpin } from '../../lib/eggTracker';
 import { cleanArtistName } from '../../lib/format';
 import { useCollectionStore, useAuthStore } from '../../lib/store';
-import { VinylRecord, CollectionItem, PriceHistoryResponse } from '../../lib/types';
+import { VinylRecord, CollectionItem, PriceHistoryResponse, parseEntrySource } from '../../lib/types';
 import { Colors, Typography, Spacing, BorderRadius, Gradients } from '../../constants/theme';
 import { ms } from '../../lib/responsive';
 import { VinylColorTag } from '../../components/VinylColorTag';
@@ -125,10 +125,13 @@ export default function RecordDetailScreen() {
     previewThumb,
     previewYear,
     previewBlurhash,
+    from,
   } = useLocalSearchParams<{
     id: string;
     folderId?: string;
     folderItemId?: string;
+    /** Точка входа на карточку — доезжает до offer_clicks.source. См. parseEntrySource. */
+    from?: string;
     previewTitle?: string;
     previewArtist?: string;
     previewCover?: string;
@@ -137,6 +140,9 @@ export default function RecordDetailScreen() {
     previewBlurhash?: string;
   }>();
   const router = useRouter();
+  // Считаем один раз: `from` не меняется в течение жизни экрана, а вычислять
+  // его внутри рендера значило бы гонять валидацию на каждый кадр анимации.
+  const entrySource = useMemo(() => parseEntrySource(from), [from]);
   const insets = useSafeAreaInsets();
 
   const [record, setRecord] = useState<VinylRecord | null>(null);
@@ -1150,12 +1156,20 @@ export default function RecordDetailScreen() {
             edges={{ top: -Spacing.sm, bottom: -Spacing.sm }}
           >
             {record.discogs_id ? (
-              <OffersBlock discogsId={record.discogs_id} onOffersResolved={setOffersCount} />
+              <OffersBlock
+                discogsId={record.discogs_id}
+                onOffersResolved={setOffersCount}
+                clickSource={entrySource}
+              />
             ) : (
               // store-native (нет discogs_id) — берём офферы по record_id через
               // /records/by-id/{uuid}/offers/full. Без alt-version'ов (нет
               // master_id), только exact-match листинги магазинов.
-              <OffersBlock recordId={record.id} onOffersResolved={setOffersCount} />
+              <OffersBlock
+                recordId={record.id}
+                onOffersResolved={setOffersCount}
+                clickSource={entrySource}
+              />
             )}
           </CoachPulse>
         ) : null}

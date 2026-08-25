@@ -281,14 +281,17 @@ export function MarketMain({ onScroll, scrollEnabled = true, paddingTop, pullFra
     analytics.viewMarketStore(slug);
     router.push(`/market/store/${slug}` as any);
   }, [router]);
+  // `from=market` доезжает до кнопки «Купить» на карточке и попадает в
+  // offer_clicks.source. Без него переход засчитывался бы как `record`, и
+  // вклад Маркета в отчёте магазину был бы неотличим от прямых заходов.
   const handleItemPress = useCallback((item: { id: string }) => {
     analytics.marketRecordOpen({ record_ref: item.id, from: 'market' });
-    router.push(`/record/${item.id}` as any);
+    router.push(`/record/${item.id}?from=market` as any);
   }, [router]);
   const handleSearchItemPress = useCallback((item: MarketSearchItem) => {
     const ref = item.discogs_id ?? item.record_id;
     analytics.marketRecordOpen({ record_ref: ref, from: 'market' });
-    router.push(`/record/${ref}` as any);
+    router.push(`/record/${ref}?from=market` as any);
   }, [router]);
 
   const renderSearchItem = useCallback(

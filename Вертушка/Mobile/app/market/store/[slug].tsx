@@ -133,7 +133,7 @@ export default function StorePage() {
       // from='market_store' отделяет «пришёл из витрины магазина» от «искал по
       // всему Маркету»: у этих двух путей разная конверсия в переход.
       analytics.marketRecordOpen({ record_ref: ref, from: 'market_store' });
-      router.push(`/record/${ref}` as any);
+      router.push(`/record/${ref}?from=market_store` as any);
     },
     [router],
   );
