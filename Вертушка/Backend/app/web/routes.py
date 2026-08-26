@@ -80,7 +80,7 @@ def _fun_stat_markup(stat: dict) -> Markup:
 # фронт нарисует monogram-fallback (первая буква в фирменном цвете).
 _LOCAL_STORE_LOGOS = {
     "korobkavinyla", "plastinka_com", "vinyl_ru", "stoprobotvinyl", "found", "doctorhead",
-    "skifmusic", "rotaryrecords", "long_play",
+    "skifmusic", "rotaryrecords", "long_play", "vinylhouse",
 }
 
 _MAX_OFFERS_PER_RECORD = 4

@@ -156,6 +156,19 @@ STORES: list[dict] = [
         "avg_shipping_rub": Decimal("400.00"),
         "affiliate_program": None,
     },
+    {
+        "slug": "vinylhouse",
+        "name": "Дом Винила",
+        "domain": "vinylhouse.ru",
+        "base_url": "https://vinylhouse.ru",
+        "parser_class": "vinylhouse",
+        "logo_url": None,  # Mobile рендерит локальный assets/vinylhouse.png по slug
+        "rating": Decimal("4.6"),  # б/у оригиналы, СПб (Мойка), ~10k позиций, грейды на стр. товара
+        "is_active": True,
+        "requires_browser": False,
+        "avg_shipping_rub": Decimal("450.00"),
+        "affiliate_program": None,
+    },
 ]
 
 
