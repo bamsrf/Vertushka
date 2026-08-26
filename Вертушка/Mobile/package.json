@@ -7,7 +7,8 @@
     "go": "expo start --go",
     "android": "expo run:android",
     "ios": "expo run:ios",
-    "web": "expo start --web"
+    "web": "expo start --web",
+    "update:prod": "eas update --environment production"
   },
   "dependencies": {
     "@amplitude/analytics-react-native": "^1.5.52",
