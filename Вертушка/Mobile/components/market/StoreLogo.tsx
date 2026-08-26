@@ -83,6 +83,13 @@ const STORE_REGISTRY: Record<string, {
     bgColor: '#FFFFFF',
     logoSource: require('../../assets/store-logos/rotaryrecords.png'),
   },
+  vinylhouse: {
+    name: 'Дом Винила',
+    monogram: 'Д',
+    // Лого — золото на тёмном, непрозрачный PNG 300×296.
+    bgColor: '#1C1B18',
+    logoSource: require('../../assets/store-logos/vinylhouse.png'),
+  },
   long_play: {
     name: 'Long Play',
     monogram: 'L',
