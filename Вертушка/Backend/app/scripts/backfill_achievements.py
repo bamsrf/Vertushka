@@ -4,7 +4,7 @@
 - collection_item_added — если есть хоть один CollectionItem;
 - wishlist_item_added — если есть хоть один WishlistItem;
 - avatar_set — если стоит avatar_url;
-- profile_shared_enabled — если ProfileShare.is_active=true;
+- profile_shared_enabled — если ProfileShare.shared_at заполнен;
 - gift_booked — если есть GiftBooking с booked_by_user_id=user.id;
 - daily_tick — для всех, чтобы покрыть B-серию (≥24h записи) и R_thirty_three.
 
@@ -81,8 +81,12 @@ async def _user_events(db: AsyncSession, user: User) -> list[tuple[str, dict]]:
     share = await db.scalar(
         select(ProfileShare).where(ProfileShare.user_id == user.id)
     )
-    if share and share.is_active:
-        events.append((PROFILE_SHARED_ENABLED, {}))
+    if share:
+        # Не is_active: публичность включена у всех по умолчанию, и по ней
+        # A4 досталась бы каждому даром. Считается только факт отправки
+        # ссылки — shared_at.
+        if share.shared_at:
+            events.append((PROFILE_SHARED_ENABLED, {}))
         # K5/K6 (просмотры) — обновляем прогресс через PROFILE_VIEW
         if share.view_count > 0:
             events.append((PROFILE_VIEW, {"backfill_view_count": share.view_count}))

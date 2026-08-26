@@ -1411,10 +1411,6 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
     try {
       const settings = await api.updateProfileSettings(data);
       set({ settings, isSaving: false });
-      // Возможен анлок A4 «Распахнул» при is_active=true
-      if (settings.is_active && !prev?.is_active) {
-        detectAchievementUnlocks();
-      }
     } catch (error) {
       // Откат при ошибке
       set({ settings: prev, isSaving: false });

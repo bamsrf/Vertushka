@@ -1361,6 +1361,16 @@ class ApiClient {
     return response.data;
   }
 
+  /**
+   * Отметить, что ссылкой на профиль поделились. Двигает ачивку A4
+   * «Распахнул» и закрывает шаг чеклиста на сервере — локальный флаг
+   * живёт только на одном устройстве. Идемпотентно.
+   */
+  async markProfileShared(): Promise<ProfileShareSettings> {
+    const response = await this.client.post<ProfileShareSettings>('/profile/share');
+    return response.data;
+  }
+
   async updateProfileHighlights(recordIds: string[]): Promise<ProfileShareSettings> {
     const response = await this.client.put<ProfileShareSettings>('/profile/highlights', {
       record_ids: recordIds,

@@ -781,6 +781,8 @@ export interface ProfileShareSettings {
   show_record_format: boolean;
   show_record_prices: boolean;
   show_collection_value: boolean;
+  /** Когда ссылкой на профиль поделились. null — ещё ни разу. */
+  shared_at?: string | null;
 }
 
 export interface PublicProfileRecord {

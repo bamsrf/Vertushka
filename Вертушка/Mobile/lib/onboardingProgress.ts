@@ -3,8 +3,11 @@
  *
  * Ключевое решение: прогресс ВЫВОДИТСЯ из реальных данных, а не копится в
  * отдельных флагах. Поэтому человек, импортировавший 200 пластинок из Discogs,
- * сразу видит закрытый первый пункт, а не фальшивый ноль. Исключения — только
- * то, чего в данных нет: факт отправки ссылки на профиль.
+ * сразу видит закрытый первый пункт, а не фальшивый ноль. Исключение — факт
+ * отправки ссылки на профиль: системный share-лист не сообщает, чем всё
+ * кончилось, поэтому ловим намерение. Хранится он на сервере
+ * (profile_shares.shared_at, оттуда же растёт ачивка A4 «Распахнул»), а
+ * локальный флаг остаётся кэшем на случай оффлайна.
  *
  * ВАЖНО про реактивность. Пункты читаются из zustand-сторов и обновляются
  * сами. Флаг «поделился» когда-то жил в useState, заполнялся один раз в
@@ -26,6 +29,7 @@ import { create } from 'zustand';
 import { useAuthStore, useCollectionStore } from './store';
 import type { SpotlightKey } from './coachSpotlight';
 import { api } from './api';
+import { detectAchievementUnlocks } from './achievementsBus';
 import { analytics } from './analytics';
 import { toast } from './toast';
 import type { User } from './types';
@@ -83,6 +87,13 @@ interface FirstStepsFlagsState {
   /** Для какого аккаунта прочитаны флаги — защита от гонки при смене юзера. */
   hydratedFor: string | null;
   loaded: boolean;
+  /**
+   * Сетевые источники правды (статус Discogs, факт шаринга) уже ответили.
+   * Отдельно от loaded: карточку рисуем сразу по локальным флагам, а вот
+   * базовую линию наблюдателя до ответа сети снимать нельзя — шаг, который
+   * закрылся месяц назад, приехал бы тостом «Шаг пройден» на ровном месте.
+   */
+  netSettled: boolean;
   dismissed: boolean;
   shared: boolean;
   expanded: boolean;
@@ -101,6 +112,7 @@ interface FirstStepsFlagsState {
 
   hydrate: (userId: string) => Promise<void>;
   markShared: (userId: string) => Promise<void>;
+  syncShared: (userId: string) => Promise<void>;
   dismiss: (userId: string) => void;
   toggleExpanded: () => void;
 }
@@ -108,6 +120,7 @@ interface FirstStepsFlagsState {
 const useFirstStepsFlags = create<FirstStepsFlagsState>((set, get) => ({
   hydratedFor: null,
   loaded: false,
+  netSettled: false,
   dismissed: true,
   shared: false,
   expanded: true,
@@ -122,6 +135,7 @@ const useFirstStepsFlags = create<FirstStepsFlagsState>((set, get) => ({
     set({
       hydratedFor: userId,
       loaded: false,
+      netSettled: false,
       shared: false,
       dismissed: true,
       discogsConnected: null,
@@ -153,14 +167,21 @@ const useFirstStepsFlags = create<FirstStepsFlagsState>((set, get) => ({
       set({ loaded: true });
     }
 
-    // Статус Discogs — отдельно и не блокируя остальное: это сеть, и падать
-    // из-за неё весь чеклист не должен.
-    try {
-      const status = await api.getDiscogsStatus();
-      set({ discogsConnected: Boolean(status?.connected) });
-    } catch {
-      set({ discogsConnected: null });
-    }
+    // Сетевое — отдельно и не блокируя остальное: чеклист не должен падать
+    // из-за недоступного бэкенда. Оба запроса параллельно, чтобы не
+    // растягивать гидратацию на два round-trip'а.
+    await Promise.all([
+      (async () => {
+        try {
+          const status = await api.getDiscogsStatus();
+          set({ discogsConnected: Boolean(status?.connected) });
+        } catch {
+          set({ discogsConnected: null });
+        }
+      })(),
+      get().syncShared(userId),
+    ]);
+    set({ netSettled: true });
   },
 
   markShared: async (userId) => {
@@ -170,6 +191,32 @@ const useFirstStepsFlags = create<FirstStepsFlagsState>((set, get) => ({
       await AsyncStorage.setItem(sharedKey(userId), '1');
     } catch {
       // Молча: пункт останется открытым, это не ломает сценарий.
+    }
+  },
+
+  /**
+   * Свести факт «поделился ссылкой» с сервером — в обе стороны.
+   *
+   * Вниз: локальный флаг живёт в AsyncStorage одного устройства, после
+   * переустановки или на втором телефоне шаг открывался заново.
+   *
+   * Вверх: у тех, кто делился ссылкой на старых сборках, флаг остался
+   * только на устройстве — сервер о них не знает, и ачивка A4 «Распахнул»
+   * им бы не досталась. Один POST закрывает и то, и другое.
+   */
+  syncShared: async (userId) => {
+    try {
+      const settings = await api.getProfileSettings();
+      if (settings?.shared_at) {
+        if (!get().shared) {
+          set({ shared: true });
+          void AsyncStorage.setItem(sharedKey(userId), '1').catch(() => {});
+        }
+        return;
+      }
+      if (get().shared) await api.markProfileShared();
+    } catch {
+      // Сеть отвалилась — останется локальный флаг, синхронизируемся позже.
     }
   },
 
@@ -183,12 +230,25 @@ const useFirstStepsFlags = create<FirstStepsFlagsState>((set, get) => ({
 
 // ==================== Публичные отметки ====================
 
-/** Отметить «поделился профилем» — из share-листа и из копирования ссылки. */
+/**
+ * Отметить «поделился профилем» — из share-листа и из копирования ссылки.
+ *
+ * Локально закрывает шаг чеклиста, на сервере ставит profile_shares.shared_at
+ * и двигает ачивку A4 «Распахнул»: раньше она висела на тумблере публичности,
+ * а он у всех включён с регистрации — переключать было нечего.
+ */
 export async function markProfileShared() {
   const userId = useAuthStore.getState().user?.id;
   if (!userId) return;
   // Тост покажет наблюдатель — здесь только факт.
   await useFirstStepsFlags.getState().markShared(userId);
+  try {
+    await api.markProfileShared();
+    // Оверлей анлока — сразу после действия, пока человек ещё на профиле.
+    await detectAchievementUnlocks();
+  } catch {
+    // Молча: локальный флаг уже стоит, а на сервер попробуем в другой раз.
+  }
 }
 
 /**
@@ -334,7 +394,9 @@ function evaluateProgress() {
   const flags = useFirstStepsFlags.getState();
   // До загрузки флагов состав шагов неполон (нет shared, нет Discogs) —
   // замер по нему дал бы ложную базовую линию и залп тостов следом.
-  if (!flags.loaded) return;
+  // netSettled — то же самое про серверные источники: они доезжают позже
+  // локальных, и снятая до них линия объявляет старые шаги «пройденными».
+  if (!flags.loaded || !flags.netSettled) return;
 
   const userId = useAuthStore.getState().user?.id ?? null;
   if (userId !== baselineUserId) {

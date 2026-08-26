@@ -4,7 +4,7 @@ Phase 1: A1–A4 + META_foundation.
 - A1: первая пластинка в коллекции
 - A2: первая запись в вишлисте
 - A3: установлен аватар
-- A4: активирован публичный профиль
+- A4: ссылкой на публичный профиль поделились
 - META_foundation: все 4 открыты
 """
 from __future__ import annotations
@@ -91,10 +91,17 @@ async def _evaluate_a4(
     payload: dict[str, Any],
     unlocked_now: set[str],
 ) -> EvalResult:
+    """Открывается по факту отправки ссылки, а не по is_active.
+
+    Публичность включена у всех с регистрации (server_default="true"), так
+    что is_active истинен всегда и ачивка на нём была бы бесплатной. Ловим
+    осознанное действие: shared_at ставит POST /profile/share из кнопок
+    «Поделиться» и «Копировать ссылку».
+    """
     share = await db.scalar(
         select(ProfileShare).where(ProfileShare.user_id == user_id)
     )
-    return EvalResult(unlocked=bool(share and share.is_active))
+    return EvalResult(unlocked=bool(share and share.shared_at))
 
 
 async def _evaluate_meta_foundation(
@@ -174,8 +181,8 @@ DEFINITIONS: list[AchievementDefinition] = [
     AchievementDefinition(
         code=A4_CODE,
         title_ru="Распахнул",
-        description_ru="Активируй публичный профиль.",
-        description_done_ru="Публичный профиль активирован.",
+        description_ru="Поделись ссылкой на свой профиль.",
+        description_done_ru="Ссылкой на профиль поделились.",
         series="foundation",
         tier=AchievementTier.SIMPLE,
         is_hidden=False,
