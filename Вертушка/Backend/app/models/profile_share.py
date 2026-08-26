@@ -96,6 +96,14 @@ class ProfileShare(Base):
         nullable=False
     )
 
+    # Момент, когда человек реально отправил ссылку на профиль: нажал
+    # «Поделиться» или «Копировать ссылку». Именно это, а не is_active,
+    # означает «распахнул» — публичность у всех включена с регистрации.
+    shared_at: Mapped[datetime | None] = mapped_column(
+        DateTime,
+        nullable=True
+    )
+
     # OG Meta
     og_image_url: Mapped[str | None] = mapped_column(
         Text,

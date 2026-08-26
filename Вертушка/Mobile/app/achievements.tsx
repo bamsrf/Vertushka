@@ -381,7 +381,7 @@ const HOW_TO_UNLOCK: Record<string, string> = {
   A1_first_record: 'Добавь первую пластинку в коллекцию.',
   A2_first_wishlist: 'Добавь первую запись в вишлист.',
   A3_avatar_set: 'Поставь аватар.',
-  A4_public_profile: 'Активируй публичный профиль в настройках.',
+  A4_public_profile: 'Отправь друзьям ссылку на свой профиль.',
   META_foundation: 'Открой все ачивки серии «Первые шаги».',
   // Scale (B1-B6 + META_scale) — текст подставляется из progress_target
   // Gifts

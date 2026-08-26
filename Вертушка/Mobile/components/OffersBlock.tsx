@@ -29,7 +29,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Icon } from './ui';
 import { api } from '../lib/api';
 import { analytics } from '../lib/analytics';
-import { Offer } from '../lib/types';
+import { Offer, ClickSource } from '../lib/types';
 import { Typography, Spacing, BorderRadius, MarketPalette, Gradients } from '../constants/theme';
 import { ms } from '../lib/responsive';
 import StoreLogo from './market/StoreLogo';
@@ -48,9 +48,22 @@ interface OffersBlockProps {
    * лёг бы на соседний блок.
    */
   onOffersResolved?: (count: number) => void;
+  /**
+   * Точка входа на карточку — уезжает в `offer_clicks.source`.
+   *
+   * Дефолт `record` означает «пришли напрямую»: из поиска, коллекции, диплинка.
+   * Родитель передаёт `market` / `market_store`, когда привёл Маркет, иначе его
+   * вклад в отчёте магазину был бы неотличим от прямых заходов.
+   */
+  clickSource?: ClickSource;
 }
 
-export function OffersBlock({ discogsId, recordId, onOffersResolved }: OffersBlockProps) {
+export function OffersBlock({
+  discogsId,
+  recordId,
+  onOffersResolved,
+  clickSource = 'record',
+}: OffersBlockProps) {
   const router = useRouter();
   const [offers, setOffers] = useState<Offer[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -157,6 +170,7 @@ export function OffersBlock({ discogsId, recordId, onOffersResolved }: OffersBlo
               discogsId={discogsId}
               router={router}
               isAlt={!!offer.is_alt_version}
+              clickSource={clickSource}
             />
           ))}
         </View>
@@ -187,6 +201,7 @@ export function OffersBlock({ discogsId, recordId, onOffersResolved }: OffersBlo
                 discogsId={discogsId}
                 router={router}
                 isAlt={!!offer.is_alt_version}
+                clickSource={clickSource}
               />
             ))}
           </View>
@@ -240,15 +255,20 @@ interface OfferRowProps {
   discogsId?: string;
   router: ReturnType<typeof useRouter>;
   isAlt?: boolean;
+  /** Точка входа на карточку — уезжает в offer_clicks.source. */
+  clickSource: ClickSource;
 }
 
-function OfferRow({ offer, discogsId, router, isAlt }: OfferRowProps) {
+function OfferRow({ offer, discogsId, router, isAlt, clickSource }: OfferRowProps) {
   const handlePress = useCallback(async () => {
     // Для alt-version листинга: тап = переход на детальную другого
     // пресса (а не сразу в магазин). Юзер хочет сначала посмотреть
     // что это за пресс и его OffersBlock.
     if (isAlt && offer.record_discogs_id) {
-      router.push(`/record/${offer.record_discogs_id}`);
+      // Тащим точку входа дальше: путь «Маркет → карточка → alt-пресс → купить»
+      // всё ещё привёл Маркет, и терять это на промежуточном экране нельзя.
+      const carry = clickSource === 'record' ? '' : `?from=${clickSource}`;
+      router.push(`/record/${offer.record_discogs_id}${carry}` as any);
       return;
     }
 
@@ -257,14 +277,14 @@ function OfferRow({ offer, discogsId, router, isAlt }: OfferRowProps) {
       store_slug: offer.store.slug,
       price_rub: Number(offer.price_rub),
       discogs_id: discogsId ?? '',
-      source: 'record',
+      source: clickSource,
     });
 
     // 1. Регистрируем клик и получаем финальный URL с affiliate-subid.
     //    Если бэк упал — открываем offer.preview_url (UTM-only, без аттрибуции).
     let urlToOpen = offer.preview_url;
     try {
-      const { url } = await api.trackOfferClick(offer.listing_id, 'record');
+      const { url } = await api.trackOfferClick(offer.listing_id, clickSource);
       urlToOpen = url;
     } catch {
       // network/server error — fallback на preview-URL, не блокируем переход

@@ -36,6 +36,25 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+def _settings_response(profile: ProfileShare) -> ProfileShareSettings:
+    """Ответ настроек профиля. Один конструктор на три эндпоинта: раньше он
+    был скопирован трижды и новое поле приходилось добавлять в каждый."""
+    return ProfileShareSettings(
+        is_active=profile.is_active,
+        is_private_profile=profile.is_private_profile,
+        show_collection=profile.show_collection,
+        show_wishlist=profile.show_wishlist,
+        custom_title=profile.custom_title,
+        highlight_record_ids=profile.highlight_record_ids,
+        show_record_year=profile.show_record_year,
+        show_record_label=profile.show_record_label,
+        show_record_format=profile.show_record_format,
+        show_record_prices=profile.show_record_prices,
+        show_collection_value=profile.show_collection_value,
+        shared_at=profile.shared_at,
+    )
+
+
 def _cover_url(record: Record) -> str | None:
     """Обложка для публичного профиля.
 
@@ -458,19 +477,7 @@ async def get_profile_settings(
     if not profile:
         return ProfileShareSettings()
 
-    return ProfileShareSettings(
-        is_active=profile.is_active,
-        is_private_profile=profile.is_private_profile,
-        show_collection=profile.show_collection,
-        show_wishlist=profile.show_wishlist,
-        custom_title=profile.custom_title,
-        highlight_record_ids=profile.highlight_record_ids,
-        show_record_year=profile.show_record_year,
-        show_record_label=profile.show_record_label,
-        show_record_format=profile.show_record_format,
-        show_record_prices=profile.show_record_prices,
-        show_collection_value=profile.show_collection_value,
-    )
+    return _settings_response(profile)
 
 
 @router.put("/settings", response_model=ProfileShareSettings)
@@ -489,8 +496,6 @@ async def update_profile_settings(
         profile = ProfileShare(user_id=current_user.id)
         db.add(profile)
 
-    was_active_before = bool(profile.is_active)
-
     update_fields = data.model_dump(exclude_unset=True)
     for field, value in update_fields.items():
         setattr(profile, field, value)
@@ -498,26 +503,48 @@ async def update_profile_settings(
     await db.commit()
     await db.refresh(profile)
 
-    # Эмиссия события: профиль стал публичным (любой переход в is_active=True
-    # триггерит — повторные A4 не выдаёт идемпотентно через registry).
-    if profile.is_active and not was_active_before:
-        from app.services.achievements import emit_event
-        from app.services.achievements.events import PROFILE_SHARED_ENABLED
-        await emit_event(db, current_user.id, PROFILE_SHARED_ENABLED, {})
+    # Событие PROFILE_SHARED_ENABLED отсюда убрано намеренно: профиль
+    # создаётся публичным (server_default="true"), перехода false → true
+    # у новых аккаунтов не бывает — A4 «Распахнул» на нём не выдавалась
+    # никому. Теперь ачивку двигает POST /profile/share.
+    return _settings_response(profile)
 
-    return ProfileShareSettings(
-        is_active=profile.is_active,
-        is_private_profile=profile.is_private_profile,
-        show_collection=profile.show_collection,
-        show_wishlist=profile.show_wishlist,
-        custom_title=profile.custom_title,
-        highlight_record_ids=profile.highlight_record_ids,
-        show_record_year=profile.show_record_year,
-        show_record_label=profile.show_record_label,
-        show_record_format=profile.show_record_format,
-        show_record_prices=profile.show_record_prices,
-        show_collection_value=profile.show_collection_value,
+
+@router.post("/share", response_model=ProfileShareSettings)
+async def mark_profile_shared(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Отметить, что ссылкой на профиль поделились.
+
+    Зовётся мобилкой из «Поделиться» и «Копировать ссылку» на экране
+    профиля. Факт отправки из данных не восстановить — системный
+    share-лист не сообщает, чем всё кончилось, — поэтому ловим намерение.
+
+    Идемпотентен: shared_at ставится один раз, повторный вызов ничего не
+    меняет. Событие эмитим на каждый вызов, но registry не выдаёт ачивку
+    дважды.
+    """
+    result = await db.execute(
+        select(ProfileShare).where(ProfileShare.user_id == current_user.id)
     )
+    profile = result.scalar_one_or_none()
+
+    if not profile:
+        profile = ProfileShare(user_id=current_user.id)
+        db.add(profile)
+
+    if profile.shared_at is None:
+        profile.shared_at = datetime.utcnow()
+
+    await db.commit()
+    await db.refresh(profile)
+
+    from app.services.achievements import emit_event
+    from app.services.achievements.events import PROFILE_SHARED_ENABLED
+    await emit_event(db, current_user.id, PROFILE_SHARED_ENABLED, {})
+
+    return _settings_response(profile)
 
 
 @router.put("/highlights", response_model=ProfileShareSettings)
@@ -562,19 +589,7 @@ async def update_highlights(
     await db.commit()
     await db.refresh(profile)
 
-    return ProfileShareSettings(
-        is_active=profile.is_active,
-        is_private_profile=profile.is_private_profile,
-        show_collection=profile.show_collection,
-        show_wishlist=profile.show_wishlist,
-        custom_title=profile.custom_title,
-        highlight_record_ids=profile.highlight_record_ids,
-        show_record_year=profile.show_record_year,
-        show_record_label=profile.show_record_label,
-        show_record_format=profile.show_record_format,
-        show_record_prices=profile.show_record_prices,
-        show_collection_value=profile.show_collection_value,
-    )
+    return _settings_response(profile)
 
 
 
