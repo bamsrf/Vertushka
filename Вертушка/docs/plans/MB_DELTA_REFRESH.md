@@ -17,6 +17,7 @@ MB/CAA-данные на проде — снимок от 1 июля. MusicBrain
 |---|---|---|
 | `Backend/app/scripts/ingest_mb_discogs_map.py` | URL-связи MB↔Discogs + CAA front | `mb_discogs_map` + `discogs_releases_index.cover_image_url` (NULL-строки) |
 | `Backend/app/scripts/ingest_mb_barcode_covers.py` | barcode → mbid c front | `mb_barcode_covers` + `discogs_releases_index.cover_image_url` (NULL-строки) |
+| `Backend/app/scripts/ingest_mb_catno_covers.py` | catno+label → mbid c front | `mb_catno_covers`+`mb_mbid_rg`; UPDATE — только явным `--apply` после гейта, аудит в `catno_cover_audit` |
 | SQL «B» (см. ниже) | master-обложки из маппинга | `discogs_master_covers` (source='caa', ON CONFLICT DO NOTHING) |
 
 Всё идемпотентно: TRUNCATE+COPY, UPDATE только `cover_image_url IS NULL`,
@@ -33,14 +34,15 @@ BASE=https://data.metabrainz.org/pub/musicbrainz/data/fullexport/$(curl -s https
 
 mkdir -p ~/mbdump ~/mbdump-caa
 curl -s $BASE/mbdump.tar.bz2 | tar -xjf - -C ~/mbdump --strip-components=1 \
-  mbdump/url mbdump/l_release_url mbdump/release
+  mbdump/url mbdump/l_release_url mbdump/release \
+  mbdump/release_label mbdump/label mbdump/release_country mbdump/release_unknown_country
 curl -s $BASE/mbdump-cover-art-archive.tar.bz2 | tar -xjf - -C ~/mbdump-caa \
   --strip-components=1 mbdump/cover_art mbdump/art_type mbdump/cover_art_type
 ```
 
 Пик диска на Mac: ~4.5GB TSV (архивы не сохраняются — стрим).
 
-### 2. Mac: спарсить → 2 CSV (минуты, stdlib-only)
+### 2. Mac: спарсить → 4 CSV (минуты, stdlib-only)
 
 ```bash
 cd ~/Desktop/Cursor/Вертушка
@@ -48,7 +50,16 @@ python3 Backend/app/scripts/ingest_mb_discogs_map.py \
   --dir ~/mbdump --caa-dir ~/mbdump-caa --export-csv ~/mb_map.csv.gz
 python3 Backend/app/scripts/ingest_mb_barcode_covers.py \
   --dir ~/mbdump --caa-dir ~/mbdump-caa --export-csv ~/mb_barcode_covers.csv.gz
+python3 Backend/app/scripts/ingest_mb_catno_covers.py \
+  --dir ~/mbdump --caa-dir ~/mbdump-caa --export-csv ~/mb_catno_covers.csv.gz
+# катномер-скрипт пишет ДВА файла: основной + mb_catno_covers.rg.csv.gz
 ```
+
+⚠️ **Порядок каналов обязателен: map → barcode → catno.** Все три пишут по
+правилу «заполни NULL», слот занимается навсегда — догадка по катномеру не
+должна опережать точный ключ. Катномер-канал вдобавок гейтится: `--from-csv`
+только грузит и мерит точность на непокрытой популяции, запись — отдельный
+`--apply` (перепроверяет гейт сам, пишет аудит в `catno_cover_audit`).
 
 ### 3. Сервер: залить CSV (~100MB суммарно)
 
