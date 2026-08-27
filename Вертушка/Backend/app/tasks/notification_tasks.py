@@ -621,6 +621,24 @@ async def _run_price_drop(db: AsyncSession) -> None:
     history_floor = now - timedelta(days=PRICE_DROP_HISTORY_DAYS)
 
     # Ранжируем историю по листингу; prev_price = цена в прошлом снапшоте.
+    #
+    # Привязку к пластинке берём ДЖОЙНОМ через store_listings.matched_record_id,
+    # а не из денормализованного listing_price_history.record_id. Денорм пишется
+    # в _upsert_listing значением НА МОМЕНТ снятия снапшота, а матчинг листингов
+    # — отдельная часовая задача (hourly_match_unmatched), и listing_matcher
+    # историю не досыпает: в нём нет ни одного обращения к ListingPriceHistory.
+    # Значит всё, что снято до привязки, лежит с record_id=NULL.
+    #
+    # Что это ломало здесь. Фильтр `record_id IS NOT NULL` вырезал до-матчевые
+    # строки ДО вычисления окна, поэтому у первого снапшота после привязки не
+    # оказывалось предшественника в партиции: prev_price=NULL → строка гибла на
+    # `prev_price.is_not(None)`. Первое же падение цены на свежепривязанном
+    # листинге не рождало ни одного wishlist_price_drop — а это ровно тот
+    # момент, когда пластинка впервые появляется в чьём-то радаре.
+    #
+    # Джойн — inner, и потерять он ничего не может: listing_id NOT NULL с
+    # ON DELETE CASCADE, то есть история не переживает свой листинг. Партицию
+    # LAG он тоже не трогает: store_listings.id — PK, связь 1:1.
     lag_price = func.lag(ListingPriceHistory.price_rub).over(
         partition_by=ListingPriceHistory.listing_id,
         order_by=ListingPriceHistory.captured_at,
@@ -628,14 +646,16 @@ async def _run_price_drop(db: AsyncSession) -> None:
     ranked = (
         select(
             ListingPriceHistory.listing_id.label("listing_id"),
-            ListingPriceHistory.record_id.label("record_id"),
+            StoreListing.matched_record_id.label("record_id"),
             ListingPriceHistory.price_rub.label("price_rub"),
             ListingPriceHistory.status.label("status"),
             ListingPriceHistory.captured_at.label("captured_at"),
             lag_price.label("prev_price"),
         )
+        .select_from(ListingPriceHistory)
+        .join(StoreListing, StoreListing.id == ListingPriceHistory.listing_id)
         .where(
-            ListingPriceHistory.record_id.is_not(None),
+            StoreListing.matched_record_id.is_not(None),
             ListingPriceHistory.captured_at >= history_floor,
         )
         .subquery()
@@ -677,20 +697,28 @@ async def _run_price_drop(db: AsyncSession) -> None:
     # снапшотов СТРОГО ДО текущего окна: `new` уже записан в историю, и если его не
     # исключить, min всегда равен new и сравнение вырождается в тавтологию.
     # Побочная польза: previous_low — настоящее «прошлый минимум N ₽» для текста push.
+    #
+    # Привязка — тем же джойном, что и выше. По денорму этот минимум считался по
+    # ПОЛОВИНЕ истории: до-матчевые снапшоты в него не входили, и «дешевле ещё
+    # не было» уезжало в push на цене, которую уже били раньше. Здесь ошибка
+    # опаснее, чем в графике: is_all_time_low пробивает push даже watched-айтемам
+    # без порога.
     previous_low: dict[UUID, float] = {}
     low_rows = (
         await db.execute(
             select(
-                ListingPriceHistory.record_id,
+                StoreListing.matched_record_id,
                 func.min(ListingPriceHistory.price_rub),
             )
+            .select_from(ListingPriceHistory)
+            .join(StoreListing, StoreListing.id == ListingPriceHistory.listing_id)
             .where(
-                _id_filter(ListingPriceHistory.record_id, record_ids, dialect=dialect),
+                _id_filter(StoreListing.matched_record_id, record_ids, dialect=dialect),
                 ListingPriceHistory.status == ListingStatus.IN_STOCK,
                 ListingPriceHistory.price_rub.is_not(None),
                 ListingPriceHistory.captured_at < window_start,
             )
-            .group_by(ListingPriceHistory.record_id)
+            .group_by(StoreListing.matched_record_id)
         )
     ).all()
     for rid, min_price in low_rows:
