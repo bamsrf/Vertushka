@@ -5,7 +5,11 @@ Discogs API для прогрева обложек dump-строк без cover_
 bucket простаивает. Воркер запускается раз в минуту (APScheduler, scheduler-
 контейнер) и работает ТОЛЬКО при почти полном bucket'е:
 
-  peek_tokens() > _HEADROOM → тратим (tokens - _HEADROOM), максимум _MAX_PER_RUN
+  peek_tokens() > headroom → тратим (tokens - headroom), максимум max_per_run
+
+Профиль (headroom / max_per_run / pace) — в конфиге: COVER_DRIP_HEADROOM,
+COVER_DRIP_MAX_PER_RUN, COVER_DRIP_PACE_SEC. Дефолты щадящие (юзеры важнее);
+до релиза на проде env ставит агрессивный профиль ~45 req/min.
 
 Юзерский трафик всегда в приоритете: между каждым запросом peek повторяется,
 при падении ниже headroom — немедленный выход. Redis недоступен → пропуск
@@ -37,14 +41,21 @@ logger = logging.getLogger(__name__)
 _BUCKET_KEY = "app"
 _BUCKET_CAPACITY = 55
 _BUCKET_REFILL = 0.95
-# Ниже этого уровня токены не трогаем — резерв для живых юзеров.
-_HEADROOM = 35
-# Кап на один прогон (прогоны каждую минуту). Вместе с паузой _PACE_SEC
-# даёт размазанные ~10 req/min вместо burst'а: Discogs считает скользящее
-# окно 60/min, а наш bucket в worst case пропускал burst 55 + рефилл —
-# drip-насыщение превращало это в постоянные 429 (2026-07-03).
-_MAX_PER_RUN = 10
-_PACE_SEC = 2.0
+
+
+def _run_budget(tokens: float | None, headroom: int, cap: int) -> int:
+    """Сколько запросов можно потратить в этом прогоне.
+
+    headroom — резерв токенов для живых юзеров, cap — потолок на прогон.
+    Профиль (headroom/cap/pace) живёт в конфиге: до релиза на проде стоит
+    агрессивный (~45 req/min), после релиза env убирается и дефолты
+    возвращают щадящие ~10 req/min. Пауза между запросами обязательна:
+    Discogs считает скользящее окно 60/min, и burst из bucket'а уже
+    превращался в постоянные 429 (2026-07-03).
+    """
+    if tokens is None or tokens <= headroom:
+        return 0
+    return min(int(tokens - headroom), cap)
 
 
 async def drip_covers_batch() -> None:
@@ -57,10 +68,11 @@ async def drip_covers_batch() -> None:
     if await cache.get("discogs", "app_429"):
         return
 
+    settings = get_settings()
+    headroom = settings.cover_drip_headroom
+    pace = settings.cover_drip_pace_sec
     tokens = await cache.peek_tokens(_BUCKET_KEY, _BUCKET_CAPACITY, _BUCKET_REFILL)
-    if tokens is None or tokens <= _HEADROOM:
-        return
-    budget = min(int(tokens - _HEADROOM), _MAX_PER_RUN)
+    budget = _run_budget(tokens, headroom, settings.cover_drip_max_per_run)
     if budget <= 0:
         return
 
@@ -93,11 +105,11 @@ async def drip_covers_batch() -> None:
         for i, did in enumerate(rows):
             # Пауза между запросами — размазываем нагрузку вместо burst'а.
             if i:
-                await asyncio.sleep(_PACE_SEC)
+                await asyncio.sleep(pace)
             # Re-peek перед каждым запросом: юзерский всплеск или свежий 429 —
             # выходим немедленно.
             tokens = await cache.peek_tokens(_BUCKET_KEY, _BUCKET_CAPACITY, _BUCKET_REFILL)
-            if tokens is None or tokens <= _HEADROOM or await cache.get("discogs", "app_429"):
+            if tokens is None or tokens <= headroom or await cache.get("discogs", "app_429"):
                 break
 
             cover = await discogs.get_release_cover(did)

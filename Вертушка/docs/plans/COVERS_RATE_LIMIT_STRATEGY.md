@@ -54,6 +54,19 @@ CAA **без rate limit** (archive.org). Ни одного запроса к Dis
   навсегда (перепроверка: `SET cover_checked_at = NULL`)
 - Выключатель: `COVER_DRIP_ENABLED=false`
 
+**Профиль темпа (2026-08-27).** headroom / max_per_run / pace вынесены в env:
+`COVER_DRIP_HEADROOM` / `COVER_DRIP_MAX_PER_RUN` / `COVER_DRIP_PACE_SEC`.
+Дефолты — щадящие (35 / 10 / 2.0 ≈ 10 req/min). До релиза, пока DAU 0 и
+bucket простаивает, на проде стоит агрессивный профиль 10 / 45 / 1.0
+(~45 req/min ≈ 55–60K обложек/день, вся очередь 11.3M ≈ полгода).
+
+⚠️ **Перед релизом в App Store агрессивный профиль ОБЯЗАТЕЛЬНО снять**:
+удалить три COVER_DRIP_* переменные из env на сервере и перезапустить
+scheduler — дефолты вернут щадящий режим. Pace ниже 1.0 не ставить никогда:
+Discogs считает скользящее окно 60/min, burst уже давал постоянные 429
+(2026-07-03). Красная линия при наблюдении: `docker logs vertushka_scheduler
+| grep -i 429` — появились, значит профиль слишком жирный.
+
 ### Слой 3 — iTunes Search API fallback
 
 `cover_url_by_artist_title()` в `cover_fallback.py` — последний шаг цепочки

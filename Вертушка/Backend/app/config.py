@@ -50,6 +50,16 @@ class Settings(BaseSettings):
     discogs_token_encryption_key: str = Field(default="", alias="DISCOGS_TOKEN_ENCRYPTION_KEY")
     # Drip-прогрев обложек простаивающими токенами app-bucket (cover_drip_tasks)
     cover_drip_enabled: bool = Field(default=True, alias="COVER_DRIP_ENABLED")
+    # Профиль дрипа. Дефолты — щадящий режим «есть живые юзеры»: ~10 req/min,
+    # 35 токенов в резерве. До релиза (DAU 0) на проде стоит агрессивный
+    # профиль через env: HEADROOM=10, MAX_PER_RUN=45, PACE=1.0 → ~45 req/min,
+    # ~55-60 тыс. обложек/день. ПЕРЕД РЕЛИЗОМ в App Store env убрать (откат на
+    # эти дефолты) — см. COVERS_RATE_LIMIT_STRATEGY.md, слой 2.
+    cover_drip_headroom: int = Field(default=35, alias="COVER_DRIP_HEADROOM")
+    cover_drip_max_per_run: int = Field(default=10, alias="COVER_DRIP_MAX_PER_RUN")
+    # Пауза между запросами. Ниже 1.0 не ставить: Discogs считает скользящее
+    # окно 60/min, burst из bucket'а уже давал постоянные 429 (2026-07-03).
+    cover_drip_pace_sec: float = Field(default=2.0, alias="COVER_DRIP_PACE_SEC")
 
     # Yandex-native матчинг (шаг 5.5): создавать записи вне Discogs из Yandex.
     # OFF по умолчанию — включать осознанно, мгновенный откат без деплоя.
