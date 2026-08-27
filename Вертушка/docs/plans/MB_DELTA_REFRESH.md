@@ -1,6 +1,8 @@
 # План C — месячный рефреш дампов (MB + CAA), обложки без API
 
-> Статус: **не начато** (сознательно отложено — текущие дампы от 2026-07-01, свежее не нужно).
+> Статус: **прогнан 2026-08-27** (дамп 2026-08-26): +12 718 обложек по URL-связям,
+> +11 671 по штрихкодам, +3 784 master-обложек. Оба финальных UPDATE срезались
+> statement_timeout'ом — добиты руками, см. грабли в шаге 4.
 > Триггер запуска: раз в месяц, или когда свежие релизы (< 2 мес) заметно без обложек.
 > Родственный хвост: monthly delta-ингест Discogs-дампа (docs/plans, заметка covers-rate-limit-saga).
 
@@ -34,11 +36,17 @@ BASE=https://data.metabrainz.org/pub/musicbrainz/data/fullexport/$(curl -s https
 mkdir -p ~/mbdump ~/mbdump-caa
 curl -s $BASE/mbdump.tar.bz2 | tar -xjf - -C ~/mbdump --strip-components=1 \
   mbdump/url mbdump/l_release_url mbdump/release
+# ⚠️ CAA-дамп с августа-2026 префиксует имена схемой: cover_art_archive.cover_art
+# (основной дамп при этом БЕЗ префикса — не «чинить» его по аналогии!).
+# После распаковки срезать префикс, скрипты ждут голые имена.
 curl -s $BASE/mbdump-cover-art-archive.tar.bz2 | tar -xjf - -C ~/mbdump-caa \
-  --strip-components=1 mbdump/cover_art mbdump/art_type mbdump/cover_art_type
+  --strip-components=1 'mbdump/*.cover_art' 'mbdump/*.art_type' 'mbdump/*.cover_art_type'
+(cd ~/mbdump-caa && for f in *.*; do mv "$f" "${f#*.}"; done)
 ```
 
 Пик диска на Mac: ~4.5GB TSV (архивы не сохраняются — стрим).
+Если tar ругается «Not found in archive» — раскладка снова поменялась:
+`tar -tjf` на CAA-дампе (он маленький) и поправить пути тут.
 
 ### 2. Mac: спарсить → 2 CSV (минуты, stdlib-only)
 
@@ -115,6 +123,15 @@ SELECT source, count(*) FROM discogs_master_covers GROUP BY source;
 rm -rf ~/mbdump ~/mbdump-caa
 # сервер: docker exec vertushka_api rm /tmp/mb_map.csv.gz /tmp/mb_barcode_covers.csv.gz
 ```
+
+## Бейзлайн после прогона 2026-08-27 (дамп 2026-08-26)
+
+- `discogs_releases_index`: covers total **2,008,531** (CAA 1,303,080)
+- `mb_discogs_map`: 1,847,357 пар (1,183,125 has_front)
+- `mb_barcode_covers`: 1,925,589 пар
+- `discogs_master_covers`: deezer 443,911 / caa 417,191 / store 4,923 / discogs 375
+- В сыром CAA-дампе 3,795,202 релиза с front — наши связи покрывают ~1.3 млн;
+  остаток недостижим по URL/штрихкоду, следующий ключ — каталожный номер+лейбл.
 
 ## Бейзлайн после прогона 2026-07-12
 
