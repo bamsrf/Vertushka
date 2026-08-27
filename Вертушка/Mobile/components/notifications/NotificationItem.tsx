@@ -35,6 +35,13 @@ interface Props {
   onLongPress?: (item: NotificationItemType) => void;
   onMarkRead?: (item: NotificationItemType) => void;
   onDelete?: (item: NotificationItemType) => void;
+  /**
+   * Тап по самой иконке радара — увести на экран радара. Иконка была обычным
+   * <View> внутри TouchableOpacity всей строки, поэтому нажатие на неё
+   * отрабатывала строка и уводила в карточку релиза: выглядело как «по радару
+   * не проваливается».
+   */
+  onPressRadar?: (item: NotificationItemType) => void;
 }
 
 function formatRelativeTime(iso: string): string {
@@ -219,6 +226,7 @@ export const NotificationItem: React.FC<Props> = ({
   onRejectFollow,
   onLongPress,
   onDelete,
+  onPressRadar,
 }) => {
   const unread = !item.read_at;
   const text = useMemo(() => buildText(item), [item]);
@@ -265,35 +273,71 @@ export const NotificationItem: React.FC<Props> = ({
         ) : avatarUrl ? (
           <>
             <Image source={avatarUrl} style={styles.avatar} cachePolicy="disk" />
-            <View style={[styles.iconBadge, { backgroundColor: meta.tint }]}>
-              {onRadar ? (
+            {onRadar && onPressRadar ? (
+              <TouchableOpacity
+                style={[styles.iconBadge, { backgroundColor: meta.tint }]}
+                onPress={() => onPressRadar(item)}
+                hitSlop={10}
+                accessibilityRole="button"
+                accessibilityLabel="Открыть радар"
+              >
                 <RadarIcon size={11} color={Colors.background} variant="on" />
-              ) : (
-                <Icon name={meta.name as any} size={10} color={Colors.background} />
-              )}
-            </View>
+              </TouchableOpacity>
+            ) : (
+              <View style={[styles.iconBadge, { backgroundColor: meta.tint }]}>
+                {onRadar ? (
+                  <RadarIcon size={11} color={Colors.background} variant="on" />
+                ) : (
+                  <Icon name={meta.name as any} size={10} color={Colors.background} />
+                )}
+              </View>
+            )}
           </>
         ) : initials ? (
           <>
             <View style={[styles.avatar, styles.initialsAvatar]}>
               <Text style={styles.initialsText}>{initials}</Text>
             </View>
-            <View style={[styles.iconBadge, { backgroundColor: meta.tint }]}>
-              {onRadar ? (
+            {onRadar && onPressRadar ? (
+              <TouchableOpacity
+                style={[styles.iconBadge, { backgroundColor: meta.tint }]}
+                onPress={() => onPressRadar(item)}
+                hitSlop={10}
+                accessibilityRole="button"
+                accessibilityLabel="Открыть радар"
+              >
                 <RadarIcon size={11} color={Colors.background} variant="on" />
-              ) : (
-                <Icon name={meta.name as any} size={10} color={Colors.background} />
-              )}
-            </View>
+              </TouchableOpacity>
+            ) : (
+              <View style={[styles.iconBadge, { backgroundColor: meta.tint }]}>
+                {onRadar ? (
+                  <RadarIcon size={11} color={Colors.background} variant="on" />
+                ) : (
+                  <Icon name={meta.name as any} size={10} color={Colors.background} />
+                )}
+              </View>
+            )}
           </>
         ) : (
-          <View style={[styles.systemIcon, { backgroundColor: meta.tint }]}>
-            {onRadar ? (
+          onRadar && onPressRadar ? (
+            <TouchableOpacity
+              style={[styles.systemIcon, { backgroundColor: meta.tint }]}
+              onPress={() => onPressRadar(item)}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel="Открыть радар"
+            >
               <RadarIcon size={24} color={Colors.background} variant="on" />
-            ) : (
-              <Icon name={meta.name as any} size={22} color={Colors.background} />
-            )}
-          </View>
+            </TouchableOpacity>
+          ) : (
+            <View style={[styles.systemIcon, { backgroundColor: meta.tint }]}>
+              {onRadar ? (
+                <RadarIcon size={24} color={Colors.background} variant="on" />
+              ) : (
+                <Icon name={meta.name as any} size={22} color={Colors.background} />
+              )}
+            </View>
+          )
         )}
       </View>
 

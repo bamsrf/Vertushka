@@ -45,7 +45,18 @@ const AnimatedTextInput = Animated.createAnimatedComponent(TextInput);
 export interface ThresholdSheetData {
   itemId: string;
   recordId: string;
+  /**
+   * ЖИВАЯ цена маркета (самый дешёвый in_stock листинг). Показывается как
+   * «сейчас» и по ней считается предупреждение «порог выше текущей цены».
+   * Не путать с priceHint: оценку Discogs сюда класть нельзя — она не имеет
+   * отношения к тому, за сколько пластинку реально продают.
+   */
   currentPrice?: number | null;
+  /**
+   * Оценка Discogs — только чтобы задать разумные границы слайдера, пока не
+   * приехала цена маркета. Как «сейчас» НЕ показывается.
+   */
+  priceHint?: number | null;
   threshold?: number | null;
   /** Задан → открываемся в режиме «дешевле обычного» с этой скидкой. */
   thresholdPct?: number | null;
@@ -141,6 +152,8 @@ export const ThresholdSheet = forwardRef<ThresholdSheetRef, Props>(({ onSaved, o
   const [mode, setMode] = useState<ThresholdMode>('fixed');
   const [pct, setPct] = useState(DEFAULT_PCT);
   const [baseline, setBaseline] = useState<number | null>(null);
+  // Оценка Discogs: только для границ слайдера, в «сейчас» не попадает.
+  const [hint, setHint] = useState<number | null>(null);
 
   // Во что превратится «на N% дешевле обычного» прямо сейчас. Без базы (мало
   // истории) бэкенд откатывается на абсолютный порог — так и пишем.
@@ -149,10 +162,10 @@ export const ThresholdSheet = forwardRef<ThresholdSheetRef, Props>(({ onSaved, o
   // Границы: MIN_THRESHOLD … выше текущей (порог можно и выше цены).
   const bounds = useMemo(() => {
     const amt = Number.isFinite(amount) ? amount : 0;
-    const base = current ?? (amt > 0 ? amt : 5000);
+    const base = current ?? hint ?? (amt > 0 ? amt : 5000);
     const hi = Math.max(base * 1.6, base + 3000, amt + STEP);
     return { lo: MIN_THRESHOLD, hi: Math.max(Math.ceil(hi), MIN_THRESHOLD + 500) };
-  }, [current, amount]);
+  }, [current, hint, amount]);
 
   // UI-поток: позиция thumb (px) + зеркала границ/ширины для worklet'ов.
   const thumbX = useSharedValue(0);
@@ -218,10 +231,13 @@ export const ThresholdSheet = forwardRef<ThresholdSheetRef, Props>(({ onSaved, o
   const present = useCallback((d: ThresholdSheetData) => {
     setData(d);
     const cp = finite(d.currentPrice);
+    const hint = finite(d.priceHint);
     const th = finite(d.threshold);
-    const amt0 = Math.max(MIN_THRESHOLD, th ?? (cp ? roundTo(cp * 0.9, STEP) : 0));
+    const seed = cp ?? hint;
+    const amt0 = Math.max(MIN_THRESHOLD, th ?? (seed ? roundTo(seed * 0.9, STEP) : 0));
     setAmount(amt0);
     setCurrent(cp);
+    setHint(hint);
     setLow(null);
     setBaseline(null);
     setMode(d.thresholdPct ? 'relative' : 'fixed');
@@ -229,13 +245,24 @@ export const ThresholdSheet = forwardRef<ThresholdSheetRef, Props>(({ onSaved, o
     setConds(d.conditions && d.conditions.length ? d.conditions : DEFAULT_CONDITIONS);
     // Синхронно засеваем sharedValue'ы границ/позиции ДО показа листа — иначе первый
     // кадр считает по дефолтам (sLo=0/sHi=1) и мелькают «единичные цифры» до useEffect.
-    const base0 = cp ?? (amt0 > 0 ? amt0 : 5000);
+    const base0 = seed ?? (amt0 > 0 ? amt0 : 5000);
     const lo0 = MIN_THRESHOLD;
     const hi0 = Math.max(Math.ceil(Math.max(base0 * 1.6, base0 + 3000, amt0 + STEP)), lo0 + 500);
     sLo.value = lo0;
     sHi.value = hi0;
     thumbX.value = clamp(hi0 > lo0 ? ((amt0 - lo0) / (hi0 - lo0)) * sW.value : sW.value / 2, 0, sW.value);
     sheetRef.current?.present();
+    // Живая цена маркета — самый дешёвый in_stock листинг. Раньше с карточки
+    // релиза сюда приезжала оценка Discogs (estimated_price_median_rub), и
+    // «сейчас» вместе с предупреждением «сработает сразу» считались по числу,
+    // которое к реальным продажам отношения не имеет.
+    api
+      .getOfferDetailsFullByRecordId(d.recordId)
+      .then((res) => {
+        const market = finite(res.summary?.min_price_rub);
+        if (market != null) setCurrent(market);
+      })
+      .catch(() => {});
     api
       .getPriceHistory(d.recordId, 90)
       .then((res) => {
