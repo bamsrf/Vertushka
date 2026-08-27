@@ -35,6 +35,10 @@ tenacity==8.2.3
 
 # Обработка изображений
 pillow==11.1.0
+
+# S3-слой обложек (dual-write зеркала, app/services/s3_covers.py).
+# Импортируется лениво — при COVERS_S3_ENABLED=false не загружается вовсе.
+boto3==1.43.81
 # blurhash-плейсхолдеры обложек (pure-python; encode ждёт numpy-массив)
 blurhash==1.1.4
 numpy==1.26.4  # прямая зависимость blurhash-энкодера (уже стоял транзитивно)

@@ -141,6 +141,11 @@ def _encode_and_place(raw: bytes, tmp_path: Path, dest: Path) -> tuple[str | Non
         img.thumbnail((_MAX_SIDE, _MAX_SIDE), Image.LANCZOS)
     img.save(tmp_path, format="JPEG", quality=_JPEG_QUALITY, optimize=True)
     os.rename(tmp_path, dest)
+    # Dual-write в вечный S3-слой (no-op пока COVERS_S3_ENABLED=false).
+    # Здесь, а не у зовущих: это единственная точка, через которую на диск
+    # попадает любой мастер. Никогда не бросает.
+    from app.services.s3_covers import schedule_upload
+    schedule_upload(dest)
     return bhash, min(img.width, img.height)
 
 

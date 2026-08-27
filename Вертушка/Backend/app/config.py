@@ -179,6 +179,19 @@ class Settings(BaseSettings):
         default="https://api.vinyl-vertushka.ru/covers", alias="PUBLIC_COVERS_BASE",
     )
     covers_max_cache_mb: int = Field(default=5000, alias="COVERS_MAX_CACHE_MB")
+    # ── S3-слой обложек (подготовка трека A, COVERS_S3_IMGPROXY_MILESTONE) ──
+    # Дефолт выключен: пока бакета нет, dual-write в s3_covers — полный no-op
+    # (boto3 даже не импортируется). Включение: заполнить переменные ниже,
+    # прогнать app/scripts/sync_covers_to_s3 (миграция накопленного зеркала),
+    # затем COVERS_S3_ENABLED=true + рестарт. Неполный конфиг при включённом
+    # флаге НЕ роняет старт: s3_covers логирует error и живёт как выключенный
+    # (обложка на диске важнее дубля в бакете).
+    covers_s3_enabled: bool = Field(default=False, alias="COVERS_S3_ENABLED")
+    s3_endpoint_url: str = Field(default="", alias="S3_ENDPOINT_URL")
+    s3_region: str = Field(default="ru-1", alias="S3_REGION")
+    s3_bucket_covers: str = Field(default="vertushka-covers", alias="S3_BUCKET_COVERS")
+    s3_access_key_id: str = Field(default="", alias="S3_ACCESS_KEY_ID")
+    s3_secret_access_key: str = Field(default="", alias="S3_SECRET_ACCESS_KEY")
     # Дневной бюджет скачиваний КАРТИНОК с хостов Discogs (i.discogs.com).
     # У Discogs неофициальный потолок ~1000 изображений/сутки на IP, дальше
     # 403 на всё — включая обложки, которые видят живые пользователи. 800
