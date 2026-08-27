@@ -282,6 +282,7 @@ grace period, **если юзеру это ясно сказано**. Прове
 
 ## Verification перед сабмитом (чек-лист ревьюера)
 
+- [ ] COVER_DRIP_* удалены из `.env.prod`, scheduler пересоздан; `docker logs vertushka_scheduler | grep "cover drip"` показывает profile hr=35 cap=10
 - [ ] Свежий аккаунт: регистрация → verify-code → пустая коллекция с внятным empty state
 - [ ] Демо-аккаунт из review notes логинится, коллекция наполнена
 - [ ] Report-кнопка на чужой записи/профиле/в чате отправляет жалобу, тост показан

@@ -5,7 +5,11 @@ Discogs API для прогрева обложек dump-строк без cover_
 bucket простаивает. Воркер запускается раз в минуту (APScheduler, scheduler-
 контейнер) и работает ТОЛЬКО при почти полном bucket'е:
 
-  peek_tokens() > _HEADROOM → тратим (tokens - _HEADROOM), максимум _MAX_PER_RUN
+  peek_tokens() > headroom → тратим (tokens - headroom), максимум max_per_run
+
+Профиль (headroom / max_per_run / pace) — в конфиге: COVER_DRIP_HEADROOM,
+COVER_DRIP_MAX_PER_RUN, COVER_DRIP_PACE_SEC. Дефолты щадящие (юзеры важнее);
+до релиза на проде env ставит агрессивный профиль ~45 req/min.
 
 Юзерский трафик всегда в приоритете: между каждым запросом peek повторяется,
 при падении ниже headroom — немедленный выход. Redis недоступен → пропуск
@@ -22,29 +26,42 @@ cover_checked_at ставится после КАЖДОЙ попытки (вкл
 перепроверить: UPDATE ... SET cover_checked_at = NULL.
 """
 import asyncio
+import time
 import logging
 from datetime import datetime
 
 from sqlalchemy import text
 
 from app.config import get_settings
+from app.services.rate_limiter import get_limiter
 from app.database import async_session_maker
 from app.services.cache import cache
 
 logger = logging.getLogger(__name__)
 
-# Bucket app-лимитера (rate_limiter.py: capacity=55, refill=0.95/s).
+# Bucket app-лимитера. Ёмкость/refill берём у самого лимитера, а не дублируем
+# числами: разъехавшаяся копия завышала бы peek и устраивала burst → 429.
 _BUCKET_KEY = "app"
-_BUCKET_CAPACITY = 55
-_BUCKET_REFILL = 0.95
-# Ниже этого уровня токены не трогаем — резерв для живых юзеров.
-_HEADROOM = 35
-# Кап на один прогон (прогоны каждую минуту). Вместе с паузой _PACE_SEC
-# даёт размазанные ~10 req/min вместо burst'а: Discogs считает скользящее
-# окно 60/min, а наш bucket в worst case пропускал burst 55 + рефилл —
-# drip-насыщение превращало это в постоянные 429 (2026-07-03).
-_MAX_PER_RUN = 10
-_PACE_SEC = 2.0
+_BUCKET_CAPACITY = get_limiter(_BUCKET_KEY)._capacity
+_BUCKET_REFILL = get_limiter(_BUCKET_KEY)._refill_rate
+# Жёсткий потолок длительности прогона — меньше минутного интервала джобы.
+_MAX_RUN_SECONDS = 55
+
+
+def _below_headroom(tokens: float | None, headroom: int) -> bool:
+    """Единственное место с семантикой гейта: None (Redis лёг) = не работаем."""
+    return tokens is None or tokens <= headroom
+
+
+def _run_budget(tokens: float | None, headroom: int, cap: int) -> int:
+    """Бюджет прогона: излишек над резервом, не больше капа, дробное — вниз.
+
+    Политика профилей (какие значения ставить и когда снимать) — не здесь,
+    а в COVERS_RATE_LIMIT_STRATEGY.md, слой 2.
+    """
+    if _below_headroom(tokens, headroom):
+        return 0
+    return min(int(tokens - headroom), cap)
 
 
 async def drip_covers_batch() -> None:
@@ -57,15 +74,17 @@ async def drip_covers_batch() -> None:
     if await cache.get("discogs", "app_429"):
         return
 
+    settings = get_settings()
+    headroom = settings.cover_drip_headroom
+    pace = settings.cover_drip_pace_sec
     tokens = await cache.peek_tokens(_BUCKET_KEY, _BUCKET_CAPACITY, _BUCKET_REFILL)
-    if tokens is None or tokens <= _HEADROOM:
-        return
-    budget = min(int(tokens - _HEADROOM), _MAX_PER_RUN)
+    budget = _run_budget(tokens, headroom, settings.cover_drip_max_per_run)
     if budget <= 0:
         return
 
     from app.services.discogs import DiscogsService
     discogs = DiscogsService()
+    started = time.monotonic()
 
     async with async_session_maker() as session:
         rows = (await session.execute(
@@ -93,14 +112,27 @@ async def drip_covers_batch() -> None:
         for i, did in enumerate(rows):
             # Пауза между запросами — размазываем нагрузку вместо burst'а.
             if i:
-                await asyncio.sleep(_PACE_SEC)
+                await asyncio.sleep(pace)
             # Re-peek перед каждым запросом: юзерский всплеск или свежий 429 —
             # выходим немедленно.
             tokens = await cache.peek_tokens(_BUCKET_KEY, _BUCKET_CAPACITY, _BUCKET_REFILL)
-            if tokens is None or tokens <= _HEADROOM or await cache.get("discogs", "app_429"):
+            if _below_headroom(tokens, headroom) or await cache.get("discogs", "app_429"):
+                break
+            # Прогон обязан влезать в свой минутный интервал: перерасход не
+            # падает, а молча роняет следующий тик (max_instances=1) — темп
+            # проседает вдвое без единой строки в логе.
+            if time.monotonic() - started > _MAX_RUN_SECONDS:
                 break
 
-            cover = await discogs.get_release_cover(did)
+            # swallow_errors=False: таймаут лимитера/сети НЕ означает «у
+            # релиза нет обложки». Пометить строку по ошибке — потерять её
+            # из очереди навсегда, поэтому при исключении выходим, не трогая
+            # строку: bucket и так под давлением.
+            try:
+                cover = await discogs.get_release_cover(did, swallow_errors=False)
+            except Exception:
+                logger.warning("cover drip: запрос %s упал, строка не помечена", did)
+                break
             checked += 1
             if cover:
                 warmed += 1
@@ -113,10 +145,19 @@ async def drip_covers_batch() -> None:
                 ),
                 {"url": cover, "did": int(did), "now": datetime.utcnow()},
             )
+            # Commit на каждую строку: прогон при жирном профиле длится почти
+            # минуту, а копившаяся транзакция держала row-locks против
+            # statement_timeout=30s соседних бэкфиллов и теряла весь батч
+            # (и потраченную API-квоту) при рестарте на деплое.
+            await session.commit()
 
         if checked:
-            await session.commit()
-            logger.info("cover drip: %d checked, %d covers found", checked, warmed)
+            logger.info(
+                "cover drip: %d checked, %d covers found "
+                "(profile hr=%d cap=%d pace=%.1f)",
+                checked, warmed, headroom,
+                settings.cover_drip_max_per_run, pace,
+            )
 
 
 # ---- Добор обложек из магазинных листингов ------------------------------ #

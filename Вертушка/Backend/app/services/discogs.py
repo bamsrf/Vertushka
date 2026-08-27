@@ -1460,13 +1460,21 @@ class DiscogsService:
         await cache.set("master_info", master_id, result, TTL_MASTER_INFO)
         return result
 
-    async def get_release_cover(self, release_id: str) -> str | None:
+    async def get_release_cover(
+        self, release_id: str, *, swallow_errors: bool = True
+    ) -> str | None:
         """Только обложка релиза (`images[0].uri`), без фан-аута на artist
         thumb / price stats / master — 1 API-вызов вместо 4. Для фонового
         прогрева обложек dump-строк (cover_warm).
 
         Если полный payload уже в кэше release — берём оттуда бесплатно.
         Negative cache на 1 час.
+
+        swallow_errors=False пробрасывает сетевые/лимитные исключения вместо
+        None. Нужен вызывающим, которые по None принимают НЕОБРАТИМОЕ решение
+        (дрип помечает строку cover_checked_at навсегда): иначе таймаут
+        лимитера неотличим от «у релиза нет картинки», и строки выжигаются
+        из очереди без единого реального запроса.
         """
         cached_release = await cache.get("release", release_id)
         if cached_release is not None:
@@ -1483,6 +1491,8 @@ class DiscogsService:
             )
         except Exception:
             logger.debug("get_release_cover failed for %s", release_id, exc_info=True)
+            if not swallow_errors:
+                raise
             await cache.set("release_cover", release_id, {"cover": None}, 3600)
             return None
 
