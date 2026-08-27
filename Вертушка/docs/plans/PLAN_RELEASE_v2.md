@@ -480,6 +480,7 @@ logger.info("gift_booked", extra={"booking_id": str(booking.id), "gifter_email":
 ## Чеклист перед сабмитом в стор
 
 - [ ] API URL = `https://api.vinyl-vertushka.ru/api` (не localhost)
+- [ ] COVER_DRIP_* удалены из `.env.prod`, scheduler пересоздан (пре-релизный профиль дрипа обложек жёг бы Discogs-квоту живых юзеров — COVERS_RATE_LIMIT_STRATEGY.md, слой 2)
 - [ ] Sentry DSN прописан (backend + mobile)
 - [ ] Access token TTL = 30 минут
 - [ ] `eas build --profile production` — билды собираются

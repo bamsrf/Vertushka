@@ -26,34 +26,40 @@ cover_checked_at ставится после КАЖДОЙ попытки (вкл
 перепроверить: UPDATE ... SET cover_checked_at = NULL.
 """
 import asyncio
+import time
 import logging
 from datetime import datetime
 
 from sqlalchemy import text
 
 from app.config import get_settings
+from app.services.rate_limiter import get_limiter
 from app.database import async_session_maker
 from app.services.cache import cache
 
 logger = logging.getLogger(__name__)
 
-# Bucket app-лимитера (rate_limiter.py: capacity=55, refill=0.95/s).
+# Bucket app-лимитера. Ёмкость/refill берём у самого лимитера, а не дублируем
+# числами: разъехавшаяся копия завышала бы peek и устраивала burst → 429.
 _BUCKET_KEY = "app"
-_BUCKET_CAPACITY = 55
-_BUCKET_REFILL = 0.95
+_BUCKET_CAPACITY = get_limiter(_BUCKET_KEY)._capacity
+_BUCKET_REFILL = get_limiter(_BUCKET_KEY)._refill_rate
+# Жёсткий потолок длительности прогона — меньше минутного интервала джобы.
+_MAX_RUN_SECONDS = 55
+
+
+def _below_headroom(tokens: float | None, headroom: int) -> bool:
+    """Единственное место с семантикой гейта: None (Redis лёг) = не работаем."""
+    return tokens is None or tokens <= headroom
 
 
 def _run_budget(tokens: float | None, headroom: int, cap: int) -> int:
-    """Сколько запросов можно потратить в этом прогоне.
+    """Бюджет прогона: излишек над резервом, не больше капа, дробное — вниз.
 
-    headroom — резерв токенов для живых юзеров, cap — потолок на прогон.
-    Профиль (headroom/cap/pace) живёт в конфиге: до релиза на проде стоит
-    агрессивный (~45 req/min), после релиза env убирается и дефолты
-    возвращают щадящие ~10 req/min. Пауза между запросами обязательна:
-    Discogs считает скользящее окно 60/min, и burst из bucket'а уже
-    превращался в постоянные 429 (2026-07-03).
+    Политика профилей (какие значения ставить и когда снимать) — не здесь,
+    а в COVERS_RATE_LIMIT_STRATEGY.md, слой 2.
     """
-    if tokens is None or tokens <= headroom:
+    if _below_headroom(tokens, headroom):
         return 0
     return min(int(tokens - headroom), cap)
 
@@ -78,6 +84,7 @@ async def drip_covers_batch() -> None:
 
     from app.services.discogs import DiscogsService
     discogs = DiscogsService()
+    started = time.monotonic()
 
     async with async_session_maker() as session:
         rows = (await session.execute(
@@ -109,10 +116,23 @@ async def drip_covers_batch() -> None:
             # Re-peek перед каждым запросом: юзерский всплеск или свежий 429 —
             # выходим немедленно.
             tokens = await cache.peek_tokens(_BUCKET_KEY, _BUCKET_CAPACITY, _BUCKET_REFILL)
-            if tokens is None or tokens <= headroom or await cache.get("discogs", "app_429"):
+            if _below_headroom(tokens, headroom) or await cache.get("discogs", "app_429"):
+                break
+            # Прогон обязан влезать в свой минутный интервал: перерасход не
+            # падает, а молча роняет следующий тик (max_instances=1) — темп
+            # проседает вдвое без единой строки в логе.
+            if time.monotonic() - started > _MAX_RUN_SECONDS:
                 break
 
-            cover = await discogs.get_release_cover(did)
+            # swallow_errors=False: таймаут лимитера/сети НЕ означает «у
+            # релиза нет обложки». Пометить строку по ошибке — потерять её
+            # из очереди навсегда, поэтому при исключении выходим, не трогая
+            # строку: bucket и так под давлением.
+            try:
+                cover = await discogs.get_release_cover(did, swallow_errors=False)
+            except Exception:
+                logger.warning("cover drip: запрос %s упал, строка не помечена", did)
+                break
             checked += 1
             if cover:
                 warmed += 1
@@ -125,10 +145,19 @@ async def drip_covers_batch() -> None:
                 ),
                 {"url": cover, "did": int(did), "now": datetime.utcnow()},
             )
+            # Commit на каждую строку: прогон при жирном профиле длится почти
+            # минуту, а копившаяся транзакция держала row-locks против
+            # statement_timeout=30s соседних бэкфиллов и теряла весь батч
+            # (и потраченную API-квоту) при рестарте на деплое.
+            await session.commit()
 
         if checked:
-            await session.commit()
-            logger.info("cover drip: %d checked, %d covers found", checked, warmed)
+            logger.info(
+                "cover drip: %d checked, %d covers found "
+                "(profile hr=%d cap=%d pace=%.1f)",
+                checked, warmed, headroom,
+                settings.cover_drip_max_per_run, pace,
+            )
 
 
 # ---- Добор обложек из магазинных листингов ------------------------------ #
