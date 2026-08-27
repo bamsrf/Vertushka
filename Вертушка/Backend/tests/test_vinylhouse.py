@@ -113,7 +113,12 @@ def test_card_parses_all_fields():
     assert dto.status == "in_stock"
     # Превью 150×150 развёрнуто в полноразмер
     assert dto.image_url == "https://vinylhouse.ru/images/detailed/77/10cc.jpg"
-    assert dto.raw_payload["album"] == "2 Great Pop Classics"
+    # title_raw — ЧИСТЫЙ альбом: матчер считает similarity против
+    # records.title напрямую. Ночь 27.08 с полным тайтлом дала 17.6% матчей.
+    assert dto.title_raw == "2 Great Pop Classics"
+    assert dto.raw_payload["title_full"] == (
+        "10CC – 1978 – 2 Great Pop Classics — Виниловая пластинка"
+    )
 
 
 def test_card_external_id_is_product_id_not_url():
@@ -131,6 +136,16 @@ def test_card_without_product_id_is_dropped():
     html = _card_html().replace('name="product_data[29959][product_id]"', 'name="other"')
     html = html.replace("product_form_29959", "product_form")
     assert _parse_card(_extract_cards(_soup(html))[0]) is None
+
+
+def test_card_without_album_keeps_full_title():
+    # Альбом не распознан («1989 Australian Rocks – 1989») — fallback на полный
+    # тайтл, чтобы матчеру было хоть что сравнивать
+    dto = _parse_card(_extract_cards(_soup(_card_html(
+        title="1989 Australian Rocks – 1989 — Виниловая пластинка"
+    )))[0])
+    assert dto is not None
+    assert dto.title_raw == "1989 Australian Rocks – 1989 — Виниловая пластинка"
 
 
 def test_card_without_price_is_on_request():
@@ -313,6 +328,7 @@ async def test_parse_listing_condition_and_stock():
     )
     assert dto.external_id == "29959"       # тот же id, что у карточки листинга
     assert dto.artist_raw == "10CC"
+    assert dto.title_raw == "2 Great Pop Classics"  # чистый альбом, не полный тайтл
     assert dto.year_raw == 1978
     assert dto.price_rub == Decimal("4990.00")
     # «Нет в наличии» в JS-словаре темы не сбивает определение наличия
