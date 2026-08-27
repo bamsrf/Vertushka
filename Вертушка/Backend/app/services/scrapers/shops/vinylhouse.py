@@ -151,14 +151,18 @@ def _parse_card(card: Tag) -> ListingDTO | None:
     return ListingDTO(
         external_id=external_id,
         url=link["href"],
-        title_raw=title_raw,
+        # title_raw обязан быть ЧИСТЫМ названием альбома: матчер считает
+        # similarity против records.title напрямую (listing_matcher.py:489).
+        # Первая ночь 27.08 с полным «Артист – Год – Альбом — Формат» дала
+        # 17.6% матчей — артист+год+формат в строке убивали score.
+        title_raw=album or title_raw,
         artist_raw=artist,
         year_raw=year,
         format_raw=format_tail,
         price_rub=price,
         status="in_stock" if price is not None else "on_request",
         image_url=_full_image(img.get("src") if img else None),
-        raw_payload={"album": album} if album else {},
+        raw_payload={"title_full": title_raw},
     )
 
 
@@ -323,7 +327,8 @@ class VinylhouseParser(BaseStoreParser):
         return ListingDTO(
             external_id=m.group(1),
             url=url,
-            title_raw=title_raw,
+            # Чистый альбом — см. комментарий в _parse_card (ночь 27.08, 17.6%).
+            title_raw=album or title_raw,
             artist_raw=artist,
             year_raw=year,
             format_raw=format_tail,
@@ -331,5 +336,5 @@ class VinylhouseParser(BaseStoreParser):
             price_rub=price,
             status="in_stock" if (in_stock and price is not None) else "out_of_stock",
             image_url=_full_image(img.get("src") if img else None),
-            raw_payload={"album": album} if album else {},
+            raw_payload={"title_full": title_raw},
         )
