@@ -25,6 +25,12 @@ interface PriceSparklineProps {
   historicalLow: number | null;
   width?: number;
   height?: number;
+  /**
+   * 'bare' — без карточной подложки и собственной шапки. Сворачиваемый блок в
+   * радаре рисует заголовок с дельтой сам, и вторая строка «Динамика цены ·
+   * сейчас X» под ней повторяла бы те же числа слабее.
+   */
+  variant?: 'card' | 'bare';
 }
 
 const formatRub = (v: number): string => `${Math.round(v).toLocaleString('ru-RU')} ₽`;
@@ -34,7 +40,9 @@ export function PriceSparkline({
   historicalLow,
   width = 300,
   height = 64,
+  variant = 'card',
 }: PriceSparklineProps) {
+  const bare = variant === 'bare';
   const priced = points.filter(
     (p): p is PriceHistoryPoint & { min_price_rub: number } => p.min_price_rub != null,
   );
@@ -45,15 +53,17 @@ export function PriceSparkline({
     const latest = priced.length ? priced[priced.length - 1].min_price_rub : null;
     if (latest == null && historicalLow == null) return null;
     return (
-      <View style={styles.container}>
-        <View style={styles.header}>
-          <Text style={styles.title}>Динамика цены</Text>
-          <Text style={styles.lowValue}>
-            {latest != null ? `сейчас ${formatRub(latest)}` : ''}
-            {latest != null && historicalLow != null ? ' · ' : ''}
-            {historicalLow != null ? `мин. ${formatRub(historicalLow)}` : ''}
-          </Text>
-        </View>
+      <View style={bare ? styles.bareContainer : styles.container}>
+        {bare ? null : (
+          <View style={styles.header}>
+            <Text style={styles.title}>Динамика цены</Text>
+            <Text style={styles.lowValue}>
+              {latest != null ? `сейчас ${formatRub(latest)}` : ''}
+              {latest != null && historicalLow != null ? ' · ' : ''}
+              {historicalLow != null ? `мин. ${formatRub(historicalLow)}` : ''}
+            </Text>
+          </View>
+        )}
         <Text style={styles.tooFew}>Цена менялась слишком редко — графика пока нет</Text>
       </View>
     );
@@ -96,14 +106,16 @@ export function PriceSparkline({
   const trendDown = current < first;
 
   return (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Динамика цены</Text>
-        <Text style={styles.lowValue}>
-          сейчас {formatRub(current)}
-          {historicalLow != null ? ` · мин. ${formatRub(historicalLow)}` : ''}
-        </Text>
-      </View>
+    <View style={bare ? styles.bareContainer : styles.container}>
+      {bare ? null : (
+        <View style={styles.header}>
+          <Text style={styles.title}>Динамика цены</Text>
+          <Text style={styles.lowValue}>
+            сейчас {formatRub(current)}
+            {historicalLow != null ? ` · мин. ${formatRub(historicalLow)}` : ''}
+          </Text>
+        </View>
+      )}
       <Svg width={width} height={height}>
         {/* Пунктир минимума-в-окне как ориентир «дна». */}
         <Line
@@ -137,6 +149,9 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.surface,
     borderRadius: BorderRadius.md,
   },
+  // Подложку и отступы в bare-режиме задаёт родитель — иначе в шторке радара
+  // карточка вкладывалась в карточку и график съезжал внутрь двойной рамки.
+  bareContainer: {},
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',

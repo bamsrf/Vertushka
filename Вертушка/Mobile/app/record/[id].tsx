@@ -543,12 +543,15 @@ export default function RecordDetailScreen() {
     // Тап всегда открывает меню порога. Подписка — только по «Сохранить»,
     // «Убрать радар» — внизу шторки (когда уже подписан).
     const subscribed = status.wishlistNotifyMode === 'subscribed';
+    // Оценка Discogs — только подсказка для границ слайдера. Живую цену
+    // маркета шторка возьмёт сама из офферов: показывать оценку как «сейчас»
+    // значило врать (у Discogs 5 322 ₽ там, где магазин продаёт за 3 352 ₽).
     const priceHint =
       record.estimated_price_median_rub ?? record.estimated_price_min_rub ?? null;
     thresholdSheetRef.current?.present({
       itemId: status.wishlistItemId,
       recordId: record.id,
-      currentPrice: priceHint,
+      priceHint,
       threshold: status.wishlistPriceThreshold ?? null,
       thresholdPct: status.wishlistThresholdPct ?? null,
       conditions: status.wishlistConditions ?? null,

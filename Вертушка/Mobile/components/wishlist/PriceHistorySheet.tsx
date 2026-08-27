@@ -1,6 +1,6 @@
 /**
  * PriceHistorySheet — шторка динамики цены (макет 1d). Оверлей по тапу обложки на радаре.
- * Переиспользует PriceSparkline + /records/{id}/price-history. Кнопки «В магазин»/«Порог».
+ * Переиспользует PriceHistoryCollapsible + /records/{id}/price-history. Кнопки «В магазин»/«Порог».
  */
 import React, { forwardRef, useImperativeHandle, useRef, useState, useCallback } from 'react';
 import { StyleSheet, Text, View, TouchableOpacity, Image, Alert } from 'react-native';
@@ -12,7 +12,7 @@ import {
 } from '@gorhom/bottom-sheet';
 import { useRouter } from 'expo-router';
 import { Colors, Typography, Spacing, BorderRadius } from '../../constants/theme';
-import { PriceSparkline } from '../PriceSparkline';
+import { PriceHistoryCollapsible } from './PriceHistoryCollapsible';
 import { RadarIcon } from '../RadarIcon';
 import { Icon } from '@/components/ui';
 import { api } from '../../lib/api';
@@ -280,9 +280,11 @@ export const PriceHistorySheet = forwardRef<PriceHistorySheetRef, Props>(
           ) : null}
 
           {history && history.points.length > 0 ? (
-            <View style={styles.chartCard}>
-              <PriceSparkline points={history.points} historicalLow={history.historical_low_rub} width={300} />
-            </View>
+            <PriceHistoryCollapsible
+              points={history.points}
+              historicalLow={history.historical_low_rub}
+              days={history.days}
+            />
           ) : null}
 
           {events.length > 0 ? (
@@ -363,7 +365,6 @@ const styles = StyleSheet.create({
   hiddenRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 14, paddingVertical: 12, paddingHorizontal: 14, borderRadius: 14, backgroundColor: Colors.surfaceHover },
   hiddenTxt: { fontSize: 13, color: Colors.textSecondary },
   hiddenAction: { fontSize: 14, fontFamily: 'Inter_600SemiBold', color: Colors.royalBlue },
-  chartCard: { marginTop: 18, backgroundColor: '#fff', borderRadius: 14, paddingVertical: 4 },
   histBlock: { marginTop: 16 },
   histTitle: { ...Typography.bodyBold, color: Colors.text, marginBottom: 8 },
   histRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 11 },

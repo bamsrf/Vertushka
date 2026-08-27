@@ -360,6 +360,16 @@ export default function NotificationsScreen() {
   );
   const socialSections = useMemo(() => groupByDateBucket(socialItems), [socialItems]);
 
+  // Тап по иконке радара уводит на радар, а не в карточку релиза. Уведомление
+  // при этом помечаем прочитанным — юзер его увидел и отработал.
+  const handleOpenRadar = useCallback(
+    (item: NotificationItemType) => {
+      if (!item.read_at) markRead(item.id);
+      router.push('/radar' as any);
+    },
+    [markRead],
+  );
+
   const renderPersonal = ({ item }: { item: NotificationItemType }) => {
     // Синтетическая дайджест-строка: тап открывает поп-ап с корешками, без
     // swipe-delete/long-press (удалять/снузить нечего — это виртуальная свёртка).
@@ -376,6 +386,7 @@ export default function NotificationsScreen() {
         onMarkRead={(it) => markRead(it.id)}
         onDelete={(it) => removePersonal(it.id)}
         onLongPress={handleLongPress}
+        onPressRadar={handleOpenRadar}
       />
     );
   };
