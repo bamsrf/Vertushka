@@ -41,12 +41,19 @@ set -o pipefail
 # discogs_dump_state исключён сознательно: иначе после restore система считала
 # бы дампы загруженными при пустых таблицах. discogs_price_jobs НЕ исключать —
 # это пользовательская очередь, не справочник. Оговорка: releases_index копит
-# URL, найденные живым резолвом обложек, — после restore они переисчислятся
-# сами (negative-cache + лестница источников).
+# URL обложек — их уже миллионы (drip + офлайн-каналы), и «переисчислятся сами»
+# для drip-части означает месяцы; recovery-путь — CSV-срез
+# ~/backups/covers_urls_YYYYMMDD.csv.gz (discogs_id,cover_image_url,
+# cover_checked_at; ротация его не трогает — маска vertushka_*), переснимать
+# после крупных прогонов каналов.
+# mb_catno_covers / mb_mbid_rg — справочники catno-канала (27.08.2026, ~1.4 ГБ
+# raw): пересоздаются из CSV при месячном MB-рефреше, в дампе им не место.
+# catno_cover_audit НЕ исключать: это provenance применённых обложек, мал.
 EXCLUDE_REF_TABLES=(
   discogs_releases_index discogs_release_formats discogs_release_tracklists
   discogs_artists discogs_artist_names discogs_master_covers
   discogs_dump_state mb_discogs_map mb_barcode_covers
+  mb_catno_covers mb_mbid_rg
 )
 EXCLUDE_ARGS=()
 for t in "${EXCLUDE_REF_TABLES[@]}"; do
