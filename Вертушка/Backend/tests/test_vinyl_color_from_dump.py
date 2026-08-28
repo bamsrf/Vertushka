@@ -62,6 +62,30 @@ def test_black_pressing_is_found_but_not_colored():
     assert is_colored_vinyl(color) is False
 
 
+@pytest.mark.parametrize("two_tone", [
+    "Red/Black Splatter",
+    "Orange With Black Splatter",
+    "Black and Purple Marbled",
+    "Clear & Black",
+    "White And Black Swirl",
+    "Blue Transparent w/ Black Haze",
+])
+def test_two_tone_pressings_count_as_colored(two_tone):
+    """Двухцветный пресс — цветной, хотя семья у него «black».
+
+    color_family ставит black первым по приоритету, и через неё все эти
+    пластинки считались бы чёрными: в дампе таких 570 из 5 493 значений, 12%.
+    А это ровно тот винил, за которым охотятся.
+    """
+    assert color_family(two_tone) == "black"
+    assert is_colored_vinyl(two_tone) is True
+
+
+@pytest.mark.parametrize("black", ["Black", "Simple Black", "Black Vinyl", "чёрный"])
+def test_plain_black_is_still_not_colored(black):
+    assert is_colored_vinyl(black) is False
+
+
 @pytest.mark.parametrize("texts", [None, [], [""], ["   "], [None]])
 def test_empty_input(texts):
     assert vinyl_color_from_format_texts(texts) is None

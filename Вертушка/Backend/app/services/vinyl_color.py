@@ -113,30 +113,59 @@ def vinyl_color_from_format_texts(texts: list[str] | None) -> str | None:
 # чаще всего написано ровно так, без уточнения: у plastinka_com 883 листинга с
 # «(цветной винил)» в заголовке и ни одного конкретного цвета. Через семью этот
 # вопрос не выразить, поэтому у него своя функция — и своё SQL-зеркало.
+#: Неспецифичные признаки «это не обычный чёрный»: сам маркер «цветной», а
+#: также прозрачность, разводы и брызги. Семьёй они не считаются намеренно
+#: (конфликт ими не докажешь), но пластинку с «Clear & Black» или «Splatter»
+#: чёрной называть нельзя. Набор совпадает с правилом счётчика цветных в
+#: профиле (services/profile_stats) — одно определение «цветного» на оба места.
+#:
 #: Сюда приходит уже РАСПОЗНАННОЕ значение (канон «coloured» от
 #: infer_vinyl_color или сырая строка магазина), а не произвольный текст, —
 #: поэтому адъяцентность к носителю тут не нужна, её проверил парсер.
-_COLORED_MARKER = r"\bcolou?red\b|цветн"
+_COLORED_MARKER = (
+    r"\bcolou?red\b|\bcolou?r\b|цветн|"
+    r"translucen|transparent|\bclear\b|marbl|splatter|swirl|"
+    r"picture disc|\bglow\b|прозрачн|мрамор"
+)
 _COLORED_MARKER_RE = re.compile(_COLORED_MARKER, re.IGNORECASE)
 
 
 def is_colored_vinyl(raw: str | None) -> bool:
-    """Цветной ли винил: конкретный не-чёрный цвет ИЛИ общий маркер «цветной»."""
+    """Цветной ли винил: есть ЛЮБОЕ не-чёрное цветовое слово ИЛИ общий маркер.
+
+    Именно «любое», а не «семья по приоритету». `color_family` ставит black
+    первым и на двухцветном прессе отдаёт именно его — а «Red/Black Splatter»,
+    «Orange With Black Splatter», «Black and Purple Marbled» это ровно тот
+    цветной винил, за которым и охотятся. В дампе таких 570 из 5 493 значений,
+    12%: через семью они все считались бы чёрными.
+
+    Приоритет семьи при этом не трогаем — он нужен там, где доказывается
+    КОНФЛИКТ цвета листинга и записи, и там «первый по списку» осмыслен.
+    """
     if not raw:
         return False
-    fam = color_family(raw)
-    if fam is not None:
-        return fam != "black"
+    for fam, rx in _COMPILED:
+        if fam != "black" and rx.search(raw):
+            return True
     return bool(_COLORED_MARKER_RE.search(raw))
 
 
 def sql_is_colored_vinyl(col_expr: str) -> str:
-    """SQL-зеркало is_colored_vinyl. Держать в синхроне с функцией выше."""
-    family = sql_color_family(col_expr)
+    """SQL-зеркало is_colored_vinyl. Держать в синхроне с функцией выше.
+
+    Проверяем НАЛИЧИЕ любого не-чёрного цветового слова, а не результат
+    sql_color_family: у той black первый по приоритету и «Red/Black Splatter»
+    вернулся бы чёрным.
+    """
+    nonblack = "|".join(
+        pat.replace(chr(92) + "b", chr(92) + "y")
+        for fam, pat in _FAMILY_PATTERNS
+        if fam != "black"
+    )
     marker = _COLORED_MARKER.replace(chr(92) + "b", chr(92) + "y")
     return (
-        f"(CASE WHEN ({family}) IS NOT NULL THEN ({family}) <> 'black' "
-        f"ELSE lower({col_expr}) ~ '{marker}' END)"
+        f"(lower({col_expr}) ~ '({nonblack})'"
+        f" OR lower({col_expr}) ~ '{marker}')"
     )
 
 
