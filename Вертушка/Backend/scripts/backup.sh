@@ -90,7 +90,7 @@ if [ -n "$API_CONT" ]; then
     BASE=$(basename "$BACKUP_FILE")
     if docker cp "$BACKUP_FILE" "$API_CONT:/tmp/$BASE" \
        && docker exec "$API_CONT" python -m app.scripts.push_file_to_s3 \
-            "/tmp/$BASE" --prefix backups/ --keep 30 \
+            "/tmp/$BASE" --prefix backups/ --keep 30 --prune-glob "vertushka_*.sql.gz" \
        && docker exec "$API_CONT" rm -f "/tmp/$BASE"; then
         echo "$(date): ☁️  Дамп залит в S3 (backups/, retention 30)"
     else

@@ -26,6 +26,7 @@ def main() -> None:
     parser.add_argument("file", help="путь к файлу")
     parser.add_argument("--prefix", default="", help="префикс ключа в бакете, например backups/")
     parser.add_argument("--keep", type=int, default=0, help="оставить N новейших объектов под префиксом")
+    parser.add_argument("--prune-glob", default="", help="ротировать только ключи с basename по этой маске (fnmatch); без неё ротация выключена при наличии соседей")
     args = parser.parse_args()
 
     settings = get_settings()
@@ -45,10 +46,20 @@ def main() -> None:
                 path.stat().st_size / 1024 / 1024)
 
     if args.keep > 0 and args.prefix:
+        import fnmatch
         objs = []
         paginator = client.get_paginator("list_objects_v2")
         for page in paginator.paginate(Bucket=bucket, Prefix=args.prefix):
             objs.extend(page.get("Contents", []))
+        # Ротируем ТОЛЬКО по маске: под префиксом живут и разовые архивы
+        # (треклисты, срез cover-URL) — без фильтра «keep 30» удалил бы их
+        # как самые старые, когда ночных дампов накопится 30 (баг 28.08.2026).
+        if args.prune_glob:
+            objs = [o for o in objs
+                    if fnmatch.fnmatch(o["Key"].rsplit("/", 1)[-1], args.prune_glob)]
+        else:
+            logger.info("ротация пропущена: --prune-glob не задан")
+            objs = []
         objs.sort(key=lambda o: o["LastModified"], reverse=True)
         stale = objs[args.keep:]
         for obj in stale:
