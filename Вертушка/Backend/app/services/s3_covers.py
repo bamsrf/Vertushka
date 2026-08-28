@@ -103,6 +103,14 @@ def make_client():
             connect_timeout=10,
             read_timeout=30,
             retries={"max_attempts": 2, "mode": "standard"},
+            # boto3 >= 1.36 по умолчанию шлёт streaming-чексуммы (aws-chunked
+            # + x-amz-content-sha256=STREAMING-*), которые S3-совместимые
+            # хранилища (Beget: XAmzContentSHA256Mismatch, 28.08.2026) не
+            # понимают. when_required = как вели себя старые boto3.
+            request_checksum_calculation="when_required",
+            response_checksum_validation="when_required",
+            # path-style — самый совместимый режим адресации у S3-клонов.
+            s3={"addressing_style": "path"},
         ),
     )
 

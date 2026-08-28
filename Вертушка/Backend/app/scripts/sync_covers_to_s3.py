@@ -79,20 +79,25 @@ def main() -> None:
     started = time.monotonic()
     done = 0
     errors = 0
+    # Чанки, а не 63K футур разом: каждая future держит ссылки до самого
+    # конца прогона, на 4 ГБ хоста это дорога к OOM («Killed», 28.08.2026).
+    chunk_size = 1000
+    items = list(missing.items())
     with ThreadPoolExecutor(max_workers=args.threads) as pool:
-        futures = {
-            pool.submit(upload_file_sync, path, key, client): key
-            for key, path in missing.items()
-        }
-        for fut in as_completed(futures):
-            try:
-                fut.result()
-                done += 1
-            except Exception:
-                errors += 1
-                logger.warning("заливка %s упала", futures[fut], exc_info=True)
-            if (done + errors) % 1000 == 0:
-                logger.info("прогресс: %d/%d (ошибок %d)", done + errors, len(missing), errors)
+        for start in range(0, len(items), chunk_size):
+            chunk = items[start:start + chunk_size]
+            futures = {
+                pool.submit(upload_file_sync, path, key, client): key
+                for key, path in chunk
+            }
+            for fut in as_completed(futures):
+                try:
+                    fut.result()
+                    done += 1
+                except Exception:
+                    errors += 1
+                    logger.warning("заливка %s упала", futures[fut], exc_info=True)
+            logger.info("прогресс: %d/%d (ошибок %d)", done + errors, len(items), errors)
 
     logger.info(
         "ГОТОВО: залито %d, ошибок %d, за %.0fs — при ошибках просто перезапустить",
