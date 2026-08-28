@@ -66,6 +66,43 @@ def color_family(raw: str | None) -> str | None:
     return None
 
 
+# ---- «Цветной ли винил» — вопрос, отдельный от семьи -------------------- #
+#
+# `color_family` отвечает «какой именно цвет» и нужна для ДОКАЗАТЕЛЬСТВА
+# конфликта (чёрный листинг ↔ зелёная запись). Неспецифичные слова она
+# намеренно не считает семьёй: «цветной» не конфликтует ни с чем.
+#
+# Но у фильтра Маркета вопрос другой — «цветной ли он вообще». И на складе это
+# чаще всего написано ровно так, без уточнения: у plastinka_com 883 листинга с
+# «(цветной винил)» в заголовке и ни одного конкретного цвета. Через семью этот
+# вопрос не выразить, поэтому у него своя функция — и своё SQL-зеркало.
+#: Сюда приходит уже РАСПОЗНАННОЕ значение (канон «coloured» от
+#: infer_vinyl_color или сырая строка магазина), а не произвольный текст, —
+#: поэтому адъяцентность к носителю тут не нужна, её проверил парсер.
+_COLORED_MARKER = r"\bcolou?red\b|цветн"
+_COLORED_MARKER_RE = re.compile(_COLORED_MARKER, re.IGNORECASE)
+
+
+def is_colored_vinyl(raw: str | None) -> bool:
+    """Цветной ли винил: конкретный не-чёрный цвет ИЛИ общий маркер «цветной»."""
+    if not raw:
+        return False
+    fam = color_family(raw)
+    if fam is not None:
+        return fam != "black"
+    return bool(_COLORED_MARKER_RE.search(raw))
+
+
+def sql_is_colored_vinyl(col_expr: str) -> str:
+    """SQL-зеркало is_colored_vinyl. Держать в синхроне с функцией выше."""
+    family = sql_color_family(col_expr)
+    marker = _COLORED_MARKER.replace(chr(92) + "b", chr(92) + "y")
+    return (
+        f"(CASE WHEN ({family}) IS NOT NULL THEN ({family}) <> 'black' "
+        f"ELSE lower({col_expr}) ~ '{marker}' END)"
+    )
+
+
 # ---- SQL-зеркала (для batch summary endpoint) -------------------------- #
 
 

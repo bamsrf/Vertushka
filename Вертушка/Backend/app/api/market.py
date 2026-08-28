@@ -41,7 +41,7 @@ from app.services.cover_storage import (
     _download_cover_background,
     schedule_store_native_cover_cache,
 )
-from app.services.vinyl_color import sql_color_family
+from app.services.vinyl_color import sql_color_family, sql_is_colored_vinyl
 
 logger = logging.getLogger(__name__)
 
@@ -158,9 +158,13 @@ _VINYL_RECORD_PRED = "(r.format_type IS NULL OR r.format_type ILIKE '%vinyl%')"
 # них привязаны к CD-записи и 153 к файлу/кассете. Без гейта в чипе висели
 # Beyoncé «Cowboy Carter» (CD, Album) и релизы «File, FLAC». Гейт правит выдачу;
 # сам рассинхрон лечится в rematch_format_conflicts_batch.
+# is_colored_vinyl, а не color_family <> 'black': на складе цвет чаще всего
+# записан без уточнения — «(цветной винил)» у 883 позиций plastinka_com, и ни
+# одного конкретного цвета. Семья такой текст не опознаёт (и правильно делает:
+# «цветной» ни с чем не конфликтует), поэтому у вопроса «цветной ли» своя
+# функция.
 _COLORED_PRED = (
-    f"(({sql_color_family('sl.vinyl_color_raw')}) IS NOT NULL "
-    f"AND ({sql_color_family('sl.vinyl_color_raw')}) <> 'black'"
+    f"({sql_is_colored_vinyl('sl.vinyl_color_raw')}"
     f" AND {_VINYL_LISTING_PRED} AND {_VINYL_RECORD_PRED})"
 )
 # «Новинки» (вариант C): свежий релиз (r.year ≥ текущий−1) И недавно появился в
@@ -223,7 +227,7 @@ def _filters_clause(
 # в Redis самотухнут по TTL, а свежие запросы сразу получают новую логику.
 CACHE_NS_STORES = "market_stores:v3"
 CACHE_NS_STORE_LISTINGS = "market_store_listings:v4"
-CACHE_NS_SEARCH = "market_search:v11"  # v11: «Цветной винил» гейтится носителем (не пускает CD)
+CACHE_NS_SEARCH = "market_search:v12"  # v12: цвет из текста объявления + общий маркер «цветной»
 CACHE_TTL_STORES = 1800       # 30 мин — список магазинов меняется редко
 CACHE_TTL_LISTINGS = 600      # 10 мин — карусели чаще обновляем
 CACHE_TTL_SEARCH = 300        # 5 мин — поиск свежее

@@ -28,6 +28,7 @@ from app.services.scrapers.base import (
     TransientParserError,
 )
 from app.services.scrapers.browser import browser_pool
+from app.services.scrapers.extractors import infer_vinyl_color
 from app.services.scrapers.http_client import http_client
 from app.services.scrapers.registry import get_parser
 
@@ -300,7 +301,15 @@ async def _upsert_listing(db, store_id, dto: ListingDTO) -> bool:
         "artist_raw": dto.artist_raw,
         "year_raw": dto.year_raw,
         "format_raw": dto.format_raw,
-        "vinyl_color_raw": dto.vinyl_color_raw,
+        # Цвет: сперва то, что распарсил магазин, иначе — из заголовка. Сетка
+        # безопасности для парсеров, которые про цвет не думают вовсе: у
+        # vinylhouse он пуст у всех 12 053 листингов, у long_play — у всех 4 633.
+        # Функция та же, что зовут сами парсеры (korobkavinyla, plastinka_com,
+        # skifmusic, rotaryrecords) — второй реализации тут быть не должно.
+        "vinyl_color_raw": (
+            dto.vinyl_color_raw
+            or infer_vinyl_color(dto.title_raw, require_cue=True)
+        ),
         "condition": dto.condition,
         "price_rub": dto.price_rub,
         "price_currency": dto.price_currency,
