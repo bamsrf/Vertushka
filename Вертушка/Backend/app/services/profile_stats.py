@@ -126,14 +126,31 @@ async def compute_fun_stats(user_id: UUID, db: AsyncSession) -> list[dict]:
         )
         ur_join = user_records_subq.join(Record, Record.id == user_records_subq.c.rid)
 
-        # Цветные пластинки (по format_description: Coloured / Translucent / Picture / Splatter)
-        color_keywords = ["Coloured", "Color", "Translucent", "Picture Disc", "Splatter", "Marbled", "Glow"]
-        color_filter = func.coalesce(Record.format_description, "")
-        color_clauses = [color_filter.ilike(f"%{kw}%") for kw in color_keywords]
+        # Цветные пластинки. Реальный цвет у Discogs лежит в formats[0].text →
+        # discogs_data->>'vinyl_color_raw', а НЕ в format_description (там
+        # «LP, Album, Limited Edition…»). Считаем цветной, если:
+        #   * в vinyl_color_raw есть слово любого цвета, КРОМЕ чёрного
+        #     («Red w/ Black Smoke» — цветная, «Cosmic Black» — нет); или
+        #   * в vinyl_color_raw либо format_description есть неспецифичный
+        #     маркер (coloured/translucent/marbled/…) — старая логика.
+        # Намеренно не через color_family(): у неё black первым в приоритете,
+        # и «Red w/ Black Smoke» ушла бы в чёрные. \y — граница слова в
+        # Postgres ARE (аналог \b), иначе red ловится внутри hundred.
+        color_raw = func.coalesce(Record.discogs_data.op("->>")("vinyl_color_raw"), "")
+        fmt_desc = func.coalesce(Record.format_description, "")
+        nonblack_color_re = (
+            r"\y(white|teal|turquoise|red|blue|green|yellow|orange|purple|"
+            r"pink|gold|silver|clear)\y"
+        )
+        colored_marker_re = r"colou?r|translucent|marbled|splatter|picture disc|glow"
         color_count = await db.scalar(
             select(func.count(Record.id))
             .select_from(ur_join)
-            .where(or_(*color_clauses))
+            .where(or_(
+                color_raw.op("~*")(nonblack_color_re),
+                color_raw.op("~*")(colored_marker_re),
+                fmt_desc.op("~*")(colored_marker_re),
+            ))
         ) or 0
 
         # Топ-жанр (Discogs хранит несколько через запятую — расщепляем в Python)
