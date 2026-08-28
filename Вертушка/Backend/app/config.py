@@ -192,6 +192,11 @@ class Settings(BaseSettings):
     s3_bucket_covers: str = Field(default="vertushka-covers", alias="S3_BUCKET_COVERS")
     s3_access_key_id: str = Field(default="", alias="S3_ACCESS_KEY_ID")
     s3_secret_access_key: str = Field(default="", alias="S3_SECRET_ACCESS_KEY")
+    # ── Apple Music API (канал обложек #5, services/apple_music.py) ──
+    # Пусто = канал выключен. Как получить ключ — докстринг apple_music.py.
+    apple_music_team_id: str = Field(default="", alias="APPLE_MUSIC_TEAM_ID")
+    apple_music_key_id: str = Field(default="", alias="APPLE_MUSIC_KEY_ID")
+    apple_music_private_key_b64: str = Field(default="", alias="APPLE_MUSIC_PRIVATE_KEY_B64")
     # Дневной бюджет скачиваний КАРТИНОК с хостов Discogs (i.discogs.com).
     # У Discogs неофициальный потолок ~1000 изображений/сутки на IP, дальше
     # 403 на всё — включая обложки, которые видят живые пользователи. 800
