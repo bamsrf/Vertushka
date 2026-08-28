@@ -37,7 +37,9 @@ from app.models.store_listing import StoreListing, MatchMethod
 from app.services.scrapers.extractors import (
     normalize_barcode,
     normalize_catalog,
+    FORMAT_FAMILY,
     infer_format,
+    sql_format_family,
     barcode_variants,
 )
 from app.services.vinyl_color import color_family
@@ -64,17 +66,14 @@ def _format_family(raw: str | None) -> str | None:
     """Грубая «семья носителя» для сравнения форматов листинга и записи.
 
     Прогоняем через infer_format (понимает Vinyl/LP/CD/Cassette в любом
-    написании), затем сворачиваем в семью. Box Set / неизвестное → None
-    (penalty не применяется — бокс бывает и виниловый, и CD).
+    написании), затем сворачиваем в семью по FORMAT_FAMILY. Box Set /
+    неизвестное → None (penalty не применяется — бокс бывает и виниловый, и CD).
+
+    Таблица семей живёт рядом с паттернами (scrapers/extractors), потому что из
+    неё же генерируется SQL-зеркало `sql_format_family` — иначе Python и SQL
+    разошлись бы при первой же правке.
     """
-    fmt = infer_format(raw)
-    if fmt in ("LP", "2xLP", "EP", "Single"):
-        return "VINYL"
-    if fmt in ("CD", "SACD"):
-        return "CD"
-    if fmt == "Cassette":
-        return "CASSETTE"
-    return None
+    return FORMAT_FAMILY.get(infer_format(raw) or "")
 
 # Аксессуары: магазины ставят их в общий каталог рядом с пластинками
 # (пины-значки, пакеты, щётки, постеры, сертификаты), а парсер по дефолту
@@ -1351,17 +1350,46 @@ async def rematch_format_conflicts_batch(batch_size: int = 500) -> dict[str, int
     """
     counters = {"scanned": 0, "conflicts_reset": 0, "errors": 0}
     affected_discogs_ids: set[str] = set()
+    listing_family = sql_format_family("sl.format_raw")
+    record_family = sql_format_family("r.format_type")
     async with async_session_maker() as db:
+        # Конфликт ищем предикатом в БД, а не фильтром в Python. Раньше отбор шёл
+        # так: 500 строк по matched_at ASC → сравнение семей в Python. Но у
+        # чистой строки matched_at не меняется, и она НИКОГДА не покидала окно:
+        # джоба каждую ночь разглядывала одни и те же 500 майских листингов. На
+        # проде 28.08 в этом окне было 2 конфликта из 500 при 1 645 всего — темп
+        # разбора «два в сутки», горизонт больше года.
+        candidate_ids = (await db.execute(
+            text(
+                f"""
+                SELECT sl.id
+                FROM store_listings sl
+                JOIN records r ON r.id = sl.matched_record_id
+                WHERE sl.status IN ('in_stock', 'preorder')
+                  AND sl.match_method <> :store_native
+                  AND sl.format_raw IS NOT NULL
+                  AND r.format_type IS NOT NULL
+                  AND {listing_family} IS NOT NULL
+                  AND {record_family} IS NOT NULL
+                  AND {listing_family} <> {record_family}
+                ORDER BY sl.matched_at ASC
+                LIMIT :limit
+                """
+            ),
+            {"store_native": MatchMethod.STORE_NATIVE, "limit": batch_size},
+        )).scalars().all()
+
+        if not candidate_ids:
+            logger.info("rematch format conflicts: конфликтов нет")
+            return counters
+
+        # Python остаётся арбитром: SQL-зеркало сгенерировано из тех же
+        # паттернов, но подтверждение стоит дёшево, а ложный сброс привязки —
+        # дорого (листинг уходит в unmatched до следующего часового прогона).
         res = await db.execute(
             select(StoreListing, Record)
             .join(Record, Record.id == StoreListing.matched_record_id)
-            .where(StoreListing.matched_record_id.is_not(None))
-            .where(StoreListing.status.in_(("in_stock", "preorder")))
-            .where(StoreListing.match_method != MatchMethod.STORE_NATIVE)
-            .where(StoreListing.format_raw.is_not(None))
-            .where(Record.format_type.is_not(None))
-            .order_by(StoreListing.matched_at.asc())
-            .limit(batch_size)
+            .where(StoreListing.id.in_(candidate_ids))
         )
         rows = res.all()
         for listing, rec in rows:
