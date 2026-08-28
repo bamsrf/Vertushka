@@ -990,10 +990,23 @@ class ApiClient {
    * `storeSlug` сужает подсчёт до одного магазина — для экрана
    * /market/store/[slug], чтобы там не появлялись чипы жанров, которых у
    * этого магазина нет.
+   *
+   * `active` — фильтры, которые юзер уже выбрал. С ними счётчики показывают
+   * пересечение («сколько станет, если нажать»), а не собственный объём чипа.
+   * Без них чип обещал «Регги 342» рядом с включённым «Цветным винилом», где
+   * на самом деле 14, и это читалось как потолок выдачи.
    */
-  async getMarketFacets(storeSlug?: string): Promise<MarketFacetsResponse> {
+  async getMarketFacets(
+    storeSlug?: string,
+    active?: { q?: string; format?: MarketFormatFilter | null; genres?: string[]; features?: string[] },
+  ): Promise<MarketFacetsResponse> {
+    const params: Record<string, string | number> = {};
+    if (storeSlug) params.store = storeSlug;
+    if (active?.q && active.q.length >= 2) params.q = active.q;
+    if (active?.format) params.format = active.format;
+    applyMarketFilterParams(params, active?.genres, active?.features);
     return this.deduplicatedGet<MarketFacetsResponse>('/market/facets', {
-      params: storeSlug ? { store: storeSlug } : undefined,
+      params: Object.keys(params).length > 0 ? params : undefined,
     });
   }
 

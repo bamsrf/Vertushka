@@ -764,6 +764,12 @@ async def market_facets(
             "/market/store/[slug]). Без параметра — по всем активным магазинам."
         ),
     ),
+    q: str | None = Query(None, description="Активный поисковый запрос"),
+    format: Optional[Literal["vinyl", "cd", "cassette"]] = Query(None),
+    genre: str | None = Query(None, description="Уже выбранные жанры через запятую"),
+    colored: bool = Query(False, description="Уже выбран чип «Цветной винил»"),
+    limited: bool = Query(False, description="Уже выбран чип «Лимитка»"),
+    new: bool = Query(False, description="Уже выбран чип «Новинки»"),
     db: AsyncSession = Depends(get_db),
 ) -> MarketFacetsResponse:
     """Считает, сколько карточек в наличии под каждой опцией фильтра.
@@ -775,11 +781,28 @@ async def market_facets(
       • colored / new    — на уровне листинга (bool_or) — группа считается, если
         ХОТЯ БЫ один её листинг цветной / свежий (так же, как фильтрует search).
 
+    СЧЁТЧИКИ УЧИТЫВАЮТ УЖЕ ВЫБРАННЫЕ ФИЛЬТРЫ. Раньше они были безусловными, и
+    это врало на пересечениях: цвет винила парсят фактически два маленьких
+    магазина из девяти (stoprobotvinyl 1632/1632, korobkavinyla 361/691, у
+    skifmusic 34 из 18 315), поэтому весь «цветной» пул — около 800 карточек на
+    маркет. Чип обещал «Регги 342» и «Цветной винил 832», а на пересечении
+    выдавал 14 — и это читалось как потолок выдачи.
+
+    Считаем по правилу «фасет не видит собственное измерение»: у жанровых чипов
+    применяем формат и особенности, но не жанры; у особенностей — формат и
+    жанры, но не сами особенности. Так число рядом с чипом отвечает на вопрос
+    «сколько станет, если я его нажму», а не «сколько было бы, будь он один».
+
     `store` сужает базу до одного магазина — иначе на его витрине рисовались бы
     чипы жанров, которых у него нет, и фильтр вёл бы в пустоту.
     """
     store_clause = " AND s.slug = :store" if store else ""
-    cache_key = f"facets:v4:{store or 'all'}"
+    genre_list = [g for g in (genre.split(",") if genre else []) if g in _GENRE_PATTERNS]
+    genre_key = ",".join(sorted(genre_list))
+    cache_key = (
+        f"facets:v5:{store or 'all'}:{q or ''}:{format or 'all'}"
+        f":g={genre_key}:c={int(colored)}:l={int(limited)}:n={int(new)}"
+    )
     cached = await cache.get(CACHE_NS_SEARCH, cache_key)
     if cached is not None:
         return MarketFacetsResponse.model_validate(cached)
@@ -788,15 +811,45 @@ async def market_facets(
     new_cutoff = datetime.utcnow() - timedelta(days=NEW_ARRIVAL_DAYS)
     new_year = datetime.utcnow().year - NEW_RELEASE_LOOKBACK_YEARS
 
-    genre_selects = ",\n            ".join(
-        f"count(*) FILTER (WHERE {_genre_match_sql(key, f'g_{key}', f's_{key}', 'genre', 'style')}) AS g_{key}"
-        for key, _label, _pats, _spats in GENRES
-    )
     genre_params: dict = {}
     for key, _label, pats, style_pats in GENRES:
         genre_params[f"g_{key}"] = pats
         if style_pats:
             genre_params[f"s_{key}"] = style_pats
+
+    # Условия «уже выбранного» — по колонкам agg, а не по sl/r: в outer SELECT
+    # строк листингов уже нет, есть агрегированная группа.
+    active_features = [
+        col for key, col in (("colored", "colored"), ("limited", "is_limited"), ("new", "is_new"))
+        if {"colored": colored, "limited": limited, "new": new}[key]
+    ]
+    # Жанровое измерение — OR (мультивыбор чипов), особенности — AND.
+    active_genre_pred = " OR ".join(
+        _genre_match_sql(key, f"g_{key}", f"s_{key}", "genre", "style") for key in genre_list
+    )
+    genre_cond = " AND ".join(active_features) if active_features else "true"
+    feature_cond = f"({active_genre_pred})" if active_genre_pred else "true"
+
+    # Для каждого жанра считаем ДВА числа: условное (с учётом выбранного — его
+    # показываем) и безусловное (по всему складу — по нему сортируем). Иначе
+    # порядок чипов менялся бы на каждый тап: числа пересчитываются, чипы
+    # переставляются, и следующий тап попадает не туда, куда целились.
+    genre_selects = ",\n            ".join(
+        f"count(*) FILTER (WHERE ({_genre_match_sql(key, f'g_{key}', f's_{key}', 'genre', 'style')})"
+        f" AND {genre_cond}) AS g_{key},\n            "
+        f"count(*) FILTER (WHERE {_genre_match_sql(key, f'g_{key}', f's_{key}', 'genre', 'style')})"
+        f" AS u_{key}"
+        for key, _label, _pats, _spats in GENRES
+    )
+
+    # Фильтры формата и запроса — на уровне листингов, внутри CTE: они сужают
+    # базу для ЛЮБОГО чипа, в отличие от жанра и особенностей.
+    fmt_sql, fmt_params = _format_clause(format)
+    q_clause = ""
+    q_params: dict = {}
+    if q and len(q.strip()) >= 2:
+        q_clause = " AND (r.artist ILIKE :q OR r.title ILIKE :q)"
+        q_params["q"] = f"%{q.strip()}%"
 
     sql = text(
         f"""
@@ -819,18 +872,21 @@ async def market_facets(
               AND r.merged_into_id IS NULL
               AND COALESCE(r.cover_local_path, r.cover_image_url, sl.raw_payload->>'image_url') IS NOT NULL
               {store_clause}
+              {fmt_sql}
+              {q_clause}
             GROUP BY COALESCE(r.discogs_master_id, r.id::text)
         )
         SELECT
             {genre_selects},
-            count(*) FILTER (WHERE colored) AS f_colored,
-            count(*) FILTER (WHERE is_limited) AS f_limited,
-            count(*) FILTER (WHERE is_new) AS f_new
+            count(*) FILTER (WHERE colored AND {feature_cond}) AS f_colored,
+            count(*) FILTER (WHERE is_limited AND {feature_cond}) AS f_limited,
+            count(*) FILTER (WHERE is_new AND {feature_cond}) AS f_new
         FROM agg
         """
     )
     sql_params: dict = {
-        "cutoff": cutoff, "new_cutoff": new_cutoff, "new_year": new_year, **genre_params,
+        "cutoff": cutoff, "new_cutoff": new_cutoff, "new_year": new_year,
+        **genre_params, **fmt_params, **q_params,
     }
     if store:
         sql_params["store"] = store
@@ -842,13 +898,18 @@ async def market_facets(
     # сортировки дополняем `key`, иначе при равных count порядок между
     # запросами плавал бы и чипы перескакивали. У `?store=` порядок свой —
     # ровно то, что нужно: у джазовой лавки сверху джаз.
+    # Порядок — по безусловному объёму (что вообще есть на складе), показываем
+    # условное число (что получится, если нажать). Так ряд чипов стоит на месте
+    # весь сеанс фильтрации, а числа под ним честно меняются. Чипы, которые с
+    # текущим выбором дадут ноль, не показываем вовсе — иначе фильтр ведёт в
+    # пустой экран, ровно та жалоба, с которой всё началось.
     genres = sorted(
         (
             MarketFacetItem(key=key, label=label, count=row[f"g_{key}"])
             for key, label, _pats, _spats in GENRES
             if (row[f"g_{key}"] or 0) > 0
         ),
-        key=lambda item: (-item.count, item.key),
+        key=lambda item: (-(row[f"u_{item.key}"] or 0), item.key),
     )
     features = [
         MarketFacetItem(key=key, label=_FEATURE_LABELS[key], count=row[col])
