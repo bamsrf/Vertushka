@@ -472,16 +472,29 @@ class CoverStorageService:
         # размытые плитки и думал, что дело в интернете.
         #
         # Правило теперь простое: выселяем только то, что честно вернётся само.
-        result = await db.execute(
-            select(Record.id, Record.discogs_id, Record.cover_local_path)
-            .where(
-                Record.cover_local_path.isnot(None),
+        #
+        # С включённым S3-слоем (2026-08-28) «вернётся само» верно для ВСЕГО
+        # зеркала: каждый файл лежит в бакете навсегда (миграция + dual-write),
+        # restore-путь в covers.py возвращает его на диск при первом же
+        # просмотре. Поэтому защиты Маркета/библиотек/discogs.com не нужны —
+        # остаётся только user-фото (paranoia: незаменимый оригинал держим и
+        # на диске тоже). Без S3 — прежние консервативные правила.
+        from app.services.s3_covers import enabled as _s3_enabled
+        s3_on = _s3_enabled()
+        filters = [
+            Record.cover_local_path.isnot(None),
+            Record.source.is_distinct_from("user"),
+        ]
+        if not s3_on:
+            filters += [
                 ~active_in_stock,
                 ~in_library,
-                Record.source.is_distinct_from("user"),
                 Record.cover_image_url.isnot(None),
                 ~Record.cover_image_url.like("%discogs.com%"),
-            )
+            ]
+        result = await db.execute(
+            select(Record.id, Record.discogs_id, Record.cover_local_path)
+            .where(*filters)
         )
         candidates = result.all()
 
@@ -523,10 +536,14 @@ class CoverStorageService:
                 logger.warning("cover_storage: cleanup failed to delete %s: %s", file_path, e)
 
         if ids_to_clear:
+            # С S3 стираем только указатель на локальный файл: cover_cached_at
+            # остаётся как метка «файл существует в вечном слое» (по ней
+            # enrich_market_covers не перекачивает выселенное, а restore-путь
+            # отдаёт ту же версию — метка честна). Без S3 — как раньше.
+            values = ({"cover_local_path": None} if s3_on
+                      else {"cover_local_path": None, "cover_cached_at": None})
             await db.execute(
-                update(Record)
-                .where(Record.id.in_(ids_to_clear))
-                .values(cover_local_path=None, cover_cached_at=None)
+                update(Record).where(Record.id.in_(ids_to_clear)).values(**values)
             )
             await db.commit()
 
