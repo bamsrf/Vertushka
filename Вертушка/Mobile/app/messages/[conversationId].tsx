@@ -1,14 +1,16 @@
 /**
- * Экран одного диалога (V2.3).
+ * Экран одного диалога (V2.4).
  *
+ * - Инвертированный FlatList: лента прижата к низу нативно, без scrollToEnd-
+ *   хаков; история подгружается без прыжков (maintainVisibleContentPosition).
+ * - Клавиатура на UI-потоке через useAnimatedKeyboard + interactive dismiss.
  * - Группировка сообщений того же sender ≤5 минут (Telegram-style).
  * - Date-разделители («Сегодня», «Вчера», конкретная дата).
- * - Read-receipt галочки на своих сообщениях.
- * - Composer: paperclip (заглушка под share record), TextInput до 5 строк,
- *   круглая send-кнопка с плавным переходом disabled ↔ active.
- * - Empty state: карточка с аватаркой собеседника.
+ * - Read-receipt галочки, entering-анимации новых сообщений и реакций,
+ *   typing-бабл с точками, heart-burst на double-tap, lightbox для фото.
+ * - Composer: фото/пластинка, TextInput, анимированная send-кнопка.
  *
- * Поллинг 8с пока экран открыт (заменится на WS в M2).
+ * WS — основной транспорт; поллинг только как страховка (см. POLL_INTERVAL_MS).
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -26,6 +28,7 @@ import {
   ActionSheetIOS,
   Alert,
   Keyboard,
+  Pressable,
   Share,
   NativeScrollEvent,
   NativeSyntheticEvent,
@@ -36,11 +39,19 @@ import * as ImagePicker from 'expo-image-picker';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
+  useAnimatedKeyboard,
   withSpring,
   withTiming,
   runOnJS,
   interpolate,
+  interpolateColor,
   Extrapolation,
+  Easing,
+  FadeIn,
+  FadeOut,
+  FadeInDown,
+  ZoomIn,
+  type EntryAnimationsValues,
 } from 'react-native-reanimated';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { Image } from 'expo-image';
@@ -51,7 +62,10 @@ import { Icon } from '@/components/ui';
 import {
   MessageContextMenu,
   type MenuAction,
+  type MenuAnchor,
 } from '../../components/messages/MessageContextMenu';
+import { ImageLightbox } from '../../components/messages/ImageLightbox';
+import { TypingIndicator } from '../../components/messages/TypingIndicator';
 import { Colors, Spacing, BorderRadius } from '../../constants/theme';
 import { ms } from '../../lib/responsive';
 import { useAuthStore } from '../../lib/store';
@@ -77,6 +91,28 @@ const POLL_INTERVAL_MS = 30_000;
 const PRESENCE_INTERVAL_MS = 60_000;
 const GROUP_GAP_MS = 5 * 60 * 1000; // сообщения подряд того же sender → одна группа
 const EMPTY_MESSAGES: Message[] = [];
+
+/**
+ * Появление нового сообщения: мягкий подъём из композера (fade + translate +
+ * лёгкий scale на пружине). Применяется только к сообщениям, пришедшим после
+ * маунта экрана — история при открытии не анимируется.
+ */
+function messageEntering(_values: EntryAnimationsValues) {
+  'worklet';
+  return {
+    initialValues: {
+      opacity: 0,
+      transform: [{ translateY: 14 }, { scale: 0.97 }],
+    },
+    animations: {
+      opacity: withTiming(1, { duration: 160 }),
+      transform: [
+        { translateY: withSpring(0, { damping: 19, stiffness: 240 }) },
+        { scale: withSpring(1, { damping: 19, stiffness: 240 }) },
+      ],
+    },
+  };
+}
 
 function formatLastSeen(iso: string | null): string {
   if (!iso) return 'был(а) в сети давно';
@@ -170,7 +206,9 @@ function buildFeed(
 
     items.push({
       type: 'message',
-      key: m.id,
+      // client_nonce стабилен при свапе optimistic → server (id меняется
+      // с local-* на серверный) — без него entering-анимация играла бы дважды.
+      key: m.client_nonce || m.id,
       message: m,
       isMine,
       isFirstInGroup,
@@ -192,13 +230,20 @@ function ReadMark({
     return <ActivityIndicator size="small" color="rgba(255,255,255,0.7)" />;
   }
   // Двойная галка — собеседник прочитал; одинарная — отправлено.
+  // Вторая галочка «доезжает» (fade + сдвиг) в момент прочтения.
   if (isRead) {
     return (
       <View style={{ flexDirection: 'row' }}>
         <Icon name="check" size={12} color="#7AE2FF" />
-        <View style={{ marginLeft: -6 }}>
+        <Animated.View
+          entering={FadeIn.duration(220).withInitialValues({
+            opacity: 0,
+            transform: [{ translateX: -4 }],
+          })}
+          style={{ marginLeft: -6 }}
+        >
           <Icon name="check" size={12} color="#7AE2FF" />
-        </View>
+        </Animated.View>
       </View>
     );
   }
@@ -248,23 +293,60 @@ function ReactionsRow({
       ]}
     >
       {items.map((it) => (
-        <TouchableOpacity
+        <Animated.View
           key={it.emoji}
-          activeOpacity={0.7}
-          onPress={() => onPress(it.emoji)}
-          style={[
-            styles.reactionChip,
-            it.mine && styles.reactionChipMine,
-          ]}
+          entering={ZoomIn.springify().damping(14).stiffness(260)}
+          exiting={FadeOut.duration(120)}
         >
-          <Text style={styles.reactionChipEmoji}>{it.emoji}</Text>
-          {it.count > 1 ? (
-            <Text style={[styles.reactionChipCount, it.mine && styles.reactionChipCountMine]}>
-              {it.count}
-            </Text>
-          ) : null}
-        </TouchableOpacity>
+          <TouchableOpacity
+            activeOpacity={0.7}
+            onPress={() => onPress(it.emoji)}
+            style={[
+              styles.reactionChip,
+              it.mine && styles.reactionChipMine,
+            ]}
+          >
+            <Text style={styles.reactionChipEmoji}>{it.emoji}</Text>
+            {it.count > 1 ? (
+              <Text style={[styles.reactionChipCount, it.mine && styles.reactionChipCountMine]}>
+                {it.count}
+              </Text>
+            ) : null}
+          </TouchableOpacity>
+        </Animated.View>
       ))}
+    </View>
+  );
+}
+
+/**
+ * Всплывающее сердечко над баблом при double-tap (Instagram-style):
+ * вырастает, поднимается и тает. Живёт один цикл, потом сообщает onDone.
+ */
+function HeartBurst({ onDone }: { onDone: () => void }) {
+  const p = useSharedValue(0);
+
+  useEffect(() => {
+    p.value = withTiming(
+      1,
+      { duration: 700, easing: Easing.out(Easing.quad) },
+      (finished) => {
+        if (finished) runOnJS(onDone)();
+      },
+    );
+  }, [p, onDone]);
+
+  const style = useAnimatedStyle(() => ({
+    opacity: interpolate(p.value, [0, 0.15, 0.7, 1], [0, 1, 1, 0]),
+    transform: [
+      { translateY: -44 * p.value },
+      { scale: interpolate(p.value, [0, 0.3, 1], [0.4, 1.15, 1]) },
+    ],
+  }));
+
+  return (
+    <View pointerEvents="none" style={styles.heartBurstWrap}>
+      <Animated.Text style={[styles.heartBurstEmoji, style]}>❤️</Animated.Text>
     </View>
   );
 }
@@ -282,8 +364,11 @@ function MessageBubble({
   onLongPress,
   onPress,
   onOpenRecord,
+  onOpenMedia,
   onJumpToReply,
   onToggleReaction,
+  showHeartBurst,
+  onHeartBurstDone,
 }: {
   message: Message;
   isMine: boolean;
@@ -294,12 +379,32 @@ function MessageBubble({
   selectionMode: boolean;
   isHighlighted: boolean;
   meId: string | null;
-  onLongPress: () => void;
+  onLongPress: (anchor: MenuAnchor | null) => void;
   onPress: () => void;
   onOpenRecord?: (recordId: string) => void;
+  onOpenMedia?: (url: string) => void;
   onJumpToReply?: (messageId: string) => void;
   onToggleReaction?: (messageId: string, emoji: string) => void;
+  showHeartBurst?: boolean;
+  onHeartBurstDone?: () => void;
 }) {
+  // Замер положения бабла на экране — контекст-меню откроется от этого места.
+  const bubbleWrapRef = useRef<View>(null);
+  const handleLongPress = useCallback(() => {
+    const node = bubbleWrapRef.current;
+    if (!node) {
+      onLongPress(null);
+      return;
+    }
+    node.measureInWindow((x, y, width, height) => {
+      onLongPress(
+        Number.isFinite(x) && Number.isFinite(y)
+          ? { x, y, width, height }
+          : null,
+      );
+    });
+  }, [onLongPress]);
+
   if (message.deleted_at) {
     return (
       <View
@@ -329,7 +434,7 @@ function MessageBubble({
         }
         if (message.attached_record) onOpenRecord?.(message.attached_record.id);
       }}
-      onLongPress={onLongPress}
+      onLongPress={handleLongPress}
       delayLongPress={300}
       style={[
         styles.bubbleRecord,
@@ -388,13 +493,15 @@ function MessageBubble({
         isHighlighted && styles.bubbleRowHighlighted,
       ]}
     >
+      <View ref={bubbleWrapRef} collapsable={false} style={styles.bubbleWrap}>
       <TouchableOpacity
         activeOpacity={0.85}
-        onLongPress={onLongPress}
+        onLongPress={handleLongPress}
         onPress={onPress}
         delayLongPress={300}
         style={[
           styles.bubble,
+          { maxWidth: '100%' },
           isMine ? styles.bubbleMine : styles.bubbleOther,
           isMine && !isLastInGroup && { borderBottomRightRadius: 18 },
           !isMine && !isLastInGroup && { borderBottomLeftRadius: 18 },
@@ -426,15 +533,27 @@ function MessageBubble({
         ) : null}
         {recordCard}
         {message.media_url ? (
-          <Image
-            source={resolveMediaUrl(message.media_url)}
-            style={[
-              styles.bubbleMedia,
-              !hasBody && !message.edited_at ? { marginBottom: 4 } : null,
-            ]}
-            contentFit="cover"
-            cachePolicy="disk"
-          />
+          <Pressable
+            onPress={() => {
+              if (selectionMode) {
+                onPress();
+                return;
+              }
+              if (message.media_url) onOpenMedia?.(message.media_url);
+            }}
+            onLongPress={handleLongPress}
+            delayLongPress={300}
+          >
+            <Image
+              source={resolveMediaUrl(message.media_url)}
+              style={[
+                styles.bubbleMedia,
+                !hasBody && !message.edited_at ? { marginBottom: 4 } : null,
+              ]}
+              contentFit="cover"
+              cachePolicy="disk"
+            />
+          </Pressable>
         ) : null}
         {hasBody ? (
           <Text style={[styles.bubbleBody, isMine && styles.bubbleBodyMine]}>
@@ -465,12 +584,16 @@ function MessageBubble({
           </View>
         ) : null}
       </TouchableOpacity>
+      </View>
       <ReactionsRow
         reactions={message.reactions}
         isMine={isMine}
         meId={meId}
         onPress={(emoji) => onToggleReaction?.(message.id, emoji)}
       />
+      {showHeartBurst && onHeartBurstDone ? (
+        <HeartBurst onDone={onHeartBurstDone} />
+      ) : null}
     </View>
   );
 }
@@ -653,6 +776,7 @@ export default function ConversationScreen() {
   const clearHistory = useMessagesStore((s) => s.clearHistory);
   const archive = useMessagesStore((s) => s.archive);
   const blockUser = useMessagesStore((s) => s.blockUser);
+  const deleteMessagesAction = useMessagesStore((s) => s.deleteMessages);
 
   const [draft, setDraft] = useState('');
   const [partner, setPartner] = useState<Conversation['partner'] | null>(
@@ -672,16 +796,20 @@ export default function ConversationScreen() {
     uploading: boolean;
   } | null>(null);
   const [partnerTyping, setPartnerTyping] = useState(false);
-  const [keyboardVisible, setKeyboardVisible] = useState(false);
-  const [keyboardHeight, setKeyboardHeight] = useState(0);
   const [highlightedMessageId, setHighlightedMessageId] = useState<string | null>(null);
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const [unreadAccum, setUnreadAccum] = useState(0);
   const [menuTarget, setMenuTarget] = useState<{
     message: Message;
     isMine: boolean;
+    anchor: MenuAnchor | null;
   } | null>(null);
   const [editTarget, setEditTarget] = useState<Message | null>(null);
+  const [lightboxUri, setLightboxUri] = useState<string | null>(null);
+  const [heartBurstId, setHeartBurstId] = useState<string | null>(null);
+  // Отсечка «нового»: entering-анимация играет только для сообщений,
+  // появившихся после маунта экрана; история открывается без каскада.
+  const mountTsRef = useRef(Date.now());
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastTypingSentRef = useRef<number>(0);
@@ -693,22 +821,12 @@ export default function ConversationScreen() {
   const unreadCapturedRef = useRef(false);
   const isAtBottomRef = useRef<boolean>(true);
 
-  useEffect(() => {
-    const showEvt = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
-    const hideEvt = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
-    const s = Keyboard.addListener(showEvt, (e) => {
-      setKeyboardVisible(true);
-      setKeyboardHeight(e.endCoordinates?.height ?? 0);
-    });
-    const h = Keyboard.addListener(hideEvt, () => {
-      setKeyboardVisible(false);
-      setKeyboardHeight(0);
-    });
-    return () => {
-      s.remove();
-      h.remove();
-    };
-  }, []);
+  // Клавиатура на UI-потоке: контент двигается синхронно с ней кадр в кадр
+  // (в т.ч. при interactive dismiss), без JS-ререндеров на каждое событие.
+  const keyboard = useAnimatedKeyboard();
+  const kbWrapStyle = useAnimatedStyle(() => ({
+    paddingBottom: Math.max(keyboard.height.value - insets.bottom, 0),
+  }));
 
   // Когда возвращаемся со share-record экрана с params — подхватим выбор
   useEffect(() => {
@@ -760,20 +878,16 @@ export default function ConversationScreen() {
         {
           text: 'Удалить',
           style: 'destructive',
-          onPress: async () => {
+          onPress: () => {
             const ids = Array.from(selected);
-            await Promise.all(
-              ids.map((id) =>
-                messagesApi.deleteMessage(id).catch(() => null),
-              ),
-            );
             clearSelection();
-            loadThread(conversationId);
+            // Оптимистично: tombstone сразу, без полного reload ленты.
+            deleteMessagesAction(conversationId, ids);
           },
         },
       ],
     );
-  }, [conversationId, selected, clearSelection, loadThread]);
+  }, [conversationId, selected, clearSelection, deleteMessagesAction]);
 
   useEffect(() => {
     if (conversation?.partner) setPartner(conversation.partner);
@@ -909,19 +1023,12 @@ export default function ConversationScreen() {
     }
   }, [conversation, messages, me?.id]);
 
-  const feed = useMemo(
-    () => buildFeed(messages, me?.id ?? null, unreadFirstMsgId),
-    [messages, me?.id, unreadFirstMsgId],
-  );
-
-  // Sticky-индексы для date-разделителей.
-  const stickyHeaderIndices = useMemo(() => {
-    const idx: number[] = [];
-    feed.forEach((it, i) => {
-      if (it.type === 'date') idx.push(i);
-    });
-    return idx;
-  }, [feed]);
+  // Лента инвертирована: index 0 = самое новое сообщение (визуальный низ).
+  // FlatList с inverted прижимает контент к низу нативно — никаких scrollToEnd.
+  const feed = useMemo(() => {
+    const chronological = buildFeed(messages, me?.id ?? null, unreadFirstMsgId);
+    return chronological.reverse();
+  }, [messages, me?.id, unreadFirstMsgId]);
 
   const jumpToMessage = useCallback((messageId: string) => {
     const idx = feed.findIndex(
@@ -929,7 +1036,7 @@ export default function ConversationScreen() {
     );
     if (idx < 0) return;
     try {
-      listRef.current?.scrollToIndex({ index: idx, animated: true, viewPosition: 0.3 });
+      listRef.current?.scrollToIndex({ index: idx, animated: true, viewPosition: 0.5 });
     } catch {
       // тихо — иногда scrollToIndex кидает, если viewability ещё не готов
     }
@@ -948,9 +1055,8 @@ export default function ConversationScreen() {
 
   const handleScroll = useCallback(
     (e: NativeSyntheticEvent<NativeScrollEvent>) => {
-      const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
-      const distanceFromBottom =
-        contentSize.height - (contentOffset.y + layoutMeasurement.height);
+      // В инвертированном списке offset.y — расстояние от визуального низа.
+      const distanceFromBottom = e.nativeEvent.contentOffset.y;
       const atBottom = distanceFromBottom < 80;
       isAtBottomRef.current = atBottom;
       if (atBottom) {
@@ -964,7 +1070,7 @@ export default function ConversationScreen() {
   );
 
   const scrollToBottom = useCallback(() => {
-    listRef.current?.scrollToEnd({ animated: true });
+    listRef.current?.scrollToOffset({ offset: 0, animated: true });
     setShowScrollToBottom(false);
     setUnreadAccum(0);
   }, []);
@@ -1007,8 +1113,8 @@ export default function ConversationScreen() {
     setReplyTo(null);
     setAttachedRecord(null);
     setPendingMedia(null);
+    listRef.current?.scrollToOffset({ offset: 0, animated: true });
     await sendMessage(conversationId, text, rt, ar, media);
-    setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 50);
   }, [conversationId, draft, replyTo, attachedRecord, pendingMedia, editTarget, sendMessage, editMessageAction]);
 
   const handlePickMedia = useCallback(async () => {
@@ -1061,8 +1167,8 @@ export default function ConversationScreen() {
   );
 
   const openBubbleMenu = useCallback(
-    (m: Message, isMine: boolean) => {
-      setMenuTarget({ message: m, isMine });
+    (m: Message, isMine: boolean, anchor: MenuAnchor | null) => {
+      setMenuTarget({ message: m, isMine, anchor });
     },
     [],
   );
@@ -1216,13 +1322,8 @@ export default function ConversationScreen() {
             {
               text: 'Удалить',
               style: 'destructive',
-              onPress: async () => {
-                try {
-                  await messagesApi.deleteMessage(m.id);
-                  if (conversationId) loadThread(conversationId);
-                } catch {
-                  // тихо
-                }
+              onPress: () => {
+                if (conversationId) deleteMessagesAction(conversationId, [m.id]);
               },
             },
           ]);
@@ -1233,7 +1334,7 @@ export default function ConversationScreen() {
   }, [
     menuTarget,
     conversationId,
-    loadThread,
+    deleteMessagesAction,
     toggleSelection,
     conversation?.pinned_message?.id,
     router,
@@ -1276,14 +1377,25 @@ export default function ConversationScreen() {
         lastTapRef.current = null;
         if (conversationId) {
           Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+          const alreadyMine = !!(m.reactions ?? []).some(
+            (r) => r.user_id === me?.id && r.emoji === '❤️',
+          );
+          if (!alreadyMine) setHeartBurstId(m.id);
           toggleReactionAction(conversationId, m.id, '❤️').catch(() => {});
         }
         return;
       }
       lastTapRef.current = { id: m.id, ts: now };
     },
-    [selectionMode, conversationId, toggleSelection, toggleReactionAction],
+    [selectionMode, conversationId, toggleSelection, toggleReactionAction, me?.id],
   );
+
+  const openMedia = useCallback((url: string) => {
+    const resolved = resolveMediaUrl(url);
+    if (resolved) setLightboxUri(resolved);
+  }, []);
+
+  const clearHeartBurst = useCallback(() => setHeartBurstId(null), []);
 
   const openAttachedRecord = useCallback(
     (recordId: string) => {
@@ -1306,7 +1418,7 @@ export default function ConversationScreen() {
       const isHighlighted = highlightedMessageId === m.id;
       const longPressHandler = selectionMode
         ? () => toggleSelection(m.id)
-        : () => openBubbleMenu(m, item.isMine);
+        : (anchor: MenuAnchor | null) => openBubbleMenu(m, item.isMine, anchor);
 
       const bubble = (
         <MessageBubble
@@ -1322,8 +1434,11 @@ export default function ConversationScreen() {
           onLongPress={longPressHandler}
           onPress={() => handleBubbleTap(m)}
           onOpenRecord={openAttachedRecord}
+          onOpenMedia={openMedia}
           onJumpToReply={jumpToMessage}
           onToggleReaction={handleToggleReaction}
+          showHeartBurst={heartBurstId === m.id}
+          onHeartBurstDone={clearHeartBurst}
         />
       );
 
@@ -1336,15 +1451,28 @@ export default function ConversationScreen() {
         </SwipeableMessage>
       );
 
-      if (isFailed && !selectionMode) {
-        return (
+      const content =
+        isFailed && !selectionMode ? (
           <TouchableOpacity activeOpacity={0.8} onPress={() => handleRetry(m)}>
             {wrapped}
             <Text style={styles.failedHint}>Не отправлено — нажмите, чтобы повторить</Text>
           </TouchableOpacity>
+        ) : (
+          wrapped
         );
-      }
-      return wrapped;
+
+      // Окно 5с: при ремаунте ячейки из виртуализации (скролл туда-обратно)
+      // анимация уже не переигрывается.
+      const createdTs = new Date(m.created_at).getTime();
+      const isNew =
+        m._local_status === 'sending' ||
+        (createdTs > mountTsRef.current && Date.now() - createdTs < 5000);
+
+      return (
+        <Animated.View entering={isNew ? messageEntering : undefined}>
+          {content}
+        </Animated.View>
+      );
     },
     [
       handleRetry,
@@ -1353,10 +1481,13 @@ export default function ConversationScreen() {
       selectionMode,
       openBubbleMenu,
       openAttachedRecord,
+      openMedia,
       jumpToMessage,
       handleToggleReaction,
       handleBubbleTap,
       highlightedMessageId,
+      heartBurstId,
+      clearHeartBurst,
       me?.id,
     ]
   );
@@ -1372,6 +1503,30 @@ export default function ConversationScreen() {
     !!attachedRecord ||
     !!(pendingMedia && pendingMedia.remoteUrl && !pendingMedia.uploading);
   const isMuted = !!conversation?.muted;
+
+  // Send-кнопка: пружинный переход disabled ↔ active (цвет + scale) и
+  // «пульс» при нажатии — вместо мгновенной смены стилей.
+  const sendProgress = useSharedValue(0);
+  const sendPress = useSharedValue(1);
+  useEffect(() => {
+    sendProgress.value = withSpring(canSend ? 1 : 0, {
+      damping: 16,
+      stiffness: 260,
+    });
+  }, [canSend, sendProgress]);
+  const sendBtnStyle = useAnimatedStyle(() => ({
+    backgroundColor: interpolateColor(
+      sendProgress.value,
+      [0, 1],
+      [Colors.surface, Colors.royalBlue],
+    ),
+    borderColor: interpolateColor(
+      sendProgress.value,
+      [0, 1],
+      [Colors.border, Colors.royalBlue],
+    ),
+    transform: [{ scale: (0.94 + 0.06 * sendProgress.value) * sendPress.value }],
+  }));
 
   const setMuteDurationAction = useMessagesStore((s) => s.setMuteDuration);
 
@@ -1604,92 +1759,103 @@ export default function ConversationScreen() {
         </TouchableOpacity>
       ) : null}
 
-      {/* Ручной keyboard-avoid: KeyboardAvoidingView ненадёжен на new arch +
-          edge-to-edge. Поднимаем контент на реальную высоту клавиатуры из
-          событий — детерминированно и одинаково на iOS/Android/Expo Go. */}
-      <View style={[styles.kbWrap, { paddingBottom: keyboardHeight }]}>
+      {/* Keyboard-avoid на UI-потоке: useAnimatedKeyboard двигает контент
+          синхронно с клавиатурой (в т.ч. interactive dismiss), без
+          JS-ререндеров. Работает на new arch + edge-to-edge. */}
+      <Animated.View style={[styles.kbWrap, kbWrapStyle]}>
         <View style={styles.listWrap}>
           <FlatList
             ref={listRef}
             data={feed}
+            inverted
             keyExtractor={(item) => item.key}
             renderItem={renderItem}
-            contentContainerStyle={feed.length === 0 ? styles.listEmpty : styles.list}
-            onContentSizeChange={() => {
-              if (isAtBottomRef.current)
-                listRef.current?.scrollToEnd({ animated: false });
+            contentContainerStyle={styles.list}
+            // Прижатие к низу и стабильность позиции при догрузке — нативно:
+            // при чтении истории позиция держится, у низа — автоскролл к новому.
+            maintainVisibleContentPosition={{
+              minIndexForVisible: 0,
+              autoscrollToTopThreshold: 100,
             }}
-            onLayout={() => listRef.current?.scrollToEnd({ animated: false })}
             onScroll={handleScroll}
             scrollEventThrottle={32}
-            stickyHeaderIndices={stickyHeaderIndices}
-            onEndReachedThreshold={0.1}
-            onStartReached={() => conversationId && loadMore(conversationId)}
+            onEndReachedThreshold={0.3}
+            onEndReached={() => conversationId && loadMore(conversationId)}
             onScrollToIndexFailed={({ index }) => {
               setTimeout(() => {
                 try {
-                  listRef.current?.scrollToIndex({ index, animated: true, viewPosition: 0.3 });
+                  listRef.current?.scrollToIndex({ index, animated: true, viewPosition: 0.5 });
                 } catch {
                   // тихо
                 }
               }, 200);
             }}
-            ListEmptyComponent={isLoading ? null : <EmptyState partner={partner} />}
+            // В инвертированном списке header рендерится у визуального низа —
+            // идеальное место для «печатает…».
+            ListHeaderComponent={partnerTyping ? <TypingIndicator /> : null}
             keyboardShouldPersistTaps="handled"
-            keyboardDismissMode="on-drag"
+            keyboardDismissMode="interactive"
           />
+          {feed.length === 0 && !isLoading ? (
+            <View pointerEvents="none" style={styles.emptyOverlay}>
+              <EmptyState partner={partner} />
+            </View>
+          ) : null}
           {showScrollToBottom ? (
-            <TouchableOpacity
-              activeOpacity={0.85}
-              onPress={scrollToBottom}
+            <Animated.View
+              entering={ZoomIn.springify().damping(16).stiffness(260)}
+              exiting={FadeOut.duration(120)}
               style={[
-                styles.scrollFab,
+                styles.scrollFabWrap,
                 { bottom: Spacing.sm + (attachedRecord || replyTo || pendingMedia ? 70 : 0) },
               ]}
             >
-              <Icon name="arrow-down" size={20} color={Colors.text} />
-              {unreadAccum > 0 ? (
-                <View style={styles.scrollFabBadge}>
-                  <Text style={styles.scrollFabBadgeTxt}>
-                    {unreadAccum > 99 ? '99+' : unreadAccum}
-                  </Text>
-                </View>
-              ) : null}
-            </TouchableOpacity>
+              <TouchableOpacity
+                activeOpacity={0.85}
+                onPress={scrollToBottom}
+                style={styles.scrollFab}
+              >
+                <Icon name="arrow-down" size={20} color={Colors.text} />
+                {unreadAccum > 0 ? (
+                  <View style={styles.scrollFabBadge}>
+                    <Text style={styles.scrollFabBadgeTxt}>
+                      {unreadAccum > 99 ? '99+' : unreadAccum}
+                    </Text>
+                  </View>
+                ) : null}
+              </TouchableOpacity>
+            </Animated.View>
           ) : null}
         </View>
 
         {pendingMedia ? (
-          <View style={styles.attachBar}>
-            <Image
-              source={{ uri: pendingMedia.localUri }}
-              style={styles.attachCover}
-              cachePolicy="memory"
-            />
+          <Animated.View
+            entering={FadeInDown.springify().damping(18)}
+            exiting={FadeOut.duration(120)}
+            style={styles.attachBar}
+          >
+            <View>
+              <Image
+                source={{ uri: pendingMedia.localUri }}
+                style={styles.attachMediaThumb}
+                cachePolicy="memory"
+              />
+              {pendingMedia.uploading ? (
+                <View style={styles.attachMediaOverlay}>
+                  <ActivityIndicator size="small" color="#fff" />
+                </View>
+              ) : null}
+            </View>
             <View style={{ flex: 1, minWidth: 0 }}>
               <Text style={styles.attachTitle} numberOfLines={1}>
                 {pendingMedia.uploading ? 'Загружаем фото…' : 'Фото готово'}
               </Text>
               <Text style={styles.attachSub} numberOfLines={1}>
-                {pendingMedia.uploading ? 'Подождите' : 'Можно отправить'}
+                {pendingMedia.uploading
+                  ? 'Подождите'
+                  : 'Добавьте подпись или отправьте'}
               </Text>
             </View>
-            <TouchableOpacity
-              onPress={handleSend}
-              disabled={!pendingMedia.remoteUrl || pendingMedia.uploading}
-              style={[
-                styles.attachSendBtn,
-                (!pendingMedia.remoteUrl || pendingMedia.uploading) && styles.sendBtnDisabled,
-              ]}
-              activeOpacity={0.85}
-              accessibilityLabel="Отправить фото"
-            >
-              {pendingMedia.uploading ? (
-                <ActivityIndicator size="small" color="#fff" />
-              ) : (
-                <Icon name="arrow-up" size={18} color="#fff" />
-              )}
-            </TouchableOpacity>
             <TouchableOpacity
               onPress={() => setPendingMedia(null)}
               style={styles.replyClose}
@@ -1697,11 +1863,15 @@ export default function ConversationScreen() {
             >
               <Icon name="close" size={16} color={Colors.textMuted} />
             </TouchableOpacity>
-          </View>
+          </Animated.View>
         ) : null}
 
         {attachedRecord ? (
-          <View style={styles.attachBar}>
+          <Animated.View
+            entering={FadeInDown.springify().damping(18)}
+            exiting={FadeOut.duration(120)}
+            style={styles.attachBar}
+          >
             {attachedRecord.cover_image_url ? (
               <Image
                 source={resolveMediaUrl(attachedRecord.cover_image_url)}
@@ -1728,11 +1898,15 @@ export default function ConversationScreen() {
             >
               <Icon name="close" size={16} color={Colors.textMuted} />
             </TouchableOpacity>
-          </View>
+          </Animated.View>
         ) : null}
 
         {replyTo ? (
-          <View style={styles.replyBar}>
+          <Animated.View
+            entering={FadeInDown.springify().damping(18)}
+            exiting={FadeOut.duration(120)}
+            style={styles.replyBar}
+          >
             <View style={styles.replyLine} />
             <View style={{ flex: 1, minWidth: 0 }}>
               <Text style={styles.replyTitle}>
@@ -1747,11 +1921,15 @@ export default function ConversationScreen() {
             <TouchableOpacity onPress={() => setReplyTo(null)} style={styles.replyClose}>
               <Icon name="close" size={16} color={Colors.textMuted} />
             </TouchableOpacity>
-          </View>
+          </Animated.View>
         ) : null}
 
         {editTarget ? (
-          <View style={styles.replyBar}>
+          <Animated.View
+            entering={FadeInDown.springify().damping(18)}
+            exiting={FadeOut.duration(120)}
+            style={styles.replyBar}
+          >
             <View style={[styles.replyLine, { backgroundColor: '#F59E0B' }]} />
             <View style={{ flex: 1, minWidth: 0 }}>
               <Text style={[styles.replyTitle, { color: '#F59E0B' }]}>
@@ -1770,14 +1948,11 @@ export default function ConversationScreen() {
             >
               <Icon name="close" size={16} color={Colors.textMuted} />
             </TouchableOpacity>
-          </View>
+          </Animated.View>
         ) : null}
 
         <View
-          style={[
-            styles.inputBar,
-            { paddingBottom: keyboardVisible ? 8 : insets.bottom + 8 },
-          ]}
+          style={[styles.inputBar, { paddingBottom: insets.bottom + 8 }]}
         >
           <TouchableOpacity
             style={styles.attachBtn}
@@ -1813,24 +1988,32 @@ export default function ConversationScreen() {
             multiline
             maxLength={4000}
           />
-          <TouchableOpacity
-            style={[styles.sendBtn, !canSend && styles.sendBtnDisabled]}
+          <Pressable
             onPress={handleSend}
             disabled={!canSend}
-            activeOpacity={0.85}
+            onPressIn={() => {
+              sendPress.value = withSpring(0.85, { damping: 20, stiffness: 400 });
+            }}
+            onPressOut={() => {
+              sendPress.value = withSpring(1, { damping: 14, stiffness: 300 });
+            }}
+            accessibilityLabel="Отправить"
           >
-            <Icon
-              name="arrow-up"
-              size={18}
-              color={canSend ? '#fff' : Colors.textMuted}
-            />
-          </TouchableOpacity>
+            <Animated.View style={[styles.sendBtn, sendBtnStyle]}>
+              <Icon
+                name="arrow-up"
+                size={18}
+                color={canSend ? '#fff' : Colors.textMuted}
+              />
+            </Animated.View>
+          </Pressable>
         </View>
-      </View>
+      </Animated.View>
 
       <MessageContextMenu
         visible={!!menuTarget}
         isMine={menuTarget?.isMine ?? false}
+        anchor={menuTarget?.anchor ?? null}
         bubbleSnapshot={
           menuTarget ? (
             <MessageBubble
@@ -1854,6 +2037,12 @@ export default function ConversationScreen() {
         actions={menuActions}
         onClose={() => setMenuTarget(null)}
         onReact={handleQuickReact}
+      />
+
+      <ImageLightbox
+        visible={!!lightboxUri}
+        uri={lightboxUri}
+        onClose={() => setLightboxUri(null)}
       />
     </View>
   );
@@ -1965,8 +2154,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: Colors.surface,
   },
-  list: { paddingHorizontal: Spacing.md, paddingTop: Spacing.sm, paddingBottom: Spacing.md },
-  listEmpty: { flexGrow: 1, justifyContent: 'center' },
+  // Инвертированный список: paddingTop контейнера рендерится у визуального
+  // низа (над композером), paddingBottom — у визуального верха.
+  list: { paddingHorizontal: Spacing.md, paddingTop: Spacing.md, paddingBottom: Spacing.sm },
+  emptyOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: 'center',
+  },
 
   /* Unread divider */
   unreadDividerWrap: {
@@ -2001,9 +2195,11 @@ const styles = StyleSheet.create({
   swipeReplyIconOther: { left: 8 },
 
   /* Scroll-to-bottom FAB */
-  scrollFab: {
+  scrollFabWrap: {
     position: 'absolute',
     right: Spacing.md,
+  },
+  scrollFab: {
     width: 40,
     height: 40,
     borderRadius: 20,
@@ -2052,6 +2248,15 @@ const styles = StyleSheet.create({
 
   /* Bubble */
   bubbleRow: { width: '100%', marginVertical: 1 },
+  // Обёртка для measureInWindow (якорь контекст-меню); несёт ограничение
+  // ширины вместо самого бабла.
+  bubbleWrap: { maxWidth: '76%' },
+  heartBurstWrap: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  heartBurstEmoji: { fontSize: 44 },
   bubbleRowFirstInGroup: { marginTop: 10 },
   bubbleRowLastInGroup: { marginBottom: 2 },
   bubbleRowMine: { alignItems: 'flex-end' },
@@ -2200,6 +2405,19 @@ const styles = StyleSheet.create({
   attachCoverPlaceholder: { alignItems: 'center', justifyContent: 'center' },
   attachTitle: { fontSize: ms(13), fontWeight: '600', color: Colors.text },
   attachSub: { fontSize: ms(11), color: Colors.textMuted, marginTop: 1 },
+  attachMediaThumb: {
+    width: 52,
+    height: 52,
+    borderRadius: 8,
+    backgroundColor: Colors.surface,
+  },
+  attachMediaOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 8,
+    backgroundColor: 'rgba(0,0,0,0.35)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
 
   /* Attached-record card внутри bubble */
   bubbleRecord: {
@@ -2287,26 +2505,13 @@ const styles = StyleSheet.create({
     fontSize: ms(14),
     color: Colors.text,
   },
+  // Цвет фона/бордера и scale анимируются в sendBtnStyle (reanimated).
   sendBtn: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: Colors.royalBlue,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  sendBtnDisabled: {
-    backgroundColor: Colors.surface,
     borderWidth: 1,
-    borderColor: Colors.border,
-  },
-  attachSendBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: Colors.royalBlue,
     alignItems: 'center',
     justifyContent: 'center',
-    marginLeft: 4,
   },
 });

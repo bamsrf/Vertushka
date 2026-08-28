@@ -1,11 +1,11 @@
 /**
  * Telegram-style контекст-меню для сообщения.
  *
- * Открывается по long-press на бабле. Показывает:
- *   • Emoji-реакции (Phase 3 — пока визуально, без бэка)
- *   • Превью-копию бабла (изолированный snapshot)
- *   • Вертикальный список действий (Ответить / Скопировать / Поделиться /
- *     Выделить / Удалить-если-своё)
+ * Открывается по long-press на бабле и «вырастает» из места самого сообщения:
+ * экран треда передаёт anchor (measureInWindow бабла), меню кладёт снапшот
+ * в ту же точку, реакции пружинят над ним, действия — под ним. Если места
+ * не хватает — колонка мягко сдвигается в пределы экрана. Без anchor
+ * (fallback) — прежняя центрированная раскладка.
  *
  * Модалка с blur-backdrop, spring-in анимацией. Тап вне зоны меню — закрывает.
  */
@@ -18,6 +18,8 @@ import {
   TouchableWithoutFeedback,
   StyleSheet,
   Pressable,
+  ScrollView,
+  useWindowDimensions,
 } from 'react-native';
 import { BlurView } from 'expo-blur';
 import Animated, {
@@ -25,8 +27,10 @@ import Animated, {
   useAnimatedStyle,
   withSpring,
   withTiming,
+  withDelay,
 } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Icon } from '@/components/ui';
 import { Colors, Spacing, BorderRadius } from '../../constants/theme';
 
@@ -38,11 +42,24 @@ export type MenuAction = {
   onPress: () => void;
 };
 
+export type MenuAnchor = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
 export const QUICK_REACTIONS = ['❤️', '🔥', '😂', '😮', '😢', '👍'] as const;
+
+const REACTIONS_H = 52;
+const ACTION_ROW_H = 48;
+const ACTIONS_MAX_H = 300;
+const GAP = 8;
 
 interface Props {
   visible: boolean;
   isMine: boolean;
+  anchor?: MenuAnchor | null;
   bubbleSnapshot: React.ReactNode;
   actions: MenuAction[];
   onClose: () => void;
@@ -52,29 +69,61 @@ interface Props {
 export function MessageContextMenu({
   visible,
   isMine,
+  anchor,
   bubbleSnapshot,
   actions,
   onClose,
   onReact,
 }: Props) {
-  const scale = useSharedValue(0.94);
+  const { height: screenH } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
+  const scale = useSharedValue(0.9);
   const opacity = useSharedValue(0);
+  const reactionsPop = useSharedValue(0);
 
   useEffect(() => {
     if (visible) {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
-      scale.value = withSpring(1, { damping: 18, stiffness: 240 });
-      opacity.value = withTiming(1, { duration: 160 });
-    } else {
-      scale.value = 0.94;
+      scale.value = 0.9;
       opacity.value = 0;
+      reactionsPop.value = 0;
+      scale.value = withSpring(1, { damping: 18, stiffness: 260 });
+      opacity.value = withTiming(1, { duration: 140 });
+      reactionsPop.value = withDelay(
+        60,
+        withSpring(1, { damping: 14, stiffness: 240 }),
+      );
+    } else {
+      scale.value = 0.9;
+      opacity.value = 0;
+      reactionsPop.value = 0;
     }
-  }, [visible, scale, opacity]);
+  }, [visible, scale, opacity, reactionsPop]);
 
   const cardStyle = useAnimatedStyle(() => ({
     transform: [{ scale: scale.value }],
     opacity: opacity.value,
   }));
+
+  const reactionsStyle = useAnimatedStyle(() => ({
+    opacity: reactionsPop.value,
+    transform: [
+      { scale: 0.7 + reactionsPop.value * 0.3 },
+      { translateY: (1 - reactionsPop.value) * 8 },
+    ],
+  }));
+
+  // Раскладка от якоря: снапшот стремится остаться на месте бабла,
+  // колонка целиком зажимается в видимую область.
+  let anchoredTop: number | null = null;
+  if (anchor) {
+    const actionsH = Math.min(actions.length * ACTION_ROW_H, ACTIONS_MAX_H);
+    const estHeight = REACTIONS_H + GAP + anchor.height + GAP + actionsH;
+    const idealTop = anchor.y - REACTIONS_H - GAP;
+    const minTop = insets.top + 12;
+    const maxTop = screenH - insets.bottom - 16 - estHeight;
+    anchoredTop = Math.max(minTop, Math.min(idealTop, Math.max(minTop, maxTop)));
+  }
 
   return (
     <Modal
@@ -85,17 +134,28 @@ export function MessageContextMenu({
       statusBarTranslucent
     >
       <TouchableWithoutFeedback onPress={onClose}>
-        <View style={styles.backdrop}>
+        <View
+          style={[
+            styles.backdrop,
+            anchoredTop === null && styles.backdropCentered,
+          ]}
+        >
           <BlurView intensity={20} tint="dark" style={StyleSheet.absoluteFill} />
           <TouchableWithoutFeedback>
             <Animated.View
               style={[
                 styles.card,
                 isMine ? styles.cardMine : styles.cardOther,
+                anchoredTop !== null && {
+                  position: 'absolute',
+                  top: anchoredTop,
+                  left: Spacing.lg,
+                  right: Spacing.lg,
+                },
                 cardStyle,
               ]}
             >
-              <View style={styles.reactionsRow}>
+              <Animated.View style={[styles.reactionsRow, reactionsStyle]}>
                 {QUICK_REACTIONS.map((emoji) => (
                   <Pressable
                     key={emoji}
@@ -112,7 +172,7 @@ export function MessageContextMenu({
                     <Text style={styles.reactionEmoji}>{emoji}</Text>
                   </Pressable>
                 ))}
-              </View>
+              </Animated.View>
 
               <View
                 style={[
@@ -130,34 +190,40 @@ export function MessageContextMenu({
                   isMine ? styles.actionsMine : styles.actionsOther,
                 ]}
               >
-                {actions.map((a, i) => (
-                  <TouchableOpacity
-                    key={a.key}
-                    activeOpacity={0.6}
-                    style={[
-                      styles.actionRow,
-                      i < actions.length - 1 && styles.actionRowDivider,
-                    ]}
-                    onPress={() => {
-                      a.onPress();
-                      onClose();
-                    }}
-                  >
-                    <Text
+                <ScrollView
+                  style={{ maxHeight: ACTIONS_MAX_H }}
+                  bounces={false}
+                  showsVerticalScrollIndicator={false}
+                >
+                  {actions.map((a, i) => (
+                    <TouchableOpacity
+                      key={a.key}
+                      activeOpacity={0.6}
                       style={[
-                        styles.actionLabel,
-                        a.destructive && styles.actionLabelDestructive,
+                        styles.actionRow,
+                        i < actions.length - 1 && styles.actionRowDivider,
                       ]}
+                      onPress={() => {
+                        a.onPress();
+                        onClose();
+                      }}
                     >
-                      {a.label}
-                    </Text>
-                    <Icon
-                      name={a.icon}
-                      size={18}
-                      color={a.destructive ? '#E5484D' : Colors.text}
-                    />
-                  </TouchableOpacity>
-                ))}
+                      <Text
+                        style={[
+                          styles.actionLabel,
+                          a.destructive && styles.actionLabelDestructive,
+                        ]}
+                      >
+                        {a.label}
+                      </Text>
+                      <Icon
+                        name={a.icon}
+                        size={18}
+                        color={a.destructive ? '#E5484D' : Colors.text}
+                      />
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
               </View>
             </Animated.View>
           </TouchableWithoutFeedback>
@@ -171,11 +237,13 @@ const styles = StyleSheet.create({
   backdrop: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.35)',
+  },
+  backdropCentered: {
     justifyContent: 'center',
     paddingHorizontal: Spacing.lg,
   },
   card: {
-    gap: Spacing.sm,
+    gap: GAP,
   },
   cardMine: { alignItems: 'flex-end' },
   cardOther: { alignItems: 'flex-start' },
@@ -234,6 +302,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 16,
     paddingVertical: 13,
+    minHeight: ACTION_ROW_H,
   },
   actionRowDivider: {
     borderBottomWidth: StyleSheet.hairlineWidth,

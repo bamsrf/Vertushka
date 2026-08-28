@@ -53,6 +53,7 @@ interface MessagesState {
   togglePin: (conversationId: string) => Promise<void>;
   toggleReaction: (conversationId: string, messageId: string, emoji: string) => Promise<void>;
   editMessage: (conversationId: string, messageId: string, body: string) => Promise<void>;
+  deleteMessages: (conversationId: string, messageIds: string[]) => Promise<void>;
   pinMessage: (conversationId: string, messageId: string) => Promise<void>;
   unpinMessage: (conversationId: string) => Promise<void>;
   setMuteDuration: (conversationId: string, duration: MuteDuration) => Promise<void>;
@@ -571,6 +572,34 @@ export const useMessagesStore = create<MessagesState>((set, get) => ({
         String(e?.response?.data?.detail || 'Попробуйте позже'),
       );
       throw e;
+    }
+  },
+
+  deleteMessages: async (conversationId, messageIds) => {
+    // Оптимистичный tombstone (тот же вид, что даёт WS message.deleted) —
+    // без полного loadThread, чтобы лента не мигала. Откат — точечным
+    // рефетчем только при реальной ошибке.
+    const ids = new Set(messageIds);
+    const before = get().threads[conversationId] ?? [];
+    set((s) => ({
+      threads: {
+        ...s.threads,
+        [conversationId]: (s.threads[conversationId] ?? []).map((m) =>
+          ids.has(m.id)
+            ? { ...m, body: null, deleted_at: new Date().toISOString() }
+            : m,
+        ),
+      },
+    }));
+    const results = await Promise.allSettled(
+      messageIds.map((id) => messagesApi.deleteMessage(id)),
+    );
+    if (results.some((r) => r.status === 'rejected')) {
+      set((s) => ({
+        threads: { ...s.threads, [conversationId]: before },
+      }));
+      toast.error('Не все сообщения удалились', 'Попробуйте ещё раз');
+      get().loadThread(conversationId);
     }
   },
 

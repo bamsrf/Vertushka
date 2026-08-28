@@ -1,26 +1,40 @@
 /**
- * Инбокс сообщений (V2.2).
+ * Инбокс сообщений (V2.3).
  *
  * - Сегмент Личные / Запросы внутри экрана (Instagram-style).
  * - Список диалогов: gradient-аватар, имя, mute-иконка, превью, time, read-mark / unread badge.
  * - Если есть pending-запросы — в баннере сверху стек 3 аватарок и «От @a, @b и ещё N».
+ * - Скелетоны на первой загрузке; пересортировка диалогов (новое сообщение
+ *   поднимает тред) анимируется через itemLayoutAnimation.
+ * - Свайп-действия на ReanimatedSwipeable (плавнее старого Swipeable).
  * - Empty state — карточкой с подсказкой.
- *
- * М3-эндпоинты accept/reject/block ещё не реализованы — в режиме «Запросы» открытие
- * треда тапом работает; кнопки accept/reject подключим в V2.4.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
-  FlatList,
   TouchableOpacity,
   RefreshControl,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Swipeable } from 'react-native-gesture-handler';
+import ReanimatedSwipeable, {
+  type SwipeableMethods,
+} from 'react-native-gesture-handler/ReanimatedSwipeable';
+import Animated, {
+  LinearTransition,
+  FadeIn,
+  FadeOut,
+  FadeInDown,
+  ZoomIn,
+  useSharedValue,
+  useAnimatedStyle,
+  withRepeat,
+  withSequence,
+  withTiming,
+  cancelAnimation,
+} from 'react-native-reanimated';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Icon, SegmentedControl } from '@/components/ui';
@@ -115,7 +129,7 @@ function ConversationRow({
   const preview = item.last_message_preview ?? 'Нет сообщений';
   const unread = item.unread_count;
   const isRequest = item.request_status === 'pending';
-  const swipeRef = useRef<Swipeable>(null);
+  const swipeRef = useRef<SwipeableMethods>(null);
 
   const renderRightActions = () => (
     <View style={styles.swipeActions}>
@@ -192,9 +206,13 @@ function ConversationRow({
             {preview}
           </Text>
           {!isRequest && unread > 0 ? (
-            <View style={[styles.unreadDot, item.muted && styles.unreadDotMuted]}>
+            <Animated.View
+              entering={ZoomIn.springify().damping(14).stiffness(260)}
+              exiting={FadeOut.duration(120)}
+              style={[styles.unreadDot, item.muted && styles.unreadDotMuted]}
+            >
               <Text style={styles.unreadTxt}>{unread > 99 ? '99+' : unread}</Text>
-            </View>
+            </Animated.View>
           ) : null}
         </View>
         {isRequest && (onAccept || onReject) ? (
@@ -227,14 +245,52 @@ function ConversationRow({
   if (isRequest) return content;
 
   return (
-    <Swipeable
+    <ReanimatedSwipeable
       ref={swipeRef}
       renderRightActions={renderRightActions}
       friction={2}
       rightThreshold={40}
     >
       {content}
-    </Swipeable>
+    </ReanimatedSwipeable>
+  );
+}
+
+/** Пульсирующий скелетон диалога — первая загрузка вместо пустого экрана. */
+function SkeletonRow() {
+  const pulse = useSharedValue(0.5);
+
+  useEffect(() => {
+    pulse.value = withRepeat(
+      withSequence(
+        withTiming(1, { duration: 600 }),
+        withTiming(0.5, { duration: 600 }),
+      ),
+      -1,
+    );
+    return () => cancelAnimation(pulse);
+  }, [pulse]);
+
+  const style = useAnimatedStyle(() => ({ opacity: pulse.value }));
+
+  return (
+    <Animated.View style={[styles.row, style]}>
+      <View style={styles.skelAvatar} />
+      <View style={styles.rowMain}>
+        <View style={styles.skelLineWide} />
+        <View style={styles.skelLineNarrow} />
+      </View>
+    </Animated.View>
+  );
+}
+
+function InboxSkeleton() {
+  return (
+    <Animated.View exiting={FadeOut.duration(160)}>
+      {Array.from({ length: 6 }, (_, i) => (
+        <SkeletonRow key={i} />
+      ))}
+    </Animated.View>
   );
 }
 
@@ -359,10 +415,10 @@ export default function MessagesInboxScreen() {
   );
 
   const renderEmpty = () => {
-    if (isLoading) return null;
+    if (isLoading) return <InboxSkeleton />;
     if (folder === 'primary') {
       return (
-        <View style={styles.empty}>
+        <Animated.View entering={FadeIn.duration(200)} style={styles.empty}>
           <View style={styles.emptyIconBg}>
             <Icon name="chat-circle" size={36} color={Colors.royalBlue} />
           </View>
@@ -378,17 +434,17 @@ export default function MessagesInboxScreen() {
             <Icon name="pencil" size={16} color="#fff" />
             <Text style={styles.emptyBtnTxt}>Новое сообщение</Text>
           </TouchableOpacity>
-        </View>
+        </Animated.View>
       );
     }
     return (
-      <View style={styles.empty}>
+      <Animated.View entering={FadeIn.duration(200)} style={styles.empty}>
         <Icon name="envelope" size={36} color={Colors.textMuted} />
         <Text style={styles.emptyTitle}>Запросов нет</Text>
         <Text style={styles.emptySub}>
           Здесь появятся первые сообщения от тех, на кого вы не подписаны.
         </Text>
-      </View>
+      </Animated.View>
     );
   };
 
@@ -404,21 +460,29 @@ export default function MessagesInboxScreen() {
       />
 
       {folder === 'primary' && requests.length > 0 ? (
-        <TouchableOpacity
-          activeOpacity={0.7}
-          onPress={() => setFolder('requests')}
+        <Animated.View
+          entering={FadeInDown.springify().damping(18)}
+          exiting={FadeOut.duration(140)}
         >
-          <RequestsHint requests={requests} />
-        </TouchableOpacity>
+          <TouchableOpacity
+            activeOpacity={0.7}
+            onPress={() => setFolder('requests')}
+          >
+            <RequestsHint requests={requests} />
+          </TouchableOpacity>
+        </Animated.View>
       ) : null}
 
-      <FlatList
+      <Animated.FlatList
         data={data}
         keyExtractor={(item) => item.id}
         renderItem={renderItem}
         ListEmptyComponent={renderEmpty}
         contentContainerStyle={styles.listContent}
         showsVerticalScrollIndicator={false}
+        // Пересортировка (новое сообщение поднимает диалог наверх) едет
+        // пружиной вместо телепорта.
+        itemLayoutAnimation={LinearTransition.springify().damping(18)}
         refreshControl={
           <RefreshControl
             refreshing={isLoading}
@@ -520,6 +584,28 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontWeight: '700',
     letterSpacing: 0.3,
+  },
+
+  /* Skeleton первой загрузки */
+  skelAvatar: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: Colors.surface,
+  },
+  skelLineWide: {
+    height: 14,
+    borderRadius: 7,
+    backgroundColor: Colors.surface,
+    alignSelf: 'stretch',
+    marginRight: 60,
+  },
+  skelLineNarrow: {
+    height: 11,
+    borderRadius: 6,
+    backgroundColor: Colors.surface,
+    marginTop: 8,
+    marginRight: 140,
   },
 
   rowMain: { flex: 1, minWidth: 0 },
