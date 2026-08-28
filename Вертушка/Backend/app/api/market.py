@@ -139,11 +139,29 @@ def _genre_match_sql(
     by_style = f"NOT {has_genre} AND {style_col} ILIKE ANY(:{style_param})"
     return f"(({by_genre}) OR ({by_style}))"
 
+# Носитель «винил» — одно определение на два места: чип «Формат: Винил» и гейт
+# «Цветного винила». Двойной гейт (и листинг, и запись) — из-за рассинхрона
+# матчера: винил-листинг бывает привязан к CD-записи, и карточка тогда врёт
+# «CD» в подписи. Литералы, а не bind-параметры: предикат подставляется и в
+# /market/search, и в /market/facets, а наборы params у них свои.
+_VINYL_LISTING_PRED = (
+    "(sl.format_raw ILIKE ANY(ARRAY['LP','2xLP','3xLP','EP','Single','Box Set']) "
+    "OR sl.format_raw ~ '^(\\d+x?LP|12\"|10\"|7\")')"
+)
+_VINYL_RECORD_PRED = "(r.format_type IS NULL OR r.format_type ILIKE '%vinyl%')"
+
 # Особенности: ключ → (label, SQL-предикат). Предикаты — доверенные строки (не
 # пользовательский ввод), sql_color_family подставляет только имя колонки.
+#
+# «Цветной винил» гейтится носителем, и это не косметика. Замер 28.08: из 2 312
+# листингов с распознанным цветом 2 303 по своему format_raw — винил, но 284 из
+# них привязаны к CD-записи и 153 к файлу/кассете. Без гейта в чипе висели
+# Beyoncé «Cowboy Carter» (CD, Album) и релизы «File, FLAC». Гейт правит выдачу;
+# сам рассинхрон лечится в rematch_format_conflicts_batch.
 _COLORED_PRED = (
     f"(({sql_color_family('sl.vinyl_color_raw')}) IS NOT NULL "
-    f"AND ({sql_color_family('sl.vinyl_color_raw')}) <> 'black')"
+    f"AND ({sql_color_family('sl.vinyl_color_raw')}) <> 'black'"
+    f" AND {_VINYL_LISTING_PRED} AND {_VINYL_RECORD_PRED})"
 )
 # «Новинки» (вариант C): свежий релиз (r.year ≥ текущий−1) И недавно появился в
 # продаже (first_seen ≤ 30д). Только first_seen мало: при онбординге магазина ВСЕ
@@ -205,7 +223,7 @@ def _filters_clause(
 # в Redis самотухнут по TTL, а свежие запросы сразу получают новую логику.
 CACHE_NS_STORES = "market_stores:v3"
 CACHE_NS_STORE_LISTINGS = "market_store_listings:v4"
-CACHE_NS_SEARCH = "market_search:v10"  # v10: жанр матчится по r.genre, style — только fallback
+CACHE_NS_SEARCH = "market_search:v11"  # v11: «Цветной винил» гейтится носителем (не пускает CD)
 CACHE_TTL_STORES = 1800       # 30 мин — список магазинов меняется редко
 CACHE_TTL_LISTINGS = 600      # 10 мин — карусели чаще обновляем
 CACHE_TTL_SEARCH = 300        # 5 мин — поиск свежее
@@ -310,14 +328,9 @@ def _format_clause(fmt: Optional[str]) -> tuple[str, dict]:
         # записи есть discogs format_type, он тоже должен быть vinyl. Иначе
         # vinyl-листинг, ошибочно смэтченный на CD-запись, всплывал бы под
         # фильтром «Винил» с подписью «CD» (баг рассинхрона listing↔record).
-        return (
-            " AND (sl.format_raw ILIKE ANY(:vinyl_fmts) OR sl.format_raw ~ :vinyl_re)"
-            " AND (r.format_type IS NULL OR r.format_type ILIKE '%vinyl%')",
-            {
-                "vinyl_fmts": ["LP", "2xLP", "3xLP", "EP", "Single", "Box Set"],
-                "vinyl_re": r'^(\d+x?LP|12"|10"|7")',
-            },
-        )
+        # Те же две константы, что у гейта «Цветного винила»: определение
+        # носителя обязано быть одно, иначе чип и фильтр разъедутся молча.
+        return (f" AND {_VINYL_LISTING_PRED} AND {_VINYL_RECORD_PRED}", {})
     if fmt == "cd":
         return (
             " AND sl.format_raw ILIKE ANY(:cd_fmts)"

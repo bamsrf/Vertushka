@@ -105,3 +105,34 @@ def test_unknown_genre_key_is_ignored():
 def test_chip_keys_are_unique():
     keys = [key for key, _label, _g, _s in GENRES]
     assert len(keys) == len(set(keys))
+
+
+# ── «Цветной винил» не должен пускать CD ─────────────────────────────────
+#
+# Замер 28.08: из 2 312 листингов с распознанным цветом 2 303 по своему
+# format_raw — винил, но 284 привязаны к CD-записи и 153 к файлу/кассете. В
+# чипе висели Beyoncé «Cowboy Carter» (CD, Album) и релизы «File, FLAC».
+
+def test_colored_feature_is_gated_by_vinyl_medium():
+    from app.api.market import _FEATURE_PREDS
+
+    pred = _FEATURE_PREDS["colored"]
+    # Гейт двусторонний: и по носителю листинга, и по формату записи —
+    # рассинхрон матчера ловится с любой стороны.
+    assert "sl.format_raw" in pred
+    assert "r.format_type IS NULL OR r.format_type ILIKE '%vinyl%'" in pred
+
+
+def test_colored_and_vinyl_format_share_one_definition():
+    """Определение винила — одно на чип «Формат» и на гейт «Цветного».
+
+    Разъедься они — и «Цветной винил» начал бы пускать носители, которых чип
+    «Винил» не показывает (или наоборот), молча и без падающих тестов.
+    """
+    from app.api.market import _FEATURE_PREDS, _format_clause
+
+    fmt_sql, fmt_params = _format_clause("vinyl")
+    # Предикат литеральный: он идёт и в /market/facets, где свой набор binds.
+    assert fmt_params == {}
+    for part in ("sl.format_raw ILIKE ANY(ARRAY[", "r.format_type ILIKE '%vinyl%'"):
+        assert part in fmt_sql and part in _FEATURE_PREDS["colored"]
