@@ -53,6 +53,7 @@ _TRIGGERS = (TRIGGER_USER, TRIGGER_SWEEP, TRIGGER_BACKFILL, TRIGGER_STORE)
 # заглушку после мгновенного 404 или заглушку после 6-секундной лестницы —
 # это три разных продукта. Разбивка по исходам показывает, куда уходит холодный
 # трафик и работает ли negative-cache/дедуп/бюджет.
+OUTCOME_S3_RESTORE = "s3_restore"  # файл вернулся из вечного S3-слоя → 302 на статику
 OUTCOME_REDIRECT = "redirect"    # 302 из БД/индекса — URL уже был известен
 OUTCOME_LIVE_HIT = "live_hit"    # живой резолв нашёл URL → 302
 OUTCOME_LIVE_MISS = "live_miss"  # живой резолв провалился/таймаут → 404
@@ -61,7 +62,7 @@ OUTCOME_BUSY = "busy"            # 404: резолв этого id уже идё
 OUTCOME_BUDGET = "budget"        # 404: дневной бюджет Discogs-картинок исчерпан
 OUTCOME_NOT_FOUND = "not_found"  # 404: ни записи, ни URL, ни пути к резолву
 _OUTCOMES = (
-    OUTCOME_REDIRECT, OUTCOME_LIVE_HIT, OUTCOME_LIVE_MISS,
+    OUTCOME_S3_RESTORE, OUTCOME_REDIRECT, OUTCOME_LIVE_HIT, OUTCOME_LIVE_MISS,
     OUTCOME_NEG_CACHE, OUTCOME_BUSY, OUTCOME_BUDGET, OUTCOME_NOT_FOUND,
 )
 

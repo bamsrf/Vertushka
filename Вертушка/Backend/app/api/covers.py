@@ -12,7 +12,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, Header, HTTPException
 from fastapi.responses import RedirectResponse
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
@@ -20,6 +20,7 @@ from app.database import async_session_maker, get_db
 from app.models.record import Record
 from app.services.cache import cache
 from app.services.cover_demand import (
+    OUTCOME_S3_RESTORE,
     OUTCOME_BUDGET,
     OUTCOME_BUSY,
     OUTCOME_LIVE_HIT,
@@ -303,6 +304,24 @@ async def get_cover(
     # Именно этого числа не хватало для планирования ёмкости: рост
     # records.cover_cached_at считает и фоновые джобы, и людей вперемешку.
     await record_cold_request(discogs_id)
+
+    # Вечный S3-слой первым: файл, когда-либо зеркалённый, живёт там навсегда,
+    # LRU-эвикция локального кэша — не потеря. Восстановили на диск → 302 на
+    # ту же статику (nginx теперь найдёт файл), внешние источники не трогаем.
+    from app.services.s3_covers import restore_cover
+    if await restore_cover(discogs_id):
+        if discogs_id.isdigit():
+            # Вернуть указатель зеркала записи (эвикция его сняла): по нему
+            # LRU видит файл, а market-enrich не перекачивает повторно.
+            await db.execute(
+                update(Record)
+                .where(Record.discogs_id == discogs_id,
+                       Record.cover_local_path.is_(None))
+                .values(cover_local_path=f"covers/{discogs_id}.jpg")
+            )
+            await db.commit()
+        await record_cold_outcome(OUTCOME_S3_RESTORE)
+        return RedirectResponse(url=f"/covers/{discogs_id}.jpg", status_code=302)
 
     # m{master_id} — обложка МАСТЕРА (сетка артиста): discogs_master_covers,
     # иначе лучшая обложка любой версии группы из dump-индекса.

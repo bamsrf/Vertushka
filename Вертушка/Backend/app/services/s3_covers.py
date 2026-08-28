@@ -18,8 +18,11 @@ boto3, ни тредов, ни очередей. Включение = пять S
 идемпотентен, гонять можно когда угодно.
 """
 import logging
+import os
 import queue
+import re
 import threading
+import uuid
 from pathlib import Path
 
 from app.config import get_settings
@@ -151,6 +154,65 @@ def _worker_loop() -> None:
             client = None  # соединение могло протухнуть — пересоздать
         finally:
             _queue.task_done()
+
+
+# Имена, которые раздаёт /covers/: релиз ({id}.jpg) и мастер (m{gid}.jpg).
+# Всё остальное (в т.ч. попытки traversalа из URL) restore не обслуживает.
+_RESTORE_NAME_RE = re.compile(r"m?\d+")
+
+# Отдельный кэшируемый клиент для restore-пути: он живёт в запросах API,
+# создавать boto3-клиент на каждый промах слишком дорого.
+_restore_client = None
+_restore_client_lock = threading.Lock()
+
+
+def _get_restore_client():
+    global _restore_client
+    if _restore_client is None:
+        with _restore_client_lock:
+            if _restore_client is None:
+                _restore_client = make_client()
+    return _restore_client
+
+
+def restore_sync(name: str) -> bool:
+    """Вернуть covers/{name}.jpg из вечного слоя в горячий кэш на диске.
+
+    True — файл на диске (уже был или скачан из S3). False — в S3 его нет
+    (не зеркалился никогда) или S3 выключен/недоступен: зовущий идёт по
+    старой лестнице (redirect на внешний источник). Не бросает.
+    """
+    global _restore_client
+    if not enabled() or not _RESTORE_NAME_RE.fullmatch(name):
+        return False
+    covers_dir = Path(get_settings().covers_dir)
+    dest = covers_dir / f"{name}.jpg"
+    if dest.exists():
+        return True
+    tmp = covers_dir / f".tmp_s3_{name}_{uuid.uuid4().hex}.jpg"
+    try:
+        client = _get_restore_client()
+        client.download_file(
+            get_settings().s3_bucket_covers, f"{covers_dir.name}/{name}.jpg", str(tmp)
+        )
+        os.rename(tmp, dest)
+        return True
+    except Exception as exc:
+        tmp.unlink(missing_ok=True)
+        # 404 (в S3 нет) — норма холодного пути, шумим только по-настоящему.
+        if "404" in str(exc) or "Not Found" in str(exc):
+            logger.debug("s3_covers: restore %s — в бакете нет", name)
+        else:
+            logger.warning("s3_covers: restore %s упал", name, exc_info=True)
+            with _restore_client_lock:
+                _restore_client = None  # пересоздать после сетевой ошибки
+        return False
+
+
+async def restore_cover(name: str) -> bool:
+    """Async-обёртка restore_sync: сетевой I/O уводим из event loop."""
+    import asyncio
+    return await asyncio.to_thread(restore_sync, name)
 
 
 def schedule_upload(path: Path) -> None:

@@ -275,6 +275,10 @@ async def enrich_market_covers():
                 select(Record)
                 .where(
                     Record.cover_local_path.is_(None),
+                    # Выселенное LRU при живом S3 не перекачиваем: у таких
+                    # cover_cached_at сохранён, файл вернёт restore-путь.
+                    # «Никогда не зеркалилось» = оба поля пустые.
+                    Record.cover_cached_at.is_(None),
                     Record.discogs_id.isnot(None),
                     Record.discogs_master_id.isnot(None),
                     active_in_stock,
