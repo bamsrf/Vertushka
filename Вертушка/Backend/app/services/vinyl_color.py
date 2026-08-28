@@ -66,6 +66,43 @@ def color_family(raw: str | None) -> str | None:
     return None
 
 
+# ---- Цвет пресса из дампа Discogs --------------------------------------- #
+#
+# Discogs держит цвет винила в атрибуте `text` у формата: `<format name="Vinyl"
+# text="Red Translucent">`. Поле необязательное и общего назначения — рядом с
+# цветом пластинки туда пишут упаковку, вес и вообще что угодно. Замер по
+# нашим 37 464 записям (дамп 2026-08): непустой text у 14 770, цвет
+# распознаётся у 6 436, и 943 из них описывают НЕ пластинку:
+#
+#   «Metallic Silver Sleeve», «Gold Inner Sleeve», «Green Case»,
+#   «White Embossed Cover», «Blue Labels», «Simple Black Sleeve»
+#
+# Возьми мы их — чёрная пластинка в золотом конверте приехала бы золотой.
+# Поэтому куски со словами упаковки отбрасываются целиком, до поиска цвета.
+_PACKAGING_RE = re.compile(
+    r"sleeve|cover|case|jacket|box|insert|obi|booklet|poster|sticker|label|"
+    r"card|slipcase|digipak|gatefold|envelope|конверт|чехол",
+    re.IGNORECASE,
+)
+
+
+def vinyl_color_from_format_texts(texts: list[str] | None) -> str | None:
+    """Цвет пластинки из значений `format@text` одного релиза.
+
+    Возвращает исходную строку (например «Red Translucent»), а не семью:
+    хранить лучше то, что написал Discogs, семью выведут потребители.
+    Куски про упаковку игнорируются, из остальных берётся первый, где есть
+    известное цветовое слово.
+    """
+    for text in texts or []:
+        cleaned = (text or "").strip()
+        if not cleaned or _PACKAGING_RE.search(cleaned):
+            continue
+        if color_family(cleaned):
+            return cleaned
+    return None
+
+
 # ---- «Цветной ли винил» — вопрос, отдельный от семьи -------------------- #
 #
 # `color_family` отвечает «какой именно цвет» и нужна для ДОКАЗАТЕЛЬСТВА

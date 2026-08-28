@@ -56,6 +56,7 @@ from pathlib import Path
 from lxml import etree
 
 from app.scripts.ingest_discogs_dump import _parse_release, derive_format
+from app.services.vinyl_color import vinyl_color_from_format_texts
 
 logger = logging.getLogger("extract_release_formats")
 
@@ -143,6 +144,7 @@ def extract(
     formats_path = out_dir / f"formats_{stamp}.csv.gz"
     new_path = out_dir / f"new_{stamp}.csv.gz"
     genres_path = out_dir / f"genres_{stamp}.csv.gz"
+    colors_path = out_dir / f"colors_{stamp}.csv.gz"
     # Пишем в .part и переименовываем в самом конце. Обрезанный дамп (а
     # data.discogs.com отдаёт файл chunked, без Content-Length, так что curl
     # завершается успехом даже на обрыве) роняет iterparse посреди потока —
@@ -151,8 +153,9 @@ def extract(
     formats_tmp = formats_path.with_suffix(".gz.part")
     new_tmp = new_path.with_suffix(".gz.part")
     genres_tmp = genres_path.with_suffix(".gz.part")
+    colors_tmp = colors_path.with_suffix(".gz.part")
 
-    counters = {"seen": 0, "formats": 0, "new": 0, "genres": 0, "skipped": 0}
+    counters = {"seen": 0, "formats": 0, "new": 0, "genres": 0, "colors": 0, "skipped": 0}
     started = time.time()
     last_report = started
     # Суммарная длина записанных строк — по ней оцениваем вес таблицы на проде
@@ -163,12 +166,18 @@ def extract(
     genres_file = (
         gzip.open(genres_tmp, "wt", newline="", encoding="utf-8") if wanted_ids else None
     )
+    # Цвет пресса — из атрибута `text` у формата. Discogs пишет туда и цвет
+    # пластинки, и упаковку; отсев в vinyl_color_from_format_texts.
+    colors_file = (
+        gzip.open(colors_tmp, "wt", newline="", encoding="utf-8") if wanted_ids else None
+    )
     try:
         with gzip.open(file_path, "rb") as fh, \
                 gzip.open(formats_tmp, "wt", newline="", encoding="utf-8") as fmt_out:
             fmt_writer = csv.writer(fmt_out)
             new_writer = csv.writer(new_file) if new_file else None
             genres_writer = csv.writer(genres_file) if genres_file else None
+            colors_writer = csv.writer(colors_file) if colors_file else None
 
             for _event, elem in etree.iterparse(fh, tag="release"):
                 try:
@@ -206,6 +215,14 @@ def extract(
                             ))
                             counters["new"] += 1
 
+                    if colors_writer is not None and discogs_id in wanted_ids:
+                        color = vinyl_color_from_format_texts(
+                            [f.get("text") for f in elem.findall(".//formats/format")]
+                        )
+                        if color:
+                            colors_writer.writerow((discogs_id, color[:255]))
+                            counters["colors"] += 1
+
                     if genres_writer is not None and discogs_id in wanted_ids:
                         genre = _joined(elem, "genres/genre")
                         style = _joined(elem, "styles/style")
@@ -239,6 +256,8 @@ def extract(
             new_file.close()
         if genres_file is not None:
             genres_file.close()
+        if colors_file is not None:
+            colors_file.close()
 
     # Досюда дошли — поток дочитан до конца, файлы можно считать готовыми.
     formats_tmp.rename(formats_path)
@@ -246,6 +265,8 @@ def extract(
         new_tmp.rename(new_path)
     if genres_file is not None:
         genres_tmp.rename(genres_path)
+    if colors_file is not None:
+        colors_tmp.rename(colors_path)
 
     # Дамп 2026-08 содержит ~19M релизов. Сильно меньше — почти наверняка
     # обрезанный файл, который iterparse дочитал «успешно» (gzip-поток кончился
@@ -282,6 +303,10 @@ def extract(
             genres_path, genres_path.stat().st_size / 1e6,
             counters["genres"], len(wanted_ids), missing,
         )
+        logger.info(
+            "colors → %s (%.1f МБ): цвет пресса нашёлся у %d",
+            colors_path, colors_path.stat().st_size / 1e6, counters["colors"],
+        )
     return counters
 
 
@@ -300,7 +325,8 @@ def main() -> int:
         "--ids-file", type=Path,
         help=(
             "файл со списком discogs_id (по одному в строке) — включает выгрузку "
-            "genres_*.csv.gz с жанрами и стилями только для этих релизов"
+            "genres_*.csv.gz с жанрами/стилями и colors_*.csv.gz с цветом "
+            "пресса — только для этих релизов"
         ),
     )
     parser.add_argument("--limit", type=int, help="остановиться после N релизов (тест)")

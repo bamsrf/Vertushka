@@ -12,7 +12,8 @@
 #   3. читает водяной знак прошлого дампа (discogs_dump_state), снимает с прода
 #      список записей без жанра и вытаскивает три выгрузки: formats_*.csv.gz
 #      (полные описания формата), new_*.csv.gz (релизы, которых в индексе нет)
-#      и genres_*.csv.gz (жанры/стили для records с пустым genre);
+#      genres_*.csv.gz (жанры/стили для records с пустым genre) и
+#      colors_*.csv.gz (цвет пресса из format@text);
 #   4. заливает все на прод и грузит;
 #   5. чистит за собой.
 #
@@ -141,7 +142,7 @@ EXTRA_ARGS=()
   "${EXTRA_ARGS[@]}")
 
 # --- 4. заливаем -------------------------------------------------------------
-for f in "formats_${STAMP}.csv.gz" "new_${STAMP}.csv.gz" "genres_${STAMP}.csv.gz"; do
+for f in "formats_${STAMP}.csv.gz" "new_${STAMP}.csv.gz" "genres_${STAMP}.csv.gz" "colors_${STAMP}.csv.gz"; do
   [[ -s "$f" ]] || { log "нет $f — пропускаю"; continue; }
   log "загружаю $f ($(du -h "$f" | cut -f1))"
   # -O: macOS 15 гонит scp через sftp, и тот падает «no such directory» на
@@ -168,9 +169,16 @@ if ssh "$PROD" "docker exec $API_CONTAINER test -f /tmp/genres_${STAMP}.csv.gz";
   ssh "$PROD" "docker exec $API_CONTAINER python -m app.scripts.load_release_genres \
     --file /tmp/genres_${STAMP}.csv.gz"
 fi
+# Цвет пресса — туда же, в records: чип «Цветной винил» иначе видит только те
+# два магазина из девяти, что заполняют цвет сами.
+if ssh "$PROD" "docker exec $API_CONTAINER test -f /tmp/colors_${STAMP}.csv.gz"; then
+  log "гружу цвет пресса"
+  ssh "$PROD" "docker exec $API_CONTAINER python -m app.scripts.load_release_colors \
+    --file /tmp/colors_${STAMP}.csv.gz"
+fi
 
 # --- 5. уборка ---------------------------------------------------------------
-ssh "$PROD" "docker exec $API_CONTAINER sh -c 'rm -f /tmp/formats_*.csv.gz /tmp/new_*.csv.gz /tmp/genres_*.csv.gz'"
+ssh "$PROD" "docker exec $API_CONTAINER sh -c 'rm -f /tmp/formats_*.csv.gz /tmp/new_*.csv.gz /tmp/genres_*.csv.gz /tmp/colors_*.csv.gz'"
 rm -f "$IDS_FILE"
 # Обложки/классификация кэшируются — иначе свежие данные всплывут только через сутки.
 ssh "$PROD" "docker exec vertushka_redis redis-cli --scan --pattern 'artist_masters:*' \

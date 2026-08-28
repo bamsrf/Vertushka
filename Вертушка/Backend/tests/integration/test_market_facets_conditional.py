@@ -123,6 +123,62 @@ async def test_chip_order_does_not_move_when_filters_change(market):
     assert order_colored == ["rock", "reggae"]
 
 
+async def test_record_color_counts_when_the_shop_is_silent(market):
+    """Цвет пресса из Discogs подхватывается, когда магазин молчит.
+
+    Это +3 578 карточек к ~985: цвет заполняют два маленьких магазина из
+    девяти, а Discogs знает его для 4 779 наших записей.
+    """
+    async with async_session_maker() as db:
+        rec = Record(
+            title="D", artist="A", source="discogs", genre="Jazz",
+            discogs_id=str(uuid.uuid4().int)[:9], format_type="Vinyl, LP",
+            cover_image_url="http://x/c.jpg",
+            discogs_data={"vinyl_color_raw": "Red Translucent"},
+        )
+        db.add(rec)
+        await db.flush()
+        db.add(StoreListing(
+            store_id=market, external_id=uuid.uuid4().hex, url="http://x",
+            title_raw="D", format_raw="LP", status="in_stock", price_rub=1000,
+            vinyl_color_raw=None, matched_record_id=rec.id, match_method="fuzzy",
+            matched_at=datetime.utcnow(), last_seen_at=datetime.utcnow(),
+            first_seen_at=datetime.utcnow(),
+        ))
+        await db.commit()
+
+    _genres, features, _order = await _facets()
+
+    # Было 2 цветных (оранжевый рок + зелёное регги), стало 3.
+    assert features["colored"] == 3
+
+
+async def test_shop_color_wins_over_the_record(market):
+    """У магазина конкретный товар, у записи — релиз. Магазин точнее."""
+    async with async_session_maker() as db:
+        rec = Record(
+            title="E", artist="A", source="discogs", genre="Jazz",
+            discogs_id=str(uuid.uuid4().int)[:9], format_type="Vinyl, LP",
+            cover_image_url="http://x/c.jpg",
+            discogs_data={"vinyl_color_raw": "Red"},
+        )
+        db.add(rec)
+        await db.flush()
+        db.add(StoreListing(
+            store_id=market, external_id=uuid.uuid4().hex, url="http://x",
+            title_raw="E", format_raw="LP", status="in_stock", price_rub=1000,
+            vinyl_color_raw="Black", matched_record_id=rec.id, match_method="fuzzy",
+            matched_at=datetime.utcnow(), last_seen_at=datetime.utcnow(),
+            first_seen_at=datetime.utcnow(),
+        ))
+        await db.commit()
+
+    _genres, features, _order = await _facets()
+
+    # Магазин говорит «чёрный» — красный цвет релиза не должен его перебить.
+    assert features["colored"] == 2
+
+
 async def test_zero_intersection_chips_disappear(market):
     """Чип, который с текущим выбором даст пустой экран, не показываем."""
     genres, _features, _order = await _facets(colored="true")

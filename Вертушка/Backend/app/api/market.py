@@ -159,12 +159,23 @@ _VINYL_RECORD_PRED = "(r.format_type IS NULL OR r.format_type ILIKE '%vinyl%')"
 # Beyoncé «Cowboy Carter» (CD, Album) и релизы «File, FLAC». Гейт правит выдачу;
 # сам рассинхрон лечится в rematch_format_conflicts_batch.
 # is_colored_vinyl, а не color_family <> 'black': на складе цвет чаще всего
-# записан без уточнения — «(цветной винил)» у 883 позиций plastinka_com, и ни
+# записан без уточнения — «(цветной винил)» у 911 позиций plastinka_com, и ни
 # одного конкретного цвета. Семья такой текст не опознаёт (и правильно делает:
 # «цветной» ни с чем не конфликтует), поэтому у вопроса «цветной ли» своя
 # функция.
+#
+# Источника два, и порядок важен. Сначала то, что написал магазин про КОНКРЕТНЫЙ
+# товар; если он молчит — цвет пресса из Discogs, привезённый дампом в
+# discogs_data (см. scripts/load_release_colors). Второй источник даёт +3 578
+# карточек к ~985, и это осознанный размен: он описывает релиз, к которому
+# примотан листинг, а не само объявление, так что на нечётких матчах может
+# относиться к другому прессу того же альбома. Год, страну, лейбл и формат
+# карточка уже показывает из этой же записи — цвет тут не спекулятивнее.
+_LISTING_OR_RECORD_COLOR = (
+    "COALESCE(NULLIF(sl.vinyl_color_raw, ''), r.discogs_data->>'vinyl_color_raw')"
+)
 _COLORED_PRED = (
-    f"({sql_is_colored_vinyl('sl.vinyl_color_raw')}"
+    f"({sql_is_colored_vinyl(_LISTING_OR_RECORD_COLOR)}"
     f" AND {_VINYL_LISTING_PRED} AND {_VINYL_RECORD_PRED})"
 )
 # «Новинки» (вариант C): свежий релиз (r.year ≥ текущий−1) И недавно появился в
@@ -227,7 +238,7 @@ def _filters_clause(
 # в Redis самотухнут по TTL, а свежие запросы сразу получают новую логику.
 CACHE_NS_STORES = "market_stores:v3"
 CACHE_NS_STORE_LISTINGS = "market_store_listings:v4"
-CACHE_NS_SEARCH = "market_search:v12"  # v12: цвет из текста объявления + общий маркер «цветной»
+CACHE_NS_SEARCH = "market_search:v13"  # v13: цвет пресса из Discogs, когда магазин молчит
 CACHE_TTL_STORES = 1800       # 30 мин — список магазинов меняется редко
 CACHE_TTL_LISTINGS = 600      # 10 мин — карусели чаще обновляем
 CACHE_TTL_SEARCH = 300        # 5 мин — поиск свежее
