@@ -2,7 +2,7 @@
 
 Таблица reports: жалоба юзера на record / user / message.
 Индекс (status, created_at) — лента открытых жалоб для staff.
-См. docs/plans/UGC_MODERATION_M2.md.
+См. docs/plans/appstore/UGC_MODERATION_M2.md.
 
 Revision ID: 20260702_reports
 Revises: 20260630_default_public_profile

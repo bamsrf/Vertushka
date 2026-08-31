@@ -90,7 +90,7 @@ def list_plans() -> list[dict]:
 def get_section(path: str, heading: str) -> str:
     """Return a specific section of a doc file by heading (case-insensitive substring).
 
-    Path is relative to project root (e.g. 'docs/plans/PARSING.md' or 'ROADMAP.md').
+    Path is relative to project root (e.g. 'docs/plans/market/PARSING.md' or 'ROADMAP.md').
     Heading is matched against the heading text (without #'s). Returns the section
     body including its own heading line, stopping at the next heading of equal or
     higher level.

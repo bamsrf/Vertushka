@@ -9,7 +9,7 @@
 когда нужен. Ключ троттла — тип аларма, а не текст, чтобы шторм одинаковых
 ошибок схлопнулся в одно сообщение.
 
-См. docs/plans/APPSTORE_LAUNCH_PLAN.md §4.2.
+См. docs/plans/appstore/APPSTORE_LAUNCH_PLAN.md §4.2.
 """
 from __future__ import annotations
 

@@ -7,7 +7,7 @@ discogs.py. Spotify НЕ отдаёт прессинги/каталожные н
 
 Если креды (SPOTIFY_CLIENT_ID/SECRET) пустые — сервис в no-op режиме: все методы
 возвращают пусто, фронт показывает только ручной ввод. См.
-docs/plans/USER_SUBMITTED_RECORDS.md §3.
+docs/plans/collection/USER_SUBMITTED_RECORDS.md §3.
 """
 import base64
 import logging

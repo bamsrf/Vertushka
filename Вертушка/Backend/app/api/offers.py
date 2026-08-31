@@ -295,7 +295,7 @@ async def track_offer_click(
     здесь, а не там, именно потому, что его id нужен как `subid` ещё до открытия
     браузера. Для публичного веба точка входа другая — `/go/l/{listing_id}`,
     где клик создаётся в момент GET (иначе показы страницы считались бы
-    кликами). См. docs/plans/CLICK_REDIRECTOR_AND_METRIKA.md.
+    кликами). См. docs/plans/market/CLICK_REDIRECTOR_AND_METRIKA.md.
 
     Идемпотентность: каждый клик = новая строка (это нужно для отчётов).
     Anti-fraud делается отдельно (rate-limit / DB-аналитика), не здесь.

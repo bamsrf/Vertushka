@@ -18,7 +18,7 @@
  * Старые экспорты (Colors, Spacing, BorderRadius, Gradients, Typography, Shadows,
  * ComponentSizes, AnimatedGradientPalette) сохранены как легаси-алиасы.
  *
- * См.: docs/plans/PLAN_DESIGN_SYSTEM_V2_FLOW.md
+ * См.: docs/plans/design/PLAN_DESIGN_SYSTEM_V2_FLOW.md
  */
 
 // ───────────────────────────────────────────────────────────────────────────

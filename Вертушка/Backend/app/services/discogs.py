@@ -1649,7 +1649,7 @@ class DiscogsService:
         sort_order: str = "desc",
         creds: "tuple[str, str] | None" = None,
     ) -> MasterSearchResponse:
-        """Master releases артиста по `docs/plans/PRINCIPLES.md`.
+        """Master releases артиста по `docs/plans/product/PRINCIPLES.md`.
 
         Список — канонический из `/artists/{id}/releases` (фильтр
         `type=master AND role=Main`: своя дискография, без appearances и

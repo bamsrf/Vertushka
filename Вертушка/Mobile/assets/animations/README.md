@@ -1,6 +1,6 @@
 # assets/animations
 
-Lottie-анимации маскота Вертушки. ТЗ: `docs/plans/MASCOT_ANIMATION_SPEC.md`.
+Lottie-анимации маскота Вертушки. ТЗ: `docs/plans/design/MASCOT_ANIMATION_SPEC.md`.
 
 | Файл | Где | ТЗ |
 |---|---|---|

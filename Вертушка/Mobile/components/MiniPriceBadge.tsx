@@ -2,7 +2,7 @@
  * MiniPriceBadge — облегчённая версия `HotStockTag` без gradient-pill.
  *
  * Используется в плотных горизонтальных каруселях Маркета (витрина магазина
- * — см. docs/plans/MARKET_AND_PRICE_DRAWER.md §1.9 и atoms.jsx из Design
+ * — см. docs/plans/market/MARKET_AND_PRICE_DRAWER.md §1.9 и atoms.jsx из Design
  * Claude handoff). В таких каруселях 15-20 карточек идут в ряд, и полный
  * pill был бы избыточен — пользователь уже понимает контекст из заголовка
  * секции «В НАЛИЧИИ СЕЙЧАС».

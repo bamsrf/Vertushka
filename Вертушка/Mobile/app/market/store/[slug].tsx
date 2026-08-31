@@ -10,7 +10,7 @@
  *
  * Фон — market-палитра (без magic transition — мы уже «в маркете»).
  *
- * Источник: docs/plans/MARKET_AND_PRICE_DRAWER.md §1.12 + screens-market.jsx
+ * Источник: docs/plans/market/MARKET_AND_PRICE_DRAWER.md §1.12 + screens-market.jsx
  * (ScreenStorePage из Design Claude handoff).
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';

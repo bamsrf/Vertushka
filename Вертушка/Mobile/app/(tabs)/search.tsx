@@ -301,7 +301,7 @@ export default function SearchScreen() {
 
   // ──────────────────────────────────────────────────────────────────
   // МАРКЕТ — раздел «потайной двери» ниже Discogs-секций
-  // (docs/plans/MARKET_AND_PRICE_DRAWER.md §1).
+  // (docs/plans/market/MARKET_AND_PRICE_DRAWER.md §1).
   // ──────────────────────────────────────────────────────────────────
 
   const scrollToTopRef = useRef<(() => void) | null>(null);

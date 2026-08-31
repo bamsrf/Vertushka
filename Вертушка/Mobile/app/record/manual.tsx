@@ -8,7 +8,7 @@
  * Форматы: винил / CD / кассета (§9). Edit-режим через ?editId= (§11).
  * Дедуп-перехват: если релиз уже есть — предлагаем добавить найденный (§10).
  *
- * Бэкенд: docs/plans/USER_SUBMITTED_RECORDS.md
+ * Бэкенд: docs/plans/collection/USER_SUBMITTED_RECORDS.md
  *   - POST  /records/preflight/      (дабл-чек Discogs + Маркет)
  *   - GET   /records/spotify-search/ (автозаполнение)
  *   - POST  /records/user/           (создание)

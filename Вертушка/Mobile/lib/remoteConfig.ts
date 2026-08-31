@@ -6,7 +6,7 @@
  * включёнными. Гейт, который блокирует людей при первой же сетевой ошибке,
  * вреднее, чем отсутствие гейта.
  *
- * См. Backend/app/api/app_config.py, docs/plans/APPSTORE_LAUNCH_PLAN.md §4.2.
+ * См. Backend/app/api/app_config.py, docs/plans/appstore/APPSTORE_LAUNCH_PLAN.md §4.2.
  */
 import { create } from 'zustand';
 import Constants from 'expo-constants';

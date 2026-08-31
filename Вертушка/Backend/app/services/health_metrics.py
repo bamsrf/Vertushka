@@ -17,7 +17,7 @@
 `--workers 1` из-за резидентной CLIP-модели), поэтому окно видит весь трафик.
 Появятся воркеры — метрики станут пер-процессные, и пороги надо будет делить.
 
-См. docs/plans/APPSTORE_LAUNCH_PLAN.md §4.2.
+См. docs/plans/appstore/APPSTORE_LAUNCH_PLAN.md §4.2.
 """
 from __future__ import annotations
 

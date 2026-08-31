@@ -2,7 +2,7 @@
 Admin API — модерация user-submitted records (source='user').
 
 Доступ только для users.is_staff. Лента pending-записей + approve/reject.
-См. docs/plans/USER_SUBMITTED_RECORDS.md §6.
+См. docs/plans/collection/USER_SUBMITTED_RECORDS.md §6.
 """
 from uuid import UUID
 

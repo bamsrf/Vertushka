@@ -24,7 +24,7 @@
  * Прод-загрузку source maps это не трогает: она идёт через EAS, где
  * SENTRY_AUTH_TOKEN есть.
  *
- * См. docs/plans/APPSTORE_LAUNCH_PLAN.md §4.4.
+ * См. docs/plans/appstore/APPSTORE_LAUNCH_PLAN.md §4.4.
  */
 const { withDangerousMod } = require('expo/config-plugins');
 const fs = require('fs');

@@ -33,7 +33,7 @@
 
 ## 2. Чем gbrain отличается от `vertushka-docs` MCP
 
-В проекте уже есть **второй retrieval-слой** — `vertushka-docs` (FTS5 поиск, см. `docs/plans/CONTEXT_LAYER_V1.md`). Они не дублируют друг друга:
+В проекте уже есть **второй retrieval-слой** — `vertushka-docs` (FTS5 поиск, см. `docs/plans/quality/CONTEXT_LAYER_V1.md`). Они не дублируют друг друга:
 
 | | `vertushka-docs` | `gbrain` |
 |---|---|---|
@@ -115,7 +115,7 @@ Sync режет префикс `Вертушка/` и приводит к lower-
 | `Вертушка/README.md` | `readme` |
 | `Вертушка/CLAUDE.md` | `claude` |
 | `Вертушка/docs/BUGS.md` | `docs/bugs` |
-| `Вертушка/docs/plans/PLAN_NOTIFICATIONS_V2.md` | `docs/plans/plan_notifications_v2` |
+| `Вертушка/docs/plans/social/PLAN_NOTIFICATIONS_V2.md` | `docs/plans/plan_notifications_v2` |
 | `Вертушка/Mobile/docs/plans/PLAN_FOLDERS.md` | `mobile/docs/plans/plan_folders` |
 | `Вертушка/docs/runbooks/discogs-dump-ingest.md` | `docs/runbooks/discogs-dump-ingest` |
 
@@ -263,7 +263,7 @@ mcp__gbrain__restore_page(slug)
 
 ## 11. Связанные документы
 
-- [CONTEXT_LAYER_V1](docs/plans/CONTEXT_LAYER_V1.md) — соседний retrieval-слой (`vertushka-docs` MCP)
+- [CONTEXT_LAYER_V1](docs/plans/quality/CONTEXT_LAYER_V1.md) — соседний retrieval-слой (`vertushka-docs` MCP)
 - [.claude/commands/v-sync.md](.claude/commands/v-sync.md) — slash-команда sync
 - [.claude/commands/v-context.md](.claude/commands/v-context.md) — снапшот состояния проекта
 - `~/.gbrain/config.json` — конфиг brain'а

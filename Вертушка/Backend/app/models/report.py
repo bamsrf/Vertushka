@@ -2,7 +2,7 @@
 Report — жалоба пользователя на UGC-объект (запись, юзера, сообщение).
 
 Требование App Store Guideline 1.2: report + takedown + бан.
-См. docs/plans/UGC_MODERATION_M2.md.
+См. docs/plans/appstore/UGC_MODERATION_M2.md.
 """
 import uuid
 from datetime import datetime

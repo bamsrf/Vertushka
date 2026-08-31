@@ -23,7 +23,7 @@ INDEX_FILES = [
     "docs/ВЕРТУШКА_LIBRARIES_RESEARCH.md",
     "docs/СТРУКТУРА_ПРОЕКТА.md",
 ]
-INDEX_GLOBS = ["docs/plans/*.md"]
+INDEX_GLOBS = ["docs/plans/*.md", "docs/plans/*/*.md"]
 
 MAX_CHUNK = 2500
 HEADING_RE = re.compile(r"^(#{1,4})\s+(.+?)\s*$")

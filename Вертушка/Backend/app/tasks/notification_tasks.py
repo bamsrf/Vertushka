@@ -12,7 +12,7 @@ emit_wishlist_in_stock_notifications:
 - если последняя прочитана и snooze ещё активен (7д/30д/90д) → skip;
 - если за окно сработало ≥DIGEST_THRESHOLD алертов одному юзеру → склеиваем в digest.
 
-См. docs/plans/PLAN_NOTIFICATIONS_V2.md.
+См. docs/plans/social/PLAN_NOTIFICATIONS_V2.md.
 """
 from __future__ import annotations
 

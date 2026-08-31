@@ -1,7 +1,7 @@
 /**
  * Архетипы коллекционера — XP-лестница «Физика звука».
  *
- * V3-rewrite (см. docs/plans/PLAN_ACHIEVEMENTS_ARCHETYPES_V3.md):
+ * V3-rewrite (см. docs/plans/achievements/PLAN_ACHIEVEMENTS_ARCHETYPES_V3.md):
  * - Pure score-based ladder: суммарные очки по тирам открытых ачивок.
  * - 10 уровней (0..9), от «Тишь» до «Первозвук».
  * - У каждого уровня — название, флейвор-текст (постоянно в hero), tier-окрас.

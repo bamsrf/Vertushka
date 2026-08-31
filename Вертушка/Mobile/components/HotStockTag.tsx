@@ -2,7 +2,7 @@
  * HotStockTag — pill-индикатор «в наличии» с 6 состояниями × 3 размерами.
  *
  * Центральный визуальный примитив раздела «Маркет» и Hot Stock UX
- * (см. docs/plans/MARKET_AND_PRICE_DRAWER.md §2.2 + atoms.jsx из Design Claude
+ * (см. docs/plans/market/MARKET_AND_PRICE_DRAWER.md §2.2 + atoms.jsx из Design Claude
  * handoff). Концепция: холодный мир коллекции встречает огонь — но только
  * когда что-то реально доступно к покупке. Ember-glow = «лампочка открыто».
  *
@@ -25,7 +25,7 @@
  *   <HotStockTag variant="none" />   // → null
  *
  * Защита от инфляции токена (где НЕ показывать) — на стороне родителя:
- * см. RecordCard.tsx правила в docs/plans/OFFERS_UX.md §2.8.
+ * см. RecordCard.tsx правила в docs/plans/market/OFFERS_UX.md §2.8.
  */
 
 import React from 'react';
@@ -62,7 +62,7 @@ interface HotStockTagProps {
   /**
    * 0..1, для transition-моков: насколько «гореть» (1 = полный glow + полный ember
    * в gradient'е, 0 = gradient почти без ember + без glow). Используется в
-   * MarketBackground transition (см. docs/plans/MARKET_AND_PRICE_DRAWER.md §1.3).
+   * MarketBackground transition (см. docs/plans/market/MARKET_AND_PRICE_DRAWER.md §1.3).
    */
   emberAmount?: number;
   onPress?: () => void;

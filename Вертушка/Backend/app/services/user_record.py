@@ -4,7 +4,7 @@ User-submitted records (source='user') — дабл-чек и создание.
 preflight_dedup — ядро фичи: перед созданием user-record прогоняем каскад, чтобы
 не плодить дубли того, что уже есть в Маркете/Discogs. Переиспользуем готовые
 кирпичи listing_matcher (barcode/catalog/fuzzy/dump-index) + normalize из
-scrapers.extractors. См. docs/plans/USER_SUBMITTED_RECORDS.md §2.
+scrapers.extractors. См. docs/plans/collection/USER_SUBMITTED_RECORDS.md §2.
 
 Каскад:
     1. barcode  → exact в records           → DUPLICATE

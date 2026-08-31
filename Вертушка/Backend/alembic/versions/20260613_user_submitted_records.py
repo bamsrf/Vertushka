@@ -6,7 +6,7 @@ Create Date: 2026-06-13
 
 Третий источник записей — 'user'. Пластинка, которой нет ни в Discogs, ни в
 Маркете: юзер добавляет вручную, запись проходит дабл-чек (preflight_dedup) и
-становится общей после модерации. См. docs/plans/USER_SUBMITTED_RECORDS.md.
+становится общей после модерации. См. docs/plans/collection/USER_SUBMITTED_RECORDS.md.
 
 Новой таблицы НЕ заводим — user-record это Record с source='user'. Добавляем:
   records.created_by_user_id  — автор (модерация, права)

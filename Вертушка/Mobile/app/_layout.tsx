@@ -486,7 +486,7 @@ function RootLayout() {
             // collection/value. Тот же приём, что в (tabs)/_layout.tsx, но
             // покрывает Stack — а именно в нём живут экраны с бесконечными
             // анимациями мимо lib/useAnimationGate.ts.
-            // См. docs/plans/APPSTORE_LAUNCH_PLAN.md §4.4.
+            // См. docs/plans/appstore/APPSTORE_LAUNCH_PLAN.md §4.4.
             freezeOnBlur: true,
           }}
         >

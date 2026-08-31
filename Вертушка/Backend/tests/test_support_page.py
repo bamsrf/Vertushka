@@ -178,5 +178,5 @@ class TestAppStoreGuard:
             f"платёжная ссылка просочилась в мобильное приложение: {hits}. "
             "App Store Guideline 3.1.1 — во всех сторфронтах, кроме US, кнопки и "
             "внешние ссылки на оплату мимо IAP запрещены. "
-            "См. docs/plans/PLAN_SUPPORT_PROJECT.md"
+            "См. docs/plans/product/PLAN_SUPPORT_PROJECT.md"
         )

@@ -41,7 +41,7 @@ export default function TabLayout() {
           // (react-native-screens). Системный аналог lib/useAnimationGate.ts,
           // который гейтит вручную и только четыре компонента: freezeOnBlur
           // страхует всё разом, включая анимации, добавленные позже.
-          // См. docs/plans/APPSTORE_LAUNCH_PLAN.md §4.4.
+          // См. docs/plans/appstore/APPSTORE_LAUNCH_PLAN.md §4.4.
           freezeOnBlur: true,
         }}
       >

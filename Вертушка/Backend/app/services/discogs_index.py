@@ -3,7 +3,7 @@
 Обычно индекс наполняется батч-ингестом дампа (scripts/ingest_discogs_dump.py).
 Но дамп устаревает — свежие релизы, добытые из live Discogs API, в нём
 отсутствуют. Этот helper кладёт такой релиз в индекс «на лету», чтобы
-`/records/search` нашёл его в следующий раз. См. docs/plans/USER_SUBMITTED_RECORDS
+`/records/search` нашёл его в следующий раз. См. docs/plans/collection/USER_SUBMITTED_RECORDS
 и план Discogs-first.
 
 Единая точка вызова — api/records.py::get_or_create_record_by_discogs_id: любой

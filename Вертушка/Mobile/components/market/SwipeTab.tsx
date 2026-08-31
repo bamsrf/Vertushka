@@ -10,7 +10,7 @@
  * первом mount вишлиста (управляется через `useMarketStore.hasSeenSwipeHint`).
  *
  * Источник: screens-drawer-a.jsx (SwipeTab атом) + chat1.md итерации 2/3
- * по стрелкам + docs/plans/MARKET_AND_PRICE_DRAWER.md §2.1.
+ * по стрелкам + docs/plans/market/MARKET_AND_PRICE_DRAWER.md §2.1.
  */
 import React, { useEffect } from 'react';
 import { StyleSheet, Text, View } from 'react-native';

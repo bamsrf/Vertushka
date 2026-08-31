@@ -15,7 +15,7 @@
  * onSeeAll callback который зовёт ref.current?.present(...) на OffersBottomSheet.
  *
  * Источник: screens-drawer-a.jsx (WishlistRow + drawer композиция) +
- *           docs/plans/MARKET_AND_PRICE_DRAWER.md §2.1-2.2.
+ *           docs/plans/market/MARKET_AND_PRICE_DRAWER.md §2.1-2.2.
  */
 import React, { useEffect, useRef, useState } from 'react';
 import {

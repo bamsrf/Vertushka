@@ -671,7 +671,7 @@ async def _download_store_native_cover_background(
         # URL приходит из парсера чужого магазина, то есть по происхождению это
         # содержимое стороннего HTML. Гоняем через url_guard: скомпрометированная
         # или просто вредная витрина иначе направила бы нашу закачку внутрь
-        # docker-сети. См. docs/plans/SECURITY_AUDIT_PRERELEASE.md §S2.
+        # docker-сети. См. docs/plans/appstore/SECURITY_AUDIT_PRERELEASE.md §S2.
         try:
             resp = await safe_image_get(image_url, timeout=_DOWNLOAD_TIMEOUT)
         except UnsafeUrlError as exc:
