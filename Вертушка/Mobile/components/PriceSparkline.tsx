@@ -13,7 +13,7 @@ import { PriceHistoryPoint } from '../lib/types';
 // Минимум точек для графика. Две точки формально линия, но при нормализации
 // они обязаны лечь в противоположные углы — картинка одна и та же при любом
 // движении цены. Пять — паритет с MIN_BASELINE_POINTS режима «дешевле обычного».
-const MIN_POINTS = 5;
+export const MIN_POINTS = 5;
 
 // Шкала не должна схлопываться под разброс данных: иначе движение на 2%
 // рисуется как отвесный обрыв, и график врёт о масштабе. Ниже этой доли от
@@ -35,6 +35,15 @@ interface PriceSparklineProps {
 
 const formatRub = (v: number): string => `${Math.round(v).toLocaleString('ru-RU')} ₽`;
 
+const MONTHS = ['янв', 'фев', 'мар', 'апр', 'май', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
+const dm = (iso: string): string => {
+  const d = new Date(`${iso}T00:00:00Z`);
+  return `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]}`;
+};
+
+// Сколько известных замеров показываем вместо графика.
+const RETRO_LIMIT = 4;
+
 export function PriceSparkline({
   points,
   historicalLow,
@@ -52,6 +61,11 @@ export function PriceSparkline({
   if (priced.length < MIN_POINTS) {
     const latest = priced.length ? priced[priced.length - 1].min_price_rub : null;
     if (latest == null && historicalLow == null) return null;
+    // Ретроспектива вместо «минимума». По одной-двум точкам минимум — не
+    // минимум, а единственное известное значение: на Arctic Monkeys это дало
+    // «минимум за 3 мес — 4 490 ₽» у пластинки, которая месяцами стоила 3 990.
+    // Замеры показываем как есть, с датами — за них мы ручаемся.
+    const known = [...priced].reverse().slice(0, RETRO_LIMIT);
     return (
       <View style={bare ? styles.bareContainer : styles.container}>
         {bare ? null : (
@@ -59,12 +73,20 @@ export function PriceSparkline({
             <Text style={styles.title}>Динамика цены</Text>
             <Text style={styles.lowValue}>
               {latest != null ? `сейчас ${formatRub(latest)}` : ''}
-              {latest != null && historicalLow != null ? ' · ' : ''}
-              {historicalLow != null ? `мин. ${formatRub(historicalLow)}` : ''}
             </Text>
           </View>
         )}
-        <Text style={styles.tooFew}>Цена менялась слишком редко — графика пока нет</Text>
+        <Text style={styles.tooFew}>
+          {known.length
+            ? 'Точек для графика мало. Что известно о цене:'
+            : 'Цена ещё ни разу не менялась — истории пока нет'}
+        </Text>
+        {known.map((p) => (
+          <View key={p.date} style={styles.retroRow}>
+            <Text style={styles.retroDate}>{dm(p.date)}</Text>
+            <Text style={styles.retroPrice}>{formatRub(p.min_price_rub)}</Text>
+          </View>
+        ))}
       </View>
     );
   }
@@ -166,6 +188,22 @@ const styles = StyleSheet.create({
     ...Typography.caption,
     color: Colors.text,
     fontWeight: '600',
+  },
+  retroRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingTop: 6,
+  },
+  retroDate: {
+    ...Typography.caption,
+    color: Colors.textSecondary,
+  },
+  retroPrice: {
+    ...Typography.caption,
+    color: Colors.text,
+    fontWeight: '600',
+    fontVariant: ['tabular-nums'],
   },
   tooFew: {
     ...Typography.caption,

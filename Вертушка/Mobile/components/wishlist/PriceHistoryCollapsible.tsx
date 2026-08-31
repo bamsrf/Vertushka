@@ -14,7 +14,7 @@ import { LayoutChangeEvent, Pressable, StyleSheet, Text, View } from 'react-nati
 import * as Haptics from 'expo-haptics';
 import { Icon } from '@/components/ui';
 import { Colors, Typography, Spacing, BorderRadius } from '../../constants/theme';
-import { PriceSparkline } from '../PriceSparkline';
+import { PriceSparkline, MIN_POINTS } from '../PriceSparkline';
 import { summarizePriceHistory } from '../../lib/priceHistory';
 import { PriceHistoryPoint } from '../../lib/types';
 
@@ -52,6 +52,11 @@ export function PriceHistoryCollapsible({ points, historicalLow, days = 90 }: Pr
 
   if (!summary) return null;
 
+  // Хватает ли ряда, чтобы вообще что-то утверждать. Порог общий с графиком:
+  // если точек мало для линии, их мало и для слов «минимум» и «почти не
+  // менялась» — по одному замеру мы не знаем ни того, ни другого.
+  const enough = points.filter((p) => p.min_price_rub != null).length >= MIN_POINTS;
+
   const dropped = summary.deltaRub < 0;
   const flat = Math.round(summary.deltaPct) === 0;
   const deltaColor = flat ? Colors.textSecondary : dropped ? Colors.success : Colors.warning;
@@ -68,7 +73,11 @@ export function PriceHistoryCollapsible({ points, historicalLow, days = 90 }: Pr
         accessibilityLabel={expanded ? 'Свернуть динамику цены' : 'Развернуть динамику цены'}
       >
         <Text style={styles.title} numberOfLines={1}>Динамика цены</Text>
-        {flat ? (
+        {!enough ? (
+          // «Почти не менялась» на одной точке — утверждение о движении, которого
+          // мы не наблюдали: цена могла меняться до того, как мы начали писать.
+          <Text style={styles.flatTxt} numberOfLines={1}>мало данных</Text>
+        ) : flat ? (
           <Text style={styles.flatTxt} numberOfLines={1}>почти не менялась</Text>
         ) : (
           <View style={[styles.deltaChip, { backgroundColor: deltaBg, marginLeft: 'auto' }]}>
@@ -94,7 +103,9 @@ export function PriceHistoryCollapsible({ points, historicalLow, days = 90 }: Pr
           ) : null}
           <View style={styles.footer}>
             <Text style={styles.footerTxt}>
-              {historicalLow != null ? `Минимум ${monthsLabel} — ${fmt(historicalLow)} ₽` : ''}
+              {enough && historicalLow != null
+                ? `Минимум ${monthsLabel} — ${fmt(historicalLow)} ₽`
+                : ''}
             </Text>
             {/* «Сейчас» на протухших точках — это то самое враньё, из-за
                 которого график и не читался: последняя цена может быть
