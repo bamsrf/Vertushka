@@ -34,9 +34,10 @@ _API = "https://api.music.apple.com/v1/catalog/{storefront}/albums"
 _STOREFRONT = "us"
 _ARTWORK_SIZE = 1200
 
-# Пейсинг: у Apple лимит не публикуется, 429 приходят при явном флуде.
-# 4 req/s суммарно — далеко от любых наблюдаемых порогов.
-_MIN_INTERVAL_S = 0.25
+# Пейсинг: у Apple лимит не публикуется. Замер 31.08.2026: последовательные
+# запросы с шагом 0.5-2с — стабильные 200, а 4 воркера с шагом 0.25с
+# (in-flight burst) выхватили 429 на десятом запросе. Держим 2 rps.
+_MIN_INTERVAL_S = 0.5
 _token_cache: tuple[str, float] | None = None  # (jwt, годен_до_monotonic)
 _TOKEN_TTL_S = 11 * 3600  # сам токен подписываем на 12ч — час запаса на часы
 _pace_lock = asyncio.Lock()

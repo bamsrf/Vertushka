@@ -40,9 +40,10 @@ logger = logging.getLogger("backfill_apple")
 WORKLIST = "cover_backfill_apple"
 MARKER = "/app/uploads/.backfill_apple_enabled"
 
-# Темп держит глобальный пейсер apple_music (0.25 с/запрос) — воркеры лишь
-# перекрывают сетевую латентность.
-_CONCURRENCY = 4
+# Темп держит глобальный пейсер apple_music (0.5 с/запрос) — воркеры лишь
+# перекрывают сетевую латентность. Два, не четыре: Apple реагирует 429 не на
+# темп стартов, а на глубину in-flight (замер 31.08.2026).
+_CONCURRENCY = 2
 _MAX_FANOUT = 20          # мусорные штрихкоды-паровозы, как в UPC-канале
 _RUN_BUDGET = 240         # бюджет scheduled-прогона, с
 _QUOTA_BACKOFF = 60
