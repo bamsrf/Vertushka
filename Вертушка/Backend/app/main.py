@@ -56,7 +56,7 @@ logger = logging.getLogger(__name__)
 # --- Гейт конфигурации ---
 # ДО Sentry и до создания приложения: если секреты дефолтные, поднимать процесс
 # нельзя вообще, а не «поднять и заодно отрапортовать». См. config.py и
-# docs/plans/SECURITY_AUDIT_PRERELEASE.md §S5.
+# docs/plans/appstore/SECURITY_AUDIT_PRERELEASE.md §S5.
 assert_secrets_ok()
 
 # --- Sentry ---
