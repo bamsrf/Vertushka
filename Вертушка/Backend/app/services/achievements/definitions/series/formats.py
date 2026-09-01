@@ -233,7 +233,7 @@ DEFINITIONS: list[AchievementDefinition] = [
     ),
     _fmt(
         META_FORMATS_CODE, "Без предрассудков",
-        "Открой FMT1–FMT3 и собери по 10 единиц каждого формата.",
+        "Собери минимум по 10 винилов, кассет, CD и бокс-сетов.",
         AchievementTier.EPIC, _evaluate_meta_formats,
         "Ты не споришь о носителях. Ты их собираешь.", "meta_formats", "formats",
         done="Все кросс-форматные ачивки открыты, и каждого формата — не меньше 10 штук.",
