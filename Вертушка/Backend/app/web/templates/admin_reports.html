@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="robots" content="noindex, nofollow">
+    <title>Жалобы — Вертушка</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --ivory: #F4EEE6;
+            --cobalt: #3A4BE0;
+            --cobalt-bright: #4E5BFF;
+            --ink: #1B1D26;
+            --slate: #6B7080;
+            --mute: #9096A6;
+            --hairline: rgba(27,29,38,0.08);
+            --danger: #C4372F;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        html, body {
+            min-height: 100%;
+            background:
+                radial-gradient(700px 420px at 80% -4%, rgba(154,168,255,0.35), transparent 55%),
+                linear-gradient(180deg, #F4EEE6 0%, #F0EBE2 100%);
+            font-family: 'Inter Tight', -apple-system, sans-serif;
+            color: var(--ink);
+            padding: 24px 16px 64px;
+        }
+
+        .wrap { max-width: 720px; margin: 0 auto; }
+
+        h1 { font-size: 24px; font-weight: 700; letter-spacing: -0.02em; }
+        .sub { color: var(--slate); font-size: 14px; margin-top: 4px; }
+
+        .card {
+            background: rgba(255,255,255,0.72);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid var(--hairline);
+            border-radius: 18px;
+            padding: 20px;
+            margin-top: 16px;
+        }
+
+        label { display: block; font-size: 13px; color: var(--slate); margin-bottom: 6px; }
+        input, select {
+            width: 100%; padding: 11px 13px; font: inherit; font-size: 15px;
+            border: 1px solid var(--hairline); border-radius: 11px;
+            background: #fff; color: var(--ink); margin-bottom: 12px;
+        }
+        button {
+            font: inherit; font-weight: 600; font-size: 14px; cursor: pointer;
+            border: 0; border-radius: 11px; padding: 10px 16px;
+            background: var(--cobalt); color: #fff;
+        }
+        button:hover { background: var(--cobalt-bright); }
+        button:disabled { opacity: 0.45; cursor: default; }
+        button.ghost { background: transparent; color: var(--slate); border: 1px solid var(--hairline); }
+        button.ghost:hover { background: rgba(27,29,38,0.04); }
+        button.danger { background: var(--danger); }
+        button.danger:hover { background: #A82C25; }
+
+        .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+        .row.tight { margin-top: 14px; }
+
+        .report { border-top: 1px solid var(--hairline); padding: 16px 0; }
+        .report:first-of-type { border-top: 0; padding-top: 4px; }
+        .meta { font-size: 12px; color: var(--mute); font-variant-numeric: tabular-nums; }
+        .preview {
+            font-size: 16px; font-weight: 600; margin: 4px 0 2px;
+            overflow-wrap: anywhere;
+        }
+        .reason { font-size: 14px; color: var(--slate); overflow-wrap: anywhere; }
+        .pill {
+            display: inline-block; font-size: 11px; font-weight: 600; text-transform: uppercase;
+            letter-spacing: 0.04em; padding: 3px 8px; border-radius: 999px;
+            background: rgba(58,75,224,0.1); color: var(--cobalt);
+        }
+        .body { display: flex; gap: 14px; margin: 8px 0 2px; align-items: flex-start; }
+        .cover {
+            width: 104px; height: 104px; flex: none; border-radius: 12px;
+            object-fit: cover; background: rgba(27,29,38,0.05);
+            border: 1px solid var(--hairline); cursor: zoom-in;
+        }
+        .nocover {
+            width: 104px; height: 104px; flex: none; border-radius: 12px;
+            background: rgba(27,29,38,0.04); border: 1px dashed var(--hairline);
+            display: flex; align-items: center; justify-content: center;
+            font-size: 11px; color: var(--mute); text-align: center; padding: 6px;
+        }
+        .facts { min-width: 0; flex: 1; }
+        .fact { font-size: 13px; color: var(--slate); }
+        .fact b { font-weight: 600; color: var(--ink); }
+        .empty { color: var(--slate); font-size: 15px; padding: 8px 0; }
+        .note {
+            font-size: 13px; color: var(--slate); background: rgba(196,55,47,0.06);
+            border-radius: 11px; padding: 10px 12px; margin-top: 12px;
+        }
+        .err { color: var(--danger); font-size: 14px; margin-top: 10px; }
+        .hidden { display: none; }
+    </style>
+</head>
+<body>
+<div class="wrap">
+    <h1>Жалобы</h1>
+    <div class="sub">Постмодерация UGC. Guideline 1.2 — реакция ≤24ч.</div>
+
+    <!-- Логин. Токен живёт в sessionStorage: закрыл вкладку — забыли. -->
+    <div class="card" id="auth">
+        <label for="login">Email или username (staff-аккаунт)</label>
+        <input id="login" type="text" autocomplete="username">
+        <label for="password">Пароль</label>
+        <input id="password" type="password" autocomplete="current-password">
+        <button id="signin">Войти</button>
+        <div class="err hidden" id="auth-err"></div>
+    </div>
+
+    <div class="card hidden" id="panel">
+        <div class="row">
+            <select id="status" style="width: auto; margin: 0;">
+                <option value="open">Открытые</option>
+                <option value="actioned">Обработанные</option>
+                <option value="dismissed">Отклонённые</option>
+                <option value="reviewed">Просмотренные</option>
+            </select>
+            <button class="ghost" id="refresh">Обновить</button>
+            <button class="ghost" id="signout" style="margin-left: auto;">Выйти</button>
+        </div>
+        <div class="err hidden" id="list-err"></div>
+        <div id="list"></div>
+    </div>
+</div>
+
+<script>
+(function () {
+    'use strict';
+
+    // Страница ходит в тот же origin, что и API. Абсолютный хост здесь был бы
+    // ошибкой: CORS пускает только vinyl-vertushka.ru, и с api-хоста запросы
+    // молча падали бы на preflight.
+    var API = '/api';
+    var TOKEN_KEY = 'vertushka_staff_token';
+
+    var $ = function (id) { return document.getElementById(id); };
+    var token = sessionStorage.getItem(TOKEN_KEY);
+
+    function show(el, on) { el.classList.toggle('hidden', !on); }
+
+    function fail(el, msg) {
+        el.textContent = msg;
+        show(el, true);
+    }
+
+    function api(path, opts) {
+        opts = opts || {};
+        opts.headers = Object.assign(
+            { 'Authorization': 'Bearer ' + token },
+            opts.body ? { 'Content-Type': 'application/json' } : {}
+        );
+        return fetch(API + path, opts).then(function (r) {
+            if (r.status === 401 || r.status === 403) {
+                signOut();
+                throw new Error('Нужен staff-аккаунт: доступ отклонён.');
+            }
+            if (!r.ok) {
+                return r.json().catch(function () { return {}; }).then(function (b) {
+                    throw new Error(typeof b.detail === 'string' ? b.detail : 'Ошибка ' + r.status);
+                });
+            }
+            return r.json();
+        });
+    }
+
+    function signOut() {
+        token = null;
+        sessionStorage.removeItem(TOKEN_KEY);
+        show($('panel'), false);
+        show($('auth'), true);
+    }
+
+    function signIn() {
+        show($('auth-err'), false);
+        $('signin').disabled = true;
+        fetch(API + '/auth/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ login: $('login').value, password: $('password').value })
+        }).then(function (r) {
+            if (!r.ok) throw new Error(r.status === 429 ? 'Слишком много попыток, подождите минуту.' : 'Неверный логин или пароль.');
+            return r.json();
+        }).then(function (data) {
+            token = data.access_token;
+            sessionStorage.setItem(TOKEN_KEY, token);
+            $('password').value = '';
+            show($('auth'), false);
+            show($('panel'), true);
+            load();
+        }).catch(function (e) {
+            fail($('auth-err'), e.message);
+        }).then(function () {
+            $('signin').disabled = false;
+        });
+    }
+
+    // Жалобы и превью — UGC. Только textContent: innerHTML здесь означает XSS
+    // ровно от тех людей, на которых жалуются.
+    function node(tag, cls, text) {
+        var el = document.createElement(tag);
+        if (cls) el.className = cls;
+        if (text !== undefined && text !== null) el.textContent = text;
+        return el;
+    }
+
+    var ACTIONS = {
+        record: [
+            { action: 'hide_record', label: 'Скрыть запись' },
+            { action: 'ban_user', label: 'Забанить автора', danger: true },
+            { action: 'dismiss', label: 'Отклонить', ghost: true }
+        ],
+        message: [
+            { action: 'hide_message', label: 'Удалить сообщение' },
+            { action: 'ban_user', label: 'Забанить автора', danger: true },
+            { action: 'dismiss', label: 'Отклонить', ghost: true }
+        ],
+        user: [
+            { action: 'ban_user', label: 'Забанить', danger: true },
+            { action: 'dismiss', label: 'Отклонить', ghost: true }
+        ]
+    };
+
+    function render(reports) {
+        var list = $('list');
+        list.textContent = '';
+
+        if (!reports.length) {
+            list.appendChild(node('div', 'empty', 'Пусто. Разбирать нечего.'));
+            return;
+        }
+
+        reports.forEach(function (r) {
+            var box = node('div', 'report');
+
+            var head = node('div', 'row');
+            head.appendChild(node('span', 'pill', r.target_type));
+            head.appendChild(node('span', 'meta', new Date(r.created_at + 'Z').toLocaleString('ru-RU')));
+            box.appendChild(head);
+
+            box.appendChild(node('div', 'preview', r.target_preview || '[объект удалён]'));
+
+            var d = r.target_detail;
+            var body = node('div', 'body');
+
+            // Обложка — то, ради чего жалобу и открывают: смотрят на картинку,
+            // а не на подпись. Клик открывает оригинал в новой вкладке.
+            if (d && d.cover_url) {
+                var img = document.createElement('img');
+                img.className = 'cover';
+                img.src = d.cover_url;
+                img.alt = '';
+                img.addEventListener('click', function () {
+                    window.open(d.cover_url, '_blank', 'noopener');
+                });
+                body.appendChild(img);
+            } else if (r.target_type === 'record') {
+                body.appendChild(node('div', 'nocover', 'без обложки'));
+            }
+
+            var facts = node('div', 'facts');
+            facts.appendChild(node('div', 'reason', r.reason || 'Причина не указана.'));
+            if (d && d.author_username) {
+                var who = node('div', 'fact');
+                who.appendChild(node('b', null, 'Автор: '));
+                who.appendChild(document.createTextNode('@' + d.author_username));
+                facts.appendChild(who);
+            }
+            if (d && d.moderation_status) {
+                var mod = node('div', 'fact');
+                mod.appendChild(node('b', null, 'Модерация: '));
+                mod.appendChild(document.createTextNode(d.moderation_status));
+                facts.appendChild(mod);
+            }
+            (d && d.fields ? d.fields : []).forEach(function (pair) {
+                var row = node('div', 'fact');
+                row.appendChild(node('b', null, pair[0] + ': '));
+                row.appendChild(document.createTextNode(pair[1]));
+                facts.appendChild(row);
+            });
+            facts.appendChild(node('div', 'meta', 'id: ' + r.id));
+            body.appendChild(facts);
+
+            box.appendChild(body);
+
+            if (r.status === 'open') {
+                var bar = node('div', 'row tight');
+                (ACTIONS[r.target_type] || []).forEach(function (a) {
+                    var b = node('button', a.danger ? 'danger' : (a.ghost ? 'ghost' : ''), a.label);
+                    b.addEventListener('click', function () { act(r, a, box); });
+                    bar.appendChild(b);
+                });
+                box.appendChild(bar);
+
+                // Разбан эндпоинтом не предусмотрен — только руками в БД.
+                box.appendChild(node('div', 'note', 'Бан необратим из интерфейса: снимается только UPDATE в БД.'));
+            }
+
+            list.appendChild(box);
+        });
+    }
+
+    function act(report, a, box) {
+        var what = a.action === 'ban_user'
+            ? 'Забанить пользователя? Отменить отсюда будет нельзя.'
+            : 'Подтвердить: ' + a.label + '?';
+        if (!window.confirm(what)) return;
+
+        box.querySelectorAll('button').forEach(function (b) { b.disabled = true; });
+        api('/reports/' + report.id + '/action', {
+            method: 'POST',
+            body: JSON.stringify({ action: a.action })
+        }).then(load).catch(function (e) {
+            fail($('list-err'), e.message);
+            box.querySelectorAll('button').forEach(function (b) { b.disabled = false; });
+        });
+    }
+
+    function load() {
+        show($('list-err'), false);
+        api('/reports/?status=' + encodeURIComponent($('status').value))
+            .then(render)
+            .catch(function (e) { fail($('list-err'), e.message); });
+    }
+
+    $('signin').addEventListener('click', signIn);
+    $('password').addEventListener('keydown', function (e) { if (e.key === 'Enter') signIn(); });
+    $('refresh').addEventListener('click', load);
+    $('status').addEventListener('change', load);
+    $('signout').addEventListener('click', signOut);
+
+    if (token) {
+        show($('auth'), false);
+        show($('panel'), true);
+        load();
+    }
+})();
+</script>
+</body>
+</html>

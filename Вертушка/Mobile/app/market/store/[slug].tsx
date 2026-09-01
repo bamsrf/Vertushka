@@ -89,22 +89,35 @@ export default function StorePage() {
     return () => { cancelled = true; };
   }, [slug]);
 
-  // Фасеты считаем по складу ЭТОГО магазина — иначе на витрине появлялись бы
-  // чипы жанров, которых у него нет, и тап по ним вёл бы в пустоту.
-  useEffect(() => {
-    let cancelled = false;
-    setFacets(null);
-    api.getMarketFacets(slug)
-      .then((res) => { if (!cancelled) setFacets(res); })
-      .catch(() => {});
-    return () => { cancelled = true; };
-  }, [slug]);
-
   const effectiveQuery = debouncedQuery.length >= 2 ? debouncedQuery : '';
   const filtersKey = useMemo(
     () => `${filters.format}|${[...filters.genres].sort().join(',')}|${[...filters.features].sort().join(',')}`,
     [filters],
   );
+
+  // Фасеты считаем по складу ЭТОГО магазина — иначе на витрине появлялись бы
+  // чипы жанров, которых у него нет, и тап по ним вёл бы в пустоту. Активные
+  // фильтры передаём туда же: счётчик показывает пересечение с уже выбранным,
+  // а не собственный объём чипа.
+  //
+  // setFacets(null) только при смене магазина: на смене фильтров это схлопнуло
+  // бы ряд чипов до спиннера прямо под пальцем.
+  useEffect(() => {
+    setFacets(null);
+  }, [slug]);
+
+  useEffect(() => {
+    let cancelled = false;
+    api.getMarketFacets(slug, {
+      q: effectiveQuery || undefined,
+      format: filters.format === 'all' ? null : filters.format,
+      genres: filters.genres,
+      features: filters.features,
+    })
+      .then((res) => { if (!cancelled) setFacets(res); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [slug, filtersKey, effectiveQuery]);
 
   const fetchPage = useCallback(
     (offset: number, limit: number) =>

@@ -41,12 +41,19 @@ set -o pipefail
 # discogs_dump_state исключён сознательно: иначе после restore система считала
 # бы дампы загруженными при пустых таблицах. discogs_price_jobs НЕ исключать —
 # это пользовательская очередь, не справочник. Оговорка: releases_index копит
-# URL, найденные живым резолвом обложек, — после restore они переисчислятся
-# сами (negative-cache + лестница источников).
+# URL обложек — их уже миллионы (drip + офлайн-каналы), и «переисчислятся сами»
+# для drip-части означает месяцы; recovery-путь — CSV-срез
+# ~/backups/covers_urls_YYYYMMDD.csv.gz (discogs_id,cover_image_url,
+# cover_checked_at; ротация его не трогает — маска vertushka_*), переснимать
+# после крупных прогонов каналов.
+# mb_catno_covers / mb_mbid_rg — справочники catno-канала (27.08.2026, ~1.4 ГБ
+# raw): пересоздаются из CSV при месячном MB-рефреше, в дампе им не место.
+# catno_cover_audit НЕ исключать: это provenance применённых обложек, мал.
 EXCLUDE_REF_TABLES=(
   discogs_releases_index discogs_release_formats discogs_release_tracklists
   discogs_artists discogs_artist_names discogs_master_covers
   discogs_dump_state mb_discogs_map mb_barcode_covers
+  mb_catno_covers mb_mbid_rg
 )
 EXCLUDE_ARGS=()
 for t in "${EXCLUDE_REF_TABLES[@]}"; do
@@ -73,15 +80,21 @@ fi
 SIZE=$(du -h "$BACKUP_FILE" | cut -f1)
 echo -e "${GREEN}$(date): ✅ Бэкап создан и проверен: $BACKUP_FILE ($SIZE)${NC}"
 
-# Опциональная отправка в Yandex Object Storage (S3-совместимый).
-# Чтобы включить — экспортируй S3_BUCKET, S3_ENDPOINT, AWS_ACCESS_KEY_ID,
-# AWS_SECRET_ACCESS_KEY перед запуском (например в cron-задании).
-if [ -n "$S3_BUCKET" ] && command -v aws >/dev/null 2>&1; then
-    if aws --endpoint-url="${S3_ENDPOINT:-https://storage.yandexcloud.net}" \
-        s3 cp "$BACKUP_FILE" "s3://$S3_BUCKET/$(basename $BACKUP_FILE)" --quiet; then
-        echo "$(date): ☁️  Загружено в s3://$S3_BUCKET/"
+# Offsite-копия дампа в S3 (Beget, бакет обложек, префикс backups/).
+# До 28.08.2026 бэкапы жили на том же диске, что и база — смерть диска
+# уносила и данные, и их копии. Заливка через api-контейнер (там boto3 и
+# S3_-креды из .env.prod), aws cli на хосте не нужен. Неуспех — только
+# warning: локальный дамп цел, алёрт не шлём.
+API_CONT=$(docker ps --format '{{.Names}}' | grep vertushka_api | head -1)
+if [ -n "$API_CONT" ]; then
+    BASE=$(basename "$BACKUP_FILE")
+    if docker cp "$BACKUP_FILE" "$API_CONT:/tmp/$BASE" \
+       && docker exec "$API_CONT" python -m app.scripts.push_file_to_s3 \
+            "/tmp/$BASE" --prefix backups/ --keep 30 --prune-glob "vertushka_*.sql.gz" \
+       && docker exec "$API_CONT" rm -f "/tmp/$BASE"; then
+        echo "$(date): ☁️  Дамп залит в S3 (backups/, retention 30)"
     else
-        echo -e "${RED}$(date): ⚠️  Не удалось загрузить бэкап в S3${NC}"
+        echo -e "${RED}$(date): ⚠️  S3-копия дампа не залилась (локальный дамп цел)${NC}"
     fi
 fi
 

@@ -28,6 +28,7 @@ from app.services.scrapers.base import (
     TransientParserError,
 )
 from app.services.scrapers.browser import browser_pool
+from app.services.scrapers.extractors import infer_vinyl_color
 from app.services.scrapers.http_client import http_client
 from app.services.scrapers.registry import get_parser
 
@@ -130,13 +131,21 @@ async def crawl_store(slug: str, *, mode: CrawlMode = "full", limit: int | None 
                     break
 
             await db.commit()
-            smoke_msg = await _smoke_check(db, store_id, counters, mode, limit)
+            smoke_msg = await _smoke_check(
+                db, store_id, counters, _smoke_mode(parser, mode), limit
+            )
             if smoke_msg:
                 logger.error("[%s] smoke check failed: %s", slug, smoke_msg)
                 await _mark_error(db, store_id, smoke_msg)
                 counters["status"] = "failed"
             else:
-                await _mark_success(db, store_id)
+                # Прогон с limit искусственно обрезан — он ничего не доказывает
+                # про живость каталога. Двигать last_successful_scrape_at по
+                # нему нельзя: ручной crawl_store(slug, limit=50) сдвигал
+                # отметку, и следующий daily_retire_vanished_listings снимал
+                # всю витрину вне этих 50 позиций (ревью 2026-08-23).
+                if limit is None:
+                    await _mark_success(db, store_id)
                 counters["status"] = "ok"
         except ParserNeedsBrowser as e:
             await _mark_needs_browser(db, store_id, store_slug, str(e))
@@ -253,6 +262,25 @@ def _select_iterator(parser: BaseStoreParser, mode: CrawlMode, store: Store):
     return parser.crawl_full()
 
 
+def _smoke_mode(parser: BaseStoreParser, mode: CrawlMode) -> CrawlMode:
+    """Режим для smoke-check: дефолтный «инкремент» — это тот же полный обход.
+
+    Дефолтный `crawl_incremental` в base.py просто зовёт `crawl_full`, и пока
+    ни один парсер его не переопределяет — дневной incremental-прогон обходит
+    весь каталог и обязан проходить те же объёмные пороги. Иначе боковая
+    дверь: магазин сменил вёрстку → ночной full падает по smoke, а дневной
+    incremental отдаёт 0 позиций, помечается ok и двигает
+    last_successful_scrape_at → назавтра daily_retire_vanished_listings
+    снимает всю живую витрину (ревью 2026-08-23).
+
+    У настоящего инкремента (метод переопределён в подклассе) пустой результат
+    — норма (новинок нет), объёмные пороги для него остаются снятыми.
+    """
+    if mode == "incremental" and type(parser).crawl_incremental is BaseStoreParser.crawl_incremental:
+        return "full"
+    return mode
+
+
 async def _upsert_listing(db, store_id, dto: ListingDTO) -> bool:
     """INSERT ... ON CONFLICT(store_id, external_id) DO UPDATE SET ...
 
@@ -273,7 +301,15 @@ async def _upsert_listing(db, store_id, dto: ListingDTO) -> bool:
         "artist_raw": dto.artist_raw,
         "year_raw": dto.year_raw,
         "format_raw": dto.format_raw,
-        "vinyl_color_raw": dto.vinyl_color_raw,
+        # Цвет: сперва то, что распарсил магазин, иначе — из заголовка. Сетка
+        # безопасности для парсеров, которые про цвет не думают вовсе: у
+        # vinylhouse он пуст у всех 12 053 листингов, у long_play — у всех 4 633.
+        # Функция та же, что зовут сами парсеры (korobkavinyla, plastinka_com,
+        # skifmusic, rotaryrecords) — второй реализации тут быть не должно.
+        "vinyl_color_raw": (
+            dto.vinyl_color_raw
+            or infer_vinyl_color(dto.title_raw, require_cue=True)
+        ),
         "condition": dto.condition,
         "price_rub": dto.price_rub,
         "price_currency": dto.price_currency,
@@ -408,9 +444,11 @@ async def _smoke_check(
     """None = crawl выглядит здоровым. Иначе текст проблемы.
 
     Ловит «магазин сменил HTML → парсер тихо отдаёт ноль/мусор»: сравниваем
-    результат прохода с историей листингов в БД. Для incremental пустой
-    результат — норма (новинок нет), деградацию там не детектим. Прогон с
-    limit искусственно обрезан — объёмные проверки для него тоже пропускаем.
+    результат прохода с историей листингов в БД. Для НАСТОЯЩЕГО incremental
+    пустой результат — норма (новинок нет), деградацию там не детектим —
+    но `mode` сюда передаёт вызывающий через `_smoke_mode`: дефолтный
+    инкремент это полный обход, и для него пороги действуют (2026-08-23).
+    Прогон с limit искусственно обрезан — объёмные проверки пропускаем.
 
     Принимает `store_id` скаляром, а НЕ ORM-объект: вызывается сразу после
     цикла обхода, где любая сбойная запись делает `db.rollback()` и протухляет
@@ -419,7 +457,16 @@ async def _smoke_check(
     помечен провалившимся из-за MissingGreenlet в этой строке).
     """
     existing = await db.scalar(
-        select(func.count()).select_from(StoreListing).where(StoreListing.store_id == store_id)
+        select(func.count())
+        .select_from(StoreListing)
+        .where(
+            StoreListing.store_id == store_id,
+            # Знаменатель — только живые строки. У б/у-магазинов проданное
+            # копится в removed и раздувает `existing`: здоровый полный обход
+            # переставал проходить порог 50%, хотя видел всю актуальную
+            # витрину (ревью 2026-08-23).
+            StoreListing.status != ListingStatus.REMOVED,
+        )
     )
     if not existing:
         return None
@@ -451,7 +498,16 @@ async def _mark_success(db, store_id) -> None:
     await db.execute(
         update(Store)
         .where(Store.id == store_id)
-        .values(last_successful_scrape_at=datetime.utcnow(), last_error=None)
+        .values(
+            last_successful_scrape_at=datetime.utcnow(),
+            last_error=None,
+            # Успешный HTTP-обход доказывает, что браузер не нужен. Без сброса
+            # requires_browser был билетом в один конец: _mark_needs_browser
+            # ставил флаг навсегда, а browser-путь фактически мёртв
+            # (BrowserPool.fetch_text никем не вызывается) — магазин навечно
+            # зависал в browser-режиме (ревью 2026-08-23).
+            requires_browser=False,
+        )
     )
 
 

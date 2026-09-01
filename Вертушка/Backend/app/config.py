@@ -50,6 +50,25 @@ class Settings(BaseSettings):
     discogs_token_encryption_key: str = Field(default="", alias="DISCOGS_TOKEN_ENCRYPTION_KEY")
     # Drip-прогрев обложек простаивающими токенами app-bucket (cover_drip_tasks)
     cover_drip_enabled: bool = Field(default=True, alias="COVER_DRIP_ENABLED")
+    # Профиль дрипа. Дефолты — щадящий режим «есть живые юзеры»: ~10 req/min.
+    # До релиза (DAU 0) на проде стоит агрессивный профиль через env:
+    # HEADROOM=18, MAX_PER_RUN=35, PACE=1.0. Больше из тик-схемы не выжать:
+    # peek считает скользящее 60с-окно, и после жирного прогона следующий
+    # минутный тик видит окно занятым — устоявшийся темп ≈ (55-headroom)/2
+    # в минуту, т.е. ~18 req/min ≈ 26 тыс. обложек/день. ПЕРЕД РЕЛИЗОМ в
+    # App Store env убрать (откат на дефолты) — COVERS_RATE_LIMIT_STRATEGY.md.
+    #
+    # Границы — это защита, не бюрократия: контейнер падает на старте вместо
+    # тихого воспроизведения инцидентов.
+    #  - headroom ge=16: лимитер вообще не обслуживает фоновые запросы при
+    #    free <= INTERACTIVE_RESERVE (15, rate_limiter.py) — headroom ниже
+    #    заставляет дрип стрелять в закрытую дверь, ловить таймауты и
+    #    выжигать строки очереди через cover_checked_at.
+    #  - pace ge=1.0: Discogs считает скользящее окно 60/min, burst из
+    #    bucket'а уже давал постоянные 429 (2026-07-03).
+    cover_drip_headroom: int = Field(default=35, ge=16, le=54, alias="COVER_DRIP_HEADROOM")
+    cover_drip_max_per_run: int = Field(default=10, ge=1, le=55, alias="COVER_DRIP_MAX_PER_RUN")
+    cover_drip_pace_sec: float = Field(default=2.0, ge=1.0, alias="COVER_DRIP_PACE_SEC")
 
     # Yandex-native матчинг (шаг 5.5): создавать записи вне Discogs из Yandex.
     # OFF по умолчанию — включать осознанно, мгновенный откат без деплоя.
@@ -160,6 +179,24 @@ class Settings(BaseSettings):
         default="https://api.vinyl-vertushka.ru/covers", alias="PUBLIC_COVERS_BASE",
     )
     covers_max_cache_mb: int = Field(default=5000, alias="COVERS_MAX_CACHE_MB")
+    # ── S3-слой обложек (подготовка трека A, COVERS_S3_IMGPROXY_MILESTONE) ──
+    # Дефолт выключен: пока бакета нет, dual-write в s3_covers — полный no-op
+    # (boto3 даже не импортируется). Включение: заполнить переменные ниже,
+    # прогнать app/scripts/sync_covers_to_s3 (миграция накопленного зеркала),
+    # затем COVERS_S3_ENABLED=true + рестарт. Неполный конфиг при включённом
+    # флаге НЕ роняет старт: s3_covers логирует error и живёт как выключенный
+    # (обложка на диске важнее дубля в бакете).
+    covers_s3_enabled: bool = Field(default=False, alias="COVERS_S3_ENABLED")
+    s3_endpoint_url: str = Field(default="", alias="S3_ENDPOINT_URL")
+    s3_region: str = Field(default="ru-1", alias="S3_REGION")
+    s3_bucket_covers: str = Field(default="vertushka-covers", alias="S3_BUCKET_COVERS")
+    s3_access_key_id: str = Field(default="", alias="S3_ACCESS_KEY_ID")
+    s3_secret_access_key: str = Field(default="", alias="S3_SECRET_ACCESS_KEY")
+    # ── Apple Music API (канал обложек #5, services/apple_music.py) ──
+    # Пусто = канал выключен. Как получить ключ — докстринг apple_music.py.
+    apple_music_team_id: str = Field(default="", alias="APPLE_MUSIC_TEAM_ID")
+    apple_music_key_id: str = Field(default="", alias="APPLE_MUSIC_KEY_ID")
+    apple_music_private_key_b64: str = Field(default="", alias="APPLE_MUSIC_PRIVATE_KEY_B64")
     # Дневной бюджет скачиваний КАРТИНОК с хостов Discogs (i.discogs.com).
     # У Discogs неофициальный потолок ~1000 изображений/сутки на IP, дальше
     # 403 на всё — включая обложки, которые видят живые пользователи. 800

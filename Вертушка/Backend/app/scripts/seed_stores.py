@@ -61,7 +61,11 @@ STORES: list[dict] = [
         "parser_class": "vinyl_ru",
         "logo_url": None,
         "rating": Decimal("4.4"),  # большой Bitrix-каталог 64k+ товаров, все форматы
-        "is_active": True,
+        # Выключен 09.08: sitemap-обход 36 часов не влезает в ночное окно;
+        # включать только после перевода на YML/инкремент
+        # (см. docs/plans/MARKET_STORES_SCALING.md §2, §7a). Полный прогон
+        # сидинга НЕ должен молча реанимировать магазин — поэтому False.
+        "is_active": False,
         "requires_browser": False,
         "avg_shipping_rub": Decimal("400.00"),
         "affiliate_program": None,
@@ -106,6 +110,40 @@ STORES: list[dict] = [
         "affiliate_program": None,
     },
     {
+        # Заведён в прод-БД руками 2026-08-09 мимо этого скрипта; значения
+        # ниже сняты с прода 2026-08-23. rating=0 и avg_shipping_rub=None на
+        # проде так и не заполнены — при простановке реальных значений менять
+        # здесь, прод подтянется прогоном сидинга.
+        "slug": "skifmusic",
+        "name": "Скифмьюзик",
+        "domain": "skifmusic.ru",
+        "base_url": "https://skifmusic.ru",
+        "parser_class": "skifmusic",
+        "logo_url": None,  # Mobile рендерит локальный assets/skifmusic.png по slug
+        "rating": Decimal("0.00"),
+        "is_active": True,
+        "requires_browser": False,
+        "avg_shipping_rub": None,
+        "affiliate_program": None,
+    },
+    {
+        # Заведён в прод-БД руками 2026-08-11 мимо этого скрипта; значения
+        # ниже сняты с прода 2026-08-23. rating=0 и avg_shipping_rub=None на
+        # проде так и не заполнены — при простановке реальных значений менять
+        # здесь, прод подтянется прогоном сидинга.
+        "slug": "rotaryrecords",
+        "name": "Rotary Records",
+        "domain": "rotaryrecords.store",
+        "base_url": "https://rotaryrecords.store",
+        "parser_class": "rotaryrecords",
+        "logo_url": None,  # Mobile рендерит локальный assets/rotaryrecords.png по slug
+        "rating": Decimal("0.00"),
+        "is_active": True,
+        "requires_browser": False,
+        "avg_shipping_rub": None,
+        "affiliate_program": None,
+    },
+    {
         "slug": "long_play",
         "name": "Long Play",
         "domain": "long-play.ru",
@@ -116,6 +154,19 @@ STORES: list[dict] = [
         "is_active": True,
         "requires_browser": False,
         "avg_shipping_rub": Decimal("400.00"),
+        "affiliate_program": None,
+    },
+    {
+        "slug": "vinylhouse",
+        "name": "Дом Винила",
+        "domain": "vinylhouse.ru",
+        "base_url": "https://vinylhouse.ru",
+        "parser_class": "vinylhouse",
+        "logo_url": None,  # Mobile рендерит локальный assets/vinylhouse.png по slug
+        "rating": Decimal("4.6"),  # б/у оригиналы, СПб (Мойка), ~10k позиций, грейды на стр. товара
+        "is_active": True,
+        "requires_browser": False,
+        "avg_shipping_rub": Decimal("450.00"),
         "affiliate_program": None,
     },
 ]

@@ -23,6 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.collection import Collection, CollectionItem
 from app.models.record import Record
 from app.models.user_achievement import UserAchievement
+from app.services.genre_vocab import split_genres
 from app.services.achievements.events import COLLECTION_ITEM_ADDED, DAILY_TICK
 from app.services.achievements.registry import (
     AchievementDefinition,
@@ -71,7 +72,10 @@ async def _count_distinct_genres(db: AsyncSession, user_id: UUID) -> int:
     """Число РАЗНЫХ жанров в основной коллекции. Без cooldown.
 
     `Record.genre` — это склейка Discogs-жанров через ", ", поэтому распуляем
-    их в Python (коллекции ограничены, дешевле, чем SQL-split)."""
+    их в Python (коллекции ограничены, дешевле, чем SQL-split). Сплит — через
+    `split_genres`, а не `.split(",")`: «Folk, World, & Country» сам содержит
+    запятые и наивным сплитом давал три жанра вместо одного, втрое удешевляя
+    F1/F2."""
     rows = await db.execute(
         select(func.distinct(Record.genre))
         .join(CollectionItem, CollectionItem.record_id == Record.id)
@@ -82,10 +86,8 @@ async def _count_distinct_genres(db: AsyncSession, user_id: UUID) -> int:
     )
     seen: set[str] = set()
     for (genre_str,) in rows.all():
-        for g in (genre_str or "").split(","):
-            g = g.strip().casefold()
-            if g:
-                seen.add(g)
+        for g in split_genres(genre_str):
+            seen.add(g.casefold())
     return len(seen)
 
 

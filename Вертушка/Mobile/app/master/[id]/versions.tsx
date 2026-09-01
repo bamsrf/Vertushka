@@ -17,7 +17,7 @@ import { Icon } from '@/components/ui';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Header } from '../../../components/Header';
 import { VersionCard } from '../../../components/VersionCard';
-import { api, getMasterCoverUrl, getPlaceholderCoverUrl, isThumbGrade } from '../../../lib/api';
+import { api, getHeroCoverUrl, getMasterCoverUrl, getPlaceholderCoverUrl, isThumbGrade } from '../../../lib/api';
 import { toast } from '../../../lib/toast';
 import { MasterVersion } from '../../../lib/types';
 import { takeVersionsPrefetch } from '../../../lib/versionsPrefetch';
@@ -155,9 +155,11 @@ export default function VersionsScreen() {
   const handleVersionPress = (version: MasterVersion) => {
     // Тёплый старт героя карточки: строка списка рисует мелкую обложку, а деталь
     // запросит мастер — начинаем тянуть его на кадр раньше навигации.
+    // getHeroCoverUrl, а не getMasterCoverUrl: у релиза без мастера герой
+    // покажет лучшее мелкое, и греть надо именно его.
     // Fire-and-forget, ошибка не важна.
-    const master = getMasterCoverUrl(version);
-    if (master) void Image.prefetch(master, 'memory-disk').catch(() => {});
+    const hero = getHeroCoverUrl(version);
+    if (hero) void Image.prefetch(hero, 'memory-disk').catch(() => {});
     router.push({
       pathname: `/record/${version.release_id}`,
       params: {

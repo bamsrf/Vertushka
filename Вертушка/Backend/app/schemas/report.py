@@ -19,6 +19,22 @@ class ReportActionRequest(BaseModel):
     action: ReportAction
 
 
+class ReportTargetDetail(BaseModel):
+    """Карточка объекта жалобы — то, что staff видит вместо одной строки.
+
+    Обложка здесь ключевая: жалуются обычно не на текст «артист — тайтл», а
+    на то, что человек залил вместо обложки. Без картинки решение
+    принималось вслепую.
+    """
+
+    cover_url: str | None = None
+    author_username: str | None = None
+    moderation_status: str | None = None
+    # [("Год", "1985"), ...] — что показать под обложкой. Список, а не словарь:
+    # порядок полей осмысленный, и шаблон рисует их как есть.
+    fields: list[tuple[str, str]] = Field(default_factory=list)
+
+
 class ReportResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -34,3 +50,6 @@ class ReportResponse(BaseModel):
     # Без этого разобрать жалобу за 24ч можно только через прямой доступ к БД,
     # а SLA мы обещаем и пользователям в Условиях, и Apple при ревью.
     target_preview: str | None = None
+
+    # Обложка и метаданные объекта. None для жалоб, чей объект уже удалён.
+    target_detail: ReportTargetDetail | None = None

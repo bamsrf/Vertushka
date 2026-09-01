@@ -16,6 +16,7 @@
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 from contextvars import ContextVar
 from datetime import datetime, timedelta
@@ -24,8 +25,10 @@ from typing import Iterable
 
 import re
 
+import httpx
 from rapidfuzz import fuzz
 from sqlalchemy import select, text, func, or_, update
+from sqlalchemy.exc import DBAPIError, InterfaceError, MissingGreenlet, OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import async_session_maker
@@ -34,7 +37,9 @@ from app.models.store_listing import StoreListing, MatchMethod
 from app.services.scrapers.extractors import (
     normalize_barcode,
     normalize_catalog,
+    FORMAT_FAMILY,
     infer_format,
+    sql_format_family,
     barcode_variants,
 )
 from app.services.vinyl_color import color_family
@@ -61,17 +66,14 @@ def _format_family(raw: str | None) -> str | None:
     """Грубая «семья носителя» для сравнения форматов листинга и записи.
 
     Прогоняем через infer_format (понимает Vinyl/LP/CD/Cassette в любом
-    написании), затем сворачиваем в семью. Box Set / неизвестное → None
-    (penalty не применяется — бокс бывает и виниловый, и CD).
+    написании), затем сворачиваем в семью по FORMAT_FAMILY. Box Set /
+    неизвестное → None (penalty не применяется — бокс бывает и виниловый, и CD).
+
+    Таблица семей живёт рядом с паттернами (scrapers/extractors), потому что из
+    неё же генерируется SQL-зеркало `sql_format_family` — иначе Python и SQL
+    разошлись бы при первой же правке.
     """
-    fmt = infer_format(raw)
-    if fmt in ("LP", "2xLP", "EP", "Single"):
-        return "VINYL"
-    if fmt in ("CD", "SACD"):
-        return "CD"
-    if fmt == "Cassette":
-        return "CASSETTE"
-    return None
+    return FORMAT_FAMILY.get(infer_format(raw) or "")
 
 # Аксессуары: магазины ставят их в общий каталог рядом с пластинками
 # (пины-значки, пакеты, щётки, постеры, сертификаты), а парсер по дефолту
@@ -158,6 +160,44 @@ DISCOGS_FETCH_HOURLY_LIMIT = 2000
 # отправить в кулдаун на неделю, ни разу не спросив про него Discogs. ContextVar,
 # а не глобальный флаг: матчер гоняется в общем event loop с остальными задачами.
 _quota_blocked: ContextVar[bool] = ContextVar("discogs_quota_blocked", default=False)
+
+# Выставляется, когда on-demand шаг умер на инфраструктуре (httpx-таймаут,
+# смерть соединения БД, MissingGreenlet), а не получил честный ответ Discogs.
+# Такой листинг тоже НЕ считается попробованным. 2026-08-23: до этого флага
+# `except Exception: return None` в обоих fetch'ах был неотличим от «Discogs
+# не знает такого релиза» — за ночь 13 листингов ушли в недельный кулдаун
+# из-за ошибок, к самим листингам отношения не имеющих.
+_infra_blocked: ContextVar[bool] = ContextVar("discogs_infra_blocked", default=False)
+
+
+def _is_infra_error(exc: BaseException) -> bool:
+    """Инфраструктурная ли это ошибка (сеть/таймаут/соединение БД/квота).
+
+    Инфра-ошибка — беда прогона, не листинга: попытка не считается
+    состоявшейся, кулдаун не сжигается. Прикладные ошибки (баг в наших
+    данных, честный HTTP 404) сюда не попадают — для них повтор через час
+    бессмыслен, и кулдаун сжигается как раньше.
+    """
+    if isinstance(exc, httpx.HTTPStatusError):
+        # 429 — квота Discogs: это про прогон, не про листинг. Остальные
+        # статусы (404/400) — честный ответ «нет такого релиза».
+        return exc.response.status_code == 429
+    if isinstance(exc, (httpx.TransportError, httpx.TimeoutException)):
+        return True
+    if isinstance(exc, (asyncio.TimeoutError, TimeoutError, ConnectionError)):
+        return True
+    if isinstance(exc, (MissingGreenlet, InterfaceError, OperationalError)):
+        return True
+    if isinstance(exc, DBAPIError):
+        return exc.connection_invalidated
+    # Circuit breaker Discogs открыт — сервис лежит, листинг ни при чём.
+    from app.services.discogs import CircuitOpenError
+    if isinstance(exc, CircuitOpenError):
+        return True
+    # asyncpg/greenlet кидают смерть соединения собственными типами, которые
+    # SQLAlchemy не всегда успевает обернуть в DBAPIError.
+    mod = type(exc).__module__ or ""
+    return mod.startswith(("asyncpg", "greenlet"))
 
 # Порог pg_trgm для фильтра кандидатов по склейке «artist title» в дампе.
 # Ставится через SET LOCAL на время транзакции, см. _lookup_in_dump_index.
@@ -711,8 +751,18 @@ async def _try_discogs_fetch(
             return None
 
         return await _save_discogs_result(db, items[0], barcode=barcode, catalog=catalog)
-    except Exception:
-        logger.exception("on-demand discogs fetch failed (barcode=%s catalog=%s)", barcode, catalog)
+    except Exception as exc:
+        # 2026-08-23: не всякий провал — «Discogs не знает релиза». Инфра-ошибка
+        # (таймаут, смерть соединения, MissingGreenlet) не должна сжигать
+        # недельный кулдаун: за ночь 23.08 так заморожено 13 листингов.
+        if _is_infra_error(exc):
+            _infra_blocked.set(True)
+            logger.warning(
+                "on-demand discogs fetch infra-failed (barcode=%s catalog=%s): %r",
+                barcode, catalog, exc,
+            )
+        else:
+            logger.exception("on-demand discogs fetch failed (barcode=%s catalog=%s)", barcode, catalog)
         return None
 
 
@@ -773,10 +823,19 @@ async def _try_discogs_fetch_by_text(
         # Берём первый — Discogs обычно выдаёт самый релевантный сверху.
         first = items[0]
         return await _save_discogs_result(db, first, barcode=None, catalog=None)
-    except Exception:
-        logger.exception(
-            "on-demand discogs fetch-by-text failed (artist=%s title=%s)", artist, title,
-        )
+    except Exception as exc:
+        # 2026-08-23: та же классификация, что и в barcode-fetch — инфра-ошибка
+        # не равна честному «не нашлось», кулдаун за неё не сжигаем.
+        if _is_infra_error(exc):
+            _infra_blocked.set(True)
+            logger.warning(
+                "on-demand discogs fetch-by-text infra-failed (artist=%s title=%s): %r",
+                artist, title, exc,
+            )
+        else:
+            logger.exception(
+                "on-demand discogs fetch-by-text failed (artist=%s title=%s)", artist, title,
+            )
         return None
 
 
@@ -1144,6 +1203,10 @@ async def match_unmatched_batch(batch_size: int = 200) -> dict[str, int]:
         # Сколько листингов не получили полноценной попытки: квота Discogs
         # кончилась. Они остаются в очереди и вернутся следующим прогоном.
         "quota_blocked": 0,
+        # Сколько листингов упёрлись в инфраструктурную ошибку (таймаут httpx,
+        # смерть соединения, MissingGreenlet) — тоже не попытка. 2026-08-23:
+        # без этого счётчика ночная заморозка 13 листингов была невидима.
+        "infra_blocked": 0,
     }
     # Диагностика: сколько unmatched листингов вообще имеют сигналы для матчинга.
     # Без неё непонятно, парсер ли не вытаскивает barcode/discogs_url, или
@@ -1182,8 +1245,9 @@ async def match_unmatched_batch(batch_size: int = 200) -> dict[str, int]:
 
         attempted_at = datetime.utcnow()
         # Листинги, по которым попытка была полноценной. Те, что упёрлись в
-        # исчерпанную квоту Discogs, сюда не попадают: пометить их — значит
-        # отправить в недельный кулдаун, ни разу про них не спросив.
+        # исчерпанную квоту Discogs или в инфраструктурную ошибку, сюда не
+        # попадают: пометить их — значит отправить в недельный кулдаун, ни
+        # разу не получив про них честного ответа.
         attempted_ids: list = []
         for listing in listings:
             counters["processed"] += 1
@@ -1211,31 +1275,42 @@ async def match_unmatched_batch(batch_size: int = 200) -> dict[str, int]:
             # только этот savepoint, остальные листинги продолжаем матчить.
             sp = await db.begin_nested()
             _quota_blocked.set(False)
+            _infra_blocked.set(False)
             try:
                 ok = await match_listing(listing, db)
                 await sp.commit()
                 counters["matched" if ok else "unmatched"] += 1
                 if ok and listing.match_method == MatchMethod.STORE_NATIVE:
                     counters["store_native_created"] += 1
-            except Exception:
+            except Exception as exc:
                 await sp.rollback()
                 counters["errors"] += 1
                 logger.exception("match failed for listing %s", listing.id)
-                # Упавший листинг — попытка состоявшаяся: причина в нём самом
-                # или в наших данных, и повторять её через час бессмысленно.
-                attempted_ids.append(listing.id)
+                if _is_infra_error(exc):
+                    # 2026-08-23: инфра-ошибка, вылетевшая из match_listing
+                    # (смерть соединения посреди SELECT'а), — не попытка:
+                    # листинг остаётся в голове очереди, как при quota_blocked.
+                    counters["infra_blocked"] += 1
+                else:
+                    # Упавший на прикладной ошибке листинг — попытка
+                    # состоявшаяся: причина в нём самом или в наших данных,
+                    # и повторять её через час бессмысленно.
+                    attempted_ids.append(listing.id)
                 continue
 
-            if ok or not _quota_blocked.get():
+            if ok or not (_quota_blocked.get() or _infra_blocked.get()):
                 attempted_ids.append(listing.id)
-            else:
+            elif _quota_blocked.get():
                 counters["quota_blocked"] += 1
+            else:
+                counters["infra_blocked"] += 1
 
         # Отметка попытки — одним UPDATE, вне савпоинтов. Через ORM-атрибут было
         # бы ненадёжно: `sp.rollback()` на упавшем листинге может откатить и её,
         # и тогда он навсегда останется в голове очереди — ровно та болезнь,
         # которую эта колонка лечит. Отмечаем только состоявшиеся попытки:
-        # упёршиеся в исчерпанную квоту Discogs остаются в очереди.
+        # упёршиеся в исчерпанную квоту Discogs или в инфра-ошибку остаются
+        # в очереди.
         if attempted_ids:
             await db.execute(
                 update(StoreListing)
@@ -1275,17 +1350,46 @@ async def rematch_format_conflicts_batch(batch_size: int = 500) -> dict[str, int
     """
     counters = {"scanned": 0, "conflicts_reset": 0, "errors": 0}
     affected_discogs_ids: set[str] = set()
+    listing_family = sql_format_family("sl.format_raw")
+    record_family = sql_format_family("r.format_type")
     async with async_session_maker() as db:
+        # Конфликт ищем предикатом в БД, а не фильтром в Python. Раньше отбор шёл
+        # так: 500 строк по matched_at ASC → сравнение семей в Python. Но у
+        # чистой строки matched_at не меняется, и она НИКОГДА не покидала окно:
+        # джоба каждую ночь разглядывала одни и те же 500 майских листингов. На
+        # проде 28.08 в этом окне было 2 конфликта из 500 при 1 645 всего — темп
+        # разбора «два в сутки», горизонт больше года.
+        candidate_ids = (await db.execute(
+            text(
+                f"""
+                SELECT sl.id
+                FROM store_listings sl
+                JOIN records r ON r.id = sl.matched_record_id
+                WHERE sl.status IN ('in_stock', 'preorder')
+                  AND sl.match_method <> :store_native
+                  AND sl.format_raw IS NOT NULL
+                  AND r.format_type IS NOT NULL
+                  AND {listing_family} IS NOT NULL
+                  AND {record_family} IS NOT NULL
+                  AND {listing_family} <> {record_family}
+                ORDER BY sl.matched_at ASC
+                LIMIT :limit
+                """
+            ),
+            {"store_native": MatchMethod.STORE_NATIVE, "limit": batch_size},
+        )).scalars().all()
+
+        if not candidate_ids:
+            logger.info("rematch format conflicts: конфликтов нет")
+            return counters
+
+        # Python остаётся арбитром: SQL-зеркало сгенерировано из тех же
+        # паттернов, но подтверждение стоит дёшево, а ложный сброс привязки —
+        # дорого (листинг уходит в unmatched до следующего часового прогона).
         res = await db.execute(
             select(StoreListing, Record)
             .join(Record, Record.id == StoreListing.matched_record_id)
-            .where(StoreListing.matched_record_id.is_not(None))
-            .where(StoreListing.status.in_(("in_stock", "preorder")))
-            .where(StoreListing.match_method != MatchMethod.STORE_NATIVE)
-            .where(StoreListing.format_raw.is_not(None))
-            .where(Record.format_type.is_not(None))
-            .order_by(StoreListing.matched_at.asc())
-            .limit(batch_size)
+            .where(StoreListing.id.in_(candidate_ids))
         )
         rows = res.all()
         for listing, rec in rows:

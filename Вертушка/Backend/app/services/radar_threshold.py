@@ -24,7 +24,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.listing_price_history import ListingPriceHistory
-from app.models.store_listing import ListingStatus
+from app.models.store_listing import ListingStatus, StoreListing
 
 # Окно базы. Совпадает с дефолтом графика в шторке цены (days=90).
 BASELINE_DAYS = 90
@@ -47,19 +47,33 @@ async def baseline_prices(
     since = datetime.utcnow() - timedelta(days=BASELINE_DAYS)
     day = func.date_trunc("day", ListingPriceHistory.captured_at)
 
+    # Привязку берём джойном через store_listings.matched_record_id, а не из
+    # денормализованного listing_price_history.record_id: денорм пишется в
+    # _upsert_listing значением на момент снапшота, матчинг идёт отдельной
+    # часовой задачей и историю не досыпает — до-матчевые строки лежат с
+    # record_id=NULL. График в шторке цены считает привязку джойном, и база
+    # обязана считать её так же: обещание «дешевле обычного» разъедется с
+    # картинкой, если медиана берётся по половине точек.
+    #
+    # Заодно перестаёт врать MIN_BASELINE_DAYS: по денорму у свежепривязанной
+    # пластинки набиралось <5 дней, база не отдавалась, и относительный порог
+    # молча сваливался на price_threshold_rub — то есть на None («слать всегда»)
+    # у тех, кто рубли не задавал.
     daily = (
         select(
-            ListingPriceHistory.record_id.label("record_id"),
+            StoreListing.matched_record_id.label("record_id"),
             day.label("day"),
             func.min(ListingPriceHistory.price_rub).label("min_price"),
         )
+        .select_from(ListingPriceHistory)
+        .join(StoreListing, StoreListing.id == ListingPriceHistory.listing_id)
         .where(
-            ListingPriceHistory.record_id.in_(record_ids),
+            StoreListing.matched_record_id.in_(record_ids),
             ListingPriceHistory.status == ListingStatus.IN_STOCK,
             ListingPriceHistory.price_rub.is_not(None),
             ListingPriceHistory.captured_at >= since,
         )
-        .group_by(ListingPriceHistory.record_id, day)
+        .group_by(StoreListing.matched_record_id, day)
         .subquery()
     )
 

@@ -56,6 +56,7 @@ from pathlib import Path
 from lxml import etree
 
 from app.scripts.ingest_discogs_dump import _parse_release, derive_format
+from app.services.vinyl_color import vinyl_color_from_format_texts
 
 logger = logging.getLogger("extract_release_formats")
 
@@ -88,17 +89,62 @@ def _is_unofficial(elem) -> bool:
     return False
 
 
+#: `records.genre` / `records.style` — String(255). Дамп изредка отдаёт больше
+#: (у сборников бывает десяток стилей), и без обрезки COPY упал бы на проде.
+_MAX_FIELD = 255
+
+
+def _joined(elem, path: str) -> str | None:
+    """«Rock, Pop» из `<genres><genre>…`.
+
+    Склейка через ", " — ровно так же делает `DiscogsService.get_release`
+    (services/discogs.py). Разойдись форматы, одна и та же колонка заполнялась
+    бы живым и дампным путём по-разному, и ILIKE-паттерны чипов ловили бы
+    записи через раз.
+    """
+    values = [(node.text or "").strip() for node in elem.findall(path)]
+    values = [v for v in values if v]
+    if not values:
+        return None
+    out = ", ".join(values)
+    if len(out) <= _MAX_FIELD:
+        return out
+    # Режем по границе элемента, а не посреди слова: огрызок «Ind» в style
+    # матчился бы паттернами как попало.
+    return out[:_MAX_FIELD].rsplit(", ", 1)[0] or out[:_MAX_FIELD]
+
+
+def load_wanted_ids(path: Path) -> set[int]:
+    """Список discogs_id (по одному в строке), которым нужны жанры.
+
+    Снимается с прода: `SELECT discogs_id FROM records WHERE genre IS NULL`.
+    Фильтр по списку, а не выгрузка всех 19M строк — потому что на прод-диске
+    свободно ~3 ГБ, и полная таблица жанров (~0.9 ГБ) туда просто не влезет,
+    тогда как выборка под наш склад весит единицы мегабайт.
+    """
+    ids: set[int] = set()
+    with path.open() as fh:
+        for line in fh:
+            line = line.strip()
+            if line.isdigit():
+                ids.add(int(line))
+    return ids
+
+
 def extract(
     file_path: Path,
     out_dir: Path,
     dump_date: date,
     since_id: int | None,
     limit: int | None,
+    wanted_ids: set[int] | None = None,
 ) -> dict[str, int]:
     out_dir.mkdir(parents=True, exist_ok=True)
     stamp = dump_date.strftime("%Y%m%d")
     formats_path = out_dir / f"formats_{stamp}.csv.gz"
     new_path = out_dir / f"new_{stamp}.csv.gz"
+    genres_path = out_dir / f"genres_{stamp}.csv.gz"
+    colors_path = out_dir / f"colors_{stamp}.csv.gz"
     # Пишем в .part и переименовываем в самом конце. Обрезанный дамп (а
     # data.discogs.com отдаёт файл chunked, без Content-Length, так что curl
     # завершается успехом даже на обрыве) роняет iterparse посреди потока —
@@ -106,8 +152,10 @@ def extract(
     # залил бы на прод.
     formats_tmp = formats_path.with_suffix(".gz.part")
     new_tmp = new_path.with_suffix(".gz.part")
+    genres_tmp = genres_path.with_suffix(".gz.part")
+    colors_tmp = colors_path.with_suffix(".gz.part")
 
-    counters = {"seen": 0, "formats": 0, "new": 0, "skipped": 0}
+    counters = {"seen": 0, "formats": 0, "new": 0, "genres": 0, "colors": 0, "skipped": 0}
     started = time.time()
     last_report = started
     # Суммарная длина записанных строк — по ней оцениваем вес таблицы на проде
@@ -115,11 +163,21 @@ def extract(
     bytes_written = 0
 
     new_file = gzip.open(new_tmp, "wt", newline="", encoding="utf-8") if since_id else None
+    genres_file = (
+        gzip.open(genres_tmp, "wt", newline="", encoding="utf-8") if wanted_ids else None
+    )
+    # Цвет пресса — из атрибута `text` у формата. Discogs пишет туда и цвет
+    # пластинки, и упаковку; отсев в vinyl_color_from_format_texts.
+    colors_file = (
+        gzip.open(colors_tmp, "wt", newline="", encoding="utf-8") if wanted_ids else None
+    )
     try:
         with gzip.open(file_path, "rb") as fh, \
                 gzip.open(formats_tmp, "wt", newline="", encoding="utf-8") as fmt_out:
             fmt_writer = csv.writer(fmt_out)
             new_writer = csv.writer(new_file) if new_file else None
+            genres_writer = csv.writer(genres_file) if genres_file else None
+            colors_writer = csv.writer(colors_file) if colors_file else None
 
             for _event, elem in etree.iterparse(fh, tag="release"):
                 try:
@@ -157,13 +215,29 @@ def extract(
                             ))
                             counters["new"] += 1
 
+                    if colors_writer is not None and discogs_id in wanted_ids:
+                        color = vinyl_color_from_format_texts(
+                            [f.get("text") for f in elem.findall(".//formats/format")]
+                        )
+                        if color:
+                            colors_writer.writerow((discogs_id, color[:255]))
+                            counters["colors"] += 1
+
+                    if genres_writer is not None and discogs_id in wanted_ids:
+                        genre = _joined(elem, "genres/genre")
+                        style = _joined(elem, "styles/style")
+                        if genre or style:
+                            genres_writer.writerow((discogs_id, genre or "", style or ""))
+                            counters["genres"] += 1
+
                     now = time.time()
                     if now - last_report >= 30:
                         rate = counters["seen"] / (now - started)
                         logger.info(
-                            "seen=%d formats=%d new=%d rate=%.0f/s est_table=%.0fMB",
+                            "seen=%d formats=%d new=%d genres=%d rate=%.0f/s est_table=%.0fMB",
                             counters["seen"], counters["formats"], counters["new"],
-                            rate, (bytes_written + counters["formats"] * 40) / 1e6,
+                            counters["genres"], rate,
+                            (bytes_written + counters["formats"] * 40) / 1e6,
                         )
                         last_report = now
 
@@ -180,11 +254,19 @@ def extract(
     finally:
         if new_file is not None:
             new_file.close()
+        if genres_file is not None:
+            genres_file.close()
+        if colors_file is not None:
+            colors_file.close()
 
     # Досюда дошли — поток дочитан до конца, файлы можно считать готовыми.
     formats_tmp.rename(formats_path)
     if new_file is not None:
         new_tmp.rename(new_path)
+    if genres_file is not None:
+        genres_tmp.rename(genres_path)
+    if colors_file is not None:
+        colors_tmp.rename(colors_path)
 
     # Дамп 2026-08 содержит ~19M релизов. Сильно меньше — почти наверняка
     # обрезанный файл, который iterparse дочитал «успешно» (gzip-поток кончился
@@ -198,9 +280,10 @@ def extract(
 
     elapsed = time.time() - started
     logger.info(
-        "ГОТОВО за %.0f мин: seen=%d formats=%d (%.1f%%) new=%d",
+        "ГОТОВО за %.0f мин: seen=%d formats=%d (%.1f%%) new=%d genres=%d",
         elapsed / 60, counters["seen"], counters["formats"],
         100 * counters["formats"] / max(counters["seen"], 1), counters["new"],
+        counters["genres"],
     )
     logger.info("formats → %s (%.0f МБ)", formats_path, formats_path.stat().st_size / 1e6)
     logger.info(
@@ -210,6 +293,20 @@ def extract(
     )
     if new_file is not None:
         logger.info("new → %s (%.0f МБ)", new_path, new_path.stat().st_size / 1e6)
+    if genres_file is not None:
+        # Промах = id есть у нас, но в дампе его нет: релиз новее дампа либо
+        # удалён из Discogs. Такие добираются живым API, их должно быть мало —
+        # если доля большая, значит список id снят не с того окружения.
+        missing = len(wanted_ids) - counters["genres"]
+        logger.info(
+            "genres → %s (%.1f МБ): нашли %d из %d запрошенных, не нашли %d",
+            genres_path, genres_path.stat().st_size / 1e6,
+            counters["genres"], len(wanted_ids), missing,
+        )
+        logger.info(
+            "colors → %s (%.1f МБ): цвет пресса нашёлся у %d",
+            colors_path, colors_path.stat().st_size / 1e6, counters["colors"],
+        )
     return counters
 
 
@@ -223,6 +320,14 @@ def main() -> int:
     parser.add_argument(
         "--since-id", type=int,
         help="max(discogs_id) на проде — включает выгрузку новых релизов",
+    )
+    parser.add_argument(
+        "--ids-file", type=Path,
+        help=(
+            "файл со списком discogs_id (по одному в строке) — включает выгрузку "
+            "genres_*.csv.gz с жанрами/стилями и colors_*.csv.gz с цветом "
+            "пресса — только для этих релизов"
+        ),
     )
     parser.add_argument("--limit", type=int, help="остановиться после N релизов (тест)")
     args = parser.parse_args()
@@ -244,7 +349,19 @@ def main() -> int:
     if not args.file.exists():
         parser.error(f"нет файла: {args.file}")
 
-    extract(args.file, args.out_dir, dump_date, args.since_id, args.limit)
+    wanted_ids = None
+    if args.ids_file:
+        if not args.ids_file.exists():
+            parser.error(f"нет файла со списком id: {args.ids_file}")
+        wanted_ids = load_wanted_ids(args.ids_file)
+        if not wanted_ids:
+            # Пустой список молча дал бы пустой CSV, загрузчик отработал бы «успешно»
+            # и ноль строк — ровно тот класс тихих провалов, что уже стоил нам
+            # 6M пропущенных релизов при ингесте дампа.
+            parser.error(f"список id пуст: {args.ids_file}")
+        logger.info("жанры запрошены для %d id", len(wanted_ids))
+
+    extract(args.file, args.out_dir, dump_date, args.since_id, args.limit, wanted_ids)
     return 0
 
 

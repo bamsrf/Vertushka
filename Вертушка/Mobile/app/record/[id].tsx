@@ -825,11 +825,17 @@ export default function RecordDetailScreen() {
     );
   }
 
-  // Герой карточки — только мастер-грейд. Мелкий превью (в том числе у старых
-  // записей, куда 150px-thumb успел попасть в cover_image_url) уходит в
-  // плейсхолдер: видно сразу, но не растянуто на всю ширину.
-  const imageUrl = getMasterCoverUrl(record);
+  // Герой карточки. Есть мастер — он в source, мелкий превью в placeholder:
+  // видно сразу, потом уступает место мастеру.
+  //
+  // Мастера нет (у релиза вся обложка мельче MASTER_MIN_SIDE — так бывает,
+  // когда на Discogs залили маленький скан) — тогда лучшее мелкое идёт в
+  // source само. Раньше в этой ветке source оставался пустым, и картинка
+  // навсегда залипала плейсхолдером: экран вечно «грузился», а показывал
+  // 150px-thumb вместо 300px-обложки из соседнего поля.
+  const masterUrl = getMasterCoverUrl(record);
   const thumbUrl = previewThumb || getPlaceholderCoverUrl(record);
+  const imageUrl = masterUrl || thumbUrl;
 
   // UGC: чужая user-запись — жалоба доступна из хедера даже вне коллекции.
   const isForeignUserRecord =
@@ -882,9 +888,11 @@ export default function RecordDetailScreen() {
               cachePolicy="memory-disk"
               // Приоритет плейсхолдера: уже показанный thumb (пиксели, но
               // мгновенно и без мигания на blur) → blurhash записи → blurhash
-              // из preview-параметров.
+              // из preview-параметров. Когда мастера нет, thumb уже стоит в
+              // source — дублировать его в placeholder незачем, под ним
+              // показываем blurhash.
               placeholder={
-                thumbUrl
+                masterUrl && thumbUrl
                   ? thumbUrl
                   : record.blurhash
                     ? { blurhash: record.blurhash }

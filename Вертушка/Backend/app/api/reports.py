@@ -21,7 +21,13 @@ from app.models.conversation import Conversation, Message
 from app.models.record import Record
 from app.models.report import Report
 from app.models.user import User
-from app.schemas.report import ReportActionRequest, ReportCreate, ReportResponse
+from app.schemas.record import build_cover_url
+from app.schemas.report import (
+    ReportActionRequest,
+    ReportCreate,
+    ReportResponse,
+    ReportTargetDetail,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +64,70 @@ async def _build_target_preview(db: AsyncSession, report: Report) -> str | None:
     return None
 
 
+async def _build_target_detail(
+    db: AsyncSession, report: Report
+) -> ReportTargetDetail | None:
+    """Карточка объекта: обложка, автор, метаданные.
+
+    Жалуются чаще всего на картинку, а не на подпись — по одной строке
+    «артист — тайтл» решение принять нельзя, приходилось лезть в БД за
+    cover_local_path и собирать URL руками.
+    """
+    if report.target_type == "record":
+        record = await db.get(Record, report.target_id)
+        if record is None:
+            return None
+
+        fields: list[tuple[str, str]] = []
+        if record.year:
+            fields.append(("Год", str(record.year)))
+        if record.label:
+            fields.append(("Лейбл", record.label))
+        if record.format_type:
+            fields.append(("Формат", record.format_type))
+        fields.append(("Источник", record.source))
+
+        author = None
+        if record.created_by_user_id:
+            user = await db.get(User, record.created_by_user_id)
+            author = user.username if user else None
+
+        return ReportTargetDetail(
+            # Тот же хелпер, что собирает обложку мобилке: один путь — один
+            # cache-bust, иначе staff смотрел бы на старую картинку.
+            cover_url=build_cover_url(
+                record.cover_local_path, record.cover_cached_at
+            ),
+            author_username=author,
+            moderation_status=record.moderation_status,
+            fields=fields,
+        )
+
+    if report.target_type == "user":
+        user = await db.get(User, report.target_id)
+        if user is None:
+            return None
+        return ReportTargetDetail(
+            author_username=user.username,
+            fields=[("Статус", "активен" if user.is_active else "забанен")],
+        )
+
+    if report.target_type == "message":
+        message = await db.get(Message, report.target_id)
+        if message is None:
+            return None
+        sender = await db.get(User, message.sender_id)
+        return ReportTargetDetail(
+            author_username=sender.username if sender else None,
+            fields=[
+                ("Отправлено", message.created_at.strftime("%d.%m.%Y %H:%M")),
+                ("Состояние", "удалено" if message.deleted_at else "видно в чате"),
+            ],
+        )
+
+    return None
+
+
 async def _notify_message_removed(db: AsyncSession, message: Message) -> None:
     """Разослать обоим участникам событие удаления — как при обычном удалении.
 
@@ -84,7 +154,10 @@ async def _notify_message_removed(db: AsyncSession, message: Message) -> None:
 async def _to_response(db: AsyncSession, report: Report) -> ReportResponse:
     response = ReportResponse.model_validate(report)
     return response.model_copy(
-        update={"target_preview": await _build_target_preview(db, report)}
+        update={
+            "target_preview": await _build_target_preview(db, report),
+            "target_detail": await _build_target_detail(db, report),
+        }
     )
 
 

@@ -1,6 +1,6 @@
 """
 ШАБЛОН парсера магазина. Скопируй в `<slug>.py`, переименуй класс,
-заполни поля под конкретный сайт. Не забудь добавить импорт в shops/__init__.py.
+заполни поля под конкретный сайт.
 
 Стратегии (выбери подходящую):
 1. **YML-фид** — самый удобный путь. Если у магазина есть /yml.xml — переопредели
@@ -8,6 +8,32 @@
 2. **Sitemap + JSON-LD** — sitemap.xml даёт URL-ы товаров, JSON-LD вытаскивает поля.
 3. **Sitemap + CSS** — fallback, когда JSON-LD нет.
 4. **Category-walk** — если sitemap отсутствует, override `discover_urls`.
+
+Дефолты из base.py (rate_limit_per_sec=0.5, rate_burst=2, requires_js=False)
+не переопределяй без нужды — объявляй только то, что у магазина другое.
+
+ЧЕК-ЛИСТ ПОДКЛЮЧЕНИЯ МАГАЗИНА (полный путь, сторожат
+test_store_registries_sync.py и test_store_logos.py):
+
+1. Парсер: `shops/<slug>.py` + тесты `tests/test_<slug>*.py` на живых
+   фикстурах (образцы — test_skifmusic_parser.py, test_rotaryrecords.py).
+2. Импорт `from app.services.scrapers.shops import <slug>  # noqa` в
+   shops/__init__.py — без него парсер не попадёт в реестр.
+3. Запись в STORES в app/scripts/seed_stores.py (slug == parser_class ==
+   имя файла) и прогон на проде:
+   `python -m app.scripts.seed_stores --slug=<slug>`.
+   НЕ заводить магазин в прод-БД руками мимо скрипта — реестры разъедутся.
+4. Логотип `<slug>.png` (PNG, квадрат, ≥300×300 — см. Design/Магазины/README.md)
+   в ТРИ места:
+   - Design/Магазины/<slug>.png — склад оригиналов;
+   - Backend/app/web/static/store-logos/<slug>.png + slug в
+     `_LOCAL_STORE_LOGOS` (app/web/routes.py);
+   - Mobile/assets/store-logos/<slug>.png + запись в `STORE_REGISTRY`
+     (Mobile/components/market/StoreLogo.tsx) — require(...) статический.
+5. Smoke crawl на проде: ограниченный прогон, проверить листинги/цены/статусы
+   в БД и что магазин появился в выдаче маркета.
+6. Строка в таблицу магазинов в docs/plans/MARKET_STORES_SCALING.md
+   (tier, стратегия, стоимость обхода в запросах, дата подключения).
 """
 from __future__ import annotations
 
@@ -32,8 +58,6 @@ from app.services.scrapers.registry import register_parser
 @register_parser("EXAMPLE_SLUG")
 class ExampleParser(BaseStoreParser):
     base_url = "https://example.com"
-    rate_limit_per_sec = 0.5      # 1 req / 2 сек
-    requires_js = False
     listing_url_pattern = r"/product/"   # фильтр URL из sitemap
 
     async def parse_listing(self, url: str) -> ListingDTO:

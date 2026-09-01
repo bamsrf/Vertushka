@@ -109,14 +109,15 @@ export function getCoverUrl(
 const MASTER_MIN_SIDE = 500;
 
 /**
- * Заведомо мелкая картинка? Размер читается из URL: imgproxy-сегменты
- * (`/w:150/h:150/` у Discogs), CAA `front-250`, iTunes `100x100bb`, Deezer
- * `250x250-...`. Неизвестная схема → false: рубить то, чего не разобрали,
- * значило бы терять покрытие (у CAA `/front` и у магазинных CDN размера в URL
- * нет вообще).
+ * Меньшая сторона картинки, вычитанная из URL, или undefined, если схему не
+ * разобрали. Понимает imgproxy-сегменты (`/w:150/h:150/` у Discogs), CAA
+ * `front-250`, iTunes `100x100bb`, Deezer `250x250-...`.
+ *
+ * undefined значит «не знаю», а не «мелкая»: у CAA `/front` и у магазинных CDN
+ * размера в URL нет вообще, и считать их мелкими значило бы терять покрытие.
  */
-export function isThumbGrade(url: string | undefined | null): boolean {
-  if (!url) return false;
+export function coverSideFromUrl(url: string | undefined | null): number | undefined {
+  if (!url) return undefined;
   const sides: number[] = [];
   for (const rx of [/(?:^|\/)w:(\d+)(?:\/|$)/g, /(?:^|\/)h:(\d+)(?:\/|$)/g, /\/(?:front|back|\d+)-(\d+)(?:\.\w+)?(?:\?|$)/g]) {
     for (const m of url.matchAll(rx)) sides.push(Number(m[1]));
@@ -125,7 +126,13 @@ export function isThumbGrade(url: string | undefined | null): boolean {
     for (const m of url.matchAll(rx)) sides.push(Number(m[1]), Number(m[2]));
   }
   const known = sides.filter((s) => s > 0);
-  return known.length > 0 && Math.min(...known) < MASTER_MIN_SIDE;
+  return known.length > 0 ? Math.min(...known) : undefined;
+}
+
+/** Заведомо мелкая картинка? Неразобранная схема → false, см. coverSideFromUrl. */
+export function isThumbGrade(url: string | undefined | null): boolean {
+  const side = coverSideFromUrl(url);
+  return side !== undefined && side < MASTER_MIN_SIDE;
 }
 
 /**
@@ -149,16 +156,49 @@ export function getMasterCoverUrl(
  * URL для плейсхолдер-тира: мелкая картинка, которую можно показать мгновенно,
  * пока грузится мастер. Именно так делает Discogs — в их RN-бандле рядом с
  * основной рецептурой `q:90/h:600/w:600` лежит дешёвая `q:40/h:300/w:400`.
+ *
+ * Из двух мелких берём БОЛЬШУЮ. Раньше `thumb_image_url` возвращался первым
+ * правилом, без сравнения — и у релиза с обложкой 300px и thumb'ом 150px
+ * деталь показывала 150px, вдвое хуже того, что лежало в соседнем поле той же
+ * строки. Гейт тира выбивал 300px из мастер-слота (правильно: 300 < 500), а
+ * запасной путь молча уходил на 150 (неправильно). Пример:
+ * Discogs 12194564 — обложка 300px/19 КБ, thumb 150px/2.6 КБ.
  */
 export function getPlaceholderCoverUrl(
   record: { thumb_image_url?: string; cover_image_url?: string } | null | undefined
 ): string | undefined {
   if (!record) return undefined;
-  if (record.thumb_image_url) return record.thumb_image_url;
-  if (record.cover_image_url && isThumbGrade(record.cover_image_url)) {
-    return record.cover_image_url;
-  }
-  return undefined;
+  const thumb = record.thumb_image_url;
+  // Мастер-грейд в плейсхолдере делать нечего — его забирает getMasterCoverUrl.
+  const small =
+    record.cover_image_url && isThumbGrade(record.cover_image_url)
+      ? record.cover_image_url
+      : undefined;
+  if (!thumb) return small;
+  if (!small) return thumb;
+  // Размер `small` известен по построению (isThumbGrade врёт «false» на
+  // неразобранных схемах). У thumb'а размера может не быть — тогда он
+  // проигрывает: поле называется thumb, и у наших источников это всегда 150px.
+  return (coverSideFromUrl(small) ?? 0) > (coverSideFromUrl(thumb) ?? 0) ? small : thumb;
+}
+
+/**
+ * URL для героя карточки релиза: мастер, а если мастера нет — лучшее мелкое.
+ *
+ * Второе не косметика. Пока мелкое уходило только в `placeholder`, а `source`
+ * оставался пустым, expo-image никогда не завершал загрузку: экран навсегда
+ * висел в состоянии «грузится», показывая растянутый плейсхолдер. Отсюда и
+ * жалоба «обложка как будто не догрузилась» — она буквально не догружалась.
+ * Чётче картинка от переезда в `source` не станет, но отработает onLoad и
+ * файл ляжет в disk-кэш.
+ */
+export function getHeroCoverUrl(
+  record:
+    | { cover_url?: string; cover_image_url?: string; thumb_image_url?: string }
+    | null
+    | undefined
+): string | undefined {
+  return getMasterCoverUrl(record) ?? getPlaceholderCoverUrl(record);
 }
 
 /**
@@ -950,10 +990,23 @@ class ApiClient {
    * `storeSlug` сужает подсчёт до одного магазина — для экрана
    * /market/store/[slug], чтобы там не появлялись чипы жанров, которых у
    * этого магазина нет.
+   *
+   * `active` — фильтры, которые юзер уже выбрал. С ними счётчики показывают
+   * пересечение («сколько станет, если нажать»), а не собственный объём чипа.
+   * Без них чип обещал «Регги 342» рядом с включённым «Цветным винилом», где
+   * на самом деле 14, и это читалось как потолок выдачи.
    */
-  async getMarketFacets(storeSlug?: string): Promise<MarketFacetsResponse> {
+  async getMarketFacets(
+    storeSlug?: string,
+    active?: { q?: string; format?: MarketFormatFilter | null; genres?: string[]; features?: string[] },
+  ): Promise<MarketFacetsResponse> {
+    const params: Record<string, string | number> = {};
+    if (storeSlug) params.store = storeSlug;
+    if (active?.q && active.q.length >= 2) params.q = active.q;
+    if (active?.format) params.format = active.format;
+    applyMarketFilterParams(params, active?.genres, active?.features);
     return this.deduplicatedGet<MarketFacetsResponse>('/market/facets', {
-      params: storeSlug ? { store: storeSlug } : undefined,
+      params: Object.keys(params).length > 0 ? params : undefined,
     });
   }
 

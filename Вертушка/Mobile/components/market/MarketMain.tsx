@@ -177,15 +177,6 @@ export function MarketMain({ onScroll, scrollEnabled = true, paddingTop, pullFra
     analytics.viewMarket();
   }, []);
 
-  // Фасеты (доступные жанры/особенности со счётчиками) — грузим один раз при
-  // маунте. Ошибку глотаем: FilterBar просто не покажет жанр/особенности.
-  useEffect(() => {
-    let cancelled = false;
-    api.getMarketFacets()
-      .then((res) => { if (!cancelled) setFacets(res); })
-      .catch(() => {});
-    return () => { cancelled = true; };
-  }, []);
 
   useEffect(() => {
     if (searchTimer.current) clearTimeout(searchTimer.current);
@@ -250,6 +241,29 @@ export function MarketMain({ onScroll, scrollEnabled = true, paddingTop, pullFra
     [filters],
   );
   const effectiveQuery = debouncedQuery.length >= 2 ? debouncedQuery : '';
+
+  // Фасеты (доступные жанры/особенности со счётчиками). Перезапрашиваем на
+  // каждое изменение фильтров: счётчики считаются с учётом уже выбранного, и
+  // рядом с включённым «Цветным винилом» регги честно показывает 14, а не свои
+  // 342. Порядок чипов бэк держит по объёму склада, а не по текущему числу,
+  // поэтому ряд не переставляется под пальцем.
+  //
+  // Ошибку глотаем и СТАРЫЕ фасеты не сбрасываем: моргнувшая сеть не должна
+  // схлопывать ряд чипов — юзер потеряет из-под пальца то, что уже выбрал.
+  useEffect(() => {
+    let cancelled = false;
+    api.getMarketFacets(undefined, {
+      q: effectiveQuery || undefined,
+      format: filters.format === 'all' ? null : filters.format,
+      genres: filters.genres,
+      features: filters.features,
+    })
+      .then((res) => { if (!cancelled) setFacets(res); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+    // filtersKey/effectiveQuery — стабильные строки: объект filters новый на
+    // каждый рендер и вызывал бы бесконечный перезапрос.
+  }, [filtersKey, effectiveQuery]);
 
   const fetchSearchPage = useCallback(
     (offset: number, limit: number) =>

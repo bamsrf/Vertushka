@@ -222,6 +222,15 @@ async def lifespan(app: FastAPI):
             scheduler.add_job(run_backfill_upc, 'interval', minutes=2,
                               id='cover_backfill_upc', max_instances=1, coalesce=True)
 
+            # Обложки по UPC через Apple Music (MusicKit): добор промахов всех
+            # предыдущих каналов, артворк до 1200px. Спит, пока нет ключа
+            # (APPLE_MUSIC_*) и маркера /app/uploads/.backfill_apple_enabled.
+            from app.scripts.backfill_covers_apple import (
+                run_scheduled_batch as run_backfill_apple,
+            )
+            scheduler.add_job(run_backfill_apple, 'interval', minutes=2,
+                              id='cover_backfill_apple', max_instances=1, coalesce=True)
+
             # Обратный поток обложек из маркета в дамп: магазины фотографируют
             # свой товар, но ссылка дальше витрины не шла. Данные уже в нашей
             # базе — ноль внешних запросов на поиск, только замер картинки.

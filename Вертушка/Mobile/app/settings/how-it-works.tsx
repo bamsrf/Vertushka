@@ -153,7 +153,7 @@ export default function HowItWorksScreen() {
       >
         <Text style={styles.intro}>
           Подсказки появляются сами, когда фича становится доступной. Любую можно
-          вернуть — она покажется при следующем подходящем случае.
+          посмотреть прямо отсюда: нажми «Показать», и мы откроем нужное место.
         </Text>
 
         {COACH_MARKS.map((mark) => {
@@ -190,7 +190,7 @@ export default function HowItWorksScreen() {
                   {suppressed
                     ? 'Уже показывали'
                     : state.shows > 0
-                      ? 'Показывалась — вернётся ещё раз'
+                      ? 'Показывалась, вернётся ещё раз'
                       : 'Ещё не показывалась'}
                 </Text>
                 <TouchableOpacity

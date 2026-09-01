@@ -48,7 +48,7 @@ import Animated, {
 import * as Haptics from 'expo-haptics';
 import { Colors, Spacing, BorderRadius, Typography } from '../constants/theme';
 import { CollectionItem, WishlistItem } from '../lib/types';
-import { getCoverUrl, getMasterCoverUrl, sizedCoverUrl } from '../lib/api';
+import { getCoverUrl, getHeroCoverUrl, sizedCoverUrl } from '../lib/api';
 import { RecordCard } from './RecordCard';
 import {
   RarityContext,
@@ -74,8 +74,9 @@ function cleanArtistName(name: string | null | undefined): string {
  * Fire-and-forget: ошибку глотаем — это оптимизация, а не функциональность.
  */
 function prefetchMasterCover(item: ZoomItem): void {
-  const master = getMasterCoverUrl(item.record);
-  if (master) void Image.prefetch(master, 'memory-disk').catch(() => {});
+  // Греем то, что герой реально покажет: у релиза без мастера это лучшее мелкое.
+  const hero = getHeroCoverUrl(item.record);
+  if (hero) void Image.prefetch(hero, 'memory-disk').catch(() => {});
 }
 
 type ZoomItem = CollectionItem | WishlistItem;
