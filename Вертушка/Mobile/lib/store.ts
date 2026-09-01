@@ -1326,10 +1326,11 @@ interface ScannerState {
   setScannedBarcode: (barcode: string | null) => void;
   searchByBarcode: (barcode: string) => Promise<void>;
   searchByCover: (imageBase64: string) => Promise<void>;
+  refreshScanCovers: () => Promise<void>;
   clearScan: () => void;
 }
 
-export const useScannerStore = create<ScannerState>((set) => ({
+export const useScannerStore = create<ScannerState>((set, get) => ({
   scanMode: 'barcode',
   scannedBarcode: null,
   scanResults: [],
@@ -1350,6 +1351,36 @@ export const useScannerStore = create<ScannerState>((set) => ({
     } catch (error) {
       set({ isLoading: false, scanResults: [] });
       throw error;
+    }
+  },
+
+  // Cover-retry скана: бэкенд дописывает обложки в dump-индекс фоновым
+  // прогревом через секунды после ответа. Повторяем запрос и вливаем ТОЛЬКО
+  // обложки в существующие результаты — порядок и выбор юзера не трогаем.
+  refreshScanCovers: async () => {
+    const { scannedBarcode, scanResults } = get();
+    if (!scannedBarcode) return;
+    if (!scanResults.some((r) => !r.cover_image_url && !r.thumb_image_url)) return;
+    try {
+      const fresh = await api.scanBarcode(scannedBarcode);
+      const freshById = new Map(
+        fresh
+          .filter((r) => r.discogs_id && (r.cover_image_url || r.thumb_image_url))
+          .map((r) => [r.discogs_id, r])
+      );
+      if (freshById.size === 0) return;
+      // Барокод мог смениться, пока летел запрос — не вливаем чужое
+      if (get().scannedBarcode !== scannedBarcode) return;
+      set({
+        scanResults: get().scanResults.map((r) => {
+          const f = freshById.get(r.discogs_id);
+          return f && !r.cover_image_url && !r.thumb_image_url
+            ? { ...r, cover_image_url: f.cover_image_url, thumb_image_url: f.thumb_image_url }
+            : r;
+        }),
+      });
+    } catch {
+      // best effort: не вышло — карточки остаются с плейсхолдером
     }
   },
 

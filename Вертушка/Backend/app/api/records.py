@@ -1053,6 +1053,14 @@ async def search_records(
         )
 
 
+# Сколько верхних строк без обложки скан греет инлайн (примерно один экран
+# выдачи) и сколько ждёт прогрев, прежде чем отдать ответ как есть. Быстрые
+# ступени лестницы (CAA по офлайн-маппингу — один HEAD, Deezer — один JSON)
+# в бюджет обычно укладываются; остальное дольёт клиентский cover-retry.
+_SCAN_INLINE_WARM_TOP = 6
+_SCAN_INLINE_WARM_BUDGET = 1.2
+
+
 @router.post("/scan/barcode", response_model=list[RecordSearchResult])
 async def scan_barcode(
     barcode: str = Query(..., min_length=8, max_length=20, description="Штрихкод"),
@@ -1216,8 +1224,40 @@ async def scan_barcode(
         if r.discogs_id and not r.cover_image_url
     ]
     if warm_ids:
-        from app.services.cover_warm import schedule_warm_dump_covers
-        schedule_warm_dump_covers(warm_ids)
+        from app.services.cover_warm import (
+            schedule_warm_dump_covers,
+            warm_dump_covers_inline,
+        )
+
+        # Первый экран греем инлайн с бюджетом времени: скан — единичный
+        # high-intent запрос, секунда ожидания дешевле заглушек в выдаче.
+        # Хвост списка — fire-and-forget как раньше; не успевшее доедет
+        # клиентским cover-retry (см. экран скана).
+        front = warm_ids[:_SCAN_INLINE_WARM_TOP]
+        if warm_ids[_SCAN_INLINE_WARM_TOP:]:
+            schedule_warm_dump_covers(warm_ids[_SCAN_INLINE_WARM_TOP:])
+        await warm_dump_covers_inline(front, timeout=_SCAN_INLINE_WARM_BUDGET)
+
+        front_int_ids = [int(i) for i in front if i.isdigit()]
+        fresh_rows = []
+        if front_int_ids:
+            try:
+                fresh_rows = (await db.execute(
+                    text(
+                        "SELECT discogs_id::text AS discogs_id, cover_image_url "
+                        "FROM discogs_releases_index "
+                        "WHERE discogs_id = ANY(:ids) "
+                        "AND cover_image_url IS NOT NULL"
+                    ),
+                    {"ids": front_int_ids},
+                )).mappings().all()
+            except Exception:
+                logger.warning("dump cover re-read failed", exc_info=True)
+        if fresh_rows:
+            fresh_by_id = {r["discogs_id"]: r["cover_image_url"] for r in fresh_rows}
+            for r in combined:
+                if not r.cover_image_url and r.discogs_id in fresh_by_id:
+                    r.cover_image_url = fresh_by_id[r.discogs_id]
     return combined
 
 
