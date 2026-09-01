@@ -1,7 +1,9 @@
 /**
- * «Новое сообщение» — поиск пользователя для начала диалога.
+ * «Новое сообщение» / «Переслать» — выбор получателя.
  *
- * Re-используем существующий /users/search и openOrCreate из messages store.
+ * Пока запрос пустой — список «Недавние» из существующих диалогов (для
+ * пересылки почти всегда нужен кто-то, с кем уже переписывался); поиск
+ * по /users/search подключается при вводе. openOrCreate из messages store.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -26,6 +28,15 @@ import { toast } from '../../lib/toast';
 
 const DEBOUNCE_MS = 300;
 
+// Минимальный профиль получателя: и результат поиска (UserWithStats), и
+// partner из диалога подходят под эту форму.
+interface PickUser {
+  id: string;
+  username: string;
+  display_name?: string | null;
+  avatar_url?: string | null;
+}
+
 export default function NewMessageScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -41,7 +52,27 @@ export default function NewMessageScreen() {
   const [isCreating, setIsCreating] = useState(false);
   const openOrCreate = useMessagesStore((s) => s.openOrCreate);
   const sendMessage = useMessagesStore((s) => s.send);
+  const conversationsPrimary = useMessagesStore((s) => s.conversationsPrimary);
+  const loadConversations = useMessagesStore((s) => s.loadConversations);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // «Недавние» — собеседники из существующих диалогов, свежие сверху.
+  useEffect(() => {
+    if (conversationsPrimary.length === 0) {
+      loadConversations('primary').catch(() => {});
+    }
+  }, [conversationsPrimary.length, loadConversations]);
+
+  const recentUsers = useMemo<PickUser[]>(() => {
+    const seen = new Set<string>();
+    const out: PickUser[] = [];
+    for (const c of conversationsPrimary) {
+      if (seen.has(c.partner.id)) continue;
+      seen.add(c.partner.id);
+      out.push(c.partner);
+    }
+    return out;
+  }, [conversationsPrimary]);
 
   const forwardPreview = useMemo(() => {
     if (!isForward) return null;
@@ -77,7 +108,7 @@ export default function NewMessageScreen() {
   }, [query]);
 
   const handlePick = useCallback(
-    async (user: UserWithStats) => {
+    async (user: PickUser) => {
       if (isCreating) return;
       setIsCreating(true);
       try {
@@ -127,7 +158,7 @@ export default function NewMessageScreen() {
   );
 
   const renderItem = useCallback(
-    ({ item }: { item: UserWithStats }) => (
+    ({ item }: { item: PickUser }) => (
       <TouchableOpacity
         activeOpacity={0.85}
         style={styles.row}
@@ -204,10 +235,16 @@ export default function NewMessageScreen() {
         />
       ) : (
         <FlatList
-          data={results}
+          data={query.trim() ? results : recentUsers}
           keyExtractor={(item) => item.id}
           renderItem={renderItem}
           contentContainerStyle={styles.list}
+          keyboardShouldPersistTaps="handled"
+          ListHeaderComponent={
+            !query.trim() && recentUsers.length > 0 ? (
+              <Text style={styles.sectionTitle}>Недавние</Text>
+            ) : null
+          }
           ListEmptyComponent={
             !query.trim() ? null : (
               <Text style={styles.empty}>Никого не нашли</Text>
@@ -274,6 +311,14 @@ const styles = StyleSheet.create({
   rowName: { fontSize: ms(14), fontWeight: '600', color: Colors.text },
   rowSub: { fontSize: ms(12), color: Colors.textMuted, marginTop: 2 },
   empty: { fontSize: ms(13), color: Colors.textMuted, textAlign: 'center', marginTop: Spacing.lg },
+  sectionTitle: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: Colors.textMuted,
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+    marginBottom: 4,
+  },
 
   forwardPreview: {
     flexDirection: 'row',

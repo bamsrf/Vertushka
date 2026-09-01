@@ -42,6 +42,7 @@ import Animated, {
   useAnimatedKeyboard,
   withSpring,
   withTiming,
+  withSequence,
   runOnJS,
   interpolate,
   interpolateColor,
@@ -50,7 +51,6 @@ import Animated, {
   FadeIn,
   FadeOut,
   FadeInDown,
-  ZoomIn,
   type EntryAnimationsValues,
 } from 'react-native-reanimated';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
@@ -92,24 +92,46 @@ const PRESENCE_INTERVAL_MS = 60_000;
 const GROUP_GAP_MS = 5 * 60 * 1000; // сообщения подряд того же sender → одна группа
 const EMPTY_MESSAGES: Message[] = [];
 
+// Пружина почти критического затухания: живое движение без «желе».
+// overshootClamping гасит колебания полностью.
+const CALM_SPRING = { damping: 26, stiffness: 300, overshootClamping: true };
+
 /**
  * Появление нового сообщения: мягкий подъём из композера (fade + translate +
- * лёгкий scale на пружине). Применяется только к сообщениям, пришедшим после
- * маунта экрана — история при открытии не анимируется.
+ * лёгкий scale, без перелёта). Применяется только к сообщениям, пришедшим
+ * после маунта экрана — история при открытии не анимируется.
  */
 function messageEntering(_values: EntryAnimationsValues) {
   'worklet';
   return {
     initialValues: {
       opacity: 0,
-      transform: [{ translateY: 14 }, { scale: 0.97 }],
+      transform: [{ translateY: 12 }, { scale: 0.98 }],
     },
     animations: {
-      opacity: withTiming(1, { duration: 160 }),
+      opacity: withTiming(1, { duration: 150 }),
       transform: [
-        { translateY: withSpring(0, { damping: 19, stiffness: 240 }) },
-        { scale: withSpring(1, { damping: 19, stiffness: 240 }) },
+        { translateY: withSpring(0, CALM_SPRING) },
+        { scale: withSpring(1, CALM_SPRING) },
       ],
+    },
+  };
+}
+
+/**
+ * Появление чипа реакции / FAB: fade + scale от 0.9 (не от нуля — масштаб
+ * с малых значений растрирует emoji и даёт пикселизацию, пока идёт анимация).
+ */
+function popEntering(_values: EntryAnimationsValues) {
+  'worklet';
+  return {
+    initialValues: {
+      opacity: 0,
+      transform: [{ scale: 0.9 }],
+    },
+    animations: {
+      opacity: withTiming(1, { duration: 130 }),
+      transform: [{ scale: withSpring(1, CALM_SPRING) }],
     },
   };
 }
@@ -295,7 +317,7 @@ function ReactionsRow({
       {items.map((it) => (
         <Animated.View
           key={it.emoji}
-          entering={ZoomIn.springify().damping(14).stiffness(260)}
+          entering={popEntering}
           exiting={FadeOut.duration(120)}
         >
           <TouchableOpacity
@@ -619,13 +641,17 @@ function UnreadDivider() {
 }
 
 const SWIPE_REPLY_THRESHOLD = 56;
-const SWIPE_REPLY_LIMIT = 90;
+const SWIPE_REPLY_LIMIT = 76;
+// Демпфер хода за порогом: как в Telegram, движение дальше threshold
+// «резиновое» — палец идёт, бабл почти стоит.
+const SWIPE_REPLY_RESISTANCE = 0.25;
 
 /**
  * Telegram-style swipe-to-reply: тащим бабл в сторону (свои — влево, чужие —
- * вправо). Когда переход через threshold — haptic + onReply, бабл пружинит
- * обратно. Активная зона жеста узкая (горизонтальные movement), вертикальный
- * скролл FlatList не блокируется.
+ * вправо). До порога бабл идёт за пальцем 1:1, дальше — с сильным
+ * сопротивлением. На пороге — haptic + pop иконки + onReply, при отпускании
+ * бабл возвращается одним движением без колебаний. Активная зона жеста узкая
+ * (горизонтальные movement), вертикальный скролл FlatList не блокируется.
  */
 function SwipeableMessage({
   children,
@@ -638,6 +664,7 @@ function SwipeableMessage({
 }) {
   const tx = useSharedValue(0);
   const triggered = useSharedValue(false);
+  const popScale = useSharedValue(1);
 
   const triggerReply = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
@@ -648,19 +675,29 @@ function SwipeableMessage({
     .activeOffsetX(isMine ? [-12, 9999] : [-9999, 12])
     .failOffsetY([-12, 12])
     .onUpdate((e) => {
-      const dx = e.translationX;
-      if (isMine) {
-        tx.value = Math.min(0, Math.max(-SWIPE_REPLY_LIMIT, dx));
-      } else {
-        tx.value = Math.max(0, Math.min(SWIPE_REPLY_LIMIT, dx));
-      }
-      if (!triggered.value && Math.abs(tx.value) >= SWIPE_REPLY_THRESHOLD) {
+      const raw = isMine
+        ? Math.max(0, -e.translationX)
+        : Math.max(0, e.translationX);
+      const eased =
+        raw <= SWIPE_REPLY_THRESHOLD
+          ? raw
+          : SWIPE_REPLY_THRESHOLD +
+            (raw - SWIPE_REPLY_THRESHOLD) * SWIPE_REPLY_RESISTANCE;
+      const capped = Math.min(eased, SWIPE_REPLY_LIMIT);
+      tx.value = isMine ? -capped : capped;
+      if (!triggered.value && capped >= SWIPE_REPLY_THRESHOLD) {
         triggered.value = true;
+        popScale.value = withSequence(
+          withSpring(1.22, { damping: 12, stiffness: 420 }),
+          withSpring(1, CALM_SPRING),
+        );
         runOnJS(triggerReply)();
       }
     })
     .onEnd(() => {
-      tx.value = withSpring(0, { damping: 18, stiffness: 220 });
+      // Возврат без колебаний: незаклампленная пружина «воблила» бабл
+      // влево-вправо после отпускания.
+      tx.value = withSpring(0, CALM_SPRING);
       triggered.value = false;
     });
 
@@ -673,7 +710,11 @@ function SwipeableMessage({
     return {
       opacity: progress,
       transform: [
-        { scale: interpolate(progress, [0, 1], [0.6, 1], Extrapolation.CLAMP) },
+        {
+          scale:
+            interpolate(progress, [0, 1], [0.75, 1], Extrapolation.CLAMP) *
+            popScale.value,
+        },
       ],
     };
   });
@@ -739,14 +780,7 @@ function EmptyState({ partner }: { partner: Conversation['partner'] | null }) {
 }
 
 export default function ConversationScreen() {
-  const params = useLocalSearchParams<{
-    conversationId: string;
-    attach_record_id?: string;
-    attach_title?: string;
-    attach_artist?: string;
-    attach_year?: string;
-    attach_cover?: string;
-  }>();
+  const params = useLocalSearchParams<{ conversationId: string }>();
   const { conversationId } = params;
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -828,28 +862,16 @@ export default function ConversationScreen() {
     paddingBottom: Math.max(keyboard.height.value - insets.bottom, 0),
   }));
 
-  // Когда возвращаемся со share-record экрана с params — подхватим выбор
+  // Выбор со share-record приходит через стор (router.back, без нового экрана
+  // треда в стеке) — подхватываем и очищаем.
+  const pendingAttach = useMessagesStore(
+    (s) => s.pendingAttach[conversationId ?? ''] ?? null,
+  );
   useEffect(() => {
-    if (params.attach_record_id && params.attach_title && params.attach_artist) {
-      setAttachedRecord({
-        id: params.attach_record_id,
-        title: params.attach_title,
-        artist: params.attach_artist,
-        year: params.attach_year ? Number(params.attach_year) : null,
-        cover_image_url: params.attach_cover || null,
-        cover_url: null,
-      });
-      // очистим query чтобы не повторно срабатывало
-      router.setParams({
-        attach_record_id: '',
-        attach_title: '',
-        attach_artist: '',
-        attach_year: '',
-        attach_cover: '',
-      });
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [params.attach_record_id]);
+    if (!pendingAttach || !conversationId) return;
+    setAttachedRecord(pendingAttach);
+    useMessagesStore.getState().clearPendingAttach(conversationId);
+  }, [pendingAttach, conversationId]);
 
   const selectionMode = selected.size > 0;
   const partnerLastReadAt = conversation?.partner_last_read_at
@@ -870,24 +892,46 @@ export default function ConversationScreen() {
   const handleDeleteSelected = useCallback(() => {
     if (!conversationId || selected.size === 0) return;
     const count = selected.size;
-    Alert.alert(
-      'Удалить сообщения?',
-      `Удалить ${count} ${count === 1 ? 'сообщение' : count < 5 ? 'сообщения' : 'сообщений'} у всех?`,
-      [
+    const ids = Array.from(selected);
+    const noun =
+      count === 1 ? 'сообщение' : count < 5 ? 'сообщения' : 'сообщений';
+    // «У всех» доступно только для своих сообщений (сервер запрещает трогать
+    // чужие); чужие и смешанный выбор можно скрыть только у себя.
+    const allMine =
+      !!me &&
+      ids.every((id) => {
+        const msg = messages.find((m) => m.id === id);
+        return msg && msg.sender_id === me.id;
+      });
+    const hideForMe = () => {
+      clearSelection();
+      useMessagesStore.getState().hideMessagesForMe(conversationId, ids);
+    };
+    if (allMine) {
+      Alert.alert(`Удалить ${count} ${noun}?`, undefined, [
         { text: 'Отмена', style: 'cancel' },
+        { text: 'Удалить у себя', onPress: hideForMe },
         {
-          text: 'Удалить',
+          text: 'Удалить у всех',
           style: 'destructive',
           onPress: () => {
-            const ids = Array.from(selected);
             clearSelection();
             // Оптимистично: tombstone сразу, без полного reload ленты.
             deleteMessagesAction(conversationId, ids);
           },
         },
-      ],
-    );
-  }, [conversationId, selected, clearSelection, deleteMessagesAction]);
+      ]);
+    } else {
+      Alert.alert(
+        `Удалить ${count} ${noun} у себя?`,
+        'Среди выбранных есть сообщения собеседника — их можно скрыть только у себя.',
+        [
+          { text: 'Отмена', style: 'cancel' },
+          { text: 'Удалить у себя', style: 'destructive', onPress: hideForMe },
+        ],
+      );
+    }
+  }, [conversationId, selected, clearSelection, deleteMessagesAction, messages, me]);
 
   useEffect(() => {
     if (conversation?.partner) setPartner(conversation.partner);
@@ -1561,7 +1605,7 @@ export default function ConversationScreen() {
   const handleMenu = useCallback(() => {
     if (!conversationId || !partner) return;
     const muteLabel = isMuted ? 'Включить уведомления' : 'Отключить уведомления';
-    const options = [muteLabel, 'Очистить историю', 'Пожаловаться', `Заблокировать @${partner.username}`, 'Удалить диалог', 'Отмена'];
+    const options = [muteLabel, 'Очистить историю', 'Пожаловаться', `Заблокировать @${partner.username}`, 'Скрыть диалог', 'Отмена'];
     const cancel = 5;
     const destructive = [3, 4];
 
@@ -1615,7 +1659,20 @@ export default function ConversationScreen() {
           ],
         );
       } else if (i === 4) {
-        archive(conversationId).then(() => router.back());
+        // Архив честным языком: скрываем из списка, переписка сохраняется —
+        // «удалить навсегда» здесь и не существует (см. archive_conversation).
+        Alert.alert(
+          'Скрыть диалог?',
+          'Диалог исчезнет из вашего списка. Переписка сохранится и вернётся, когда кто-то из вас снова напишет.',
+          [
+            { text: 'Отмена', style: 'cancel' },
+            {
+              text: 'Скрыть',
+              style: 'destructive',
+              onPress: () => archive(conversationId).then(() => router.back()),
+            },
+          ],
+        );
       }
     };
 
@@ -1630,7 +1687,7 @@ export default function ConversationScreen() {
         { text: 'Очистить историю', style: 'destructive', onPress: () => exec(1) },
         { text: 'Пожаловаться', onPress: () => exec(2) },
         { text: `Заблокировать @${partner.username}`, style: 'destructive', onPress: () => exec(3) },
-        { text: 'Удалить диалог', style: 'destructive', onPress: () => exec(4) },
+        { text: 'Скрыть диалог', style: 'destructive', onPress: () => exec(4) },
         { text: 'Отмена', style: 'cancel' },
       ]);
     }
@@ -1803,7 +1860,7 @@ export default function ConversationScreen() {
           ) : null}
           {showScrollToBottom ? (
             <Animated.View
-              entering={ZoomIn.springify().damping(16).stiffness(260)}
+              entering={popEntering}
               exiting={FadeOut.duration(120)}
               style={[
                 styles.scrollFabWrap,
@@ -1830,7 +1887,7 @@ export default function ConversationScreen() {
 
         {pendingMedia ? (
           <Animated.View
-            entering={FadeInDown.springify().damping(18)}
+            entering={FadeInDown.duration(180)}
             exiting={FadeOut.duration(120)}
             style={styles.attachBar}
           >
@@ -1868,7 +1925,7 @@ export default function ConversationScreen() {
 
         {attachedRecord ? (
           <Animated.View
-            entering={FadeInDown.springify().damping(18)}
+            entering={FadeInDown.duration(180)}
             exiting={FadeOut.duration(120)}
             style={styles.attachBar}
           >
@@ -1903,7 +1960,7 @@ export default function ConversationScreen() {
 
         {replyTo ? (
           <Animated.View
-            entering={FadeInDown.springify().damping(18)}
+            entering={FadeInDown.duration(180)}
             exiting={FadeOut.duration(120)}
             style={styles.replyBar}
           >
@@ -1926,7 +1983,7 @@ export default function ConversationScreen() {
 
         {editTarget ? (
           <Animated.View
-            entering={FadeInDown.springify().damping(18)}
+            entering={FadeInDown.duration(180)}
             exiting={FadeOut.duration(120)}
             style={styles.replyBar}
           >

@@ -47,7 +47,7 @@ function Dot({ delay }: { delay: number }) {
 export function TypingIndicator() {
   return (
     <Animated.View
-      entering={FadeInDown.springify().damping(18)}
+      entering={FadeInDown.duration(160)}
       exiting={FadeOut.duration(140)}
       style={styles.row}
     >

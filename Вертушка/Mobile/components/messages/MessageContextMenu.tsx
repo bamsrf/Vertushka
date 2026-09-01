@@ -77,27 +77,29 @@ export function MessageContextMenu({
 }: Props) {
   const { height: screenH } = useWindowDimensions();
   const insets = useSafeAreaInsets();
-  const scale = useSharedValue(0.9);
+  const scale = useSharedValue(0.96);
   const opacity = useSharedValue(0);
   const reactionsPop = useSharedValue(0);
+
+  // Почти критическое затухание: живо, но без «желе». Scale стартует близко
+  // к 1 — масштаб с малых значений растрирует emoji (пикселизация).
+  const CALM = { damping: 24, stiffness: 300, overshootClamping: true };
 
   useEffect(() => {
     if (visible) {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
-      scale.value = 0.9;
+      scale.value = 0.96;
       opacity.value = 0;
       reactionsPop.value = 0;
-      scale.value = withSpring(1, { damping: 18, stiffness: 260 });
+      scale.value = withSpring(1, CALM);
       opacity.value = withTiming(1, { duration: 140 });
-      reactionsPop.value = withDelay(
-        60,
-        withSpring(1, { damping: 14, stiffness: 240 }),
-      );
+      reactionsPop.value = withDelay(50, withSpring(1, CALM));
     } else {
-      scale.value = 0.9;
+      scale.value = 0.96;
       opacity.value = 0;
       reactionsPop.value = 0;
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible, scale, opacity, reactionsPop]);
 
   const cardStyle = useAnimatedStyle(() => ({
@@ -108,8 +110,8 @@ export function MessageContextMenu({
   const reactionsStyle = useAnimatedStyle(() => ({
     opacity: reactionsPop.value,
     transform: [
-      { scale: 0.7 + reactionsPop.value * 0.3 },
-      { translateY: (1 - reactionsPop.value) * 8 },
+      { scale: 0.92 + reactionsPop.value * 0.08 },
+      { translateY: (1 - reactionsPop.value) * 6 },
     ],
   }));
 
