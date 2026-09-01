@@ -269,11 +269,21 @@ class Settings(BaseSettings):
     # Дефолт для GET /api/config. Поднимается на лету через
     # PUT /api/admin/config/min-version/ — без деплоя. См. services/app_config.py
     min_supported_app_version: str = Field(default="1.0.0", alias="MIN_SUPPORTED_APP_VERSION")
-    # Витрина в URL обязательна. Без /ru/ Apple сам выбирает стор по гео гостя:
-    # аудитория у нас русскоязычная, а карточка при этом открывается английская
-    # — и именно на такой ссылке ловили «An Error Occurred» вместо приложения.
+    # Канонический адрес карточки — ровно тот, что Apple отдаёт в trackViewUrl
+    # (itunes.apple.com/lookup?id=6774999020&country=ru), только без ?uo=4.
+    # Короткие формы (без витрины и без слага) Apple доводит до него редиректом,
+    # и на этом редиректе ловили «An Error Occurred» вместо приложения: без
+    # /ru/ витрина выбирается по гео гостя, а без слага страница доезжает не
+    # везде. Правится тут — значение уходит и в CTA публичного профиля, и
+    # мобилке в /api/config как цель force-update.
     app_store_url: str = Field(
-        default="https://apps.apple.com/ru/app/id6774999020", alias="APP_STORE_URL",
+        default=(
+            "https://apps.apple.com/ru/app/"
+            "%D0%B2%D0%B5%D1%80%D1%82%D1%83%D1%88%D0%BA%D0%B0-"
+            "%D0%BA%D0%BE%D0%BB%D0%BB%D0%B5%D0%BA%D1%86%D0%B8%D1%8F-"
+            "%D0%B2%D0%B8%D0%BD%D0%B8%D0%BB%D0%B0/id6774999020"
+        ),
+        alias="APP_STORE_URL",
     )
     force_update_message: str = Field(
         default="Вышла новая версия Вертушки. Обнови приложение, чтобы продолжить.",
