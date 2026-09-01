@@ -70,13 +70,37 @@ export const analytics = {
   appOpened: () => track('app_opened'),
 
   // --- Auth ---
-  register: () => track('register'),
+  /**
+   * Новый аккаунт. Шлётся из ЛЮБОГО пути регистрации, включая OAuth.
+   *
+   * `method` обязателен по той же причине, что и у [login]: раньше register
+   * уходил только с email-формы, и приток через Apple/Google/Discogs не было
+   * видно вообще — цифра занижалась молча, а второй шаг воронки активации
+   * нечем было разбить. OAuth-эндпоинты и создают аккаунт, и логинят
+   * существующий, поэтому «первый ли это вход» знает только бэкенд: он
+   * отдаёт `is_new_user` в ответе с токенами.
+   */
+  register: (method: 'email' | 'apple' | 'google' | 'discogs') =>
+    track('register', { method }),
   login: (method: 'email' | 'apple' | 'google' | 'discogs') => track('login', { method }),
   logout: () => {
     track('logout');
     provider?.reset();
   },
-  identify: (userId: string) => provider?.identify(userId),
+  /**
+   * Связать анонимную сессию с аккаунтом и пометить, свой это человек или нет.
+   *
+   * `is_staff` шлём ВСЕГДА, включая false. Свойство, которое есть только у
+   * части пользователей, в Amplitude фильтруется трёхзначно («true», «false»,
+   * «не задано»), и когорта «не команда» тихо теряла бы всех, у кого поля нет.
+   *
+   * Вычитать в чартах нужно когортой, а не фильтром по свойству события:
+   * до логина `identify` ещё не звучал, и события онбординга уходят без метки.
+   * Когорта работает на уровне пользователя и накрывает его историю целиком —
+   * Amplitude склеивает анонимное устройство с userId в момент identify.
+   */
+  identify: (params: { userId: string; isStaff?: boolean }) =>
+    provider?.identify(params.userId, { is_staff: params.isStaff === true }),
 
   // --- Scanner ---
   scanBarcode: (found: boolean) => track('scan_barcode', { found }),
@@ -93,7 +117,21 @@ export const analytics = {
   importCompleted: (params: { imported: number; skipped: number; total: number }) =>
     track('import_completed', params),
 
-  addToCollection: (discogsId: string) => track('add_to_collection', { discogs_id: discogsId }),
+  /**
+   * Пластинка добавлена в коллекцию — главное действие продукта.
+   *
+   * Вызывается ИЗ СТОРА, а не с экранов. Путей добавления шесть (лента,
+   * карточка релиза, поиск, ручное добавление, добавление с фото, сканер), и
+   * пока событие висело на экранах, оно стояло ровно на одном из них: за две
+   * недели живого приложения `add_to_collection` не пришёл ни разу. Стор —
+   * единственное место, через которое проходят все шесть.
+   *
+   * `discogs_id` опционален: добавление по record_id (store-native и
+   * user-submitted записи) его не знает. Пропущенное свойство честнее
+   * подставленного мусора — см. [viewRecord].
+   */
+  addToCollection: (discogsId?: string | null) =>
+    track('add_to_collection', discogsId ? { discogs_id: discogsId } : {}),
   /** discogs_id опционален по той же причине, что и в [viewRecord]. */
   removeFromCollection: (discogsId?: string | null) =>
     track('remove_from_collection', discogsId ? { discogs_id: discogsId } : {}),

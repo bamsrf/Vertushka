@@ -13,6 +13,8 @@ export interface User {
   bio?: string;
   is_active: boolean;
   is_verified: boolean;
+  /** Команда и тестировщики. Уезжает в Amplitude, чтобы вычесть их из чартов. */
+  is_staff?: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -21,6 +23,8 @@ export interface AuthTokens {
   access_token: string;
   refresh_token?: string;
   token_type: string;
+  /** Первый ли это вход. Есть у OAuth-ответов; решает, слать ли register. */
+  is_new_user?: boolean;
 }
 
 export interface LoginRequest {

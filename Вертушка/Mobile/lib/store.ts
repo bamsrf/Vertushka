@@ -275,7 +275,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       await api.login({ login, password });
       const user = await api.getMe();
       set({ user, isAuthenticated: true, isLoading: false });
-      analytics.identify(user.id);
+      analytics.identify({ userId: user.id, isStaff: user.is_staff });
       analytics.login('email');
       initAchievementsCache().catch(() => {});
     } catch (error) {
@@ -290,7 +290,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       await api.restoreAccount(restoreToken);
       const user = await api.getMe();
       set({ user, isAuthenticated: true, isLoading: false });
-      analytics.identify(user.id);
+      analytics.identify({ userId: user.id, isStaff: user.is_staff });
       analytics.login('email');
       initAchievementsCache().catch(() => {});
     } catch (error) {
@@ -307,8 +307,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       // Получаем данные пользователя
       const user = await api.getMe();
       set({ user, isAuthenticated: true, isLoading: false });
-      analytics.identify(user.id);
-      analytics.register();
+      analytics.identify({ userId: user.id, isStaff: user.is_staff });
+      analytics.register('email');
       initAchievementsCache().catch(() => {});
     } catch (error) {
       set({ isLoading: false });
@@ -319,10 +319,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   loginWithApple: async (data) => {
     set({ isLoading: true });
     try {
-      await api.appleSignIn(data);
+      const tokens = await api.appleSignIn(data);
       const user = await api.getMe();
       set({ user, isAuthenticated: true, isLoading: false });
-      analytics.identify(user.id);
+      analytics.identify({ userId: user.id, isStaff: user.is_staff });
+      // Первый вход через OAuth — это регистрация. Эндпоинт один и на
+      // создание, и на возврат, поэтому различает их только бэкенд.
+      if (tokens.is_new_user) analytics.register('apple');
       analytics.login('apple');
       initAchievementsCache().catch(() => {});
     } catch (error) {
@@ -334,10 +337,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   loginWithGoogle: async (idToken) => {
     set({ isLoading: true });
     try {
-      await api.googleSignIn({ id_token: idToken });
+      const tokens = await api.googleSignIn({ id_token: idToken });
       const user = await api.getMe();
       set({ user, isAuthenticated: true, isLoading: false });
-      analytics.identify(user.id);
+      analytics.identify({ userId: user.id, isStaff: user.is_staff });
+      // Первый вход через OAuth — это регистрация. Эндпоинт один и на
+      // создание, и на возврат, поэтому различает их только бэкенд.
+      if (tokens.is_new_user) analytics.register('google');
       analytics.login('google');
       initAchievementsCache().catch(() => {});
     } catch (error) {
@@ -349,10 +355,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   loginWithDiscogs: async (ticket) => {
     set({ isLoading: true });
     try {
-      await api.exchangeDiscogsTicket(ticket);
+      const tokens = await api.exchangeDiscogsTicket(ticket);
       const user = await api.getMe();
       set({ user, isAuthenticated: true, isLoading: false });
-      analytics.identify(user.id);
+      analytics.identify({ userId: user.id, isStaff: user.is_staff });
+      // Первый вход через OAuth — это регистрация. Эндпоинт один и на
+      // создание, и на возврат, поэтому различает их только бэкенд.
+      if (tokens.is_new_user) analytics.register('discogs');
       analytics.login('discogs');
       initAchievementsCache().catch(() => {});
     } catch (error) {
@@ -386,7 +395,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       if (token) {
         const user = await api.getMe();
         set({ user, isAuthenticated: true, isLoading: false });
-        analytics.identify(user.id);
+        analytics.identify({ userId: user.id, isStaff: user.is_staff });
         initAchievementsCache().catch(() => {});
       } else {
         set({ isLoading: false });
@@ -1053,6 +1062,7 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
       }
 
       const added = await api.addToCollection(defaultCollection.id, discogsId);
+      analytics.addToCollection(discogsId);
       captureGiftMatch(added, set);
       // Инвалидируем кэш поиска — счётчики коллекции могли измениться
       useCacheStore.getState().invalidateAll();
@@ -1082,6 +1092,7 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
         }
       }
       const added = await api.addToCollectionByRecordId(defaultCollection.id, recordId);
+      analytics.addToCollection(added.record?.discogs_id);
       captureGiftMatch(added, set);
       useCacheStore.getState().invalidateAll();
       applyOptimisticCollectionAdd(added);
@@ -1107,6 +1118,7 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
       const item = discogsId
         ? await api.addToCollection(defaultCollection.id, discogsId)
         : await api.addToCollectionByRecordId(defaultCollection.id, recordId!);
+      analytics.addToCollection(discogsId ?? item.record?.discogs_id);
       captureGiftMatch(item, set);
       // Сеты владения обновляем сразу: refetch ниже их больше не трогает.
       applyOptimisticCollectionAdd(item);

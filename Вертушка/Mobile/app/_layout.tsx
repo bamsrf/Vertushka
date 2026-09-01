@@ -147,6 +147,18 @@ if (sentryDsn) {
 }
 
 const amplitudeApiKey = Constants.expoConfig?.extra?.amplitudeApiKey as string | undefined;
+const amplitudeEnv = Constants.expoConfig?.extra?.amplitudeEnv as string | undefined;
+
+if (__DEV__ && amplitudeEnv === 'prod') {
+  // Растяжка после релиза: прод-проект теперь наполняют живые люди, и события
+  // с машины разработчика смещают в нём воронки и retention. Молчать нельзя —
+  // ошибка тут не падает, а тихо портит цифры, по которым принимают решения.
+  console.error(
+    '[Analytics] Локальная сборка пишет в ПРОД-проект Amplitude. ' +
+      'Убрать AMPLITUDE_API_KEY из Mobile/.env, оставить AMPLITUDE_API_KEY_DEV.'
+  );
+}
+
 if (amplitudeApiKey) {
   initAmplitude(amplitudeApiKey)
     // app_opened шлём ТОЛЬКО после инициализации: до неё провайдер ещё null,
@@ -157,11 +169,13 @@ if (amplitudeApiKey) {
       // тихо — аналитика не должна ломать загрузку приложения
     });
 } else if (__DEV__) {
-  // Ключ инлайнится в бандл на этапе сборки. Если AMPLITUDE_API_KEY не был
-  // выставлен, аналитика отваливается целиком и совершенно беззвучно —
-  // предупреждение делает это заметным до того, как кто-то пойдёт искать
-  // события в дашборде.
-  console.warn('[Analytics] AMPLITUDE_API_KEY не задан — аналитика отключена');
+  // Ключ инлайнится в бандл на этапе сборки. Если ни AMPLITUDE_API_KEY_DEV,
+  // ни AMPLITUDE_API_KEY не были выставлены, аналитика отваливается целиком и
+  // совершенно беззвучно — предупреждение делает это заметным до того, как
+  // кто-то пойдёт искать события в дашборде.
+  console.warn(
+    '[Analytics] AMPLITUDE_API_KEY_DEV не задан в Mobile/.env — аналитика отключена'
+  );
 }
 
 SplashScreen.preventAutoHideAsync();
