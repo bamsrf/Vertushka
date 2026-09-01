@@ -13,7 +13,7 @@ Affiliate-overlay для ссылок в магазины.
    В отчётах партнёрской сети мы потом найдём конверсии по нашему subid.
 
 Store.affiliate_program — JSONB. Поддерживается ДВА основных сценария
-(см. docs/plans/SHOPS_PARSING.md §13 — гибрид direct + CPA):
+(см. docs/plans/market/SHOPS_PARSING.md §13 — гибрид direct + CPA):
 
 A) CPA-сеть (Admitad / EPN / CityAds / Yandex.Market) — для маркетплейсов:
     {

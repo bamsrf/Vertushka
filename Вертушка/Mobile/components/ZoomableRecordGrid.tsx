@@ -298,7 +298,7 @@ export function ZoomableRecordGrid({
   // Без неё `data.map()` монтировал ВСЮ коллекцию: на 300 пластинках это 300
   // живых expo-image и 300 аур RarityAura. Не лаги, а ровный нагрев и RAM —
   // и та самая причина, по которой memory-disk кэш грозил OOM на SE 2
-  // (см. docs/plans/APPSTORE_LAUNCH_PLAN.md §4.4).
+  // (см. docs/plans/appstore/APPSTORE_LAUNCH_PLAN.md §4.4).
   //
   // FlatList сюда не подходит: смена numColumns при зуме требует remount по
   // key, а это убивает pinch-анимацию и якорение scrollTo. Строки здесь

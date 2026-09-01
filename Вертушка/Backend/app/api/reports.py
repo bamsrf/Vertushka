@@ -3,7 +3,7 @@ Reports API — жалобы на UGC (записи, пользователей,
 
 App Store Guideline 1.2: report objectionable content + takedown + бан.
 Staff-действия минимальны (без UI-админки): hide_record / ban_user / dismiss.
-См. docs/plans/UGC_MODERATION_M2.md.
+См. docs/plans/appstore/UGC_MODERATION_M2.md.
 """
 import logging
 from datetime import datetime, timedelta

@@ -271,7 +271,7 @@ def main() -> int:
 
     print(
         "\nОстальное — глазами: скриншоты, атрибуция Discogs в UI, возрастной "
-        "рейтинг, Content Rights.\nСм. docs/plans/APPSTORE_PRERELEASE_AUDIT.md"
+        "рейтинг, Content Rights.\nСм. docs/plans/appstore/APPSTORE_PRERELEASE_AUDIT.md"
     )
     return 1 if failures else 0
 

@@ -13,7 +13,7 @@
  * приложения в BottomSheetModalProvider). Ref выставляется наружу.
  *
  * Источник: screens-drawer-b.jsx (ScreenBottomSheet60/92) +
- *           docs/plans/MARKET_AND_PRICE_DRAWER.md §2.3.
+ *           docs/plans/market/MARKET_AND_PRICE_DRAWER.md §2.3.
  */
 import { api } from '@/lib/api';
 import React, { forwardRef, useImperativeHandle, useMemo, useRef } from 'react';

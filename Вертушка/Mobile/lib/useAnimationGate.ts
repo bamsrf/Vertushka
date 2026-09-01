@@ -14,7 +14,7 @@
  * подписок — ровно та накладная нагрузка, которую мы убираем. Здесь одна
  * подписка на всё приложение, компоненты только читают.
  *
- * См. docs/plans/APPSTORE_LAUNCH_PLAN.md §4.4.
+ * См. docs/plans/appstore/APPSTORE_LAUNCH_PLAN.md §4.4.
  */
 import { AccessibilityInfo, AppState, AppStateStatus } from 'react-native';
 import { useIsFocused } from '@react-navigation/native';

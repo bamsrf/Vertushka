@@ -17,7 +17,7 @@
  *     curtain'у. Используется чтобы первая сессия показывала чуть более
  *     яркий tab-affordance, последующие — компактный.
  *
- * Источник: docs/plans/MARKET_AND_PRICE_DRAWER.md §1.4 + §2.1.
+ * Источник: docs/plans/market/MARKET_AND_PRICE_DRAWER.md §1.4 + §2.1.
  */
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';

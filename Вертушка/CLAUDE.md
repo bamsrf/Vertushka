@@ -2,7 +2,7 @@
 
 > 📍 **Текущий roadmap:** [ROADMAP.md](ROADMAP.md) — главный living document с milestone'ами M1–M10, Snapshot, Changelog. Обновляется автоматически при merge через `.github/workflows/sync-roadmap.yml`.
 
-> 🔍 **Context layer (V1):** локальный MCP-сервер `vertushka-docs` с FTS5-поиском по `docs/plans/`, `ROADMAP.md`, `docs/BUGS.md`. **Используй MCP-инструменты `search_docs`, `list_plans`, `get_section` вместо `Read` целых файлов** — это экономит токены. Slash-команда `/v-context` даёт снапшот состояния. Детали: [docs/plans/CONTEXT_LAYER_V1.md](docs/plans/CONTEXT_LAYER_V1.md).
+> 🔍 **Context layer (V1):** локальный MCP-сервер `vertushka-docs` с FTS5-поиском по `docs/plans/`, `ROADMAP.md`, `docs/BUGS.md`. **Используй MCP-инструменты `search_docs`, `list_plans`, `get_section` вместо `Read` целых файлов** — это экономит токены. Slash-команда `/v-context` даёт снапшот состояния. Детали: [docs/plans/quality/CONTEXT_LAYER_V1.md](docs/plans/quality/CONTEXT_LAYER_V1.md).
 
 ## Структура
 ```

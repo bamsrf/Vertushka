@@ -14,6 +14,7 @@ import { messagesSocket } from './messagesWs';
 import { useAuthStore } from './store';
 import { toast } from './toast';
 import type {
+  AttachedRecord,
   Conversation,
   Message,
   MessageFolder,
@@ -29,6 +30,10 @@ interface MessagesState {
   unread: UnreadCount;
   isLoadingList: boolean;
   isLoadingThread: Record<string, boolean>;
+  // Хендофф «прикрепить пластинку»: share-record кладёт выбор сюда и делает
+  // router.back(), экран треда забирает. Раньше выбор возвращался через
+  // router.replace с params — это создавало второй экран треда поверх первого.
+  pendingAttach: Record<string, AttachedRecord | null>;
 
   loadConversations: (folder: MessageFolder) => Promise<void>;
   loadThread: (conversationId: string) => Promise<void>;
@@ -53,10 +58,14 @@ interface MessagesState {
   togglePin: (conversationId: string) => Promise<void>;
   toggleReaction: (conversationId: string, messageId: string, emoji: string) => Promise<void>;
   editMessage: (conversationId: string, messageId: string, body: string) => Promise<void>;
+  deleteMessages: (conversationId: string, messageIds: string[]) => Promise<void>;
   pinMessage: (conversationId: string, messageId: string) => Promise<void>;
   unpinMessage: (conversationId: string) => Promise<void>;
   setMuteDuration: (conversationId: string, duration: MuteDuration) => Promise<void>;
   hideMessageForMe: (conversationId: string, messageId: string) => Promise<void>;
+  hideMessagesForMe: (conversationId: string, messageIds: string[]) => Promise<void>;
+  setPendingAttach: (conversationId: string, record: AttachedRecord) => void;
+  clearPendingAttach: (conversationId: string) => void;
   reset: () => void;
 }
 
@@ -72,6 +81,21 @@ function upsertConversation(list: Conversation[], conv: Conversation): Conversat
   return next;
 }
 
+/**
+ * Порядок как на сервере: закреплённые сверху, внутри секции — по времени
+ * последнего сообщения. Применяется после локальных мутаций (новое сообщение
+ * по WS, свой send, toggle pin), иначе диалог обновляет превью, но не
+ * поднимается наверх до полного рефетча.
+ */
+function sortConversations(list: Conversation[]): Conversation[] {
+  return [...list].sort((a, b) => {
+    if (!!a.pinned !== !!b.pinned) return a.pinned ? -1 : 1;
+    const ta = a.last_message_at ? new Date(a.last_message_at).getTime() : 0;
+    const tb = b.last_message_at ? new Date(b.last_message_at).getTime() : 0;
+    return tb - ta;
+  });
+}
+
 export const useMessagesStore = create<MessagesState>((set, get) => ({
   conversationsPrimary: [],
   conversationsRequests: [],
@@ -80,6 +104,7 @@ export const useMessagesStore = create<MessagesState>((set, get) => ({
   unread: { primary: 0, requests: 0 },
   isLoadingList: false,
   isLoadingThread: {},
+  pendingAttach: {},
 
   loadConversations: async (folder) => {
     set({ isLoadingList: true });
@@ -143,6 +168,9 @@ export const useMessagesStore = create<MessagesState>((set, get) => ({
   },
 
   loadMore: async (conversationId) => {
+    // Инвертированная лента дёргает onEndReached при каждом достижении верха —
+    // без guard'а это лишний сетевой запрос, когда истории больше нет.
+    if (get().hasMoreBefore[conversationId] === false) return;
     const existing = get().threads[conversationId] ?? [];
     if (existing.length === 0) return;
     const oldest = existing.find((m) => !m.id.startsWith('local-'));
@@ -230,9 +258,11 @@ export const useMessagesStore = create<MessagesState>((set, get) => ({
         const conversationsRequests = reqHit
           ? s.conversationsRequests.filter((c) => c.id !== conversationId)
           : s.conversationsRequests;
-        const conversationsPrimary = reqHit
-          ? upsertConversation(s.conversationsPrimary, patch({ ...reqHit, request_status: 'accepted' }))
-          : s.conversationsPrimary.map((c) => (c.id === conversationId ? patch(c) : c));
+        const conversationsPrimary = sortConversations(
+          reqHit
+            ? upsertConversation(s.conversationsPrimary, patch({ ...reqHit, request_status: 'accepted' }))
+            : s.conversationsPrimary.map((c) => (c.id === conversationId ? patch(c) : c)),
+        );
         return {
           threads: {
             ...s.threads,
@@ -451,9 +481,13 @@ export const useMessagesStore = create<MessagesState>((set, get) => ({
   togglePin: async (conversationId) => {
     try {
       const { pinned } = await messagesApi.togglePin(conversationId);
+      // Пересортировка сразу: закреплённый диалог должен подняться наверх,
+      // а не просто получить бейдж на месте.
       set((s) => ({
-        conversationsPrimary: s.conversationsPrimary.map((c) =>
-          c.id === conversationId ? { ...c, pinned } : c
+        conversationsPrimary: sortConversations(
+          s.conversationsPrimary.map((c) =>
+            c.id === conversationId ? { ...c, pinned } : c
+          ),
         ),
       }));
     } catch (e: any) {
@@ -504,6 +538,40 @@ export const useMessagesStore = create<MessagesState>((set, get) => ({
       );
     }
   },
+
+  hideMessagesForMe: async (conversationId, messageIds) => {
+    // Пакетное «удалить у себя» (работает и для чужих сообщений — в отличие
+    // от deleteMessages, который может только своё). Оптимистично убираем
+    // из ленты, при частичной ошибке — рефетч для сверки.
+    const ids = new Set(messageIds);
+    const before = get().threads[conversationId] ?? [];
+    set((s) => ({
+      threads: {
+        ...s.threads,
+        [conversationId]: (s.threads[conversationId] ?? []).filter(
+          (m) => !ids.has(m.id),
+        ),
+      },
+    }));
+    const results = await Promise.allSettled(
+      messageIds.map((id) => messagesApi.hideMessageForMe(id)),
+    );
+    if (results.some((r) => r.status === 'rejected')) {
+      set((s) => ({ threads: { ...s.threads, [conversationId]: before } }));
+      toast.error('Не все сообщения скрылись', 'Попробуйте ещё раз');
+      get().loadThread(conversationId);
+    }
+  },
+
+  setPendingAttach: (conversationId, record) =>
+    set((s) => ({
+      pendingAttach: { ...s.pendingAttach, [conversationId]: record },
+    })),
+
+  clearPendingAttach: (conversationId) =>
+    set((s) => ({
+      pendingAttach: { ...s.pendingAttach, [conversationId]: null },
+    })),
 
   pinMessage: async (conversationId, messageId) => {
     try {
@@ -574,6 +642,34 @@ export const useMessagesStore = create<MessagesState>((set, get) => ({
     }
   },
 
+  deleteMessages: async (conversationId, messageIds) => {
+    // Оптимистичный tombstone (тот же вид, что даёт WS message.deleted) —
+    // без полного loadThread, чтобы лента не мигала. Откат — точечным
+    // рефетчем только при реальной ошибке.
+    const ids = new Set(messageIds);
+    const before = get().threads[conversationId] ?? [];
+    set((s) => ({
+      threads: {
+        ...s.threads,
+        [conversationId]: (s.threads[conversationId] ?? []).map((m) =>
+          ids.has(m.id)
+            ? { ...m, body: null, deleted_at: new Date().toISOString() }
+            : m,
+        ),
+      },
+    }));
+    const results = await Promise.allSettled(
+      messageIds.map((id) => messagesApi.deleteMessage(id)),
+    );
+    if (results.some((r) => r.status === 'rejected')) {
+      set((s) => ({
+        threads: { ...s.threads, [conversationId]: before },
+      }));
+      toast.error('Не все сообщения удалились', 'Попробуйте ещё раз');
+      get().loadThread(conversationId);
+    }
+  },
+
   toggleReaction: async (conversationId, messageId, emoji) => {
     const me = useAuthStore.getState().user;
     if (!me) return;
@@ -635,6 +731,7 @@ export const useMessagesStore = create<MessagesState>((set, get) => ({
       unread: { primary: 0, requests: 0 },
       isLoadingList: false,
       isLoadingThread: {},
+      pendingAttach: {},
     }),
 }));
 
@@ -692,8 +789,10 @@ export function initMessagesRealtime(): void {
 
         return {
           threads: { ...s.threads, [e.conversation_id]: nextThread },
-          conversationsPrimary: updateList(s.conversationsPrimary),
-          conversationsRequests: updateList(s.conversationsRequests),
+          // Пересортировка: диалог с новым сообщением поднимается наверх
+          // сразу, а не после следующего полного рефетча списка.
+          conversationsPrimary: sortConversations(updateList(s.conversationsPrimary)),
+          conversationsRequests: sortConversations(updateList(s.conversationsRequests)),
         };
       });
       // Локальный инкремент вместо полного рефетча на каждое входящее

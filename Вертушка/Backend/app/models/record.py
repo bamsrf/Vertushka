@@ -25,7 +25,7 @@ class Record(Base):
     # Источник записи: 'discogs' — пришла из Discogs API; 'store' — создана
     # из листинга магазина (для релизов которых нет на Discogs, см. матчер,
     # шаг 6 store-native); 'user' — добавлена юзером вручную (пластинки нет ни
-    # в Discogs, ни в Маркете, см. docs/plans/USER_SUBMITTED_RECORDS.md). На
+    # в Discogs, ни в Маркете, см. docs/plans/collection/USER_SUBMITTED_RECORDS.md). На
     # 'store' источники нельзя добавлять в коллекции/вишлисты; 'discogs' и
     # 'user' — можно (см. /api/collections, /api/wishlists guards, whitelist).
     source: Mapped[str] = mapped_column(

@@ -1,5 +1,5 @@
 /**
- * Утилиты над MyAchievementsResponse: «самая редкая открытая»,
+ * Утилиты над MyAchievementsResponse: «последняя открытая»,
  * собирание свежих, подсчёты для архетипа и т. д.
  *
  * Все функции pure — на стороне клиента, без сетевых запросов.
@@ -19,8 +19,7 @@ const TIER_ORDER: Record<AchievementTierKey, number> = {
   legend: 5,
 };
 
-/** Возвращает все открытые ачивки, плоским массивом, отсортированные по тиру (DESC),
- *  потом по дате анлока (DESC). */
+/** Все открытые ачивки плоским массивом — без сортировки. */
 export function collectUnlocked(
   data: MyAchievementsResponse,
   extraRandom: AchievementItem[] = [],
@@ -34,7 +33,28 @@ export function collectUnlocked(
   for (const item of extraRandom) {
     if (item.is_unlocked) result.push(item);
   }
-  result.sort((a, b) => {
+  return result;
+}
+
+/** Ачивки, открытые одним прогоном evaluator'а, приходят с разницей в
+ *  микросекунды. Внутри такой пачки «последняя по времени» — случайная строка
+ *  из батча, поэтому время округляем до секунды, а внутри секунды берём
+ *  верхнюю по редкости: пачку представляет её самый ценный пин. */
+function unlockedBatchSecond(item: AchievementItem): number {
+  const t = item.unlocked_at ? Date.parse(item.unlocked_at) : 0;
+  return Number.isNaN(t) ? 0 : Math.floor(t / 1000);
+}
+
+/** Открытые ачивки от свежих к старым: пачка (секунда) DESC, внутри пачки
+ *  тир DESC, дальше точное время DESC. */
+export function sortedByFreshness(
+  data: MyAchievementsResponse,
+  extraRandom: AchievementItem[] = [],
+): AchievementItem[] {
+  return collectUnlocked(data, extraRandom).sort((a, b) => {
+    const sa = unlockedBatchSecond(a);
+    const sb = unlockedBatchSecond(b);
+    if (sa !== sb) return sb - sa;
     const ta = TIER_ORDER[a.tier.key] || 0;
     const tb = TIER_ORDER[b.tier.key] || 0;
     if (ta !== tb) return tb - ta;
@@ -42,15 +62,14 @@ export function collectUnlocked(
     const db = b.unlocked_at ? Date.parse(b.unlocked_at) : 0;
     return db - da;
   });
-  return result;
 }
 
-export function rarestUnlocked(
+/** Последняя открытая ачивка — та, что стоит в гнезде hero. */
+export function latestUnlocked(
   data: MyAchievementsResponse,
   extraRandom: AchievementItem[] = [],
 ): AchievementItem | null {
-  const all = collectUnlocked(data, extraRandom);
-  return all[0] || null;
+  return sortedByFreshness(data, extraRandom)[0] || null;
 }
 
 export function recentUnlocked(
@@ -58,21 +77,7 @@ export function recentUnlocked(
   limit: number,
   extraRandom: AchievementItem[] = [],
 ): AchievementItem[] {
-  const items: AchievementItem[] = [];
-  for (const series of data.series) {
-    for (const item of series.items) {
-      if (item.is_unlocked) items.push(item);
-    }
-  }
-  for (const item of extraRandom) {
-    if (item.is_unlocked) items.push(item);
-  }
-  items.sort((a, b) => {
-    const ta = a.unlocked_at ? Date.parse(a.unlocked_at) : 0;
-    const tb = b.unlocked_at ? Date.parse(b.unlocked_at) : 0;
-    return tb - ta;
-  });
-  return items.slice(0, limit);
+  return sortedByFreshness(data, extraRandom).slice(0, limit);
 }
 
 /** Список ачивок-series-meta (META_*) — нужны для архетипов. */

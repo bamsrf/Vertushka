@@ -1,7 +1,7 @@
 """Auto-approve existing user-records (§6: moderation cancelled).
 
 Модерация user-submitted records отменена — все source='user' теперь approved
-по умолчанию (см. docs/plans/USER_SUBMITTED_RECORDS.md §6 revised). Старые
+по умолчанию (см. docs/plans/collection/USER_SUBMITTED_RECORDS.md §6 revised). Старые
 записи, висевшие в 'pending', делаем видимыми.
 
 Revision ID: 20260617_approve_user_records

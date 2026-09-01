@@ -49,7 +49,7 @@ Roadmap — это не «что хочется», а «что соответс�
 5. **Анти-grind.** Если фичу можно сфармить за вечер скриптом — её незачем делать. Все массовые механики требуют разнообразия.
 
 ### Технические
-6. **Прод и локалка изолированы.** Реальную коллекцию строить только на проде; локальная Docker-БД может быть потеряна. См. [PRINCIPLES.md](docs/plans/PRINCIPLES.md#данные-пользователей-локалка-vs-прод).
+6. **Прод и локалка изолированы.** Реальную коллекцию строить только на проде; локальная Docker-БД может быть потеряна. См. [PRINCIPLES.md](docs/plans/product/PRINCIPLES.md#данные-пользователей-локалка-vs-прод).
 7. **Discogs URL не модифицировать.** Подписанные imgproxy URL — менять параметры нельзя, подпись сломается.
 8. **Дублей планов нет.** Каждый milestone ссылается на _один_ detail-spec. Если детали меняются — правится spec, а не roadmap.
 
@@ -101,7 +101,7 @@ Roadmap — это не «что хочется», а «что соответс�
 - Suggest с автодополнением, история поиска (первые 5 + «показать ещё»)
 - Гибридная витрина новинок (top-10, recency × want, ежемесячный refresh-job)
 
-**Маркет РФ-магазинов** — детали: [PARSING.md](docs/plans/PARSING.md), [SHOPS_PARSING.md](docs/plans/SHOPS_PARSING.md)
+**Маркет РФ-магазинов** — детали: [PARSING.md](docs/plans/market/PARSING.md), [SHOPS_PARSING.md](docs/plans/market/SHOPS_PARSING.md)
 - 5 парсеров: Коробка Винила, Plastinka.com, Vinyl.ru, StopRobotVinyl, Found ([scrapers/shops/](Backend/app/services/scrapers/shops/))
 - 5-шаговый matcher листинг→record ([services/listing_matcher.py](Backend/app/services/listing_matcher.py)), store-native записи (`source='store'`)
 - Маркет в Поиске (карусель «В наличии сейчас»), `/market`, `/market/store/[slug]`, Hot Stock pill, swipe-сравнение цен
@@ -115,7 +115,7 @@ Roadmap — это не «что хочется», а «что соответс�
 - Лента «Ты» / «Подписки», Expo push ([services/push.py](Backend/app/services/push.py))
 - v2: dedup-ключи (bump-or-create), snooze, weekly digest, quiet hours, badge, swipe-to-delete
 
-**Достижения** — детали: [PLAN_ACHIEVEMENTS.md](docs/plans/PLAN_ACHIEVEMENTS.md)
+**Достижения** — детали: [PLAN_ACHIEVEMENTS.md](docs/plans/achievements/PLAN_ACHIEVEMENTS.md)
 - Архетипы «Физика звука» (XP-ladder), PNG/SVG-пины, серии Foundation/Collection/Rarity/Сообщество/Market/Пасхалки
 - Per-achievement описания, share-карточка, push при анлоке, locked-плейсхолдеры
 
@@ -129,7 +129,7 @@ Roadmap — это не «что хочется», а «что соответс�
 - Вишлист с приоритетами, заметками, пометкой «куплено»
 - Gift-booking: бронирование подарка незарегистрированным дарителем, cancel-token, expires_at, email-уведомления ([models/gift_booking.py](Backend/app/models/gift_booking.py))
 
-**Редкость (4 тира)** — детали: [`/plans/RARITY_BADGES_PLAN.md`](docs/plans/RARITY_BADGES_PLAN.md)
+**Редкость (4 тира)** — детали: [`/plans/RARITY_BADGES_PLAN.md`](docs/plans/collection/RARITY_BADGES_PLAN.md)
 - 🩶 **Канон** (`is_canon`) — main_release_id из Discogs, slate-графит палитра, 5s border glow
 - 💚 **Коллекционка** (`is_collectible`) — комбо: цена ≥ $100 AND num_for_sale ≤ 3 AND have ≤ 200; emerald, rotating gradient
 - 🟣 **Лимитка** (`is_limited`) — Test Pressing / Promo / Limited Edition / Numbered / White Label; violet pulse 4s
@@ -165,9 +165,9 @@ Roadmap — это не «что хочется», а «что соответс�
 
 | Что | Где | Статус |
 |---|---|---|
-| M2 Release prep | [PLAN_RELEASE_v2.md](docs/plans/PLAN_RELEASE_v2.md) | TestFlight build prep ✅, GlitchTip live; ждёт soak + store-метаданные (после M1-маскота) |
+| M2 Release prep | [PLAN_RELEASE_v2.md](docs/plans/appstore/PLAN_RELEASE_v2.md) | TestFlight build prep ✅, GlitchTip live; ждёт soak + store-метаданные (после M1-маскота) |
 | M1 Дизайн-система v2 + Маскот | `Mobile/constants/theme.ts` | Icon v2 мигрирован; маскот ещё не нарисован |
-| Достижения серии D–K | [PLAN_ACHIEVEMENTS.md](docs/plans/PLAN_ACHIEVEMENTS.md) | A/B/C/Market/Сообщество/Пасхалки зашиты; социальные/лор-серии добиваются |
+| Достижения серии D–K | [PLAN_ACHIEVEMENTS.md](docs/plans/achievements/PLAN_ACHIEVEMENTS.md) | A/B/C/Market/Сообщество/Пасхалки зашиты; социальные/лор-серии добиваются |
 
 ### 1.4. Метрики
 
@@ -184,24 +184,24 @@ ROADMAP.md — это _верхнеуровневый зонтик_. Кажды�
 
 | Milestone | Detail-spec | Статус spec'а |
 |---|---|---|
-| M1. Дизайн+Маскот | `docs/plans/PLAN_DESIGN_SYSTEM_V2.md` | 🆕 будет создан в начале M1 |
-| M2. Release | [PLAN_RELEASE_v2.md](docs/plans/PLAN_RELEASE_v2.md) | ✅ есть, ~65% реализовано |
-| M3. Свои пластинки | [PLAN_USER_SUBMITTED_RECORDS.md](docs/plans/USER_SUBMITTED_RECORDS.md) | ✅ есть, ядро в проде |
+| M1. Дизайн+Маскот | `docs/plans/design/PLAN_DESIGN_SYSTEM_V2.md` | 🆕 будет создан в начале M1 |
+| M2. Release | [PLAN_RELEASE_v2.md](docs/plans/appstore/PLAN_RELEASE_v2.md) | ✅ есть, ~65% реализовано |
+| M3. Свои пластинки | [PLAN_USER_SUBMITTED_RECORDS.md](docs/plans/collection/USER_SUBMITTED_RECORDS.md) | ✅ есть, ядро в проде |
 | M4. Импорт | `docs/plans/PLAN_COLLECTION_IMPORT.md` | 🆕 (Discogs OAuth-импорт уже в проде) |
-| M5. Достижения | [`/plans/PLAN_ACHIEVEMENTS.md`](docs/plans/PLAN_ACHIEVEMENTS.md) | ✅ есть, зашиты в продукт |
-| M6. Парсинг РФ | [PARSING.md](docs/plans/PARSING.md) + [SHOPS_PARSING.md](docs/plans/SHOPS_PARSING.md) + [STORE_ONBOARDING_STRATEGY.md](docs/plans/STORE_ONBOARDING_STRATEGY.md) | ✅ есть, 5 парсеров в проде; онбординг-стратегия 🆕 |
-| M7. Магазины-партнёры | [CLICK_REDIRECTOR_AND_METRIKA.md](docs/plans/CLICK_REDIRECTOR_AND_METRIKA.md) — трекинг переходов и воронка; `docs/plans/PLAN_AFFILIATE_FLOW.md` | ✅ спек трекинга готов (2026-08-10); flow-спек 🆕 (общая стратегия — в [PLAN_MONETIZATION.md](docs/plans/PLAN_MONETIZATION.md)) |
-| M8. P2P | [PLAN_P2P_MARKETPLACE.md](docs/plans/PLAN_P2P_MARKETPLACE.md) | ✅ спек готов (2026-05-12) |
+| M5. Достижения | [`/plans/PLAN_ACHIEVEMENTS.md`](docs/plans/achievements/PLAN_ACHIEVEMENTS.md) | ✅ есть, зашиты в продукт |
+| M6. Парсинг РФ | [PARSING.md](docs/plans/market/PARSING.md) + [SHOPS_PARSING.md](docs/plans/market/SHOPS_PARSING.md) + [STORE_ONBOARDING_STRATEGY.md](docs/plans/market/STORE_ONBOARDING_STRATEGY.md) | ✅ есть, 5 парсеров в проде; онбординг-стратегия 🆕 |
+| M7. Магазины-партнёры | [CLICK_REDIRECTOR_AND_METRIKA.md](docs/plans/market/CLICK_REDIRECTOR_AND_METRIKA.md) — трекинг переходов и воронка; `docs/plans/PLAN_AFFILIATE_FLOW.md` | ✅ спек трекинга готов (2026-08-10); flow-спек 🆕 (общая стратегия — в [PLAN_MONETIZATION.md](docs/plans/product/PLAN_MONETIZATION.md)) |
+| M8. P2P | [PLAN_P2P_MARKETPLACE.md](docs/plans/product/PLAN_P2P_MARKETPLACE.md) | ✅ спек готов (2026-05-12) |
 | M9. Рекомендации | `docs/plans/PLAN_RECOMMENDATIONS.md` | 🆕 |
-| M10. Юнит-экономика | [PLAN_MONETIZATION.md](docs/plans/PLAN_MONETIZATION.md) (зонтик A→B→C) + `UNIT_ECONOMICS.md` (цифры) | ✅ стратегия готова (2026-05-12); цифровая модель — позже |
+| M10. Юнит-экономика | [PLAN_MONETIZATION.md](docs/plans/product/PLAN_MONETIZATION.md) (зонтик A→B→C) + `UNIT_ECONOMICS.md` (цифры) | ✅ стратегия готова (2026-05-12); цифровая модель — позже |
 
 Связанные технические планы (не milestone'ы, но важные):
-- [PRINCIPLES.md](docs/plans/PRINCIPLES.md) — техника (Discogs API, локалка vs прод, кэш)
+- [PRINCIPLES.md](docs/plans/product/PRINCIPLES.md) — техника (Discogs API, локалка vs прод, кэш)
 - [BUGS.md](docs/BUGS.md) — реестр багов
-- [PLAN_MONETIZATION.md](docs/plans/PLAN_MONETIZATION.md) — зонтик над M7+M8+M10 (стратегия трёх потоков A→B→C, последовательность запуска, юр.обвязка, юнит-эконом)
-- [`/plans/RARITY_BADGES_PLAN.md`](docs/plans/RARITY_BADGES_PLAN.md) — рарити-теги (готово ✅)
-- [`/plans/RARITY_DESIGN_BRIEF.md`](docs/plans/RARITY_DESIGN_BRIEF.md) — design brief для иллюстратора
-- [`/VINYL_SPINNER_PLAN.md`](docs/plans/VINYL_SPINNER_PLAN.md) — vinyl spinner (в процессе 🟨)
+- [PLAN_MONETIZATION.md](docs/plans/product/PLAN_MONETIZATION.md) — зонтик над M7+M8+M10 (стратегия трёх потоков A→B→C, последовательность запуска, юр.обвязка, юнит-эконом)
+- [`/plans/RARITY_BADGES_PLAN.md`](docs/plans/collection/RARITY_BADGES_PLAN.md) — рарити-теги (готово ✅)
+- [`/plans/RARITY_DESIGN_BRIEF.md`](docs/plans/design/RARITY_DESIGN_BRIEF.md) — design brief для иллюстратора
+- [`/VINYL_SPINNER_PLAN.md`](docs/plans/design/VINYL_SPINNER_PLAN.md) — vinyl spinner (в процессе 🟨)
 
 ---
 
@@ -216,7 +216,7 @@ ROADMAP.md — это _верхнеуровневый зонтик_. Кажды�
 **Why:** Без маскота и единого визуального языка App Store-скриншоты выглядят как «yet another Discogs клон». Маскот = узнаваемость + лицо для соцсетей (TikTok, Telegram).
 **Owner:** bamsrf + иллюстратор (внешний)
 **Target:** до сабмита M2
-**Detail-spec:** `docs/plans/PLAN_DESIGN_SYSTEM_V2.md` — будет создан в начале M1
+**Detail-spec:** `docs/plans/design/PLAN_DESIGN_SYSTEM_V2.md` — будет создан в начале M1
 
 #### Объём
 
@@ -253,7 +253,7 @@ ROADMAP.md — это _верхнеуровневый зонтик_. Кажды�
 - [ ] Splash Screen обновлён
 - [ ] Все empty/loading/error states используют маскот (≥10 экранов)
 - [ ] `Mobile/constants/theme.ts` — единственный источник цвета/тени/радиуса (грэп подтверждает)
-- [ ] `docs/plans/PLAN_DESIGN_SYSTEM_V2.md` создан и содержит токены + маскот-гайдлайн
+- [ ] `docs/plans/design/PLAN_DESIGN_SYSTEM_V2.md` создан и содержит токены + маскот-гайдлайн
 - [ ] Snapshot-тесты на ключевые экраны (Storybook или Detox screenshot tests — опц.)
 
 #### Зависимости
@@ -261,7 +261,7 @@ ROADMAP.md — это _верхнеуровневый зонтик_. Кажды�
 - **Блокируется:** —
 
 #### Связанные артефакты
-- [`/plans/RARITY_DESIGN_BRIEF.md`](docs/plans/RARITY_DESIGN_BRIEF.md) — пример формата брифа
+- [`/plans/RARITY_DESIGN_BRIEF.md`](docs/plans/design/RARITY_DESIGN_BRIEF.md) — пример формата брифа
 - `Mobile/constants/theme.ts`, `Mobile/components/AnimatedGradientText.tsx`
 
 #### Changelog
@@ -276,7 +276,7 @@ ROADMAP.md — это _верхнеуровневый зонтик_. Кажды�
 **Why:** Без публичного релиза остальные milestone'ы (P2P, парсинг, рекомендации) — работают на 1 пользователя. Пора собирать фидбек.
 **Owner:** bamsrf
 **Target:** через ~3 недели после M1
-**Detail-spec:** [PLAN_RELEASE_v2.md](docs/plans/PLAN_RELEASE_v2.md) — детальный план с фазами 0–6
+**Detail-spec:** [PLAN_RELEASE_v2.md](docs/plans/appstore/PLAN_RELEASE_v2.md) — детальный план с фазами 0–6
 
 #### Объём
 
@@ -311,7 +311,7 @@ ROADMAP.md — это _верхнеуровневый зонтик_. Кажды�
 - Условия использования + политика конфиденциальности на сайте (RU + EN)
 
 **Pre-launch риски (выявлено вне исходного плана, 2026-06-19)**
-- 🟨 **UGC-compliance (Guideline 1.2) — код закрыт, операционка нет.** 2026-07-02 добавлены `Backend/app/api/reports.py` + pre-release compliance pack ([UGC_MODERATION_M2.md](docs/plans/UGC_MODERATION_M2.md)). Осталось операционное: EULA-accept при регистрации, кнопка report на каждом UGC-объекте в мобиле, staff-action бан/удаление, контакт для жалоб в ASC, регламент реакции ≤24ч.
+- 🟨 **UGC-compliance (Guideline 1.2) — код закрыт, операционка нет.** 2026-07-02 добавлены `Backend/app/api/reports.py` + pre-release compliance pack ([UGC_MODERATION_M2.md](docs/plans/appstore/UGC_MODERATION_M2.md)). Осталось операционное: EULA-accept при регистрации, кнопка report на каждом UGC-объекте в мобиле, staff-action бан/удаление, контакт для жалоб в ASC, регламент реакции ≤24ч.
 - ⚠️ **Legal: ToS scraping + Discogs dump.** Публично показываем scraped-данные магазинов + локальный Discogs-дамп. Проверить Discogs API ToS (массовый дамп + редистрибуция) и per-shop robots/ToS **до** публичного релиза — cease-and-desist прилетает после роста, а не на старте.
 - 💡 **Activation-метрика.** DAU=1, тюнить нечего. Зашить одну activation-метрику (первый added record / первый импорт) в Amplitude и вывести Discogs-импорт (M4, уже в проде) прямо в онбординг.
 - ✅ **Off-site backup + restore-drill — закрыто** (см. Changelog ниже, 2026-06-19).
@@ -331,7 +331,7 @@ ROADMAP.md — это _верхнеуровневый зонтик_. Кажды�
 - **Блокируется:** M1 (нужны иконка + скриншоты + маскот)
 
 #### Связанные артефакты
-- [PLAN_RELEASE_v2.md](docs/plans/PLAN_RELEASE_v2.md), [PLAN_RELEASE.md](docs/plans/PLAN_RELEASE.md) (исторический), [BUGS.md](docs/BUGS.md)
+- [PLAN_RELEASE_v2.md](docs/plans/appstore/PLAN_RELEASE_v2.md), [PLAN_RELEASE.md](docs/plans/appstore/PLAN_RELEASE.md) (исторический), [BUGS.md](docs/BUGS.md)
 - `Mobile/eas.json`, `Mobile/app.json`, `Backend/scripts/restore_drill.sh`, `Backend/tests/`
 
 #### Changelog
@@ -351,7 +351,7 @@ ROADMAP.md — это _верхнеуровневый зонтик_. Кажды�
 **Why:** РФ/СССР-релизы и underground-самиздат плохо покрыты в Discogs. Без user-submitted мы блокируем самую интересную для коллекционеров часть рынка.
 **Owner:** bamsrf
 **Target:** после M2
-**Detail-spec:** [PLAN_USER_SUBMITTED_RECORDS.md](docs/plans/USER_SUBMITTED_RECORDS.md) ✅
+**Detail-spec:** [PLAN_USER_SUBMITTED_RECORDS.md](docs/plans/collection/USER_SUBMITTED_RECORDS.md) ✅
 
 #### Объём
 
@@ -460,7 +460,7 @@ ROADMAP.md — это _верхнеуровневый зонтик_. Кажды�
 **Why:** Достижения превращают каталог в живой ритуал коллекционера + увеличивают retention без grind-механик.
 **Owner:** bamsrf
 **Target:** после M2
-**Detail-spec:** [`/plans/PLAN_ACHIEVEMENTS.md`](docs/plans/PLAN_ACHIEVEMENTS.md) — 84 ачивки в 11 категориях, философия и каталог проработаны
+**Detail-spec:** [`/plans/PLAN_ACHIEVEMENTS.md`](docs/plans/achievements/PLAN_ACHIEVEMENTS.md) — 84 ачивки в 11 категориях, философия и каталог проработаны
 
 #### Поэтапный запуск
 1. **Этап 1 (sub-milestone M5.1):** категории A (Foundation, 7 ачивок) + B (Collection size, 7 ачивок) — простые счётчики, дают мгновенную ценность
@@ -507,7 +507,7 @@ ROADMAP.md — это _верхнеуровневый зонтик_. Кажды�
 - **Блокируется:** M1 (маскот для иконок), M2 (push notifications)
 
 #### Связанные артефакты
-- [`/plans/PLAN_ACHIEVEMENTS.md`](docs/plans/PLAN_ACHIEVEMENTS.md), `Mobile/app/achievements.tsx`, `Mobile/components/AchievementPin.tsx`
+- [`/plans/PLAN_ACHIEVEMENTS.md`](docs/plans/achievements/PLAN_ACHIEVEMENTS.md), `Mobile/app/achievements.tsx`, `Mobile/components/AchievementPin.tsx`
 
 #### Changelog
 - **2026-06-19** — rework серии «Сообщество» (v2.1)
@@ -570,7 +570,7 @@ ROADMAP.md — это _верхнеуровневый зонтик_. Кажды�
 
 #### Связанные артефакты
 - [services/scrapers/](Backend/app/services/scrapers/) — фреймворк парсинга + shops/
-- [services/listing_matcher.py](Backend/app/services/listing_matcher.py), [PARSING.md](docs/plans/PARSING.md), [SHOPS_PARSING.md](docs/plans/SHOPS_PARSING.md)
+- [services/listing_matcher.py](Backend/app/services/listing_matcher.py), [PARSING.md](docs/plans/market/PARSING.md), [SHOPS_PARSING.md](docs/plans/market/SHOPS_PARSING.md)
 
 #### Changelog
 - **2026-06-13** — [#51/#52](https://github.com/bamsrf/Vertushka/pull/52) Found parser (Tilda store-API) + reliable ingest (parallel crawl, stock-refresh, smoke-checks)
@@ -589,7 +589,7 @@ ROADMAP.md — это _верхнеуровневый зонтик_. Кажды�
 **Owner:** bamsrf + переговоры с магазинами
 **Target:** после M6 (мес 4–6 после M2)
 **Detail-spec:**
-- Стратегия и юнит-экономика — [PLAN_MONETIZATION.md §Поток A](docs/plans/PLAN_MONETIZATION.md)
+- Стратегия и юнит-экономика — [PLAN_MONETIZATION.md §Поток A](docs/plans/product/PLAN_MONETIZATION.md)
 - Технический спек — `docs/plans/PLAN_AFFILIATE_FLOW.md` (будет создан в начале M7)
 
 #### Объём
@@ -640,7 +640,7 @@ ROADMAP.md — это _верхнеуровневый зонтик_. Кажды�
 **Why:** **Поток B** из трёх-потоковой монетизации. Стратегический lock-in аудитории через рейтинг и эскроу. Запускается **после M7** (после доказательства трафика партнёрам).
 **Owner:** bamsrf
 **Target:** мес 6–14 после M2; 16–21 человеко-неделя чистого dev, 7 под-фаз (2.0 Подготовка → 2.6 Scale)
-**Detail-spec:** [PLAN_P2P_MARKETPLACE.md](docs/plans/PLAN_P2P_MARKETPLACE.md) — полный спек с state machine, моделями, антифрод-стеком, винильной спецификой, эскроу ЮKassa, phased rollout. Стратегический контекст — [PLAN_MONETIZATION.md §Поток B](docs/plans/PLAN_MONETIZATION.md).
+**Detail-spec:** [PLAN_P2P_MARKETPLACE.md](docs/plans/product/PLAN_P2P_MARKETPLACE.md) — полный спек с state machine, моделями, антифрод-стеком, винильной спецификой, эскроу ЮKassa, phased rollout. Стратегический контекст — [PLAN_MONETIZATION.md §Поток B](docs/plans/product/PLAN_MONETIZATION.md).
 
 #### Краткая сводка (детали — в спеке)
 
@@ -688,13 +688,13 @@ ROADMAP.md — это _верхнеуровневый зонтик_. Кажды�
 - **Блокируется:** M2 (UGC moderation policy), M7 (валидация Affiliate как первого потока), желательно M5 (доверие через ачивки)
 
 #### Связанные артефакты
-- [PLAN_P2P_MARKETPLACE.md](docs/plans/PLAN_P2P_MARKETPLACE.md), [PLAN_MONETIZATION.md](docs/plans/PLAN_MONETIZATION.md)
+- [PLAN_P2P_MARKETPLACE.md](docs/plans/product/PLAN_P2P_MARKETPLACE.md), [PLAN_MONETIZATION.md](docs/plans/product/PLAN_MONETIZATION.md)
 - [models/gift_booking.py](Backend/app/models/gift_booking.py) — паттерн «сделки между юзерами»
 - [models/blocked_contact.py](Backend/app/models/blocked_contact.py) — расширяется для антифрода (phone/device_id/card_hash)
 - [models/follow.py](Backend/app/models/follow.py) — социальная база
 
 #### Changelog
-- **2026-05-12** — создан детальный spec [PLAN_P2P_MARKETPLACE.md](docs/plans/PLAN_P2P_MARKETPLACE.md) с полной архитектурой, антифрод-стеком, phased rollout
+- **2026-05-12** — создан детальный spec [PLAN_P2P_MARKETPLACE.md](docs/plans/product/PLAN_P2P_MARKETPLACE.md) с полной архитектурой, антифрод-стеком, phased rollout
 
 ---
 
@@ -771,18 +771,18 @@ ROADMAP.md — это _верхнеуровневый зонтик_. Кажды�
 **Owner:** bamsrf
 **Target:** живёт параллельно всем milestone'ам; чек-поинты после M7 и M8
 **Detail-spec:**
-- Стратегия и phased rollout — [PLAN_MONETIZATION.md](docs/plans/PLAN_MONETIZATION.md) ✅
-- Детальный P2P — [PLAN_P2P_MARKETPLACE.md](docs/plans/PLAN_P2P_MARKETPLACE.md) ✅
+- Стратегия и phased rollout — [PLAN_MONETIZATION.md](docs/plans/product/PLAN_MONETIZATION.md) ✅
+- Детальный P2P — [PLAN_P2P_MARKETPLACE.md](docs/plans/product/PLAN_P2P_MARKETPLACE.md) ✅
 - Цифровая фин-модель — `docs/plans/UNIT_ECONOMICS.md` (будет создан до M2)
 
 #### Стратегия одной строкой
 
-**A → B(v1) → B(v2) → C.** Строго последовательно, не параллельно. Affiliate первый (короткое time-to-revenue, доказывает трафик магазинам). P2P второй (lock-in аудитории через рейтинг). Premium третий (требует существующих core-features для конверсии). Подробное обоснование — в [PLAN_MONETIZATION.md](docs/plans/PLAN_MONETIZATION.md).
+**A → B(v1) → B(v2) → C.** Строго последовательно, не параллельно. Affiliate первый (короткое time-to-revenue, доказывает трафик магазинам). P2P второй (lock-in аудитории через рейтинг). Premium третий (требует существующих core-features для конверсии). Подробное обоснование — в [PLAN_MONETIZATION.md](docs/plans/product/PLAN_MONETIZATION.md).
 
 #### Три потока (детально в PLAN_MONETIZATION.md)
 
 1. **Поток A — Affiliate с РФ-магазинами (M7)** — % с продаж от партнёрских кликов. CPA 5% от чека. Phase 1, мес 1–6 после M2. Юнит-экономика к мес 6: ~30к₽/мес комиссии.
-2. **Поток B — P2P-маркетплейс (M8)** — 7% с продавца + 1.5% сервис-фи. Phase 2, мес 6–14. Юнит-экономика к мес 14: 1М₽ GMV/мес → 70к₽ комиссии. Детально — [PLAN_P2P_MARKETPLACE.md](docs/plans/PLAN_P2P_MARKETPLACE.md).
+2. **Поток B — P2P-маркетплейс (M8)** — 7% с продавца + 1.5% сервис-фи. Phase 2, мес 6–14. Юнит-экономика к мес 14: 1М₽ GMV/мес → 70к₽ комиссии. Детально — [PLAN_P2P_MARKETPLACE.md](docs/plans/product/PLAN_P2P_MARKETPLACE.md).
 3. **Поток C — Premium-подписка** — 199₽/мес или 1990₽/год через External Link Entitlement (Apple) → ЮKassa СБП / Paddle (по гео). Phase 3, мес 9–18. Юнит-экономика к мес 18: 500 платных → 100к₽/мес.
 
 **Целевая структура revenue mix к 24 мес:** Affiliate 40%, P2P 45%, Premium 15%. Совокупно ~600к₽/мес = ~7.2М₽/год.
@@ -835,7 +835,7 @@ ROADMAP.md — это _верхнеуровневый зонтик_. Кажды�
 - M7, M8 — основные источники revenue
 
 #### Changelog
-- **2026-05-12** — утверждена стратегия трёх потоков A→B→C; созданы [PLAN_MONETIZATION.md](docs/plans/PLAN_MONETIZATION.md) и [PLAN_P2P_MARKETPLACE.md](docs/plans/PLAN_P2P_MARKETPLACE.md)
+- **2026-05-12** — утверждена стратегия трёх потоков A→B→C; созданы [PLAN_MONETIZATION.md](docs/plans/product/PLAN_MONETIZATION.md) и [PLAN_P2P_MARKETPLACE.md](docs/plans/product/PLAN_P2P_MARKETPLACE.md)
 - **2026-05-07** — [#35](https://github.com/bamsrf/Vertushka/pull/35) feat(analytics): скрипт зеркалирования БД в Supabase — _M10 relevant_
 
 ---
@@ -881,7 +881,7 @@ ROADMAP.md — это _верхнеуровневый зонтик_. Кажды�
 - **2026-05-19** — feat(market): Phase 1–7.5 (Hot Stock, MarketSection, store/[slug]); feat(messages): TG-style чат Phase 1–8; feat(claude): context layer V1 (FTS5)
 - **2026-05-17** — feat(messages): M1 DM router + mobile screens, WebSocket realtime; feat(notifications): лента + Expo push; feat(affiliate): фаза A клик-трекинг + UTM — _M7_
 - **2026-05-13** — [#44/#45](https://github.com/bamsrf/Vertushka/pull/45) feat(achievements): каркас серий C/D/E/F; feat(profile): редизайн чужого профиля + follow-requests — _M5_
-- **2026-05-12** — docs(monetization): утверждена стратегия монетизации A→B→C; добавлены [PLAN_MONETIZATION.md](docs/plans/PLAN_MONETIZATION.md) и [PLAN_P2P_MARKETPLACE.md](docs/plans/PLAN_P2P_MARKETPLACE.md) — _M7/M8/M10_
+- **2026-05-12** — docs(monetization): утверждена стратегия монетизации A→B→C; добавлены [PLAN_MONETIZATION.md](docs/plans/product/PLAN_MONETIZATION.md) и [PLAN_P2P_MARKETPLACE.md](docs/plans/product/PLAN_P2P_MARKETPLACE.md) — _M7/M8/M10_
 - **2026-05-09** — [#39](https://github.com/bamsrf/Vertushka/pull/39) feat(email): отправка через Resend + SMTP fallback
 - **2026-05-07** — [#35](https://github.com/bamsrf/Vertushka/pull/35) feat(analytics): скрипт зеркалирования БД в Supabase — _M10 relevant_
 - **2026-05-07** — [#32](https://github.com/bamsrf/Vertushka/pull/32) feat(design-system): миграция Mobile на Icon v2 (b2v2-icons + Phosphor halo wrapper)

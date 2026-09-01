@@ -14,7 +14,7 @@
  * Тап на магазин или карточку — поднимаем наружу через onStorePress/onItemPress.
  *
  * Источник: screens-market.jsx (ScreenMarketFull композиция) +
- *           docs/plans/MARKET_AND_PRICE_DRAWER.md §1.6-1.9.
+ *           docs/plans/market/MARKET_AND_PRICE_DRAWER.md §1.6-1.9.
  */
 import React from 'react';
 import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';

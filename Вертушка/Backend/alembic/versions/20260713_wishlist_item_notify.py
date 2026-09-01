@@ -1,6 +1,6 @@
 """wishlist_items.notify_mode + price_threshold_rub — per-item колокольчик
 
-Волна A из docs/plans/PLAN_WISHLIST_PRICE_ALERTS.md.
+Волна A из docs/plans/collection/PLAN_WISHLIST_PRICE_ALERTS.md.
 - notify_mode: 'watched' (дефолт, тихо + недельный digest) | 'subscribed' (bell → push).
 - price_threshold_rub: опциональный порог «уведомить, когда дешевле X».
   Колонку заводим сразу (дёшево), UI-поповер порога включаем в Волне B.

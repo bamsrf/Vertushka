@@ -29,7 +29,7 @@ class RecordCreate(RecordBase):
     Если понадобится серверное создание записи — присваивай поля явно и
     проставляй source/moderation_status/created_by_user_id сам; cover_image_url
     из клиентского запроса не брать (открытый редирект + SSRF, см.
-    docs/plans/SECURITY_AUDIT_PRERELEASE.md §S2).
+    docs/plans/appstore/SECURITY_AUDIT_PRERELEASE.md §S2).
     """
     discogs_id: str | None = None
     discogs_master_id: str | None = None

@@ -8,7 +8,7 @@
  * через borderColor + shadow.
  *
  * Источник: screens-market.jsx из Design Claude handoff (MarketSearchInput
- * атом) + docs/plans/MARKET_AND_PRICE_DRAWER.md §1.7.
+ * атом) + docs/plans/market/MARKET_AND_PRICE_DRAWER.md §1.7.
  */
 import React, { useState } from 'react';
 import {

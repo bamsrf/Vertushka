@@ -18,7 +18,7 @@
  *     ...
  *   </Animated.ScrollView>
  *
- * Источник: docs/plans/MARKET_AND_PRICE_DRAWER.md §1.3 +
+ * Источник: docs/plans/market/MARKET_AND_PRICE_DRAWER.md §1.3 +
  *           magic-transition.jsx из Design Claude handoff (frames 0/400/550/700/1250).
  */
 import React from 'react';

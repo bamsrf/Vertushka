@@ -6,8 +6,10 @@
  * - «Поиск» — RecordSearchResult с discogs_id; перед отправкой резолвим
  *   discogs_id → локальный record.id через api.getRecordByDiscogsId.
  *
- * После выбора — навигируемся обратно с params, экран треда подхватит выбор
- * и положит в attached_record поле перед отправкой.
+ * После выбора кладём запись в messagesStore.pendingAttach и делаем
+ * router.back() — экран треда подхватит выбор через подписку на стор.
+ * (Раньше был router.replace с params — он создавал второй экран треда
+ * поверх первого, и чаты наслаивались.)
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
@@ -27,6 +29,7 @@ import { Colors, Spacing, BorderRadius } from '../../constants/theme';
 import { ms } from '../../lib/responsive';
 import { api, getCoverUrl } from '../../lib/api';
 import { useAuthStore, useCollectionStore } from '../../lib/store';
+import { useMessagesStore } from '../../lib/messagesStore';
 import { toast } from '../../lib/toast';
 import { cleanArtistName } from '../../lib/format';
 import type {
@@ -121,16 +124,16 @@ export default function ShareRecordScreen() {
 
   const returnToThread = useCallback(
     (record: VinylRecord) => {
-      router.replace({
-        pathname: `/messages/${conversationId}` as any,
-        params: {
-          attach_record_id: record.id,
-          attach_title: record.title,
-          attach_artist: cleanArtistName(record.artist) || record.artist,
-          attach_year: record.year ? String(record.year) : '',
-          attach_cover: record.cover_image_url ?? '',
-        },
+      if (!conversationId) return;
+      useMessagesStore.getState().setPendingAttach(conversationId, {
+        id: record.id,
+        title: record.title,
+        artist: cleanArtistName(record.artist) || record.artist,
+        year: record.year ?? null,
+        cover_image_url: record.cover_image_url ?? null,
+        cover_url: null,
       });
+      router.back();
     },
     [conversationId, router],
   );

@@ -14,7 +14,7 @@
 шлём аларм: молча работать без квот опаснее, чем работать с ними. Redis
 лежит редко, а сломанный на весь день сканер бьёт по всем пользователям.
 
-См. docs/plans/APPSTORE_LAUNCH_PLAN.md §4.3.
+См. docs/plans/appstore/APPSTORE_LAUNCH_PLAN.md §4.3.
 """
 from __future__ import annotations
 

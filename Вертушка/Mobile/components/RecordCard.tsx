@@ -56,7 +56,7 @@ interface RecordCardProps {
    * в text-block (expanded) или справа (list). Передаётся уже-вычисленный
    * {variant, price} — используй summaryToHotStock(summary, hints) на родителе.
    * Если undefined/null — карточка как обычно, без pill'а.
-   * См. docs/plans/MARKET_AND_PRICE_DRAWER.md §2.4 + OFFERS_UX.md §2.8.
+   * См. docs/plans/market/MARKET_AND_PRICE_DRAWER.md §2.4 + OFFERS_UX.md §2.8.
    */
   hotStock?: ResolvedHotStock | null;
   /**

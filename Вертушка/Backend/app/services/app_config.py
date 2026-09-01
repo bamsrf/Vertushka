@@ -3,7 +3,7 @@ Remote config — force-update gate и kill-switch фич.
 
 Зачем: выключить дорогую или сломанную фичу и поднять минимальную версию
 приложения нужно за секунды, без деплоя и без нового ревью в App Store.
-См. docs/plans/APPSTORE_LAUNCH_PLAN.md §4.2.
+См. docs/plans/appstore/APPSTORE_LAUNCH_PLAN.md §4.2.
 
 Слои значений (побеждает первый, у кого есть значение):
 1. Redis — рантайм-оверрайд, ставится staff-эндпоинтом, применяется мгновенно

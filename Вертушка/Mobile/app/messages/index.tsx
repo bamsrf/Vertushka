@@ -1,26 +1,43 @@
 /**
- * Инбокс сообщений (V2.2).
+ * Инбокс сообщений (V2.3).
  *
  * - Сегмент Личные / Запросы внутри экрана (Instagram-style).
  * - Список диалогов: gradient-аватар, имя, mute-иконка, превью, time, read-mark / unread badge.
  * - Если есть pending-запросы — в баннере сверху стек 3 аватарок и «От @a, @b и ещё N».
+ * - Скелетоны на первой загрузке; пересортировка диалогов (новое сообщение
+ *   поднимает тред) анимируется через itemLayoutAnimation.
+ * - Свайп-действия — собственный SwipeableActionsRow (Gesture.Pan): якорь на
+ *   25% хода с хаптикой, squeeze-панель, без measure-магии ReanimatedSwipeable.
  * - Empty state — карточкой с подсказкой.
- *
- * М3-эндпоинты accept/reject/block ещё не реализованы — в режиме «Запросы» открытие
- * треда тапом работает; кнопки accept/reject подключим в V2.4.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
-  FlatList,
   TouchableOpacity,
   RefreshControl,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Swipeable } from 'react-native-gesture-handler';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import Animated, {
+  LinearTransition,
+  FadeIn,
+  FadeOut,
+  FadeInDown,
+  ZoomIn,
+  useSharedValue,
+  useAnimatedStyle,
+  withRepeat,
+  withSequence,
+  withSpring,
+  withTiming,
+  cancelAnimation,
+  runOnJS,
+  type SharedValue,
+} from 'react-native-reanimated';
+import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Icon, SegmentedControl } from '@/components/ui';
@@ -92,6 +109,205 @@ function Avatar({
   );
 }
 
+const SWIPE_BTN_W = 68;
+// Якорь фиксации шторки: достаточно протянуть 25% её ширины (~51px),
+// дальше отпускание защёлкивает панель полностью.
+const SWIPE_OPEN_FRACTION = 0.25;
+// Флик быстрее этой скорости решает сам, независимо от пройденной дистанции.
+const SWIPE_FLING_VELOCITY = 500;
+// Почти критическое затухание — фиксация одним движением, без «желе».
+const CALM_SPRING = { damping: 26, stiffness: 300, overshootClamping: true };
+
+function swipeAnchorHaptic() {
+  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+}
+
+interface SwipeActionSpec {
+  key: string;
+  icon: string;
+  label: string;
+  bg: string;
+  onPress: () => void;
+}
+
+/**
+ * Шторка свайпа (iOS-style squeeze): панель всегда заполняет открытую часть
+ * строки от края до края — кнопки равными долями растут вслед за пальцем и
+ * доезжают до полной ширины при фиксации. Геометрически исключает щели и
+ * наезды кнопок при частичном открытии.
+ *
+ * Внешний View фиксированной ширины — по нему Swipeable меряет точку
+ * фиксации; внутренняя панель прижата к правому краю и ведома translation.
+ */
+function SwipeActionsPanel({
+  specs,
+  translation,
+  onPressItem,
+}: {
+  specs: SwipeActionSpec[];
+  translation: SharedValue<number>;
+  onPressItem: (spec: SwipeActionSpec) => void;
+}) {
+  const fullW = specs.length * SWIPE_BTN_W;
+  const panelStyle = useAnimatedStyle(() => ({
+    width: Math.min(fullW, Math.max(0, -translation.value)),
+  }));
+  return (
+    <Animated.View style={[styles.swipePanel, panelStyle]}>
+      {specs.map((spec) => (
+        <TouchableOpacity
+          key={spec.key}
+          style={[styles.swipeBtn, { backgroundColor: spec.bg }]}
+          onPress={() => onPressItem(spec)}
+          activeOpacity={0.8}
+        >
+          <View style={styles.swipeBtnContent}>
+            <Icon name={spec.icon} size={18} color="#fff" />
+            <Text style={styles.swipeBtnTxt} numberOfLines={1}>
+              {spec.label}
+            </Text>
+          </View>
+        </TouchableOpacity>
+      ))}
+    </Animated.View>
+  );
+}
+
+// Одновременно открыта максимум одна шторка: открывшаяся строка закрывает
+// предыдущую (Telegram-паттерн).
+let closeOpenSwipeRow: (() => void) | null = null;
+
+/**
+ * Собственный swipe-row вместо ReanimatedSwipeable: тот меряет ширину панели
+ * невидимым маркером через measure(), и на new arch измерение периодически
+ * срывается. Здесь геометрия задана константами, без измерений:
+ *
+ * - контент строки следует за пальцем 1:1 (кламп 0…-ширина панели);
+ * - на 25% хода — хаптика-якорь; отпускание после якоря защёлкивает панель;
+ * - быстрый флик решает сам, независимо от дистанции;
+ * - панель отрисована ПОВЕРХ контента: тапы по кнопкам не может перехватить
+ *   сдвинутая строка, чем бы ни считал её hit-test;
+ * - доводка в onFinalize: даже отменённый жест (перехват скролла) не бросает
+ *   шторку на полпути;
+ * - тап по строке сразу после свайпа игнорируется — Touchable внутри
+ *   детектора может выстрелить фантомным press после жеста и тут же закрыть
+ *   только что открытую панель.
+ */
+function SwipeableActionsRow({
+  specs,
+  onRowPress,
+  children,
+}: {
+  specs: SwipeActionSpec[];
+  onRowPress: () => void;
+  children: React.ReactNode;
+}) {
+  const fullW = specs.length * SWIPE_BTN_W;
+  const tx = useSharedValue(0);
+  const startX = useSharedValue(0);
+  const crossed = useSharedValue(false);
+  const lastSwipeEndRef = useRef(0);
+
+  const close = useCallback(() => {
+    tx.value = withSpring(0, CALM_SPRING);
+  }, [tx]);
+
+  // Фиксация результата жеста на JS-стороне: метка времени против фантомного
+  // press и регистрация «единственной открытой» строки.
+  const noteSettled = useCallback(
+    (opened: boolean) => {
+      lastSwipeEndRef.current = Date.now();
+      if (opened) {
+        if (closeOpenSwipeRow && closeOpenSwipeRow !== close) closeOpenSwipeRow();
+        closeOpenSwipeRow = close;
+      } else if (closeOpenSwipeRow === close) {
+        closeOpenSwipeRow = null;
+      }
+    },
+    [close],
+  );
+
+  useEffect(
+    () => () => {
+      if (closeOpenSwipeRow === close) closeOpenSwipeRow = null;
+    },
+    [close],
+  );
+
+  const handleRowPress = useCallback(() => {
+    if (Date.now() - lastSwipeEndRef.current < 300) return;
+    if (Math.abs(tx.value) > 4) {
+      close();
+      closeOpenSwipeRow = null;
+      return;
+    }
+    onRowPress();
+  }, [tx, close, onRowPress]);
+
+  const handleItemPress = useCallback(
+    (spec: SwipeActionSpec) => {
+      // Быстрое закрытие таймингом: пружина не успевала досесть до
+      // пересортировки списка, и строка ехала с полуоткрытой панелью.
+      tx.value = withTiming(0, { duration: 120 });
+      closeOpenSwipeRow = null;
+      spec.onPress();
+    },
+    [tx],
+  );
+
+  const pan = Gesture.Pan()
+    .activeOffsetX([-12, 12])
+    .failOffsetY([-10, 10])
+    .onStart(() => {
+      startX.value = tx.value;
+      crossed.value = -tx.value >= fullW * SWIPE_OPEN_FRACTION;
+    })
+    .onUpdate((e) => {
+      const next = Math.min(0, Math.max(-fullW, startX.value + e.translationX));
+      tx.value = next;
+      const isCrossed = -next >= fullW * SWIPE_OPEN_FRACTION;
+      if (isCrossed && !crossed.value) {
+        crossed.value = true;
+        runOnJS(swipeAnchorHaptic)();
+      } else if (!isCrossed) {
+        crossed.value = false;
+      }
+    })
+    .onFinalize((e) => {
+      const pastAnchor = -tx.value >= fullW * SWIPE_OPEN_FRACTION;
+      const shouldOpen = pastAnchor
+        ? e.velocityX < SWIPE_FLING_VELOCITY // отменит только явный флик вправо
+        : e.velocityX < -SWIPE_FLING_VELOCITY; // короткий, но резкий флик влево — открыть
+      tx.value = withSpring(shouldOpen ? -fullW : 0, CALM_SPRING);
+      runOnJS(noteSettled)(shouldOpen);
+    });
+
+  const contentStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: tx.value }],
+  }));
+
+  return (
+    <GestureDetector gesture={pan}>
+      <View style={styles.swipeRowWrap}>
+        {/* Непрозрачный фон обязателен: сквозь полупрозрачный tint
+            закреплённой строки просвечивала бы панель под ней. */}
+        <Animated.View style={[styles.swipeRowContent, contentStyle]}>
+          <TouchableOpacity activeOpacity={0.7} onPress={handleRowPress}>
+            {children}
+          </TouchableOpacity>
+        </Animated.View>
+        <View style={styles.swipePanelHost} pointerEvents="box-none">
+          <SwipeActionsPanel
+            specs={specs}
+            translation={tx}
+            onPressItem={handleItemPress}
+          />
+        </View>
+      </View>
+    </GestureDetector>
+  );
+}
+
 function ConversationRow({
   item,
   isMine,
@@ -115,55 +331,38 @@ function ConversationRow({
   const preview = item.last_message_preview ?? 'Нет сообщений';
   const unread = item.unread_count;
   const isRequest = item.request_status === 'pending';
-  const swipeRef = useRef<Swipeable>(null);
 
-  const renderRightActions = () => (
-    <View style={styles.swipeActions}>
-      {!isRequest && onTogglePin ? (
-        <TouchableOpacity
-          style={[styles.swipeBtn, styles.swipeBtnPin]}
-          onPress={() => {
-            swipeRef.current?.close();
-            onTogglePin();
-          }}
-        >
-          <Icon name="star" size={18} color="#fff" />
-          <Text style={styles.swipeBtnTxt}>{item.pinned ? 'Открепить' : 'Закрепить'}</Text>
-        </TouchableOpacity>
-      ) : null}
-      {!isRequest && onToggleMute ? (
-        <TouchableOpacity
-          style={[styles.swipeBtn, styles.swipeBtnMute]}
-          onPress={() => {
-            swipeRef.current?.close();
-            onToggleMute();
-          }}
-        >
-          <Icon
-            name={item.muted ? 'bell' : 'bell-slash'}
-            size={18}
-            color="#fff"
-          />
-          <Text style={styles.swipeBtnTxt}>{item.muted ? 'Звук' : 'Mute'}</Text>
-        </TouchableOpacity>
-      ) : null}
-      {onArchive ? (
-        <TouchableOpacity
-          style={[styles.swipeBtn, styles.swipeBtnArchive]}
-          onPress={() => {
-            swipeRef.current?.close();
-            onArchive();
-          }}
-        >
-          <Icon name="trash" size={18} color="#fff" />
-          <Text style={styles.swipeBtnTxt}>Удалить</Text>
-        </TouchableOpacity>
-      ) : null}
-    </View>
-  );
+  const actionSpecs: SwipeActionSpec[] = [];
+  if (!isRequest && onTogglePin) {
+    actionSpecs.push({
+      key: 'pin',
+      icon: 'star',
+      label: item.pinned ? 'Открепить' : 'Закрепить',
+      bg: '#FBBF24',
+      onPress: onTogglePin,
+    });
+  }
+  if (!isRequest && onToggleMute) {
+    actionSpecs.push({
+      key: 'mute',
+      icon: item.muted ? 'bell' : 'bell-slash',
+      label: item.muted ? 'Звук' : 'Тихо',
+      bg: '#94A3B8',
+      onPress: onToggleMute,
+    });
+  }
+  if (onArchive) {
+    actionSpecs.push({
+      key: 'hide',
+      icon: 'eye-slash',
+      label: 'Скрыть',
+      bg: '#E5484D',
+      onPress: onArchive,
+    });
+  }
 
   const content = (
-    <TouchableOpacity activeOpacity={0.7} style={[styles.row, item.pinned && styles.rowPinned]} onPress={onPress}>
+    <View style={[styles.row, item.pinned && styles.rowPinned]}>
       <Avatar url={item.partner.avatar_url} username={item.partner.username} size={52} />
       <View style={styles.rowMain}>
         <View style={styles.rowTop}>
@@ -171,6 +370,9 @@ function ConversationRow({
             <Text style={styles.rowName} numberOfLines={1}>
               {item.partner.display_name || `@${item.partner.username}`}
             </Text>
+            {item.pinned ? (
+              <Icon name="star" size={12} color={Colors.royalBlue} />
+            ) : null}
             {item.muted ? (
               <Icon name="bell-slash" size={12} color={Colors.textMuted} />
             ) : null}
@@ -192,9 +394,15 @@ function ConversationRow({
             {preview}
           </Text>
           {!isRequest && unread > 0 ? (
-            <View style={[styles.unreadDot, item.muted && styles.unreadDotMuted]}>
+            <Animated.View
+              entering={ZoomIn.duration(140).withInitialValues({
+                transform: [{ scale: 0.85 }],
+              })}
+              exiting={FadeOut.duration(120)}
+              style={[styles.unreadDot, item.muted && styles.unreadDotMuted]}
+            >
               <Text style={styles.unreadTxt}>{unread > 99 ? '99+' : unread}</Text>
-            </View>
+            </Animated.View>
           ) : null}
         </View>
         {isRequest && (onAccept || onReject) ? (
@@ -215,26 +423,60 @@ function ConversationRow({
             </TouchableOpacity>
           </View>
         ) : null}
-        {item.pinned ? (
-          <View style={styles.pinnedBadge}>
-            <Icon name="star" size={10} color={Colors.royalBlue} />
-          </View>
-        ) : null}
       </View>
-    </TouchableOpacity>
+    </View>
   );
 
-  if (isRequest) return content;
+  if (isRequest) {
+    return (
+      <TouchableOpacity activeOpacity={0.7} onPress={onPress}>
+        {content}
+      </TouchableOpacity>
+    );
+  }
 
   return (
-    <Swipeable
-      ref={swipeRef}
-      renderRightActions={renderRightActions}
-      friction={2}
-      rightThreshold={40}
-    >
+    <SwipeableActionsRow specs={actionSpecs} onRowPress={onPress}>
       {content}
-    </Swipeable>
+    </SwipeableActionsRow>
+  );
+}
+
+/** Пульсирующий скелетон диалога — первая загрузка вместо пустого экрана. */
+function SkeletonRow() {
+  const pulse = useSharedValue(0.5);
+
+  useEffect(() => {
+    pulse.value = withRepeat(
+      withSequence(
+        withTiming(1, { duration: 600 }),
+        withTiming(0.5, { duration: 600 }),
+      ),
+      -1,
+    );
+    return () => cancelAnimation(pulse);
+  }, [pulse]);
+
+  const style = useAnimatedStyle(() => ({ opacity: pulse.value }));
+
+  return (
+    <Animated.View style={[styles.row, style]}>
+      <View style={styles.skelAvatar} />
+      <View style={styles.rowMain}>
+        <View style={styles.skelLineWide} />
+        <View style={styles.skelLineNarrow} />
+      </View>
+    </Animated.View>
+  );
+}
+
+function InboxSkeleton() {
+  return (
+    <Animated.View exiting={FadeOut.duration(160)}>
+      {Array.from({ length: 6 }, (_, i) => (
+        <SkeletonRow key={i} />
+      ))}
+    </Animated.View>
   );
 }
 
@@ -359,10 +601,10 @@ export default function MessagesInboxScreen() {
   );
 
   const renderEmpty = () => {
-    if (isLoading) return null;
+    if (isLoading) return <InboxSkeleton />;
     if (folder === 'primary') {
       return (
-        <View style={styles.empty}>
+        <Animated.View entering={FadeIn.duration(200)} style={styles.empty}>
           <View style={styles.emptyIconBg}>
             <Icon name="chat-circle" size={36} color={Colors.royalBlue} />
           </View>
@@ -378,17 +620,17 @@ export default function MessagesInboxScreen() {
             <Icon name="pencil" size={16} color="#fff" />
             <Text style={styles.emptyBtnTxt}>Новое сообщение</Text>
           </TouchableOpacity>
-        </View>
+        </Animated.View>
       );
     }
     return (
-      <View style={styles.empty}>
+      <Animated.View entering={FadeIn.duration(200)} style={styles.empty}>
         <Icon name="envelope" size={36} color={Colors.textMuted} />
         <Text style={styles.emptyTitle}>Запросов нет</Text>
         <Text style={styles.emptySub}>
           Здесь появятся первые сообщения от тех, на кого вы не подписаны.
         </Text>
-      </View>
+      </Animated.View>
     );
   };
 
@@ -404,21 +646,29 @@ export default function MessagesInboxScreen() {
       />
 
       {folder === 'primary' && requests.length > 0 ? (
-        <TouchableOpacity
-          activeOpacity={0.7}
-          onPress={() => setFolder('requests')}
+        <Animated.View
+          entering={FadeInDown.duration(180)}
+          exiting={FadeOut.duration(140)}
         >
-          <RequestsHint requests={requests} />
-        </TouchableOpacity>
+          <TouchableOpacity
+            activeOpacity={0.7}
+            onPress={() => setFolder('requests')}
+          >
+            <RequestsHint requests={requests} />
+          </TouchableOpacity>
+        </Animated.View>
       ) : null}
 
-      <FlatList
+      <Animated.FlatList
         data={data}
         keyExtractor={(item) => item.id}
         renderItem={renderItem}
         ListEmptyComponent={renderEmpty}
         contentContainerStyle={styles.listContent}
         showsVerticalScrollIndicator={false}
+        // Пересортировка (новое сообщение поднимает диалог наверх) едет
+        // плавно вместо телепорта.
+        itemLayoutAnimation={LinearTransition.duration(220)}
         refreshControl={
           <RefreshControl
             refreshing={isLoading}
@@ -490,36 +740,62 @@ const styles = StyleSheet.create({
   },
 
   /* Swipe actions */
-  swipeActions: {
+  swipeRowWrap: {
+    overflow: 'hidden',
+  },
+  swipeRowContent: {
+    backgroundColor: Colors.background,
+  },
+  swipePanelHost: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  swipePanel: {
+    position: 'absolute',
+    right: 0,
+    top: 0,
+    bottom: 0,
     flexDirection: 'row',
-    alignItems: 'stretch',
+    overflow: 'hidden',
   },
   swipeBtn: {
-    width: 78,
+    flex: 1,
+    overflow: 'hidden',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  swipeBtnContent: {
+    width: SWIPE_BTN_W,
+    alignItems: 'center',
     gap: 4,
   },
-  swipeBtnPin: { backgroundColor: '#FBBF24' },
-  swipeBtnMute: { backgroundColor: '#94A3B8' },
-  swipeBtnArchive: { backgroundColor: '#E5484D' },
   swipeBtnTxt: { color: '#fff', fontSize: ms(11), fontWeight: '600' },
 
-  pinnedBadge: {
-    position: 'absolute',
-    top: 4,
-    right: 4,
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-    backgroundColor: 'rgba(59,75,245,0.12)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
   avatarInitials: {
     color: '#fff',
     fontWeight: '700',
     letterSpacing: 0.3,
+  },
+
+  /* Skeleton первой загрузки */
+  skelAvatar: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: Colors.surface,
+  },
+  skelLineWide: {
+    height: 14,
+    borderRadius: 7,
+    backgroundColor: Colors.surface,
+    alignSelf: 'stretch',
+    marginRight: 60,
+  },
+  skelLineNarrow: {
+    height: 11,
+    borderRadius: 6,
+    backgroundColor: Colors.surface,
+    marginTop: 8,
+    marginRight: 140,
   },
 
   rowMain: { flex: 1, minWidth: 0 },

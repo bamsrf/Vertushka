@@ -12,7 +12,7 @@
  * (MarketScreen или search.tsx), driven by scrollY interpolation.
  *
  * Источник: screens-market.jsx из Design Claude handoff (ScreenMarketFull
- * stickyHeader prop) + docs/plans/MARKET_AND_PRICE_DRAWER.md §1.6.
+ * stickyHeader prop) + docs/plans/market/MARKET_AND_PRICE_DRAWER.md §1.6.
  */
 import React from 'react';
 import { Platform, Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';

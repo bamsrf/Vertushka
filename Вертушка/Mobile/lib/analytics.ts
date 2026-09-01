@@ -273,7 +273,7 @@ export const analytics = {
    *
    * Главный срез активации: у `discogs_import` и `scan` принципиально разные
    * первые пять минут, и ретеншен по ним надо смотреть отдельно (см.
-   * docs/plans/AMPLITUDE_DASHBOARDS.md §2).
+   * docs/plans/product/AMPLITUDE_DASHBOARDS.md §2).
    */
   onboardingStartChoice: (choice: 'scan' | 'discogs_import' | 'search' | 'explore') =>
     track('onboarding_start_choice', { choice }),

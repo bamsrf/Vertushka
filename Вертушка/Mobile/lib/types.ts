@@ -382,7 +382,7 @@ export interface CoverScanResponse {
 
 // ==================== User-submitted records ====================
 // Пластинка, которой нет ни в Discogs, ни в Маркете — юзер добавляет вручную.
-// См. docs/plans/USER_SUBMITTED_RECORDS.md.
+// См. docs/plans/collection/USER_SUBMITTED_RECORDS.md.
 
 export interface SpotifyAlbumCandidate {
   id: string;
@@ -1190,7 +1190,7 @@ export interface AchievementStats {
 
 /**
  * Ответ GET /api/config — force-update gate и kill-switch фич.
- * См. Backend/app/api/app_config.py, docs/plans/APPSTORE_LAUNCH_PLAN.md §4.2.
+ * См. Backend/app/api/app_config.py, docs/plans/appstore/APPSTORE_LAUNCH_PLAN.md §4.2.
  */
 export interface AppConfig {
   min_supported_version: string;

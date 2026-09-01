@@ -3,7 +3,7 @@ Remote config API.
 
 Публичный `GET /api/config` — force-update gate и kill-switch для клиента.
 Staff-эндпоинты под `/api/admin/config` — мгновенный флип без деплоя.
-См. docs/plans/APPSTORE_LAUNCH_PLAN.md §4.2.
+См. docs/plans/appstore/APPSTORE_LAUNCH_PLAN.md §4.2.
 """
 import logging
 

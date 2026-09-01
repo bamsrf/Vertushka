@@ -9,7 +9,7 @@ description: Снапшот текущего состояния Вертушки
 3. `git -C /Users/vladislavrumancev/Cursor/Вертушка status --short`
 4. Read `/Users/vladislavrumancev/Cursor/Вертушка/ROADMAP.md` (offset=0, limit=60) — топ + активный milestone
 5. Через MCP `vertushka-docs.index_stats()` — состояние FTS-индекса (или fallback: `bash -lc 'cd /Users/vladislavrumancev/Cursor/Вертушка && .claude/mcp/.venv/bin/python .claude/mcp/indexer.py --stats'`)
-6. `bash -lc 'ls /Users/vladislavrumancev/Cursor/Вертушка/docs/plans/*.md | wc -l'` — кол-во планов
+6. `bash -lc 'find /Users/vladislavrumancev/Cursor/Вертушка/docs/plans -name "*.md" | wc -l'` — кол-во планов (лежат в тематических подпапках)
 7. Read `/Users/vladislavrumancev/Cursor/Вертушка/docs/BUGS.md` (offset=0, limit=80) — открытые баги
 
 Выведи коротко, в формате:

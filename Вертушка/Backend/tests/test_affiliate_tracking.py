@@ -4,7 +4,7 @@
 не бросает исключение — переход просто становится невидимым в аналитике
 магазина, и узнаём мы об этом через месяц, когда цифры не сойдутся с их GA.
 
-См. docs/plans/CLICK_REDIRECTOR_AND_METRIKA.md
+См. docs/plans/market/CLICK_REDIRECTOR_AND_METRIKA.md
 """
 from urllib.parse import parse_qs, urlparse
 

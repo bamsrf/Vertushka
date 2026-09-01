@@ -197,7 +197,7 @@ class SkifmusicParser(BaseStoreParser):
 
         Нет в каталоге → None (товар снят). Наличие и так приезжает с листинга,
         поэтому для этого магазина `stock_refresh_active` избыточен — см.
-        WS2.2 в docs/plans/MARKET_STORES_SCALING.md.
+        WS2.2 в docs/plans/market/MARKET_STORES_SCALING.md.
         """
         catalog = await self._load_catalog_by_id()
         for url in urls:

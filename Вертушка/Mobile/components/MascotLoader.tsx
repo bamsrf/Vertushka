@@ -9,7 +9,7 @@
  * подключаем его через ленивый require и при отсутствии — падаем на существующий
  * `VinylSpinner`. Ничего не ломается, лоадер всегда что-то показывает.
  *
- * ТЗ на .json: docs/plans/MASCOT_ANIMATION_SPEC.md (сейчас там PLACEHOLDER).
+ * ТЗ на .json: docs/plans/design/MASCOT_ANIMATION_SPEC.md (сейчас там PLACEHOLDER).
  */
 import { useEffect, useRef } from 'react';
 import { View, StyleSheet } from 'react-native';

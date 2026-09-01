@@ -4,7 +4,7 @@
 
   Живёт на машине разработчика, а не на проде: data.discogs.com встречает IP
   дата-центра JS-челленджем Cloudflare, прод дамп скачать не может (см.
-  docs/plans/DISCOGS_DATA_DUMPS.md §2).
+  docs/plans/discogs/DISCOGS_DATA_DUMPS.md §2).
 
   Установка:
     cp scripts/ru.vertushka.discogs-refresh.plist ~/Library/LaunchAgents/

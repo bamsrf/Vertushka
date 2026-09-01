@@ -42,7 +42,7 @@ import {
 } from './achievement-mockup/palette';
 import { Spacing, BorderRadius } from '../constants/theme';
 import { isCompact, ms, s as scaleSize } from '../lib/responsive';
-import { rarestUnlocked } from '../lib/achievementHelpers';
+import { latestUnlocked } from '../lib/achievementHelpers';
 import { computeArchetype, LEVELS } from '../lib/archetype';
 import { useLevelUpReveal } from '../lib/useLevelUpReveal';
 import type { AchievementItem, MyAchievementsResponse } from '../lib/types';
@@ -76,7 +76,10 @@ export function AchievementsHero({
   username,
   forceLevelUp = false,
 }: Props) {
-  const rarest = rarestUnlocked(data, extraRandom);
+  // В гнезде — последняя открытая ачивка: она отвечает на «что я только что
+  // получил». Самая редкая тут стояла бы месяцами и превращала hero в
+  // статичную картинку.
+  const latest = latestUnlocked(data, extraRandom);
   const archetype = computeArchetype(data);
 
   // Пока переход не отыгран, рисуем старую ступень целиком: и плашку, и фон.
@@ -416,8 +419,8 @@ export function AchievementsHero({
               { borderColor: theme.chipBorder, backgroundColor: theme.discBg },
             ]}
           >
-            {rarest ? (
-              <AchievementPin item={rarest} size={isCompact ? 72 : 96} />
+            {latest ? (
+              <AchievementPin item={latest} size={isCompact ? 72 : 96} />
             ) : (
               <View style={styles.gnezdoEmpty}>
                 <Text style={styles.gnezdoEmptyText}>?</Text>

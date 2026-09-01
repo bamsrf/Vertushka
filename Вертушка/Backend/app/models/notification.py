@@ -27,7 +27,7 @@ NOTIFICATION_TYPES = {
 }
 
 
-# Приоритеты (см. docs/plans/PLAN_NOTIFICATIONS_V2.md)
+# Приоритеты (см. docs/plans/social/PLAN_NOTIFICATIONS_V2.md)
 PRIORITY_PUSH = 1     # push + badge + feed (high-signal)
 PRIORITY_FEED = 2     # badge + feed, push если не cap (default)
 PRIORITY_QUIET = 3    # только feed, без push (повторный bump)

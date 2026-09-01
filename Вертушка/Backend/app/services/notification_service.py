@@ -1,7 +1,7 @@
 """
 Сервис создания/обновления in-app уведомлений + отправка push.
 
-См. docs/plans/PLAN_NOTIFICATIONS_V2.md.
+См. docs/plans/social/PLAN_NOTIFICATIONS_V2.md.
 
 API:
 - `upsert_notification(...)` — основной путь: bump-or-create с явным dedup_key и priority.

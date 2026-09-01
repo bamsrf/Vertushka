@@ -7,7 +7,7 @@
  *   - Terminal card «Все N →» в конце (тоже ведёт на полный магазин).
  *
  * Источник: screens-market.jsx (StoreCarousel атом) +
- *           docs/plans/MARKET_AND_PRICE_DRAWER.md §1.9.
+ *           docs/plans/market/MARKET_AND_PRICE_DRAWER.md §1.9.
  */
 import React from 'react';
 import {

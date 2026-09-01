@@ -8,7 +8,7 @@
 scheduler-контейнере). Раньше здесь стояло «запуск через cron раз в сутки», но
 этот cron нигде не был заведён — то есть вычистка не происходила вообще и
 обещание «удалим через 30 дней» не выполнялось. См.
-docs/plans/SECURITY_AUDIT_PRERELEASE.md §S3.
+docs/plans/appstore/SECURITY_AUDIT_PRERELEASE.md §S3.
 
 Ручной прогон (например, чтобы разобрать накопившееся):
   docker compose exec api python -m app.scripts.purge_deleted_users

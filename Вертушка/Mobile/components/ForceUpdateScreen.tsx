@@ -5,7 +5,7 @@
  * GET /api/config. Выхода нет намеренно: этот экран — аварийная кнопка,
  * которой мы выгоняем сломанный билд, не дожидаясь нового ревью в App Store.
  *
- * См. lib/remoteConfig.ts, docs/plans/APPSTORE_LAUNCH_PLAN.md §4.2.
+ * См. lib/remoteConfig.ts, docs/plans/appstore/APPSTORE_LAUNCH_PLAN.md §4.2.
  */
 import { useCallback } from 'react';
 import { Linking, StyleSheet, Text, TouchableOpacity, View } from 'react-native';

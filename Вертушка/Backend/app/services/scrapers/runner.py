@@ -323,6 +323,9 @@ async def _upsert_listing(db, store_id, dto: ListingDTO) -> bool:
         select(
             StoreListing.price_rub.label("price_rub"),
             StoreListing.status.label("status"),
+            # Момент прошлого наблюдения: если истории у листинга ещё нет,
+            # ровно этой меткой backfill'им точку со старой ценой (см. ниже).
+            StoreListing.last_seen_at.label("last_seen_at"),
         )
         .where(
             StoreListing.store_id == store_id,
@@ -332,6 +335,7 @@ async def _upsert_listing(db, store_id, dto: ListingDTO) -> bool:
     )
     old_price = select(prev.c.price_rub).scalar_subquery()
     old_status = select(prev.c.status).scalar_subquery()
+    old_seen = select(prev.c.last_seen_at).scalar_subquery()
 
     stmt = pg_insert(StoreListing).values(**payload)
     stmt = stmt.on_conflict_do_update(
@@ -359,6 +363,7 @@ async def _upsert_listing(db, store_id, dto: ListingDTO) -> bool:
         StoreListing.status,
         old_price.label("old_price"),
         old_status.label("old_status"),
+        old_seen.label("old_seen"),
     )
     row = (await db.execute(stmt)).one()
 
@@ -366,6 +371,31 @@ async def _upsert_listing(db, store_id, dto: ListingDTO) -> bool:
     price_changed = row.old_price != row.price_rub
     status_changed = row.old_status != row.status
     if row.old_status is None or price_changed or status_changed:
+        # Таблица — журнал ПЕРЕХОДОВ, но читают её как полный ряд цен: минимум
+        # за 90 дней считается именно по ней. Для листинга, который жил со
+        # стабильной ценой и сменил её впервые, единственной записью
+        # оказывалась НОВАЯ цена — и «исторический минимум» становился равен
+        # свежему максимуму. Ровно это дало «минимум 4 490 ₽» у пластинки,
+        # которая месяцами стоила 3 990 ₽.
+        #
+        # Поэтому при первой смене цены дописываем точку со старой ценой,
+        # датируя её прошлым наблюдением — временем, когда мы эту цену
+        # действительно видели. Промахнуться нельзя: обе величины взяты из той
+        # же строки, что и новая цена.
+        if (
+            row.old_status is not None
+            and price_changed
+            and not await _has_price_history(db, row.id)
+        ):
+            db.add(
+                ListingPriceHistory(
+                    listing_id=row.id,
+                    record_id=row.matched_record_id,
+                    price_rub=row.old_price,
+                    status=row.old_status,
+                    captured_at=row.old_seen or now,
+                )
+            )
         db.add(
             ListingPriceHistory(
                 listing_id=row.id,
@@ -376,6 +406,21 @@ async def _upsert_listing(db, store_id, dto: ListingDTO) -> bool:
             )
         )
     return True
+
+
+async def _has_price_history(db, listing_id) -> bool:
+    """Есть ли у листинга хоть одна точка истории.
+
+    Запрос делается только в момент смены цены (редкое событие), а не на
+    каждый обход, поэтому на горячий путь скрейпа не влияет.
+    """
+    return (
+        await db.scalar(
+            select(ListingPriceHistory.id)
+            .where(ListingPriceHistory.listing_id == listing_id)
+            .limit(1)
+        )
+    ) is not None
 
 
 def _serialize_raw(dto: ListingDTO) -> dict:

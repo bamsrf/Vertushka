@@ -83,7 +83,7 @@ class Settings(BaseSettings):
     # privacy.html появится раздел про аналитику и куки: сейчас политика
     # конфиденциальности третьих лиц-аналитиков не упоминает.
     # Мобильные переходы Метрика не видит принципиально — они считаются в
-    # offer_clicks. См. docs/plans/CLICK_REDIRECTOR_AND_METRIKA.md §4.
+    # offer_clicks. См. docs/plans/market/CLICK_REDIRECTOR_AND_METRIKA.md §4.
     yandex_metrika_counter_id: str = Field(default="", alias="YANDEX_METRIKA_COUNTER_ID")
 
     # Блок «Поддержать проект» на публичных веб-страницах и страница /support.
@@ -97,7 +97,7 @@ class Settings(BaseSettings):
     # должно — App Store Guideline 3.1.1 запрещает во всех сторфронтах, кроме
     # US, кнопки и внешние ссылки на оплату мимо IAP, а российский
     # External Purchase Link Entitlement стоит 27%. Веб-страница профиля к
-    # сторам отношения не имеет. См. docs/plans/PLAN_SUPPORT_PROJECT.md.
+    # сторам отношения не имеет. См. docs/plans/product/PLAN_SUPPORT_PROJECT.md.
     support_url: str = Field(
         default="https://pay.cloudtips.ru/p/f1fd0e22",
         alias="SUPPORT_URL",

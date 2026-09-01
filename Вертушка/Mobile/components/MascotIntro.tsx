@@ -3,7 +3,7 @@
  * (после native splash). Источник — `assets/video/intro-mascot.mp4` (expo-video).
  *
  * Native splash (app.json) анимировать нельзя — платформенное ограничение, см.
- * docs/plans/MASCOT_ANIMATION_SPEC.md §6. Поэтому «живое» интро живёт здесь, уже
+ * docs/plans/design/MASCOT_ANIMATION_SPEC.md §6. Поэтому «живое» интро живёт здесь, уже
  * внутри приложения, поверх остального UI.
  *
  * Раньше интро было на Lottie (`assets/animations/intro-mascot.json`) — растровые

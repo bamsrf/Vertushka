@@ -4,7 +4,7 @@ Revision ID: 20260525_notif_v2
 Revises: 20260525_merge
 Create Date: 2026-05-25
 
-См. docs/plans/PLAN_NOTIFICATIONS_V2.md — Волна B-1.
+См. docs/plans/social/PLAN_NOTIFICATIONS_V2.md — Волна B-1.
 Готовит схему под bump-or-create логику и snooze ladder.
 """
 from typing import Sequence, Union

@@ -1,4 +1,4 @@
-"""Регресс-тесты на находки из docs/plans/SECURITY_AUDIT_PRERELEASE.md.
+"""Регресс-тесты на находки из docs/plans/appstore/SECURITY_AUDIT_PRERELEASE.md.
 
 Каждый тест привязан к конкретному §: если он покраснел — вернулась именно та
 дыра, а не «что-то похожее».

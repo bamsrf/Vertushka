@@ -173,18 +173,18 @@ Discogs hard-cap: **60 req/min** для аутентифицированных �
 
 Аксессуары (пины, постеры, футболки) отсекаются регулярным выражением до Discogs-фолбэка — не сжигать квоту на товары, которых на Discogs не бывает в принципе.
 
-**Store-native записи** — что делаем с релизами, которых нет на Discogs (русский инди, малые лейблы типа Coastal Pirates). Если все 5 шагов матчера не нашли запись, создаём `Record(source='store', discogs_id=NULL)` прямо из данных листинга (artist, title, year, cover, label). Маркет автоматически их подхватывает (`source` прозрачен для INNER JOIN), но **в коллекцию/wishlist их добавить нельзя** до появления merge-tool (защита от CASCADE-потери юзер-данных при будущем мердже на Discogs). Anti-noise gate: создаём только если листинг увиден ≥7 дней назад ИЛИ его продаёт ≥2 магазина — отсекает опечатки парсера. Раз в неделю cron повторно пробует найти запись на Discogs (вдруг релиз там появился). План: [docs/plans/STORE_NATIVE_RECORDS.md](docs/plans/STORE_NATIVE_RECORDS.md).
+**Store-native записи** — что делаем с релизами, которых нет на Discogs (русский инди, малые лейблы типа Coastal Pirates). Если все 5 шагов матчера не нашли запись, создаём `Record(source='store', discogs_id=NULL)` прямо из данных листинга (artist, title, year, cover, label). Маркет автоматически их подхватывает (`source` прозрачен для INNER JOIN), но **в коллекцию/wishlist их добавить нельзя** до появления merge-tool (защита от CASCADE-потери юзер-данных при будущем мердже на Discogs). Anti-noise gate: создаём только если листинг увиден ≥7 дней назад ИЛИ его продаёт ≥2 магазина — отсекает опечатки парсера. Раз в неделю cron повторно пробует найти запись на Discogs (вдруг релиз там появился). План: [docs/plans/market/STORE_NATIVE_RECORDS.md](docs/plans/market/STORE_NATIVE_RECORDS.md).
 
 **Cron-задачи**: incremental crawl каждую ночь (~10 мин на магазин), full re-crawl раз в неделю, stock-refresh каждые 6 часов (для активных листингов в карусели), matcher batch каждый час, re-match store-native — раз в неделю.
 
 **Ресурсы для 10 магазинов** (после initial backfill): ~150 МБ постоянной RAM, 3-5% CPU в среднем, ~55 ГБ трафика/мес, ~1 ГБ БД через год.
 
-**Бутылочное горлышко** — не наш сервер, а Discogs API rate-limit (60 req/min). **Решено**: импортирован slim [Discogs Data Dump](docs/plans/DISCOGS_DATA_DUMPS.md) в локальный индекс (`services/discogs_index.py`) — обложки, suggest, barcode-lookup и master-versions резолвятся локально, к API уходим только на промах.
+**Бутылочное горлышко** — не наш сервер, а Discogs API rate-limit (60 req/min). **Решено**: импортирован slim [Discogs Data Dump](docs/plans/discogs/DISCOGS_DATA_DUMPS.md) в локальный индекс (`services/discogs_index.py`) — обложки, suggest, barcode-lookup и master-versions резолвятся локально, к API уходим только на промах.
 
-📖 **Детальная операционка**: [docs/plans/PARSING.md](docs/plans/PARSING.md) — архитектура, cron, лимиты, ресурсы, HOWTO добавить новый магазин, troubleshooting.
-📋 **План локального mirror Discogs**: [docs/plans/DISCOGS_DATA_DUMPS.md](docs/plans/DISCOGS_DATA_DUMPS.md).
-📦 **Стратегия магазинов**: [docs/plans/SHOPS_PARSING.md](docs/plans/SHOPS_PARSING.md).
-🎨 **UX офферов в Mobile**: [docs/plans/OFFERS_UX.md](docs/plans/OFFERS_UX.md).
+📖 **Детальная операционка**: [docs/plans/market/PARSING.md](docs/plans/market/PARSING.md) — архитектура, cron, лимиты, ресурсы, HOWTO добавить новый магазин, troubleshooting.
+📋 **План локального mirror Discogs**: [docs/plans/discogs/DISCOGS_DATA_DUMPS.md](docs/plans/discogs/DISCOGS_DATA_DUMPS.md).
+📦 **Стратегия магазинов**: [docs/plans/market/SHOPS_PARSING.md](docs/plans/market/SHOPS_PARSING.md).
+🎨 **UX офферов в Mobile**: [docs/plans/market/OFFERS_UX.md](docs/plans/market/OFFERS_UX.md).
 
 ---
 
