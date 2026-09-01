@@ -205,7 +205,6 @@ export default function ScannerScreen() {
     const doAdd = async () => {
       try {
         await addToCollection(record.discogs_id);
-        analytics.addToCollection(record.discogs_id);
         // Экран сканера — единственное место, где добавление точно пришло с
         // камеры. Пасхалка «Оцифровщик» считает такие подряд.
         reportScanAdd(record.discogs_id);

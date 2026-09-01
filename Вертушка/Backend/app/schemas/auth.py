@@ -12,6 +12,11 @@ class Token(BaseModel):
     access_token: str
     refresh_token: str
     token_type: str = "bearer"
+    # Первый ли это вход. OAuth-эндпоинты и создают аккаунт, и логинят
+    # существующий — снаружи это неразличимо. Без флага клиент не может
+    # отправить register, и весь приток через Apple/Google/Discogs пропадал
+    # из аналитики: событие шлось только на email-регистрации.
+    is_new_user: bool = False
 
 
 class TokenPayload(BaseModel):

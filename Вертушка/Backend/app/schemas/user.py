@@ -69,6 +69,10 @@ class UserResponse(BaseModel):
     bio: str | None
     is_active: bool
     is_verified: bool
+    # Уезжает в Amplitude user property при identify: команда и тестировщики
+    # вычитаются из продуктовых чартов. Отдаётся только владельцу аккаунта
+    # (UserPublicResponse его не содержит) — кто в команде, снаружи не видно.
+    is_staff: bool
     created_at: datetime
     updated_at: datetime
     last_login_at: datetime | None

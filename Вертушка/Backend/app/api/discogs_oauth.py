@@ -78,11 +78,17 @@ async def login_start():
 
 async def _find_or_create_discogs_user(
     db: AsyncSession, username: str, access_token: str, access_secret: str
-) -> User:
+) -> tuple[User, bool]:
     """Найти юзера по Discogs username (или ранее привязанному токену), иначе
-    создать аккаунт без email. Обновляет сохранённые OAuth-креды."""
+    создать аккаунт без email. Обновляет сохранённые OAuth-креды.
+
+    Возвращает пару (юзер, создан_ли). Второй элемент нужен вызывающему, чтобы
+    отличить первый вход от возврата: без него приток через Discogs не
+    попадает в аналитику — register шлётся только на email-регистрации.
+    """
     result = await db.execute(select(User).where(User.discogs_username == username))
     user = result.scalar_one_or_none()
+    is_new_user = user is None
 
     if user is None:
         # username для нашего аккаунта: discogs username, lowercased, разрешённые
@@ -126,7 +132,7 @@ async def _find_or_create_discogs_user(
     user.last_login_at = datetime.utcnow()
     await db.commit()
     await db.refresh(user)
-    return user
+    return user, is_new_user
 
 
 @router.post("/exchange-ticket", response_model=Token)
@@ -142,6 +148,9 @@ async def exchange_ticket(ticket: str = Body(..., embed=True)):
     return Token(
         access_token=payload["access_token"],
         refresh_token=payload["refresh_token"],
+        # .get, а не []: тикеты, выписанные до этой правки, ключа не несут и
+        # на обмене падали бы с KeyError.
+        is_new_user=payload.get("is_new_user", False),
     )
 
 
@@ -173,7 +182,9 @@ async def callback(
     if purpose == "login":
         # Логин: найти/создать аккаунт, выдать JWT через one-time ticket.
         try:
-            user = await _find_or_create_discogs_user(db, username, access_token, access_secret)
+            user, is_new_user = await _find_or_create_discogs_user(
+                db, username, access_token, access_secret
+            )
         except Exception:
             logger.exception("Discogs login user upsert failed")
             return RedirectResponse(f"{redirect}?status=error")
@@ -185,6 +196,7 @@ async def callback(
             {
                 "access_token": create_access_token(user.id, user.token_version),
                 "refresh_token": create_refresh_token(user.id, user.token_version),
+                "is_new_user": is_new_user,
             },
             ttl=_TICKET_TTL,
         )

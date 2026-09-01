@@ -571,7 +571,10 @@ async def apple_sign_in(
                     existing.is_verified = True
                 user = existing
 
+    is_new_user = False
+
     if not user:
+        is_new_user = True
         # Создание нового пользователя
         email = data.email or apple_payload.get("email")
         if not email:
@@ -641,7 +644,8 @@ async def apple_sign_in(
 
     return Token(
         access_token=access_token,
-        refresh_token=refresh_token
+        refresh_token=refresh_token,
+        is_new_user=is_new_user,
     )
 
 
@@ -688,7 +692,10 @@ async def google_sign_in(
                 existing.is_verified = True
             user = existing
 
+    is_new_user = False
+
     if not user:
+        is_new_user = True
         if not email:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -742,7 +749,8 @@ async def google_sign_in(
 
     return Token(
         access_token=access_token,
-        refresh_token=refresh_token
+        refresh_token=refresh_token,
+        is_new_user=is_new_user,
     )
 
 
