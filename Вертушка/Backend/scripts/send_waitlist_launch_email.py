@@ -31,6 +31,36 @@ log = logging.getLogger("waitlist-launch")
 SUBJECT = "Вертушка вышла в App Store"
 
 
+# Шесть возможностей — те же, что вынесены на скриншоты в App Store, и в том
+# же порядке, в каком человек их встретит: снял → собрал → оценил → нашёл →
+# дождался → развлёкся. Формулировки короче витринных: там их читают под
+# картинкой, здесь — без неё.
+FEATURES = [
+    ("Сканер", "Наводишь камеру на обложку или штрихкод — релиз находится по базе Discogs за пару секунд."),
+    ("Коллекция", "Все пластинки в одном каталоге: папки, сортировка, отдельный вишлист."),
+    ("Оценка", "Сколько стоит полка целиком и какие пластинки на ней самые дорогие."),
+    ("Маркет", "Больше 30 000 пластинок из восьми магазинов в одном поиске — с актуальными ценами."),
+    ("Радар", "Следит за вишлистом и сообщает, когда нужная пластинка появится в продаже по твоей цене."),
+    ("Ачивки", "Открываются по ходу дела. Пасхалки найти труднее всего."),
+]
+
+
+def _feature_rows() -> str:
+    rows = []
+    for i, (title, text) in enumerate(FEATURES):
+        border = "" if i == len(FEATURES) - 1 else "border-bottom:1px solid rgba(27,29,38,0.07);"
+        rows.append(
+            f"""
+            <tr>
+              <td style="padding:14px 0;{border}">
+                <div style="color:#1B1D26;font-size:14px;font-weight:700;margin-bottom:4px;">{title}</div>
+                <div style="color:#5A5F7A;font-size:14px;line-height:1.55;">{text}</div>
+              </td>
+            </tr>"""
+        )
+    return "".join(rows)
+
+
 def build_html(store_url: str) -> str:
     return f"""
     <div style="font-family:'Helvetica Neue',Arial,sans-serif;max-width:520px;margin:0 auto;background:#F5F0EA;border-radius:16px;overflow:hidden;">
@@ -42,25 +72,16 @@ def build_html(store_url: str) -> str:
           Мы в App Store
         </h1>
         <p style="margin:0 0 24px;color:#5A5F7A;font-size:15px;line-height:1.6;">
-          Ты оставил(а) почту на чьём-то публичном профиле в Вертушке — мы обещали
-          написать один раз, когда приложение появится в сторе. Это то самое письмо.
+          Мы обещали написать один раз — когда приложение появится в сторе.
+          Вот это письмо.
         </p>
         <div style="text-align:center;margin-bottom:28px;">
           <a href="{store_url}" style="display:inline-block;background:#3B4BF5;color:#ffffff;font-size:15px;font-weight:600;text-decoration:none;padding:14px 32px;border-radius:999px;">
             Скачать в App Store
           </a>
         </div>
-        <div style="background:#ffffff;border-radius:12px;padding:20px 24px;margin-bottom:24px;border:1px solid rgba(27,29,38,0.08);">
-          <p style="margin:0 0 12px;color:#1B1D26;font-size:14px;font-weight:600;">Что внутри</p>
-          <p style="margin:0 0 8px;color:#5A5F7A;font-size:14px;line-height:1.6;">
-            — Коллекция и вишлист: добавляешь пластинку по фото обложки или поиском по Discogs.
-          </p>
-          <p style="margin:0 0 8px;color:#5A5F7A;font-size:14px;line-height:1.6;">
-            — Оценка: сколько стоит собранное и как меняется в цене.
-          </p>
-          <p style="margin:0;color:#5A5F7A;font-size:14px;line-height:1.6;">
-            — Публичный профиль — такой же, как тот, с которого ты сюда пришёл(а).
-          </p>
+        <div style="background:#ffffff;border-radius:12px;padding:8px 24px 12px;margin-bottom:24px;border:1px solid rgba(27,29,38,0.08);">
+          <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">{_feature_rows()}</table>
         </div>
         <p style="margin:0;color:#9096A6;font-size:13px;line-height:1.6;">
           Android ещё в работе — адрес остаётся в списке, напишем, когда выйдем

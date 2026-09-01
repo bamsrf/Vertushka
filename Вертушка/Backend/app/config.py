@@ -269,8 +269,11 @@ class Settings(BaseSettings):
     # Дефолт для GET /api/config. Поднимается на лету через
     # PUT /api/admin/config/min-version/ — без деплоя. См. services/app_config.py
     min_supported_app_version: str = Field(default="1.0.0", alias="MIN_SUPPORTED_APP_VERSION")
+    # Витрина в URL обязательна. Без /ru/ Apple сам выбирает стор по гео гостя:
+    # аудитория у нас русскоязычная, а карточка при этом открывается английская
+    # — и именно на такой ссылке ловили «An Error Occurred» вместо приложения.
     app_store_url: str = Field(
-        default="https://apps.apple.com/app/id6774999020", alias="APP_STORE_URL",
+        default="https://apps.apple.com/ru/app/id6774999020", alias="APP_STORE_URL",
     )
     force_update_message: str = Field(
         default="Вышла новая версия Вертушки. Обнови приложение, чтобы продолжить.",
