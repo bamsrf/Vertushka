@@ -22,6 +22,7 @@ from app.models.record import Record
 from app.models.user_achievement import UserAchievement
 from app.services.achievements.events import (
     COLLECTION_ITEM_ADDED,
+    COOLDOWN_TICK,
     DAILY_TICK,
     OFFER_CLICKED,
 )
@@ -63,20 +64,36 @@ _HIDDEN_TITLE_TOKENS = (
 )
 
 EXACT_COUNT_COOLDOWN = timedelta(hours=24)
+
+#: Пасхалки «ровно N пластинок»: код → порог. Фоновая задача
+#: cooldown_tick_achievements читает отсюда пороги, чтобы одним запросом
+#: отобрать кандидатов, а не гонять evaluator по всем юзерам.
+EXACT_COUNT_ACHIEVEMENTS: dict[str, int] = {R_SIXTY_NINE: 69}
 TAPEHEAD_MIN = 10
 CD_RENAISSANCE_MIN = 50
 GIANT_BOX_DISCS = 10
 
 
-async def _main_collection_items(db: AsyncSession, user_id: UUID, *, limit: int = 3000):
-    """Записи основной коллекции: (record, added_at). Дедуп по record_id."""
-    default_collection_id = (
+def _default_collection_id(user_id: UUID):
+    """Сабквери с id основной коллекции юзера.
+
+    Папки — это отдельные Collection с большим sort_order, куда пластинки
+    КОПИРУЮТСЯ из основной. Любой счёт по всем коллекциям сразу задваивает
+    одну и ту же пластинку, поэтому пасхалки считают только основную —
+    минимальный sort_order, при равенстве — самую раннюю.
+    """
+    return (
         select(Collection.id)
         .where(Collection.user_id == user_id)
         .order_by(Collection.sort_order, Collection.created_at)
         .limit(1)
         .scalar_subquery()
     )
+
+
+async def _main_collection_items(db: AsyncSession, user_id: UUID, *, limit: int = 3000):
+    """Записи основной коллекции: (record, added_at). Дедуп по record_id."""
+    default_collection_id = _default_collection_id(user_id)
     rows = await db.execute(
         select(Record, CollectionItem.added_at)
         .join(CollectionItem, CollectionItem.record_id == Record.id)
@@ -95,18 +112,27 @@ async def _main_collection_items(db: AsyncSession, user_id: UUID, *, limit: int 
 
 # --- Время -------------------------------------------------------------------
 
+def exact_count_stmt(user_id: UUID):
+    """(уникальных пластинок, последнее добавление) по ОСНОВНОЙ коллекции."""
+    return (
+        select(
+            func.count(func.distinct(CollectionItem.record_id)),
+            func.max(CollectionItem.added_at),
+        )
+        .where(CollectionItem.collection_id == _default_collection_id(user_id))
+    )
+
+
 def _make_exact_count(target: int):
-    """Ровно N пластинок и сутки тишины — юзер остановился, а не идёт дальше."""
+    """Ровно N пластинок и сутки тишины — юзер остановился, а не идёт дальше.
+
+    Считаем только основную коллекцию: раньше здесь был join по всем
+    коллекциям юзера, и папки задваивали счёт — «ровно N» ловилось не тем
+    числом пластинок, что видит юзер на экране.
+    """
 
     async def evaluator(db, user_id, payload, unlocked_now) -> EvalResult:
-        row = await db.execute(
-            select(
-                func.count(func.distinct(CollectionItem.record_id)),
-                func.max(CollectionItem.added_at),
-            )
-            .join(Collection, CollectionItem.collection_id == Collection.id)
-            .where(Collection.user_id == user_id)
-        )
+        row = await db.execute(exact_count_stmt(user_id))
         count, last_added = row.one()
         if int(count or 0) != target or last_added is None:
             return EvalResult()
@@ -269,20 +295,27 @@ async def _evaluate_night_crate(db, user_id, payload, unlocked_now) -> EvalResul
 
 _ADD_TRIGGERS = (COLLECTION_ITEM_ADDED, DAILY_TICK)
 
+#: Для пасхалок с кулдауном COLLECTION_ITEM_ADDED бесполезен (добавление само
+#: обнуляет тишину), а одного DAILY_TICK в 6:00 UTC мало: набравший порог
+#: вечером ждал не сутки, а почти двое. COOLDOWN_TICK ходит раз в час.
+_SILENT_TRIGGERS = (COLLECTION_ITEM_ADDED, DAILY_TICK, COOLDOWN_TICK)
 
-def _egg(code, title, desc, tier, triggers, evaluator, flavor, slug):
+
+def _egg(code, title, desc, tier, triggers, evaluator, flavor, slug, done=""):
     return AchievementDefinition(
         code=code, title_ru=title, description_ru=desc, series="random",
         tier=tier, is_hidden=True, triggers=triggers, evaluator=evaluator,
-        flavor_ru=flavor, icon_slug=slug,
+        flavor_ru=flavor, icon_slug=slug, description_done_ru=done,
     )
 
 
 DEFINITIONS: list[AchievementDefinition] = [
     # Время
-    _egg(R_SIXTY_NINE, "Шестьдесят девять", "В коллекции ровно 69 пластинок.",
-         AchievementTier.RARE, _ADD_TRIGGERS, _make_exact_count(69),
-         "Nice.", "r_sixty_nine"),
+    _egg(R_SIXTY_NINE, "Шестьдесят девять",
+         "В коллекции ровно 69 пластинок — и сутки ни одной новой.",
+         AchievementTier.RARE, _SILENT_TRIGGERS, _make_exact_count(69),
+         "Nice.", "r_sixty_nine",
+         done="Коллекция замерла на 69 — ровно сутки ни одной новой."),
     _egg(R_TIME_MACHINE_50, "Полвека спустя",
          "Пластинка добралась до тебя ровно через 50 лет после выхода.",
          AchievementTier.RARE, _ADD_TRIGGERS, _evaluate_time_machine_50,
