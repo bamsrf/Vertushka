@@ -45,6 +45,14 @@ class WaitlistEntry(Base):
         nullable=False,
     )
 
+    # Когда ушло письмо с ссылкой на стор. NULL — ещё не писали.
+    # Проставляется на все строки с этим email сразу: подписок у человека
+    # может быть несколько (с разных профилей), письмо — одно.
+    notified_at: Mapped[datetime | None] = mapped_column(
+        DateTime,
+        nullable=True,
+    )
+
     __table_args__ = (
         Index("ix_waitlist_email_source", "email", "source"),
     )

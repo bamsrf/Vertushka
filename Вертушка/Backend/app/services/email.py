@@ -1,12 +1,12 @@
 """
 Сервис отправки email для сброса пароля.
 
-Использует общий канал из notifications._send_email
+Использует общий канал из notifications.send_email
 (Resend приоритетный, SMTP — fallback для dev/локалки).
 """
 import logging
 
-from app.services.notifications import _send_email
+from app.services.notifications import send_email
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +49,7 @@ async def send_reset_code_email(to_email: str, code: str) -> bool:
     subject = "Вертушка — код для сброса пароля"
     html_body = _build_reset_code_html(code)
 
-    await _send_email(to_email, subject, html_body)
-    # _send_email логирует исход сам; считаем вызов успешным (анти-энумерация
+    await send_email(to_email, subject, html_body)
+    # send_email логирует исход сам; считаем вызов успешным (анти-энумерация
     # в эндпоинте всё равно не раскрывает результат пользователю).
     return True

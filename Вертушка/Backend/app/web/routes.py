@@ -662,6 +662,8 @@ async def public_profile_page(
         # Пусто по умолчанию → _support.html не рендерит ничего.
         "support_url": settings.support_url,
         "support_plans_url": settings.support_plans_url,
+        # CTA внизу страницы ведёт прямо в стор (раньше — в waitlist-модалку).
+        "app_store_url": settings.app_store_url,
     })
 
     # TemplateResponse рендерит тело в конструкторе — body уже готов.

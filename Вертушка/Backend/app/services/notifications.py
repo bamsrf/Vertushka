@@ -71,21 +71,29 @@ def _send_via_smtp(to: str, subject: str, html_body: str) -> bool:
         return False
 
 
-async def _send_email(to: str, subject: str, html_body: str):
-    """Отправка email. Resend приоритетный, SMTP — fallback для dev/локалки."""
+async def send_email(to: str, subject: str, html_body: str) -> bool:
+    """Отправка email. Resend приоритетный, SMTP — fallback для dev/локалки.
+
+    Возвращает True, если письмо приняли. Транзакционным вызовам исход не
+    нужен (они fire-and-forget), а массовой рассылке — нужен: по нему она
+    решает, помечать ли адрес отправленным.
+    """
     settings = get_settings()
     if not settings.email_from:
         logger.warning(f"EMAIL_FROM не задан, пропускаем отправку: {subject} -> {to}")
-        return
+        return False
 
     if settings.resend_api_key:
         if await _send_via_resend(to, subject, html_body):
-            return
+            return True
         # Fall through на SMTP если Resend не сработал и есть SMTP-конфиг
         logger.warning("Resend не сработал — пробую SMTP fallback")
 
-    if not _send_via_smtp(to, subject, html_body):
-        logger.warning(f"Email не отправлен (нет рабочего канала): {subject} -> {to}")
+    if _send_via_smtp(to, subject, html_body):
+        return True
+
+    logger.warning(f"Email не отправлен (нет рабочего канала): {subject} -> {to}")
+    return False
 
 
 async def send_booking_notification_to_owner(
@@ -115,7 +123,7 @@ async def send_booking_notification_to_owner(
         <p style="color: #9B9B9B; font-size: 12px;">Вертушка — твоя коллекция винила</p>
     </div>
     """
-    await _send_email(owner_email, subject, html_body)
+    await send_email(owner_email, subject, html_body)
 
 
 async def send_booking_confirmation_to_gifter(
@@ -149,7 +157,7 @@ async def send_booking_confirmation_to_gifter(
       </div>
     </div>
     """
-    await _send_email(gifter_email, subject, html_body)
+    await send_email(gifter_email, subject, html_body)
 
 
 async def send_gift_received_to_gifter(gifter_email: str, gifter_name: str, record_title: str, owner_name: str):
@@ -167,7 +175,7 @@ async def send_gift_received_to_gifter(gifter_email: str, gifter_name: str, reco
         <p style="color: #9B9B9B; font-size: 12px;">Вертушка — твоя коллекция винила</p>
     </div>
     """
-    await _send_email(gifter_email, subject, html_body)
+    await send_email(gifter_email, subject, html_body)
 
 
 async def send_booking_verification_to_gifter(
@@ -208,7 +216,7 @@ async def send_booking_verification_to_gifter(
       </div>
     </div>
     """
-    await _send_email(gifter_email, subject, html_body)
+    await send_email(gifter_email, subject, html_body)
 
 
 async def send_booking_cancelled_to_owner(owner_email: str, record_title: str):
@@ -236,7 +244,7 @@ async def send_booking_cancelled_to_owner(owner_email: str, record_title: str):
       </div>
     </div>
     """
-    await _send_email(owner_email, subject, html_body)
+    await send_email(owner_email, subject, html_body)
 
 
 async def send_booking_auto_released_to_gifter(
@@ -271,7 +279,7 @@ async def send_booking_auto_released_to_gifter(
       </div>
     </div>
     """
-    await _send_email(gifter_email, subject, html_body)
+    await send_email(gifter_email, subject, html_body)
 
 
 async def send_wishlist_item_removed_to_gifter(
@@ -305,7 +313,7 @@ async def send_wishlist_item_removed_to_gifter(
       </div>
     </div>
     """
-    await _send_email(gifter_email, subject, html_body)
+    await send_email(gifter_email, subject, html_body)
 
 
 async def send_booking_rejected_to_gifter(
@@ -341,7 +349,7 @@ async def send_booking_rejected_to_gifter(
       </div>
     </div>
     """
-    await _send_email(gifter_email, subject, html_body)
+    await send_email(gifter_email, subject, html_body)
 
 
 async def send_booking_reminder_email(booking: GiftBooking):
@@ -363,4 +371,4 @@ async def send_booking_reminder_email(booking: GiftBooking):
         <p style="color: #9B9B9B; font-size: 12px;">Вертушка — твоя коллекция винила</p>
     </div>
     """
-    await _send_email(booking.gifter_email, subject, html_body)
+    await send_email(booking.gifter_email, subject, html_body)

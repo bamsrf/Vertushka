@@ -1317,10 +1317,10 @@
         {% endif %}
 
         <div class="cta-wrap" id="ctaStatic">
-            <button type="button" class="cta" onclick="openWaitlistModal('cta-bottom')">
+            <a class="cta" href="{{ app_store_url }}" target="_blank" rel="noopener">
                 <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="7" stroke="white" stroke-opacity="0.45"/><circle cx="8" cy="8" r="2" fill="white"/></svg>
                 Попробовать приложение Вертушка
-            </button>
+            </a>
         </div>
         <div class="footer-line">VINYL-VERTUSHKA.RU</div>
     </div>
@@ -1328,46 +1328,10 @@
     <!-- Sticky CTA — клон нижней кнопки. Появляется после 9-й пластинки и
          исчезает, когда статическая кнопка снизу попадает в viewport (landing). -->
     <div class="cta-sticky" id="ctaSticky">
-        <button type="button" class="cta" onclick="openWaitlistModal('sticky')">
+        <a class="cta" href="{{ app_store_url }}" target="_blank" rel="noopener">
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="7" stroke="white" stroke-opacity="0.45"/><circle cx="8" cy="8" r="2" fill="white"/></svg>
             Попробовать приложение Вертушка
-        </button>
-    </div>
-
-    <!-- WAITLIST MODAL -->
-    <div class="modal-overlay" id="waitlistModal">
-        <div class="record-preview-sheet booking-sheet" role="dialog" aria-modal="true">
-            <div class="rp-handle"></div>
-            <div class="rp-header">
-                <span class="rp-header-label">Скоро в App Store и Google Play</span>
-                <button class="rp-close" onclick="closeWaitlistModal()" aria-label="Закрыть">
-                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-                        <path d="M1 1l10 10M11 1L1 11" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
-                    </svg>
-                </button>
-            </div>
-            <div class="rp-body">
-                <div class="bs-check" style="background: linear-gradient(135deg, rgba(154,168,255,0.32), rgba(189,212,255,0.22));">📱</div>
-                <div class="bs-message">Получите ссылку первым</div>
-                <div class="bs-sub">Пришлём ссылку на стор как только Вертушка выйдет — никакого спама, только один email с релизом.</div>
-                <form id="waitlistForm">
-                    <input type="hidden" id="wlSource" name="source" value="">
-                    <div class="form-row">
-                        <label>Email</label>
-                        <input type="email" name="email" required placeholder="you@example.com" autocomplete="email">
-                    </div>
-                    <div class="modal-actions">
-                        <button type="button" class="btn-ghost" onclick="closeWaitlistModal()">Не сейчас</button>
-                        <button type="submit" class="btn-primary">Хочу ссылку!</button>
-                    </div>
-                </form>
-                <div id="waitlistSuccess" style="display:none; text-align:center; padding-top:12px;">
-                    <div style="font-size:36px; margin-bottom:8px;">🎉</div>
-                    <div class="bs-message" style="font-size:18px;">Готово! Email сохранён.</div>
-                    <div class="bs-sub" style="margin-bottom:6px;">Пришлём ссылку как только релизнем приложение.</div>
-                </div>
-            </div>
-        </div>
+        </a>
     </div>
 
     <!-- RECORD PREVIEW MODAL -->
@@ -2199,57 +2163,6 @@
                 });
             }
         })();
-
-        // Waitlist modal
-        var waitlistModal = document.getElementById('waitlistModal');
-        var waitlistForm  = document.getElementById('waitlistForm');
-        function openWaitlistModal(source) {
-            if (!waitlistModal) return;
-            document.getElementById('wlSource').value = source || '';
-            // Сбрасываем success-состояние при повторном открытии
-            document.getElementById('waitlistSuccess').style.display = 'none';
-            if (waitlistForm) waitlistForm.style.display = '';
-            if (!waitlistModal.classList.contains('active')) {
-                waitlistModal.classList.add('active');
-                lockBodyScroll();
-            }
-        }
-        function closeWaitlistModal() {
-            if (!waitlistModal || !waitlistModal.classList.contains('active')) return;
-            waitlistModal.classList.remove('active');
-            unlockBodyScroll();
-        }
-        waitlistModal && waitlistModal.addEventListener('click', function(e) {
-            if (e.target === waitlistModal) closeWaitlistModal();
-        });
-        waitlistForm && waitlistForm.addEventListener('submit', async function(e) {
-            e.preventDefault();
-            var btn = waitlistForm.querySelector('button[type=submit]');
-            var emailEl = waitlistForm.querySelector('input[name=email]');
-            var sourceEl = document.getElementById('wlSource');
-            var profileSource = '@{{ user.username }}|' + (sourceEl.value || 'cta');
-            btn.disabled = true; btn.textContent = 'Отправляем…';
-            try {
-                var res = await fetch('/api/waitlist/', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ email: emailEl.value.trim(), source: profileSource }),
-                });
-                if (res.ok) {
-                    waitlistForm.style.display = 'none';
-                    document.getElementById('waitlistSuccess').style.display = '';
-                } else if (res.status === 429) {
-                    alert('Слишком часто. Подождите пару секунд и повторите.');
-                } else {
-                    var err = await res.json().catch(function(){return{};});
-                    alert('Ошибка: ' + (err.detail || 'не удалось сохранить'));
-                }
-            } catch (e) {
-                alert('Не удалось связаться с сервером');
-            } finally {
-                btn.disabled = false; btn.textContent = 'Хочу ссылку!';
-            }
-        });
 
         // Format filter + view toggle — общий код для коллекции и вишлиста
         (function() {
