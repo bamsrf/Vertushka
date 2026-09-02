@@ -95,6 +95,18 @@ def build_html(store_url: str) -> str:
     """
 
 
+# Домены из RFC 2606 зарезервированы под примеры и документацию — почту они не
+# принимают by design. В waitlist они попали с наших же смоук-прогонов формы.
+# Письмо туда — гарантированный hard bounce, а доля баунсов на маленькой
+# рассылке решает, попадут ли остальные во «Входящие» или в спам.
+_UNDELIVERABLE_DOMAINS = ("example.com", "example.org", "example.net", "test", "invalid", "localhost")
+
+
+def _is_undeliverable(email: str) -> bool:
+    domain = email.rsplit("@", 1)[-1]
+    return domain in _UNDELIVERABLE_DOMAINS
+
+
 async def _pending_emails(session, limit: int | None) -> list[str]:
     """Адреса, которым письмо ещё не уходило, в порядке подписки.
 
@@ -108,9 +120,16 @@ async def _pending_emails(session, limit: int | None) -> list[str]:
         .group_by(WaitlistEntry.email)
         .order_by(func.min(WaitlistEntry.created_at))
     )
-    if limit:
-        query = query.limit(limit)
-    return list((await session.execute(query)).scalars().all())
+    rows = list((await session.execute(query)).scalars().all())
+
+    emails = [e for e in rows if not _is_undeliverable(e)]
+    if len(emails) < len(rows):
+        # Тихо отфильтрованная часть выборки читается как «столько и было» —
+        # поэтому говорим вслух, кого и почему не берём.
+        skipped = [e for e in rows if _is_undeliverable(e)]
+        log.info("пропускаю недоставляемые (RFC 2606): %s", ", ".join(skipped))
+
+    return emails[:limit] if limit else emails
 
 
 async def _mark_sent(session, email: str) -> None:
