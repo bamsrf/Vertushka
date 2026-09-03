@@ -840,12 +840,21 @@ export default function UserProfileScreen() {
                   в вишлисте
                 </Text>
               </View>
-              <View style={styles.heroStatItem}>
+              {/* Подписчики — единственный стат-столбец с переходом: ведёт в
+                  список людей вокруг профиля (приватный отдаст 403 и покажет
+                  объяснение вместо списка). */}
+              <TouchableOpacity
+                style={styles.heroStatItem}
+                onPress={() =>
+                  router.push(`/social/list?username=${encodeURIComponent(username)}&tab=followers` as any)
+                }
+                activeOpacity={0.7}
+              >
                 <Text style={styles.heroStatNum}>{pubProfile.followers_count}</Text>
-                <Text style={styles.heroStatLbl} numberOfLines={1}>
+                <Text style={[styles.heroStatLbl, styles.heroStatLblLink]} numberOfLines={1}>
                   подписчики
                 </Text>
-              </View>
+              </TouchableOpacity>
             </View>
           </View>
 
@@ -1296,6 +1305,7 @@ const styles = StyleSheet.create({
   heroStatItem: { alignItems: 'center', flex: 1 },
   heroStatNum: { fontSize: ms(18), fontWeight: '700', color: PP.ink, letterSpacing: -0.2 },
   heroStatLbl: { fontSize: ms(10.5), color: PP.mute, marginTop: 3, letterSpacing: 0.1, textAlign: 'center' },
+  heroStatLblLink: { color: PP.cobalt, fontWeight: '600' },
 
   /* Identity (ник, имя, bio) под шапкой */
   identityBlock: {

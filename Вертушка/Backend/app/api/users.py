@@ -14,7 +14,7 @@ from sqlalchemy.orm import selectinload
 
 from app.database import get_db
 from app.services import apple_auth
-from app.services.blocking import is_user_blocked
+from app.services.blocking import blocked_partner_ids, is_user_blocked
 from app.services.secret_crypto import decrypt_secret
 from app.services.push import absolute_media_url
 from app.models.user import User
@@ -376,6 +376,128 @@ async def get_user_wishlist_by_username(
         custom_message=wishlist.custom_message,
         items=public_items,
         total_items=len(public_items)
+    )
+
+
+async def _active_user_by_username_or_404(db: AsyncSession, username: str) -> User:
+    """Активный юзер по нику или 404 — общий вход для публичных by-username."""
+    user = await db.scalar(
+        select(User).where(User.username == username, User.is_active == True)
+    )
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Пользователь не найден"
+        )
+    return user
+
+
+async def _social_graph_visible(
+    db: AsyncSession,
+    user: User,
+    current_user: User | None,
+) -> bool:
+    """Видны ли постороннему списки подписчиков/подписок этого юзера.
+
+    Приватный профиль показывает своё окружение только себе и уже одобренным
+    фолловерам: иначе заявка на подписку теряет смысл — социальный граф
+    читался бы в обход неё. Публичный профиль отдаёт списки всем, включая
+    гостей без токена (веб-профиль ходит сюда анонимно).
+    """
+    if not await _is_profile_private(db, user.id):
+        return True
+    if current_user is None:
+        return False
+    if current_user.id == user.id:
+        return True
+    follow = await db.scalar(
+        select(Follow.id).where(
+            Follow.follower_id == current_user.id,
+            Follow.following_id == user.id,
+        )
+    )
+    return follow is not None
+
+
+async def _follow_list_page(
+    db: AsyncSession,
+    user: User,
+    *,
+    followers: bool,
+    page: int,
+    per_page: int,
+    viewer: User | None,
+) -> list[UserPublicResponse]:
+    """Страница социального списка: подписчики (followers=True) или подписки.
+
+    Заблокированные в любую сторону из выдачи вычёркиваются — блокировка
+    означает «он исчез», а список подписчиков чужого профиля иначе остался бы
+    щелью, через которую блокировка не работает.
+    """
+    join_on = Follow.follower_id if followers else Follow.following_id
+    filter_on = Follow.following_id if followers else Follow.follower_id
+
+    result = await db.execute(
+        select(User)
+        .join(Follow, join_on == User.id)
+        .where(filter_on == user.id, User.is_active == True)
+        .order_by(Follow.created_at.desc())
+        .offset((page - 1) * per_page)
+        .limit(per_page)
+    )
+    users = list(result.scalars().all())
+
+    if viewer is not None and users:
+        hidden = await blocked_partner_ids(db, viewer.id, [u.id for u in users])
+        users = [u for u in users if u.id not in hidden]
+
+    return [UserPublicResponse(
+        id=u.id,
+        username=u.username,
+        display_name=u.display_name,
+        avatar_url=u.avatar_url,
+        bio=u.bio,
+        created_at=u.created_at
+    ) for u in users]
+
+
+@router.get("/by-username/{username}/followers", response_model=list[UserPublicResponse])
+async def get_user_followers_by_username(
+    username: str,
+    page: int = Query(1, ge=1),
+    per_page: int = Query(20, ge=1, le=50),
+    current_user: User | None = Depends(get_current_user_optional),
+    db: AsyncSession = Depends(get_db)
+):
+    """Подписчики пользователя — для чужого профиля."""
+    user = await _active_user_by_username_or_404(db, username)
+    if not await _social_graph_visible(db, user, current_user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Профиль приватный. Подпишитесь, чтобы увидеть подписчиков."
+        )
+    return await _follow_list_page(
+        db, user, followers=True, page=page, per_page=per_page, viewer=current_user
+    )
+
+
+@router.get("/by-username/{username}/following", response_model=list[UserPublicResponse])
+async def get_user_following_by_username(
+    username: str,
+    page: int = Query(1, ge=1),
+    per_page: int = Query(20, ge=1, le=50),
+    current_user: User | None = Depends(get_current_user_optional),
+    db: AsyncSession = Depends(get_db)
+):
+    """Подписки пользователя — для чужого профиля."""
+    user = await _active_user_by_username_or_404(db, username)
+    if not await _social_graph_visible(db, user, current_user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Профиль приватный. Подпишитесь, чтобы увидеть подписки."
+        )
+    return await _follow_list_page(
+        db, user, followers=False, page=page, per_page=per_page, viewer=current_user
     )
 
 

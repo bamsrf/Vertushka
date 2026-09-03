@@ -1,7 +1,11 @@
 /**
  * Экран списка подписок / подписчиков
+ *
+ * Свой список (без `username`) живёт в `useFollowStore` — он же кормит счётчики
+ * на профиле. Чужой (`?username=ник`) грузится отдельно и постранично: чужие
+ * подписчики в глобальный стор не кладутся, иначе они бы затёрли свои.
  */
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -12,6 +16,7 @@ import {
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFollowStore } from '../../lib/store';
+import { api } from '../../lib/api';
 import { UserPublic } from '../../lib/types';
 import { UserListItem } from '../../components/UserListItem';
 import { SegmentedControl } from '../../components/ui';
@@ -26,10 +31,13 @@ const SEGMENTS: { key: Tab; label: string }[] = [
   { key: 'followers', label: 'Подписчики' },
 ];
 
+const PER_PAGE = 30;
+
 export default function SocialListScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const params = useLocalSearchParams<{ tab?: string }>();
+  const params = useLocalSearchParams<{ tab?: string; username?: string }>();
+  const username = params.username || null;
   const [activeTab, setActiveTab] = useState<Tab>(
     params.tab === 'followers' ? 'followers' : 'following'
   );
@@ -43,13 +51,69 @@ export default function SocialListScreen() {
     fetchFollowing,
   } = useFollowStore();
 
+  // Чужой профиль: свои списки под каждый таб + пагинация и запрет доступа.
+  const [publicList, setPublicList] = useState<Record<Tab, UserPublic[]>>({
+    followers: [],
+    following: [],
+  });
+  const [publicLoading, setPublicLoading] = useState(false);
+  const [forbidden, setForbidden] = useState(false);
+  const exhausted = useRef<Record<Tab, boolean>>({ followers: false, following: false });
+
+  const loadPublicPage = useCallback(
+    async (tab: Tab, page: number) => {
+      if (!username) return;
+      setPublicLoading(true);
+      try {
+        const items =
+          tab === 'followers'
+            ? await api.getFollowersByUsername(username, page, PER_PAGE)
+            : await api.getFollowingByUsername(username, page, PER_PAGE);
+        if (items.length < PER_PAGE) exhausted.current[tab] = true;
+        setPublicList((prev) => ({
+          ...prev,
+          [tab]: page === 1 ? items : [...prev[tab], ...items],
+        }));
+      } catch (e: any) {
+        if (e?.response?.status === 403) setForbidden(true);
+        exhausted.current[tab] = true;
+      } finally {
+        setPublicLoading(false);
+      }
+    },
+    [username]
+  );
+
   useEffect(() => {
+    if (username) {
+      if (publicList[activeTab].length === 0 && !exhausted.current[activeTab]) {
+        loadPublicPage(activeTab, 1);
+      }
+      return;
+    }
     fetchFollowers();
     fetchFollowing();
-  }, [fetchFollowers, fetchFollowing]);
+    // publicList намеренно вне зависимостей: иначе дозагрузка страницы
+    // перезапускала бы эффект и первая страница грузилась бы дважды.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [username, activeTab, loadPublicPage, fetchFollowers, fetchFollowing]);
 
-  const data: UserPublic[] = activeTab === 'followers' ? followers : following;
-  const isLoading = activeTab === 'followers' ? isLoadingFollowers : isLoadingFollowing;
+  const data: UserPublic[] = username
+    ? publicList[activeTab]
+    : activeTab === 'followers'
+      ? followers
+      : following;
+  const isLoading = username
+    ? publicLoading && data.length === 0
+    : activeTab === 'followers'
+      ? isLoadingFollowers
+      : isLoadingFollowing;
+
+  const onEndReached = useCallback(() => {
+    if (!username || publicLoading || exhausted.current[activeTab]) return;
+    if (data.length === 0) return;
+    loadPublicPage(activeTab, Math.floor(data.length / PER_PAGE) + 1);
+  }, [username, publicLoading, activeTab, data.length, loadPublicPage]);
 
   const renderItem = useCallback(({ item }: { item: UserPublic }) => (
     <UserListItem
@@ -62,12 +126,23 @@ export default function SocialListScreen() {
 
   const renderEmpty = () => {
     if (isLoading) return null;
+    if (forbidden) {
+      return (
+        <View style={styles.emptyContainer}>
+          <Text style={styles.emptyText}>
+            Профиль приватный — списки видны только подписчикам.
+          </Text>
+        </View>
+      );
+    }
     return (
       <View style={styles.emptyContainer}>
         <Text style={styles.emptyText}>
           {activeTab === 'followers'
             ? 'Пока нет подписчиков'
-            : 'Вы ни на кого не подписаны'}
+            : username
+              ? 'Пока ни на кого не подписан'
+              : 'Вы ни на кого не подписаны'}
         </Text>
       </View>
     );
@@ -75,7 +150,7 @@ export default function SocialListScreen() {
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
-      <Header title="Подписки" showBack showProfile={false} />
+      <Header title={username ? `@${username}` : 'Подписки'} showBack showProfile={false} />
 
       <SegmentedControl
         segments={SEGMENTS}
@@ -92,6 +167,13 @@ export default function SocialListScreen() {
           keyExtractor={(item) => item.id}
           renderItem={renderItem}
           ListEmptyComponent={renderEmpty}
+          ListFooterComponent={
+            username && publicLoading && data.length > 0 ? (
+              <ActivityIndicator color={Colors.royalBlue} style={styles.footerLoader} />
+            ) : null
+          }
+          onEndReached={onEndReached}
+          onEndReachedThreshold={0.5}
           contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}
         />
@@ -112,6 +194,9 @@ const styles = StyleSheet.create({
   loader: {
     marginTop: Spacing.xxl,
   },
+  footerLoader: {
+    marginVertical: Spacing.lg,
+  },
   listContent: {
     paddingHorizontal: Spacing.lg,
     gap: Spacing.sm,
@@ -124,5 +209,6 @@ const styles = StyleSheet.create({
   emptyText: {
     fontSize: ms(15),
     color: Colors.textSecondary,
+    textAlign: 'center',
   },
 });
