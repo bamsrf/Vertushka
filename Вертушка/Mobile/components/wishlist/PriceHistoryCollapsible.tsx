@@ -32,10 +32,21 @@ interface Props {
   historicalLow: number | null;
   /** Окно истории в днях — ровно то, что просили у /price-history. */
   days?: number;
+  /**
+   * Живая цена маркета. С ней дельта отвечает на вопрос «как изменилась цена
+   * к СЕЙЧАС», а не «к моменту последней записи в истории» — записи редкие, и
+   * последняя могла остаться на пике месячной давности.
+   */
+  currentPrice?: number | null;
 }
 
-export function PriceHistoryCollapsible({ points, historicalLow, days = 90 }: Props) {
-  const summary = summarizePriceHistory(points);
+export function PriceHistoryCollapsible({
+  points,
+  historicalLow,
+  days = 90,
+  currentPrice = null,
+}: Props) {
+  const summary = summarizePriceHistory(points, currentPrice);
   const [expanded, setExpanded] = useState(() => summary?.isSignificant ?? false);
   // Ширина под график: раньше сюда прилетала константа 300, и на широких
   // экранах ломаная не дотягивалась до правого края карточки.
@@ -103,6 +114,18 @@ export function PriceHistoryCollapsible({ points, historicalLow, days = 90 }: Pr
               variant="bare"
             />
           ) : null}
+          {/* Кривая заканчивается последней ЗАПИСЬЮ, а дельта считается до
+              живой цены. Без этой строки экран выглядел бы противоречиво:
+              график лезет вверх, а в шапке «почти не менялась». */}
+          {summary.usesLivePrice && Math.round(summary.current) !== Math.round(summary.lastRecorded) ? (
+            <Text style={styles.nowTxt}>
+              Сейчас {fmt(summary.current)} ₽
+              {summary.vsLowPct <= 0
+                ? ` — это минимум ${monthsLabel}`
+                : ` — на ${summary.vsLowPct.toFixed(1).replace('.', ',')}% выше минимума`}
+              . График доведён до последней записи, {dm(summary.lastDate)}.
+            </Text>
+          ) : null}
           <View style={styles.footer}>
             <Text style={styles.footerTxt}>
               {enough && historicalLow != null
@@ -154,4 +177,5 @@ const styles = StyleSheet.create({
     marginTop: 10,
   },
   footerTxt: { fontSize: 12, color: Colors.textMuted },
+  nowTxt: { fontSize: 12.5, lineHeight: 17, color: Colors.text, marginTop: 8 },
 });

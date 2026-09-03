@@ -284,6 +284,7 @@ export const PriceHistorySheet = forwardRef<PriceHistorySheetRef, Props>(
               points={history.points}
               historicalLow={history.historical_low_rub}
               days={history.days}
+              currentPrice={data?.currentPrice ?? null}
             />
           ) : null}
 
