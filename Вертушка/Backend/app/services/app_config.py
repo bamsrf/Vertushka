@@ -50,6 +50,8 @@ def _flag_env_defaults() -> dict[str, bool]:
         "shop_scrapers": s.feature_shop_scrapers_enabled,
         # Добавление пользовательских пластинок (UGC).
         "user_submitted": s.feature_user_submitted_enabled,
+        # Просьба оценить приложение в сторе (Mobile/lib/reviewPrompt.ts).
+        "review_prompt": s.feature_review_prompt_enabled,
     }
 
 
