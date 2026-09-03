@@ -36,6 +36,8 @@ export interface PriceHistorySummary {
   /** Знаковый процент, одна десятая. */
   deltaPct: number;
   low: number;
+  /** ISO-дата первой точки окна — база, от которой считается дельта. */
+  firstDate: string;
   /** ISO-дата последней точки (YYYY-MM-DD). */
   lastDate: string;
   staleDays: number;
@@ -62,6 +64,7 @@ export function summarizePriceHistory(
   const values = priced.map((p) => p.min_price_rub);
   const first = values[0];
   const current = values[values.length - 1];
+  const firstDate = priced[0].date;
   const lastDate = priced[priced.length - 1].date;
 
   const deltaRub = current - first;
@@ -82,6 +85,7 @@ export function summarizePriceHistory(
     deltaRub,
     deltaPct,
     low: Math.min(...values),
+    firstDate,
     lastDate,
     staleDays,
     isStale,

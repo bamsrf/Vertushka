@@ -6,7 +6,7 @@
  * визуально интерполирует. Показываем историческую нижнюю цену как якорь.
  */
 import { View, Text, StyleSheet } from 'react-native';
-import Svg, { Polyline, Circle, Line } from 'react-native-svg';
+import Svg, { Path, Circle, Line } from 'react-native-svg';
 import { Colors, Typography, Spacing, BorderRadius } from '../constants/theme';
 import { PriceHistoryPoint } from '../lib/types';
 
@@ -44,6 +44,47 @@ interface PriceSparklineProps {
 }
 
 const formatRub = (v: number): string => `${Math.round(v).toLocaleString('ru-RU')} ₽`;
+
+/**
+ * Гладкий путь через все точки — монотонная кубическая интерполяция
+ * (Фрич — Карлсон). Ломаная из отрезков читалась «очень остро», а наивные
+ * кубические сплайны для цен опасны: они дают выброс между точками, и кривая
+ * ныряет ниже реального минимума — график показывал бы цену, которой не было.
+ * Монотонная схема выбросов не даёт по построению: на смене направления
+ * касательная зануляется, внутри монотонного участка ограничена соседями.
+ */
+function smoothPath(pts: { x: number; y: number }[]): string {
+  if (pts.length < 2) return '';
+  const n = pts.length;
+  const h: number[] = [];
+  const d: number[] = [];
+  for (let i = 0; i < n - 1; i++) {
+    const dx = pts[i + 1].x - pts[i].x || 1;
+    h.push(dx);
+    d.push((pts[i + 1].y - pts[i].y) / dx);
+  }
+  const m: number[] = new Array(n);
+  m[0] = d[0];
+  m[n - 1] = d[n - 2];
+  for (let i = 1; i < n - 1; i++) {
+    if (d[i - 1] * d[i] <= 0) {
+      m[i] = 0; // локальный экстремум — горизонтальная касательная, без выброса
+    } else {
+      const lim = 3 * Math.min(Math.abs(d[i - 1]), Math.abs(d[i]));
+      const avg = (d[i - 1] + d[i]) / 2;
+      m[i] = Math.sign(avg) * Math.min(Math.abs(avg), lim);
+    }
+  }
+  let out = `M${pts[0].x.toFixed(1)} ${pts[0].y.toFixed(1)}`;
+  for (let i = 0; i < n - 1; i++) {
+    const c1x = pts[i].x + h[i] / 3;
+    const c1y = pts[i].y + (m[i] * h[i]) / 3;
+    const c2x = pts[i + 1].x - h[i] / 3;
+    const c2y = pts[i + 1].y - (m[i + 1] * h[i]) / 3;
+    out += ` C${c1x.toFixed(1)} ${c1y.toFixed(1)}, ${c2x.toFixed(1)} ${c2y.toFixed(1)}, ${pts[i + 1].x.toFixed(1)} ${pts[i + 1].y.toFixed(1)}`;
+  }
+  return out;
+}
 
 const MONTHS = ['янв', 'фев', 'мар', 'апр', 'май', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
 const dm = (iso: string): string => {
@@ -126,7 +167,7 @@ export function PriceSparkline({
     v: p.min_price_rub,
   }));
 
-  const polyPoints = coords.map((c) => `${c.x.toFixed(1)},${c.y.toFixed(1)}`).join(' ');
+  const linePath = smoothPath(coords);
   const last = coords[coords.length - 1];
   // Пунктир дна теперь считается по общей шкале. Раньше формула (minV−minV)/span
   // давала тождественный ноль, и линия всегда лежала на нижней кромке, куда
@@ -136,6 +177,7 @@ export function PriceSparkline({
   const first = values[0];
   const current = values[values.length - 1];
   const trendDown = current < first;
+  const lineColor = trendDown ? Colors.success : Colors.royalBlue;
 
   return (
     <View style={bare ? styles.bareContainer : styles.container}>
@@ -159,21 +201,50 @@ export function PriceSparkline({
           strokeWidth={1}
           strokeDasharray="3 4"
         />
-        <Polyline
-          points={polyPoints}
+        <Path
+          d={linePath}
           fill="none"
-          stroke={trendDown ? Colors.success : Colors.royalBlue}
+          stroke={lineColor}
           strokeWidth={2}
           strokeLinejoin="round"
           strokeLinecap="round"
         />
-        <Circle cx={last.x} cy={last.y} r={3.5} fill={trendDown ? Colors.success : Colors.royalBlue} />
+        {/* Точка на каждом замере: раньше был виден только последний, и по
+            картинке нельзя было понять, где вообще данные, а где догадка
+            интерполяции. */}
+        {coords.map((c, i) => (
+          <Circle
+            key={i}
+            cx={c.x}
+            cy={c.y}
+            r={i === coords.length - 1 ? 3.5 : 2.5}
+            fill={i === coords.length - 1 ? lineColor : Colors.surface}
+            stroke={lineColor}
+            strokeWidth={1.5}
+          />
+        ))}
       </Svg>
+      {/* Концы ряда подписаны: «+48,9%» без базы прочитать было нельзя, а сама
+          база — произвольная первая точка окна, не «цена раньше вообще». */}
+      <View style={styles.axisRow}>
+        <Text style={styles.axisTxt}>
+          {dm(priced[0].date)} · {formatRub(first)}
+        </Text>
+        <Text style={styles.axisTxt}>
+          {dm(priced[priced.length - 1].date)} · {formatRub(current)}
+        </Text>
+      </View>
+      <Text style={styles.scopeTxt}>
+        Минимальная цена по дням — этот пресс, все магазины
+      </Text>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  axisRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 6 },
+  axisTxt: { ...Typography.caption, color: Colors.textSecondary, fontVariant: ['tabular-nums'] },
+  scopeTxt: { ...Typography.caption, color: Colors.textMuted, marginTop: 4 },
   container: {
     marginHorizontal: Spacing.md,
     marginBottom: Spacing.md,

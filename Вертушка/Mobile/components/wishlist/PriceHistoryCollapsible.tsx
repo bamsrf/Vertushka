@@ -81,10 +81,12 @@ export function PriceHistoryCollapsible({ points, historicalLow, days = 90 }: Pr
           <Text style={styles.flatTxt} numberOfLines={1}>почти не менялась</Text>
         ) : (
           <View style={[styles.deltaChip, { backgroundColor: deltaBg, marginLeft: 'auto' }]}>
+            {/* «+48,9%» без базы прочитать нельзя: считается оно от ПЕРВОЙ
+                точки окна, а не от «цены раньше вообще». Подписываем дату,
+                чтобы утверждение стало проверяемым и в свёрнутом виде. */}
             <Text style={[styles.deltaTxt, { color: deltaColor }]}>
               {sign}
-              {fmt(Math.abs(summary.deltaRub))} ₽ · {sign}
-              {Math.abs(summary.deltaPct).toFixed(1).replace('.', ',')}%
+              {Math.abs(summary.deltaPct).toFixed(1).replace('.', ',')}% с {dm(summary.firstDate)}
             </Text>
           </View>
         )}
