@@ -150,6 +150,10 @@ function CollectibleAura({ radius = 16 }: { radius?: number }) {
       cancelAnimation(rotation);
       return;
     }
+    // Сброс в 0 обязателен: withRepeat повторяет цикл от значения, с которого
+    // стартовал. Гейт снимается на каждом уходе с экрана, и без сброса обод
+    // после возврата крутил бы «остаток → -360 → прыжок назад» вместо круга.
+    rotation.value = 0;
     rotation.value = withRepeat(
       withTiming(-360, { duration: 8000, easing: Easing.linear }),
       -1,

@@ -198,6 +198,12 @@ export function VinylSpinner({ colorConfig, size = 220, labelName, onTap }: Viny
       cancelAnimation(rotation);
       return;
     }
+    // Сброс в 0 обязателен. withRepeat повторяет цикл от того значения, с
+    // которого стартовал: если после возврата из фона диск стоял на 200°, все
+    // круги станут «200° → 360° → прыжок назад», то есть рваная четверть
+    // оборота вместо полного. А в inactive мы попадаем от любой мелочи —
+    // шторка уведомлений, свитчер приложений, снятый скриншот.
+    rotation.value = 0;
     rotation.value = withRepeat(
       withTiming(360, {
         duration: 1800,
