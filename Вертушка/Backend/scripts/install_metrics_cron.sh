@@ -37,5 +37,7 @@ else
 fi
 
 echo
-echo "Строк замера в crontab: $(crontab -l | grep -c 'resource_sample.sh')"
+# Считаем ТОЛЬКО реальные задачи: рядом лежат строки-комментарии, где тоже
+# упомянут resource_sample.sh, и простой grep -c показывал «2» на одну задачу.
+echo "Задач замера в crontab: $(crontab -l | grep -c '^[^#]*resource_sample.sh')  (ожидается 1)"
 echo "Следующая точка — в ближайшие 5 минут."
