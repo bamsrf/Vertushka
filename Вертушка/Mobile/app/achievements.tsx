@@ -83,6 +83,10 @@ export default function AchievementsScreen() {
 
   const [data, setData] = useState<MyAchievementsResponse | null>(null);
   const [randomItems, setRandomItems] = useState<AchievementItem[]>([]);
+  // Чужой профиль: пасхалки на пересечении с моими + сколько скрыто сверх них.
+  const [peerRandom, setPeerRandom] = useState<AchievementItem[]>([]);
+  const [peerHidden, setPeerHidden] = useState(0);
+  const [peerRandomFailed, setPeerRandomFailed] = useState(false);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [selected, setSelected] = useState<AchievementItem | null>(null);
@@ -102,6 +106,21 @@ export default function AchievementsScreen() {
         setCurrentLevelFrom(resp);
         const random = await api.getMyRandomUnlocked();
         setRandomItems(random.items);
+      } else {
+        // Пересечение: раскрывать чужие пасхалки целиком нельзя — названия
+        // описывают действие, которым они открываются, и витрина стала бы
+        // гайдом. Общие безопасны: про них смотрящий уже всё знает.
+        // Свой try: упавший запрос пасхалок не должен ронять весь экран, но и
+        // молчать нельзя — пустой блок читается как «общих нет», хотя на деле
+        // ответа не было (ровно так выглядел незадеплоенный эндпоинт).
+        try {
+          const peer = await api.getRandomUnlockedByUsername(username);
+          setPeerRandom(peer.items);
+          setPeerHidden(peer.hidden_count);
+          setPeerRandomFailed(false);
+        } catch (e) {
+          setPeerRandomFailed(true);
+        }
       }
     } catch (e) {
       // оставляем data null — UI покажет пустое состояние
@@ -196,11 +215,14 @@ export default function AchievementsScreen() {
           />
         ))}
 
-        {/* Блок рандомных — только на своём профиле */}
-        {!username && (
+        {/* Блок рандомных: у себя — все свои, на чужом — только общие */}
+        {(!username || data.random_unlocked > 0) && (
           <SurpriseBlock
             randomCount={data.random_unlocked}
-            randomItems={randomItems}
+            randomItems={username ? peerRandom : randomItems}
+            hiddenCount={username ? peerHidden : 0}
+            peerUsername={username}
+            loadFailed={username ? peerRandomFailed : false}
             onPin={(item) => setSelected(item)}
           />
         )}
@@ -324,12 +346,22 @@ function SeriesGroup({
 function SurpriseBlock({
   randomCount,
   randomItems,
+  hiddenCount = 0,
+  peerUsername = null,
+  loadFailed = false,
   onPin,
 }: {
   randomCount: number;
   randomItems: AchievementItem[];
+  /** Сколько чужих пасхалок осталось нераскрытыми (0 на своём профиле). */
+  hiddenCount?: number;
+  /** Ник владельца, если смотрим чужой профиль. */
+  peerUsername?: string | null;
+  /** Запрос чужих пасхалок не дошёл — это не «общих нет». */
+  loadFailed?: boolean;
   onPin: (item: AchievementItem) => void;
 }) {
+  const isPeer = !!peerUsername;
   return (
     <View style={[styles.seriesCard, styles.surpriseCard]}>
       <GroovesBg opacity={0.05} originX={350} originY={400} />
@@ -340,7 +372,7 @@ function SurpriseBlock({
           <View style={styles.seriesHeaderText}>
             <Text style={styles.seriesTitle}>Пасхалки</Text>
             <Text style={[styles.seriesDescription, { fontStyle: 'italic' }]} numberOfLines={1}>
-              Они находятся сами.
+              {isPeer ? 'Показаны только общие с тобой.' : 'Они находятся сами.'}
             </Text>
           </View>
         </View>
@@ -351,7 +383,13 @@ function SurpriseBlock({
 
       {randomItems.length === 0 ? (
         <View style={styles.surpriseEmpty}>
-          <Text style={styles.surpriseEmptyText}>Пока ничего не нашлось.</Text>
+          <Text style={styles.surpriseEmptyText}>
+            {loadFailed
+              ? 'Не удалось загрузить — потяни экран вниз.'
+              : isPeer
+                ? 'Общих с тобой пока нет.'
+                : 'Пока ничего не нашлось.'}
+          </Text>
         </View>
       ) : (
         <View style={styles.gridWrap}>
@@ -369,6 +407,13 @@ function SurpriseBlock({
             </TouchableOpacity>
           ))}
         </View>
+      )}
+
+      {/* Остальные не показываем намеренно — это и есть механика серии */}
+      {isPeer && hiddenCount > 0 && randomItems.length > 0 && (
+        <Text style={styles.surpriseHiddenNote}>
+          {`Ещё ${hiddenCount} — секрет: их находят сами.`}
+        </Text>
       )}
     </View>
   );
@@ -639,6 +684,16 @@ function DetailsSheet({
             {item.flavor_ru && !item.is_hidden && (
               <Text style={styles.shareCardFlavor}>«{item.flavor_ru}»</Text>
             )}
+            {/* Улика «за какую музыку получено» — тот же текст, что в шите.
+                Для «Спрятанного трека» это и есть релиз, где нашёлся бонус;
+                бэкендовая PNG-карточка рисует эту строку с самого начала,
+                клиентская до сих пор молчала. Только музыка: улики с людьми
+                и ценами бэкенд в metadata не кладёт (evidence.py). */}
+            {item.evidence_text && (
+              <Text style={styles.shareCardEvidence} numberOfLines={2}>
+                ♪ {item.evidence_text}
+              </Text>
+            )}
             {item.unlocked_at && (
               <Text style={styles.shareCardDate}>Открыто {formatDate(item.unlocked_at)}</Text>
             )}
@@ -837,6 +892,13 @@ const styles = StyleSheet.create({
     color: M_IVORY_DIM,
     fontSize: ms(13),
   },
+  surpriseHiddenNote: {
+    color: M_IVORY_DIM,
+    fontSize: ms(12),
+    fontStyle: 'italic',
+    marginTop: Spacing.md,
+    textAlign: 'center',
+  },
   sheetBackdrop: {
     position: 'absolute',
     top: 0,
@@ -911,6 +973,14 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 8,
     lineHeight: 21,
+  },
+  shareCardEvidence: {
+    fontSize: 14,
+    color: 'rgba(255,255,255,0.72)',
+    textAlign: 'center',
+    marginTop: 12,
+    lineHeight: 19,
+    paddingHorizontal: 16,
   },
   shareCardDate: {
     fontSize: 13,

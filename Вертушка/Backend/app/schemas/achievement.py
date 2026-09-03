@@ -79,3 +79,21 @@ class CatalogResponse(BaseModel):
 class RandomUnlockedResponse(BaseModel):
     """Ответ GET /api/achievements/me/random — только полученные рандомные."""
     items: list[AchievementItem]
+
+
+class PeerRandomUnlockedResponse(BaseModel):
+    """Ответ GET /api/achievements/by-username/{username}/random.
+
+    Пасхалки чужого профиля отдаются только на пересечении: `items` — те, что
+    открыты и у него, и у смотрящего, `hidden_count` — сколько у него есть
+    сверх этого. Названия пасхалок описывают действие, которым они
+    открываются, поэтому чужой полный список был бы готовым гайдом, а серия
+    («они находятся сами») превратилась бы в чеклист.
+
+    Инвариант: `len(items) + hidden_count` равно `random_unlocked` из
+    /by-username/{username} — цифра в капсуле и содержимое шита не должны
+    расходиться. Любой новый фильтр править разом здесь и в
+    `_count_random_unlocked`.
+    """
+    items: list[AchievementItem]
+    hidden_count: int

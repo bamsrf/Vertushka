@@ -33,6 +33,7 @@ from app.schemas.achievement import (
     AchievementTierInfo,
     CatalogResponse,
     MyAchievementsResponse,
+    PeerRandomUnlockedResponse,
     RandomUnlockedResponse,
 )
 from app.services.achievements.registry import (
@@ -421,6 +422,61 @@ async def get_my_random_unlocked(
         items.append(_build_item(defn, ua, hide_secret=False))
     items.sort(key=lambda it: it.unlocked_at or it.code, reverse=True)
     return RandomUnlockedResponse(items=items)
+
+
+@router.get(
+    "/by-username/{username}/random",
+    response_model=PeerRandomUnlockedResponse,
+)
+async def get_peer_random_unlocked(
+    username: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> PeerRandomUnlockedResponse:
+    """Пасхалки чужого профиля — только те, что смотрящий открыл и сам.
+
+    Раскрывать чужой список целиком нельзя: названия пасхалок описывают
+    действие, которым они открываются, и витрина превратилась бы в гайд. А
+    вот пересечение безопасно — про эти ачивки смотрящий уже всё знает, зато
+    капсула «🥚 Пасхалки · N» перестаёт быть мёртвой цифрой.
+    """
+    user = await db.scalar(
+        select(User).where(User.username == username, User.is_active.is_(True))
+    )
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Пользователь не найден"
+        )
+
+    theirs = await _load_user_achievements(db, user.id)
+    mine = (
+        theirs
+        if user.id == current_user.id
+        else await _load_user_achievements(db, current_user.id)
+    )
+
+    items: list[AchievementItem] = []
+    hidden_count = 0
+    for defn in all_definitions():
+        if defn.series != "random":
+            continue
+        if defn.code in _NO_ART_CODES:
+            continue
+        ua = theirs.get(defn.code)
+        if not ua or not ua.is_unlocked:
+            continue
+        my_row = mine.get(defn.code)
+        if my_row and my_row.is_unlocked:
+            item = _build_item(defn, ua, hide_secret=False)
+            # Улику («за какую музыку получено») чужому не отдаём: коллекция
+            # может быть скрыта настройкой show_collection, а улика назвала бы
+            # из неё конкретную пластинку в обход этого.
+            item.evidence_text = None
+            items.append(item)
+        else:
+            hidden_count += 1
+    items.sort(key=lambda it: it.unlocked_at or it.code, reverse=True)
+    return PeerRandomUnlockedResponse(items=items, hidden_count=hidden_count)
 
 
 @router.get("/catalog", response_model=CatalogResponse)
