@@ -12,6 +12,7 @@ import {
   StyleSheet,
   FlatList,
   ActivityIndicator,
+  TouchableOpacity,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -58,6 +59,7 @@ export default function SocialListScreen() {
   });
   const [publicLoading, setPublicLoading] = useState(false);
   const [forbidden, setForbidden] = useState(false);
+  const [failed, setFailed] = useState(false);
   const exhausted = useRef<Record<Tab, boolean>>({ followers: false, following: false });
 
   const loadPublicPage = useCallback(
@@ -70,12 +72,17 @@ export default function SocialListScreen() {
             ? await api.getFollowersByUsername(username, page, PER_PAGE)
             : await api.getFollowingByUsername(username, page, PER_PAGE);
         if (items.length < PER_PAGE) exhausted.current[tab] = true;
+        setFailed(false);
         setPublicList((prev) => ({
           ...prev,
           [tab]: page === 1 ? items : [...prev[tab], ...items],
         }));
       } catch (e: any) {
+        // 403 — профиль приватный, это осмысленный ответ. Всё остальное
+        // (сеть, 404, 500) — «не смогли спросить», и выдавать это за пустой
+        // список нельзя: пустота читается как факт про человека.
         if (e?.response?.status === 403) setForbidden(true);
+        else setFailed(true);
         exhausted.current[tab] = true;
       } finally {
         setPublicLoading(false);
@@ -109,6 +116,14 @@ export default function SocialListScreen() {
       ? isLoadingFollowers
       : isLoadingFollowing;
 
+  const retry = useCallback(() => {
+    if (!username) return;
+    exhausted.current[activeTab] = false;
+    setForbidden(false);
+    setFailed(false);
+    loadPublicPage(activeTab, 1);
+  }, [username, activeTab, loadPublicPage]);
+
   const onEndReached = useCallback(() => {
     if (!username || publicLoading || exhausted.current[activeTab]) return;
     if (data.length === 0) return;
@@ -132,6 +147,16 @@ export default function SocialListScreen() {
           <Text style={styles.emptyText}>
             Профиль приватный — списки видны только подписчикам.
           </Text>
+        </View>
+      );
+    }
+    if (failed) {
+      return (
+        <View style={styles.emptyContainer}>
+          <Text style={styles.emptyText}>Не удалось загрузить список.</Text>
+          <TouchableOpacity style={styles.retryBtn} onPress={retry} activeOpacity={0.7}>
+            <Text style={styles.retryText}>Повторить</Text>
+          </TouchableOpacity>
         </View>
       );
     }
@@ -210,5 +235,15 @@ const styles = StyleSheet.create({
     fontSize: ms(15),
     color: Colors.textSecondary,
     textAlign: 'center',
+  },
+  retryBtn: {
+    marginTop: Spacing.md,
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.sm,
+  },
+  retryText: {
+    fontSize: ms(15),
+    fontWeight: '600',
+    color: Colors.royalBlue,
   },
 });
