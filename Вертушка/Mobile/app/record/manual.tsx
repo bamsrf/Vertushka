@@ -29,6 +29,8 @@ import {
   FlatList,
   TextInput,
   Keyboard,
+  Alert,
+  ActionSheetIOS,
 } from 'react-native';
 import { useRouter, Stack, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -91,13 +93,48 @@ async function pickPhotoBase64(fromCamera: boolean): Promise<{ uri: string; base
   return { uri: manipulated.uri, base64: manipulated.base64 };
 }
 
+// Спросить источник фото. Камера-по-умолчанию отрезала половину кейсов: обложку
+// часто снимают заранее или сохраняют из переписки, и переснять её негде.
+// Возвращает выбранное действие; null — юзер закрыл меню.
+function askPhotoSource(hasPhoto: boolean): Promise<'library' | 'camera' | 'remove' | null> {
+  const options = hasPhoto
+    ? ['Выбрать из галереи', 'Сделать фото', 'Убрать фото', 'Отмена']
+    : ['Выбрать из галереи', 'Сделать фото', 'Отмена'];
+  const cancelIndex = options.length - 1;
+  const map: Array<'library' | 'camera' | 'remove'> = hasPhoto
+    ? ['library', 'camera', 'remove']
+    : ['library', 'camera'];
+
+  return new Promise((resolve) => {
+    if (Platform.OS === 'ios') {
+      ActionSheetIOS.showActionSheetWithOptions(
+        {
+          options,
+          cancelButtonIndex: cancelIndex,
+          destructiveButtonIndex: hasPhoto ? 2 : undefined,
+        },
+        (index) => resolve(map[index] ?? null),
+      );
+      return;
+    }
+    const buttons: any[] = [
+      { text: 'Выбрать из галереи', onPress: () => resolve('library') },
+      { text: 'Сделать фото', onPress: () => resolve('camera') },
+    ];
+    if (hasPhoto) {
+      buttons.push({ text: 'Убрать фото', style: 'destructive', onPress: () => resolve('remove') });
+    }
+    buttons.push({ text: 'Отмена', style: 'cancel', onPress: () => resolve(null) });
+    Alert.alert('Обложка', undefined, buttons, { cancelable: true, onDismiss: () => resolve(null) });
+  });
+}
+
+
 // ─── Черновик ────────────────────────────────────────────────────────────────
 
 interface Draft {
   coverPhoto: string | null;       // display uri
   coverBase64: string | null;      // для отправки
-  spinePhoto: string | null;
-  spineBase64: string | null;
   spotify: SpotifyAlbumCandidate | null;
   artist: string;
   title: string;
@@ -111,8 +148,6 @@ interface Draft {
 const EMPTY_DRAFT: Draft = {
   coverPhoto: null,
   coverBase64: null,
-  spinePhoto: null,
-  spineBase64: null,
   spotify: null,
   artist: '',
   title: '',
@@ -167,11 +202,7 @@ export default function ManualRecordScreen() {
   );
 
   // Замена обложки в edit-режиме (§11). Тап по слоту → камера/галерея.
-  const pickCover = useCallback(async () => {
-    Haptics.selectionAsync();
-    const picked = await pickPhotoBase64(true);
-    if (picked) patch({ coverPhoto: picked.uri, coverBase64: picked.base64 });
-  }, [patch]);
+  const pickCover = useCallback(() => pickCoverInto(draft, patch), [draft, patch]);
 
   // Edit-режим (§11): подтягиваем запись и префиллим черновик.
   useEffect(() => {
@@ -184,8 +215,6 @@ export default function ManualRecordScreen() {
         setDraft({
           coverPhoto: getCoverUrl(rec) ?? null,
           coverBase64: null,
-          spinePhoto: null,
-          spineBase64: null,
           spotify: null,
           artist: rec.artist ?? '',
           title: rec.title ?? '',
@@ -250,7 +279,6 @@ export default function ManualRecordScreen() {
         spotify_album_id: draft.spotify?.id ?? null,
         tracklist: draft.spotify?.tracks ?? null,
         cover_photo_base64: draft.coverBase64,
-        spine_photo_base64: draft.spineBase64,
       });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       toast.success('Добавлено', 'Релиз в вашей коллекции', { position: 'bottom' });
@@ -578,43 +606,40 @@ function InterceptScreen({
 // ─── Шаг 0: фото ─────────────────────────────────────────────────────────────
 
 function PhotoStep({ draft, patch }: StepProps) {
-  const pick = async (slot: 'cover' | 'spine') => {
-    Haptics.selectionAsync();
-    const uriKey = slot === 'cover' ? 'coverPhoto' : 'spinePhoto';
-    const b64Key = slot === 'cover' ? 'coverBase64' : 'spineBase64';
-    // Уже есть фото → тап очищает слот.
-    if (draft[uriKey]) {
-      patch({ [uriKey]: null, [b64Key]: null } as Partial<Draft>);
-      return;
-    }
-    const picked = await pickPhotoBase64(true);
-    if (picked) {
-      patch({ [uriKey]: picked.uri, [b64Key]: picked.base64 } as Partial<Draft>);
-    }
-  };
-
   return (
     <View style={styles.stepGap}>
-      <Text style={styles.stepTitle}>Сфотографируй релиз</Text>
+      <Text style={styles.stepTitle}>Обложка релиза</Text>
       <Text style={styles.stepHint}>
-        Обложка обязательна. Корешок — по желанию, помогает распознать издание.
+        Сфотографируй или выбери из галереи — без обложки релиз не добавить.
       </Text>
 
-      <View style={styles.photoRow}>
+      <View style={styles.photoSingleRow}>
         <PhotoSlot
           label="Обложка"
           required
           uri={draft.coverPhoto}
-          onPress={() => pick('cover')}
-        />
-        <PhotoSlot
-          label="Корешок"
-          uri={draft.spinePhoto}
-          onPress={() => pick('spine')}
+          onPress={() => pickCoverInto(draft, patch)}
+          wrapStyle={styles.slotWrapSingle}
         />
       </View>
     </View>
   );
+}
+
+/** Общий обработчик слота обложки: меню источника → снимок/галерея/сброс. */
+async function pickCoverInto(draft: Draft, patch: (p: Partial<Draft>) => void) {
+  Haptics.selectionAsync();
+  // «Убрать» показываем только для только что выбранного файла: в edit-режиме
+  // в слоте лежит серверная обложка, и сброс локального стейта её бы не удалил —
+  // кнопка обещала бы то, чего не делает.
+  const action = await askPhotoSource(!!draft.coverBase64);
+  if (!action) return;
+  if (action === 'remove') {
+    patch({ coverPhoto: null, coverBase64: null });
+    return;
+  }
+  const picked = await pickPhotoBase64(action === 'camera');
+  if (picked) patch({ coverPhoto: picked.uri, coverBase64: picked.base64 });
 }
 
 function PhotoSlot({
@@ -622,15 +647,17 @@ function PhotoSlot({
   required,
   uri,
   onPress,
+  wrapStyle,
 }: {
   label: string;
   required?: boolean;
   uri: string | null;
   onPress: () => void;
+  wrapStyle?: object;
 }) {
   const filled = !!uri;
   return (
-    <Pressable onPress={onPress} style={styles.slotWrap}>
+    <Pressable onPress={onPress} style={[styles.slotWrap, wrapStyle]}>
       <View style={[styles.slot, filled && styles.slotFilled]}>
         {filled ? (
           <Image source={{ uri: uri! }} style={styles.slotImage} resizeMode="cover" />
@@ -1219,7 +1246,8 @@ const styles = StyleSheet.create({
   stepTitle: { ...Typography.h2, color: Colors.text },
   stepHint: { ...Typography.bodySmall, color: Colors.textSecondary },
   // фото
-  photoRow: { flexDirection: 'row', gap: Spacing.md, marginTop: Spacing.sm },
+  photoSingleRow: { alignItems: 'center', marginTop: Spacing.sm },
+  slotWrapSingle: { flex: 0, width: '64%', maxWidth: 260 },
   slotWrap: { flex: 1, alignItems: 'center', gap: Spacing.xs },
   slot: {
     width: '100%',
