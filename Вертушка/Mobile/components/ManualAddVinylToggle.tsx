@@ -9,13 +9,17 @@
  * винил-thumb справа) → тянем thumb влево (или tap) → открываем визард.
  * После открытия / на возврат фокуса состояние сбрасывается в collapsed.
  */
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, StyleSheet, Pressable, useWindowDimensions } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
+  Easing,
+  cancelAnimation,
   useSharedValue,
   useAnimatedStyle,
+  withRepeat,
+  withSequence,
   withTiming,
   withSpring,
   runOnJS,
@@ -25,12 +29,18 @@ import Animated, {
 import * as Haptics from 'expo-haptics';
 import { VinylSpinner } from './VinylSpinner';
 import { CoachPulse } from './onboarding/CoachPulse';
+import { SwipeLeftHint, SWIPE_HINT_WIDTH } from './ui/SwipeLeftHint';
 import type { VinylColorConfig } from '../lib/vinylColor';
 
 const KNOB = 56;
 const PILL_H = 64;
 const FAB_W = PILL_H; // collapsed = круг
 const RIGHT = 16; // правый отступ FAB
+const HINT_GAP = 10; // просвет между шевронами и кнобом
+const TEXT_LEFT = 18; // отступ текста от левого края пилюли
+const TEXT_GAP = 8; // минимальный просвет между текстом и шевронами
+/** Насколько кноб «клюёт» влево, показывая, что его тянут, а не жмут. */
+const NUDGE = 9;
 
 // Family-цвета кноба (как в dc-файле).
 const FAMILY = ['#E53935', '#1E88E5', '#43A047', '#FDD835', '#FB8C00'];
@@ -87,12 +97,25 @@ export function ManualAddVinylToggle({ onOpen, bottom = '14%', highlighted = fal
   const { width: W } = useWindowDimensions();
   const SLIDE = Math.max(80, W / 2 - RIGHT - 32); // knob center: (W−RIGHT−32) → W/2
   const PILL_W = SLIDE + KNOB + 8; // трек вмещает полный ход кноба
+  /**
+   * Шевроны не расширяют пилюлю — они делят с текстом её собственную ширину.
+   * Поэтому текст получает ровно остаток: пилюля минус кноб, минус группа
+   * шевронов, минус просветы. Ширина фиксированная, а не flex: pill меняет
+   * ширину анимацией, и flex-контент пересчитывал бы раскладку каждый кадр.
+   */
+  const TEXT_W =
+    PILL_W - TEXT_LEFT - (KNOB + 4) - HINT_GAP - SWIPE_HINT_WIDTH - TEXT_GAP;
 
   const expand = useSharedValue(0); // 0 collapsed → 1 expanded (ширина pill + текст)
   const knobX = useSharedValue(0); // [-SLIDE..0]
+  const nudge = useSharedValue(0); // подсказка: кноб сам подаётся влево
+
+  // Подсказку глушим на время перетаскивания: иначе кноб «дрожит» под пальцем.
+  const [hinting, setHinting] = useState(false);
 
   const reset = useCallback(() => {
     setPhase('collapsed');
+    setHinting(false);
     expand.value = withTiming(0, { duration: 200 });
     knobX.value = withTiming(0, { duration: 200 });
   }, [expand, knobX]);
@@ -114,21 +137,50 @@ export function ManualAddVinylToggle({ onOpen, bottom = '14%', highlighted = fal
     onOpen();
     // снап обратно в collapsed (экран уходит push'ем — не мелькнёт)
     setPhase('collapsed');
+    setHinting(false);
     expand.value = 0;
     knobX.value = 0;
   }, [onOpen, expand, knobX]);
 
   const activate = useCallback(() => {
     setPhase('activated');
+    setHinting(false);
     knobX.value = withTiming(-SLIDE, { duration: 200 });
     setTimeout(open, 260);
   }, [knobX, open]);
 
   const toExpanded = useCallback(() => {
     setPhase('expanded');
+    setHinting(true);
     expand.value = withSpring(1, { damping: 16, stiffness: 180 });
     Haptics.selectionAsync();
   }, [expand]);
+
+  /**
+   * Кноб раз в пару секунд коротко клюёт влево и возвращается пружиной.
+   * Шевроны показывают направление, а этот «клевок» — что двигают именно
+   * пластинку: без него раскрытую пилюлю продолжают жать как кнопку.
+   */
+  useEffect(() => {
+    if (phase !== 'expanded' || !hinting) {
+      cancelAnimation(nudge);
+      nudge.value = withTiming(0, { duration: 120 });
+      return;
+    }
+    nudge.value = withRepeat(
+      withSequence(
+        withTiming(0, { duration: 1100 }), // пауза между показами
+        withTiming(-NUDGE, { duration: 240, easing: Easing.out(Easing.cubic) }),
+        withSpring(0, { damping: 11, stiffness: 210 }),
+      ),
+      -1,
+      false,
+    );
+    return () => {
+      cancelAnimation(nudge);
+      nudge.value = 0;
+    };
+  }, [phase, hinting, nudge]);
 
   // Тап переключает раскрытие (undo): collapsed→expanded, expanded→collapsed.
   // Открытие визарда — только слайдом кноба влево.
@@ -141,12 +193,24 @@ export function ManualAddVinylToggle({ onOpen, bottom = '14%', highlighted = fal
     () =>
       Gesture.Pan()
         .enabled(phase === 'expanded')
+        .onBegin(() => {
+          runOnJS(setHinting)(false);
+        })
         .onUpdate((e) => {
           knobX.value = Math.max(-SLIDE, Math.min(0, e.translationX));
         })
         .onEnd((e) => {
-          if (e.translationX <= -SLIDE * 0.6) runOnJS(activate)();
-          else knobX.value = withSpring(0, { damping: 18, stiffness: 200 });
+          if (e.translationX <= -SLIDE * 0.6) {
+            runOnJS(activate)();
+          } else {
+            knobX.value = withSpring(0, { damping: 18, stiffness: 200 });
+          }
+        })
+        .onFinalize(() => {
+          // Именно onFinalize, а не onEnd: при обычном тапе по кнобу жест не
+          // активируется и onEnd не придёт — подсказка бы погасла навсегда.
+          // После активации phase уже 'activated', и эффект её не поднимет.
+          runOnJS(setHinting)(true);
         }),
     [phase, activate, knobX, SLIDE],
   );
@@ -156,14 +220,15 @@ export function ManualAddVinylToggle({ onOpen, bottom = '14%', highlighted = fal
     backgroundColor: `rgba(236,237,240,${expand.value})`,
   }));
 
-  const textStyle = useAnimatedStyle(() => {
-    // текст видим в expanded и тает по мере ухода thumb влево
+  // Текст и шевроны гаснут одинаково: видны в expanded, тают по мере ухода
+  // thumb влево — к моменту активации в пилюле остаётся только пластинка.
+  const fadeStyle = useAnimatedStyle(() => {
     const slideP = interpolate(knobX.value, [-SLIDE, 0], [0, 1], Extrapolation.CLAMP);
     return { opacity: expand.value * slideP };
   });
 
   const knobStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: knobX.value }],
+    transform: [{ translateX: knobX.value + nudge.value }],
   }));
 
   return (
@@ -171,9 +236,20 @@ export function ManualAddVinylToggle({ onOpen, bottom = '14%', highlighted = fal
       <CoachPulse active={highlighted} variant="glow" radius={PILL_H / 2} inset={5}>
       <Pressable onPress={onPress}>
         <Animated.View style={[styles.pill, pillStyle]}>
-          <Animated.Text style={[styles.text, textStyle]} numberOfLines={2}>
+          <Animated.Text
+            style={[styles.text, { left: TEXT_LEFT, width: TEXT_W }, fadeStyle]}
+            numberOfLines={2}
+            // На узких экранах остаток под текст ужимается до ~88pt — страховка
+            // от многоточия в «Добавить», без неё подсказка ломает надпись.
+            adjustsFontSizeToFit
+            minimumFontScale={0.85}
+          >
             Добавить{'\n'}вручную
           </Animated.Text>
+
+          <Animated.View style={[styles.hint, fadeStyle]} pointerEvents="none">
+            <SwipeLeftHint active={phase === 'expanded'} />
+          </Animated.View>
 
           <GestureDetector gesture={pan}>
             <Animated.View style={[styles.knob, knobStyle]}>
@@ -208,12 +284,17 @@ const styles = StyleSheet.create({
   },
   text: {
     position: 'absolute',
-    left: 26,
-    width: 130,
     fontWeight: '800',
     fontSize: 18,
     lineHeight: 19,
     color: '#23244D',
+  },
+  hint: {
+    position: 'absolute',
+    right: KNOB + 4 + HINT_GAP, // кноб прижат к правому краю с отступом 4
+    top: 0,
+    bottom: 0,
+    justifyContent: 'center',
   },
   knob: {
     position: 'absolute',
