@@ -53,6 +53,7 @@ import {
   GoogleSignInRequest,
   MyAchievementsResponse,
   RandomUnlockedResponse,
+  PeerRandomUnlockedResponse,
   CatalogResponse,
   AchievementStats,
   FollowRequestItem,
@@ -1656,6 +1657,15 @@ class ApiClient {
 
   async getMyAchievements(): Promise<MyAchievementsResponse> {
     const { data } = await this.client.get<MyAchievementsResponse>('/achievements/me');
+    return data;
+  }
+
+  async getRandomUnlockedByUsername(
+    username: string
+  ): Promise<PeerRandomUnlockedResponse> {
+    const { data } = await this.client.get<PeerRandomUnlockedResponse>(
+      `/achievements/by-username/${encodeURIComponent(username)}/random`
+    );
     return data;
   }
 

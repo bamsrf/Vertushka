@@ -1179,6 +1179,19 @@ export interface RandomUnlockedResponse {
   items: AchievementItem[];
 }
 
+/**
+ * Пасхалки чужого профиля — только пересечение с моими.
+ *
+ * `items` — открытые у обоих (про них я и так всё знаю), `hidden_count` —
+ * сколько у него сверх этого. Названия пасхалок описывают действие, которым
+ * они открываются, поэтому чужой полный список был бы гайдом.
+ * `items.length + hidden_count` совпадает с `random_unlocked` в hero.
+ */
+export interface PeerRandomUnlockedResponse {
+  items: AchievementItem[];
+  hidden_count: number;
+}
+
 export interface AchievementStats {
   code: string;
   total_users: number;
