@@ -5,6 +5,7 @@ import React, { Component, ReactNode } from 'react';
 import { View, Text, StyleSheet, Pressable } from 'react-native';
 import { Icon } from '@/components/ui';
 import { Colors, Typography, Spacing, BorderRadius } from '../constants/theme';
+import { noteBadExperience } from '../lib/reviewPrompt';
 
 interface Props {
   children: ReactNode;
@@ -21,6 +22,14 @@ export class ErrorBoundary extends Component<Props, State> {
 
   static getDerivedStateFromError(error: Error): State {
     return { hasError: true, error };
+  }
+
+  componentDidCatch() {
+    // Экран только что развалился — просить за это звёзды нельзя. Флаг живёт
+    // до конца сессии и глушит просьбу оценить приложение. Побочный эффект в
+    // componentDidCatch, а не в getDerivedStateFromError: та обязана быть
+    // чистой, её React зовёт и на фазе рендера, которую может выбросить.
+    noteBadExperience();
   }
 
   handleRetry = () => {

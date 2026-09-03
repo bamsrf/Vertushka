@@ -62,6 +62,7 @@ import { InAppNotificationToastHost, inAppToast } from '../components/notificati
 import { ToastHost } from '../components/ToastHost';
 import { analytics, initAmplitude } from '../lib/analytics';
 import { initDeviceMetrics } from '../lib/deviceMetrics';
+import { noteAppLaunch } from '../lib/reviewPrompt';
 import { useRemoteConfigStore } from '../lib/remoteConfig';
 import { ForceUpdateScreen } from '../components/ForceUpdateScreen';
 import { clampSystemFontScale } from '../lib/responsive';
@@ -212,6 +213,10 @@ function RootLayout() {
   useEffect(() => {
     checkAuth();
     loadRemoteConfig();
+    // Счётчик разных дней запуска — «созрел ли аккаунт» для просьбы оценить
+    // приложение. Считаем на каждом холодном старте, независимо от того,
+    // авторизован человек или нет: сама просьба свои условия проверит потом.
+    noteAppLaunch();
     // Шаги чеклиста закрываются на экранах, где самой карточки не видно
     // (профиль, поиск, настройки Discogs). Наблюдатель живёт в корне и
     // показывает тост там, где человек находится в этот момент.

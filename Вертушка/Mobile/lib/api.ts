@@ -1531,6 +1531,32 @@ class ApiClient {
     return response.data;
   }
 
+  async getFollowersByUsername(
+    username: string,
+    page = 1,
+    perPage = 30
+  ): Promise<UserPublic[]> {
+    const params = { page, per_page: perPage };
+    const response = await this.client.get<UserPublic[]>(
+      `/users/by-username/${encodeURIComponent(username)}/followers`,
+      { params }
+    );
+    return response.data;
+  }
+
+  async getFollowingByUsername(
+    username: string,
+    page = 1,
+    perPage = 30
+  ): Promise<UserPublic[]> {
+    const params = { page, per_page: perPage };
+    const response = await this.client.get<UserPublic[]>(
+      `/users/by-username/${encodeURIComponent(username)}/following`,
+      { params }
+    );
+    return response.data;
+  }
+
   async getFeed(page = 1, perPage = 20): Promise<FeedItem[]> {
     const params = { page, per_page: perPage };
     const response = await this.client.get<FeedItem[]>('/users/feed', { params });

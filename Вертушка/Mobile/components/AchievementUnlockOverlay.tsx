@@ -37,6 +37,7 @@ import * as Sharing from 'expo-sharing';
 import { LinearGradient } from 'expo-linear-gradient';
 
 import { api } from '../lib/api';
+import { maybeAskForReview } from '../lib/reviewPrompt';
 import { AchievementPin } from './AchievementPin';
 import { Confetti } from './Confetti';
 import { RootModalOverlay } from './ui/RootOverlay';
@@ -129,9 +130,18 @@ async function loadUnlockedItems(codes: string[]): Promise<AchievementItem[]> {
     .filter((x): x is AchievementItem => x !== undefined && x.is_unlocked);
 }
 
+/**
+ * Пауза между закрытием оверлея и системным окном оценки. Нужна, чтобы шит не
+ * наехал на догорающую анимацию: два всплытия подряд читаются как «приложение
+ * что-то от меня хочет», а не как «я только что чего-то добился».
+ */
+const REVIEW_PROMPT_DELAY_MS = 800;
+
 export function AchievementUnlockHost() {
   const [queue, setQueue] = useState<BatchPayload[]>([]);
   const [current, setCurrent] = useState<BatchPayload | null>(null);
+  /** Празднование в этой сессии уже было — значит, есть повод спросить оценку. */
+  const celebratedRef = useRef(false);
 
   useEffect(() => {
     return subscribe(async (codes) => {
@@ -157,8 +167,26 @@ export function AchievementUnlockHost() {
     if (!current && queue.length > 0) {
       setCurrent(queue[0]);
       setQueue((prev) => prev.slice(1));
+      celebratedRef.current = true;
     }
   }, [current, queue]);
+
+  /**
+   * Момент просьбы оценить приложение: очередь ачивок опустела, оверлей закрыт,
+   * экран снова спокоен. Именно ЗДЕСЬ, а не в `onDismiss`, потому что за первой
+   * ачивкой может стоять вторая — просить надо после последней.
+   *
+   * Сама `maybeAskForReview` почти всегда молча выходит: показов у Apple три в
+   * год, и все условия «созрел ли аккаунт» проверяются внутри неё.
+   */
+  useEffect(() => {
+    if (current || queue.length > 0 || !celebratedRef.current) return;
+    celebratedRef.current = false;
+    const timer = setTimeout(() => {
+      maybeAskForReview('achievement');
+    }, REVIEW_PROMPT_DELAY_MS);
+    return () => clearTimeout(timer);
+  }, [current, queue.length]);
 
   if (!current) return null;
 
