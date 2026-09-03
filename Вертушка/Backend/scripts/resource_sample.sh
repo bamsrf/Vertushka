@@ -14,21 +14,103 @@ set -u
 OUT="$HOME/metrics/resources.csv"
 mkdir -p "$HOME/metrics"
 
-# ── Режим отчёта: первая/последняя точка и дельта по каждой колонке ──────────
+# ── Режим отчёта ────────────────────────────────────────────────────────────
+# Второй аргумент — путь к другому CSV (для проверки логики на выдуманных
+# данных, не трогая боевую историю).
 if [ "${1:-}" = "report" ]; then
-    [ -f "$OUT" ] || { echo "Замеров ещё нет: $OUT"; exit 1; }
-    awk -F, 'NR==1{for(i=1;i<=NF;i++) h[i]=$i; n=NF; next}
-             NR==2{for(i=1;i<=n;i++) f[i]=$i; first=$1}
-             {for(i=1;i<=n;i++) l[i]=$i; last=$1; cnt++}
-             END{
-               if(cnt==0){print "Только заголовок, данных нет."; exit}
-               printf "Точек: %d   с %s по %s\n\n", cnt, first, last
-               printf "%-16s %10s %10s %10s\n", "метрика", "первая", "последняя", "дельта"
-               for(i=2;i<=n;i++){
-                 d=l[i]-f[i]
-                 printf "%-16s %10s %10s %+10.1f\n", h[i], f[i], l[i], d
-               }
-             }' "$OUT"
+    SRC="${2:-$OUT}"
+    [ -f "$SRC" ] || { echo "Замеров ещё нет: $SRC"; exit 1; }
+    awk -F, '
+function epoch(s,   t) { t = s; gsub(/[-:]/, " ", t); return mktime(t " 00") }
+function hrs(a, b) { return (b - a) / 3600.0 }
+function hhmm(x) { return strftime("%d.%m %H:%M", x) }
+
+NR == 1 { next }
+NF < 14 { next }
+{
+    n++
+    ts[n] = $1; ep[n] = epoch($1)
+    cpu[n] = $2 + $3
+    mem[n] = $6 + 0; swap[n] = $8 + 0
+    api[n] = $9 + 0; db[n] = $10 + 0; conns[n] = $14 + 0
+}
+END {
+    if (n < 2) { printf "Точек пока %d — отчёт будет осмысленным после нескольких часов.\n", n; exit }
+
+    printf "Точек: %d   с %s по %s   (%.1f ч)\n", n, ts[1], ts[n], hrs(ep[1], ep[n])
+
+    # ── Резка истории по рестартам api ──────────────────────────────────────
+    # Деплой пересоздаёт контейнер, и RSS падает с ~700 МБ до ~135. Считать
+    # рост «первая точка → последняя» через такой обрыв бессмысленно: получится
+    # отрицательная скорость там, где память на самом деле росла.
+    # Порог двойной (и −100 МБ, и падение на треть), чтобы обычные колебания
+    # рабочего набора не резали историю на куски.
+    s = 1; from[1] = 1
+    for (i = 2; i <= n; i++)
+        if (api[i-1] > 0 && api[i] < api[i-1] - 100 && api[i] < api[i-1] * 0.7) {
+            to[s] = i - 1; s++; from[s] = i
+        }
+    to[s] = n
+
+    printf "\n── ПАМЯТЬ API ПО УЧАСТКАМ МЕЖДУ РЕСТАРТАМИ ──────────────────────────\n"
+    printf "%-26s %7s %9s %9s %12s\n", "участок", "длит.", "старт", "конец", "скорость"
+    best = 0; bestlen = 0
+    for (k = 1; k <= s; k++) {
+        a = from[k]; b = to[k]
+        h = hrs(ep[a], ep[b])
+        if (b - a < 2 || h < 0.5) {
+            printf "%-26s %6.1fч %8dМБ %8dМБ %12s\n", \
+                   hhmm(ep[a]) " → " hhmm(ep[b]), h, api[a], api[b], "коротко"
+            continue
+        }
+        rate = (api[b] - api[a]) / h
+        printf "%-26s %6.1fч %8dМБ %8dМБ %+8.1f МБ/ч\n", \
+               hhmm(ep[a]) " → " hhmm(ep[b]), h, api[a], api[b], rate
+        if (h > bestlen) { bestlen = h; best = k; bestrate = rate; bestend = api[b] }
+    }
+
+    # ── Вывод по самому длинному участку ────────────────────────────────────
+    LIMIT = 1000   # mem_limit контейнера api, МБ
+    printf "\n"
+    if (best == 0)
+        print "Вывод: сплошного участка нужной длины пока нет — нужны часы без деплоя."
+    else if (bestrate > 5) {
+        printf "Вывод: рост устойчивый, %+.1f МБ/ч — плато НЕ достигнуто.\n", bestrate
+        left = (LIMIT - bestend) / bestrate
+        if (left > 0)
+            printf "        При лимите %d МБ упор примерно через %.0f ч непрерывной работы.\n", LIMIT, left
+    }
+    else if (bestrate < -5)
+        printf "Вывод: память убывает (%+.1f МБ/ч) — вероятно, отдаёт кэш.\n", bestrate
+    else
+        printf "Вывод: плато, %+.1f МБ/ч. Это не утечка — рабочий набор просто устоялся.\n", bestrate
+
+    # ── То, что рестарт не сбрасывает ───────────────────────────────────────
+    printf "\n── ЧТО НЕ СБРАСЫВАЕТСЯ РЕСТАРТОМ ────────────────────────────────────\n"
+    printf "%-16s %8s %8s %9s\n", "метрика", "первая", "последняя", "дельта"
+    printf "%-16s %8d %8d %+9d\n", "db_mb",        db[1],    db[n],    db[n]    - db[1]
+    printf "%-16s %8d %8d %+9d\n", "mem_used_mb",  mem[1],   mem[n],   mem[n]   - mem[1]
+    printf "%-16s %8d %8d %+9d\n", "swap_used_mb", swap[1],  swap[n],  swap[n]  - swap[1]
+    printf "%-16s %8d %8d %+9d\n", "pg_conns",     conns[1], conns[n], conns[n] - conns[1]
+
+    # ── CPU: день против ночи ───────────────────────────────────────────────
+    # Ради этого замер и ставился: панель Beget рисует ~125%, живой замер днём
+    # даёт 4%. Если нагрузка ночная — она проявится именно здесь.
+    peak = -1
+    for (i = 1; i <= n; i++) {
+        sum += cpu[i]
+        if (cpu[i] > peak) { peak = cpu[i]; peakat = ts[i] }
+        h24 = strftime("%H", ep[i]) + 0
+        if (h24 >= 0 && h24 < 7) { nsum += cpu[i]; ncnt++ } else { dsum += cpu[i]; dcnt++ }
+    }
+    printf "\n── CPU (%% от 2 ядер) ────────────────────────────────────────────────\n"
+    printf "среднее %.1f%%   пик %d%% в %s\n", sum / n, peak, peakat
+    if (ncnt) printf "ночь 00-07: %.1f%% (точек: %d)   ", nsum / ncnt, ncnt
+    else      printf "ночь 00-07: точек пока нет   "
+    if (dcnt) printf "день 07-24: %.1f%% (точек: %d)\n", dsum / dcnt, dcnt
+    else      printf "день 07-24: точек пока нет\n"
+}
+' "$SRC"
     exit 0
 fi
 
