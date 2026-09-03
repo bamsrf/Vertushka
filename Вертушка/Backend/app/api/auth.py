@@ -384,6 +384,13 @@ async def register(
 
     logger.info("user_registered", extra={"user_id": str(user.id), "email": user.email, "username": user.username})
 
+    # «Первая сотня» — пин за раннюю регистрацию. Эмитим сразу после коммита,
+    # чтобы юзер увидел ачивку в первую же сессию; emit_event глушит свои
+    # ошибки и регистрацию не роняет. Пропущенных догонит daily_tick.
+    from app.services.achievements import emit_event
+    from app.services.achievements.events import USER_REGISTERED
+    await emit_event(db, user.id, USER_REGISTERED, {})
+
     # Создание токенов
     access_token = create_access_token(user.id, user.token_version)
     refresh_token = create_refresh_token(user.id, user.token_version)
@@ -639,6 +646,15 @@ async def apple_sign_in(
 
     logger.info("apple_sign_in", extra={"user_id": str(user.id), "email": user.email})
 
+    if is_new_user:
+        # «Первая сотня» — пин за раннюю регистрацию. Эмитим сразу после коммита,
+        # чтобы юзер увидел ачивку в первую же сессию; emit_event глушит свои
+        # ошибки и регистрацию не роняет. Пропущенных догонит daily_tick.
+        from app.services.achievements import emit_event
+        from app.services.achievements.events import USER_REGISTERED
+        await emit_event(db, user.id, USER_REGISTERED, {})
+
+
     access_token = create_access_token(user.id, user.token_version)
     refresh_token = create_refresh_token(user.id, user.token_version)
 
@@ -743,6 +759,15 @@ async def google_sign_in(
     await db.commit()
 
     logger.info("google_sign_in", extra={"user_id": str(user.id), "email": user.email})
+
+    if is_new_user:
+        # «Первая сотня» — пин за раннюю регистрацию. Эмитим сразу после коммита,
+        # чтобы юзер увидел ачивку в первую же сессию; emit_event глушит свои
+        # ошибки и регистрацию не роняет. Пропущенных догонит daily_tick.
+        from app.services.achievements import emit_event
+        from app.services.achievements.events import USER_REGISTERED
+        await emit_event(db, user.id, USER_REGISTERED, {})
+
 
     access_token = create_access_token(user.id, user.token_version)
     refresh_token = create_refresh_token(user.id, user.token_version)

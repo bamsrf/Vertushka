@@ -12,6 +12,7 @@ GIFT_COMPLETED = "gift_completed"    # подарок дошёл (status=COMPLET
 GIFT_RECEIVED = "gift_received"      # юзер получил подарок (recipient_user_id) — для J5
 
 # Профиль и юзер
+USER_REGISTERED = "user_registered"  # аккаунт создан (email / Apple / Google)
 AVATAR_SET = "avatar_set"
 PROFILE_SHARED_ENABLED = "profile_shared_enabled"
 PROFILE_VIEW = "profile_view"  # инкремент view_count чужим юзером

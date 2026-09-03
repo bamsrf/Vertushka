@@ -1,16 +1,17 @@
 """«Первая сотня» (OG1) — проводка серии «Истоки» и правила зачёта.
 
-Живой БД у тестов нет, поэтому ранговый SQL здесь не гоняется — проверяем
-детерминированные части: кто попадает в зачёт (allowlist / отсечка), что серия
-корректно зарегистрирована, гейтится в UI и стоит правильный XP. Ранг «< 100»
-по построению не зависит от порядка событий (считается из неизменяемых
-first added_at), это зафиксировано в docstring evaluator-а.
+Живой БД у тестов нет, поэтому ранговый SQL целиком здесь не гоняется —
+проверяем детерминированные части: кто попадает в зачёт (allowlist / отсечка),
+проводку серии, XP, гейт в UI, а также оба предела выдачи (ранг и
+предохранитель на 100 выданных) через стаб сессии, возвращающий счётчики.
 """
 from datetime import datetime, timedelta
 
+import pytest
+
 from app.services.achievements.definitions.series import origins as O
 from app.services.achievements.definitions.series.formats import GATE_CODE_BY_SERIES
-from app.services.achievements.events import COLLECTION_ITEM_ADDED, DAILY_TICK
+from app.services.achievements.events import DAILY_TICK, USER_REGISTERED
 from app.services.achievements.levels import weight_for_code
 from app.services.achievements.registry import (
     AchievementTier,
@@ -57,11 +58,11 @@ def test_og1_registered_with_expected_shape():
     assert defn.series == "origins"
     assert defn.tier == AchievementTier.EPIC
     assert defn.is_hidden is False
-    assert set(defn.triggers) == {COLLECTION_ITEM_ADDED, DAILY_TICK}
+    assert set(defn.triggers) == {USER_REGISTERED, DAILY_TICK}
 
 
 def test_og1_reacts_to_both_triggers():
-    for event in (COLLECTION_ITEM_ADDED, DAILY_TICK):
+    for event in (USER_REGISTERED, DAILY_TICK):
         codes = {d.code for d in get_definitions_for_event(event)}
         assert O.OG1_CODE in codes, event
 
@@ -76,3 +77,66 @@ def test_og1_counts_toward_level_as_epic():
 
 def test_founders_target_is_hundred():
     assert O.FOUNDERS_TARGET == 100
+
+
+# --- Пределы выдачи (ранг + предохранитель) -----------------------------------
+
+class _FakeUser:
+    def __init__(self, username="newcomer", created_at=None):
+        self.id = "11111111-1111-1111-1111-111111111111"
+        self.username = username
+        self.created_at = created_at or O.FOUNDERS_CUTOFF + timedelta(days=1)
+
+
+class _RankSession:
+    """Стаб AsyncSession: первый scalar() — юзер, второй — ранг, третий —
+    сколько пинов уже выдано."""
+
+    def __init__(self, *, ahead, granted, user=None):
+        self._answers = [user or _FakeUser(), ahead, granted]
+
+    async def scalar(self, *_args, **_kwargs):
+        return self._answers.pop(0) if self._answers else 0
+
+
+@pytest.mark.asyncio
+async def test_unlocks_inside_both_limits():
+    res = await O._evaluate_first_hundred(
+        _RankSession(ahead=41, granted=41), "u", {}, set()
+    )
+    assert res.unlocked
+
+
+@pytest.mark.asyncio
+async def test_rank_beyond_hundred_does_not_unlock():
+    res = await O._evaluate_first_hundred(
+        _RankSession(ahead=O.FOUNDERS_TARGET, granted=0), "u", {}, set()
+    )
+    assert not res.unlocked
+
+
+@pytest.mark.asyncio
+async def test_safety_cap_blocks_when_hundred_already_granted():
+    # Ранг свободен (кто-то удалил аккаунт и сдвинул очередь), но сотня пинов
+    # уже роздана — 101-й не выдаём.
+    res = await O._evaluate_first_hundred(
+        _RankSession(ahead=99, granted=O.FOUNDERS_TARGET), "u", {}, set()
+    )
+    assert not res.unlocked
+
+
+@pytest.mark.asyncio
+async def test_non_candidate_does_not_unlock():
+    early = _FakeUser("random_old", O.FOUNDERS_CUTOFF - timedelta(days=1))
+    res = await O._evaluate_first_hundred(
+        _RankSession(ahead=0, granted=0, user=early), "u", {}, set()
+    )
+    assert not res.unlocked
+
+
+@pytest.mark.asyncio
+async def test_collection_is_not_required():
+    # Ни одного обращения к коллекциям: пин теперь за регистрацию.
+    import inspect
+    src = inspect.getsource(O)
+    assert "CollectionItem" not in src
