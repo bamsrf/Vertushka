@@ -11,3 +11,14 @@
 
 # Дневной снапшот стоимости коллекций.
 7 9 * * * bash ~/vertushka/Вертушка/Backend/scripts/backfill_snapshot.sh
+
+# Замер ресурсов раз в 5 минут (добавлен 03.09.2026). Нужен, чтобы отличить
+# плато памяти от ползучего роста: по одной точке это неразличимо.
+# Скрипт: Backend/scripts/resource_sample.sh → ~/metrics/resource_sample.sh
+# Отчёт:  bash ~/metrics/resource_sample.sh report
+# Ставить/снимать НЕ руками — вставка ssh-однострочника уже один раз
+# порвалась о перенос строки и крон молча не встал:
+#   bash ~/metrics/install_metrics_cron.sh          — поставить
+#   bash ~/metrics/install_metrics_cron.sh remove   — снять
+# Строка временная — снять, когда вопрос по памяти закрыт.
+*/5 * * * * bash ~/metrics/resource_sample.sh >> ~/metrics/sample.log 2>&1
