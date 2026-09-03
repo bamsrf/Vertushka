@@ -2,6 +2,7 @@
 Конфигурация Alembic для асинхронных миграций
 """
 import asyncio
+import os
 from logging.config import fileConfig
 
 from sqlalchemy import pool
@@ -64,7 +65,26 @@ def run_migrations_offline() -> None:
         context.run_migrations()
 
 
+#: Сколько миграция ждёт блокировку, прежде чем сдаться. Переопределяется
+#: переменной окружения ALEMBIC_LOCK_TIMEOUT (например "30s" для окна работ).
+LOCK_TIMEOUT = os.getenv("ALEMBIC_LOCK_TIMEOUT", "5s")
+
+
 def do_run_migrations(connection: Connection) -> None:
+    # ПРЕДОХРАНИТЕЛЬ. Деплой применяет миграции, пока старый контейнер держит
+    # боевой трафик (см. scripts/deploy.sh: alembic upgrade head идёт ДО
+    # поднятия нового цвета). Без lock_timeout ALTER, не получивший блокировку
+    # сразу, встаёт в очередь — и, что хуже, ВСЕ последующие запросы к той же
+    # таблице выстраиваются за ним. На discogs_releases_index (13M строк, 6 ГБ,
+    # горячий путь поиска) это означает лежащий поиск у всех живых юзеров.
+    #
+    # С таймаутом сценарий другой: миграция падает, deploy.sh обрывается с
+    # ненулевым кодом, трафик остаётся на старом цвете. Упавший деплой чинится
+    # спокойно, лежащий прод — нет.
+    connection.exec_driver_sql(f"SET lock_timeout = '{LOCK_TIMEOUT}'")
+    # Зависшая транзакция миграции не должна держать блокировки вечно.
+    connection.exec_driver_sql("SET idle_in_transaction_session_timeout = '60s'")
+
     context.configure(connection=connection, target_metadata=target_metadata)
 
     with context.begin_transaction():
