@@ -450,6 +450,8 @@ async def invalidate_offers_for_recently_updated(window_minutes: int = 60) -> di
         )
         ids = [r[0] for r in res.fetchall() if r[0]]
 
-    for did in ids:
-        await invalidate_record_offers(did)
-    return {"invalidated": len(ids)}
+    # WS7 2.2: одним pipeline (INCR-версии) вместо цикла по-одному —
+    # старый цикл делал полный Redis SCAN на КАЖДУЮ запись.
+    from app.api.offers import invalidate_records_offers_bulk
+    done = await invalidate_records_offers_bulk(ids)
+    return {"invalidated": done}
