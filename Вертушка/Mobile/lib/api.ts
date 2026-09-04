@@ -69,6 +69,7 @@ import {
   RecordOffersSummary,
   RecordOffersFullResponse,
   AppConfig,
+  DiscogsImportPhase,
   DiscogsImportResult,
   DiscogsPriceJobStatus,
 } from './types';
@@ -1765,6 +1766,18 @@ class ApiClient {
   // Прогресс фонового импорта (поле `import`) и дозагрузки цен. Для поллинга.
   async getDiscogsImportStatus(): Promise<DiscogsPriceJobStatus> {
     const { data } = await this.client.get('/collections/import/discogs/status');
+    return data;
+  }
+
+  // Импорт wantlist'а Discogs в вишлист — 202, финал через статус-ручку ниже.
+  async importDiscogsWishlist(): Promise<DiscogsImportResult> {
+    const { data } = await this.client.post('/wishlists/import/discogs');
+    return data;
+  }
+
+  // Плоский статус импорта вишлиста (у него нет спутника-дозагрузки цен).
+  async getDiscogsWishlistImportStatus(): Promise<DiscogsImportPhase> {
+    const { data } = await this.client.get('/wishlists/import/discogs/status');
     return data;
   }
 

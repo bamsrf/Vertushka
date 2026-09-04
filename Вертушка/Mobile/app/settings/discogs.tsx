@@ -115,9 +115,25 @@ export default function DiscogsSettings() {
     }
   }, []);
 
-  /** Общий финал импорта: аналитика, рефетч полки, поллинг цен, алерт. */
-  const finishImport = useCallback(
-    async (imported: number, skipped: number, total: number) => {
+  /** Аналог waitImportFinished для импорта вишлиста (плоская статус-ручка). */
+  const waitWishlistImportFinished = useCallback(async (): Promise<DiscogsImportPhase | null> => {
+    for (;;) {
+      await new Promise((resolve) => setTimeout(resolve, 3000));
+      if (!mountedRef.current) return null;
+      try {
+        const s = await api.getDiscogsWishlistImportStatus();
+        if (s.status === 'idle') return null;
+        if (s.status === 'done' || s.status === 'failed') return s;
+      } catch {
+        // Сеть моргнула — следующий тик попробует снова.
+      }
+    }
+  }, []);
+
+  /** Пост-обработка импорта коллекции: аналитика, рефетч полки, поллинг цен.
+      Возвращает, сколько пластинок ушло в фоновую дозагрузку цен. */
+  const afterCollectionImport = useCallback(
+    async (imported: number, skipped: number, total: number): Promise<number> => {
       analytics.importCompleted({ imported, skipped, total });
       // Экран коллекции грузится один раз на маунте и остаётся
       // смонтированным, поэтому сам импорт он бы не заметил: до
@@ -142,7 +158,15 @@ export default function DiscogsSettings() {
       } catch {
         // Статус цен — не повод портить финал импорта.
       }
+      return pricesPending;
+    },
+    [startPolling]
+  );
 
+  /** Финал одиночного импорта коллекции: эффекты + прежний алерт. */
+  const finishImport = useCallback(
+    async (imported: number, skipped: number, total: number) => {
+      const pricesPending = await afterCollectionImport(imported, skipped, total);
       // Alert, а не toast: итог импорта — это три числа плюс приписка
       // про фоновые цены, такое не влезает в плашку и его хочется
       // прочитать не спеша. (Тост тут теперь виден — корневой хост
@@ -155,7 +179,7 @@ export default function DiscogsSettings() {
             : '')
       );
     },
-    [startPolling]
+    [afterCollectionImport]
   );
 
   const loadStatus = useCallback(async () => {
@@ -192,13 +216,37 @@ export default function DiscogsSettings() {
         } catch {
           // Статус цен — не повод ронять весь экран.
         }
+
+        // Импорт вишлиста тоже мог остаться с прошлого захода — досиживаем.
+        try {
+          const w = await api.getDiscogsWishlistImportStatus();
+          if (w.status === 'running') {
+            setImporting(true);
+            waitWishlistImportFinished()
+              .then(async (phase) => {
+                if (!mountedRef.current) return;
+                if (phase && phase.status === 'done') {
+                  await useCollectionStore.getState().fetchWishlistItems();
+                  Alert.alert(
+                    'Импорт вишлиста завершён',
+                    `Добавлено: ${phase.imported}, пропущено: ${phase.skipped} из ${phase.total}`
+                  );
+                }
+              })
+              .finally(() => {
+                if (mountedRef.current) setImporting(false);
+              });
+          }
+        } catch {
+          // Статус вишлиста — тоже не повод ронять экран.
+        }
       }
     } catch {
       Alert.alert('Discogs', 'Не удалось загрузить статус Discogs');
     } finally {
       setLoading(false);
     }
-  }, [startPolling, waitImportFinished, finishImport]);
+  }, [startPolling, waitImportFinished, waitWishlistImportFinished, finishImport]);
 
   useEffect(() => {
     loadStatus();
@@ -233,47 +281,92 @@ export default function DiscogsSettings() {
     }
   }, [loadStatus]);
 
+  /** Импорт коллекции: старт + ожидание фона. Бросает Error с текстом причины. */
+  const runCollectionImport = useCallback(async () => {
+    const r = await api.importDiscogsCollection();
+    if (r.status === 'started') {
+      // Импорт ушёл в фон (202) — ждём финал через статус-ручку,
+      // спиннер «Импортируем…» крутится всё это время.
+      const phase = await waitImportFinished();
+      if (!phase || phase.status !== 'done') {
+        throw new Error(phase?.error || 'Попробуйте позже');
+      }
+      return phase;
+    }
+    // Старый бэкенд: результат пришёл синхронно, прежний путь.
+    return r;
+  }, [waitImportFinished]);
+
+  /** Импорт вишлиста: старт + ожидание фона. Бросает Error с текстом причины. */
+  const runWishlistImport = useCallback(async () => {
+    const r = await api.importDiscogsWishlist();
+    if (r.status === 'started') {
+      const phase = await waitWishlistImportFinished();
+      if (!phase || phase.status !== 'done') {
+        throw new Error(phase?.error || 'Попробуйте позже');
+      }
+      return phase;
+    }
+    return r;
+  }, [waitWishlistImportFinished]);
+
+  const runImport = useCallback(
+    async (mode: 'collection' | 'wishlist' | 'both') => {
+      setImporting(true);
+      try {
+        if (mode === 'collection') {
+          // Одиночный импорт коллекции — прежний UX один в один.
+          const nums = await runCollectionImport();
+          if (!mountedRef.current) return;
+          await finishImport(nums.imported, nums.skipped, nums.total);
+          return;
+        }
+
+        const lines: string[] = [];
+        let pricesPending = 0;
+
+        // Сначала коллекция, потом вишлист — именно в этом порядке: свежая
+        // коллекция отсекает из вишлиста уже купленное (skip «уже в коллекции»).
+        if (mode === 'both') {
+          const nums = await runCollectionImport();
+          if (!mountedRef.current) return;
+          pricesPending = await afterCollectionImport(nums.imported, nums.skipped, nums.total);
+          lines.push(`Коллекция: добавлено ${nums.imported}, пропущено ${nums.skipped} из ${nums.total}`);
+        }
+
+        const wNums = await runWishlistImport();
+        if (!mountedRef.current) return;
+        await useCollectionStore.getState().fetchWishlistItems();
+        lines.push(`Вишлист: добавлено ${wNums.imported}, пропущено ${wNums.skipped} из ${wNums.total}`);
+
+        if (pricesPending > 0) {
+          lines.push('', 'Цены подтягиваются в фоне — это займёт несколько минут.');
+        }
+        Alert.alert('Импорт завершён', lines.join('\n'));
+      } catch (e: any) {
+        Alert.alert(
+          'Не удалось импортировать',
+          e?.response?.data?.detail || e?.message || 'Попробуйте позже'
+        );
+      } finally {
+        if (mountedRef.current) setImporting(false);
+      }
+    },
+    [runCollectionImport, runWishlistImport, afterCollectionImport, finishImport]
+  );
+
   const handleImport = useCallback(() => {
     Alert.alert(
-      'Импортировать коллекцию?',
-      'Все пластинки из вашей коллекции Discogs добавятся в основную коллекцию. Уже добавленные пропустятся.',
+      'Что импортировать из Discogs?',
+      'Пластинки добавятся в основную коллекцию и/или вишлист. Уже добавленные пропустятся; из вишлиста также пропустится то, что уже лежит в коллекции.',
       [
         { text: 'Отмена', style: 'cancel' },
-        {
-          text: 'Импортировать',
-          onPress: async () => {
-            setImporting(true);
-            try {
-              const r = await api.importDiscogsCollection();
-
-              if (r.status === 'started') {
-                // Импорт ушёл в фон (202) — ждём финал через статус-ручку,
-                // спиннер «Импортируем…» крутится всё это время.
-                const phase = await waitImportFinished();
-                if (!mountedRef.current) return;
-                if (!phase || phase.status !== 'done') {
-                  Alert.alert(
-                    'Не удалось импортировать',
-                    phase?.error || 'Попробуйте позже'
-                  );
-                  return;
-                }
-                await finishImport(phase.imported, phase.skipped, phase.total);
-                return;
-              }
-
-              // Старый бэкенд: результат пришёл синхронно, прежний путь.
-              await finishImport(r.imported, r.skipped, r.total);
-            } catch (e: any) {
-              Alert.alert('Не удалось импортировать', e?.response?.data?.detail || 'Попробуйте позже');
-            } finally {
-              if (mountedRef.current) setImporting(false);
-            }
-          },
-        },
+        { text: 'Коллекцию', onPress: () => runImport('collection') },
+        { text: 'Вишлист', onPress: () => runImport('wishlist') },
+        { text: 'Коллекцию и вишлист', onPress: () => runImport('both') },
       ]
     );
-  }, [finishImport, waitImportFinished]);
+  }, [runImport]);
 
   const handleDisconnect = useCallback(() => {
     Alert.alert(
@@ -400,7 +493,7 @@ export default function DiscogsSettings() {
                 {importing ? (
                   <ActivityIndicator size="small" color="#FFF" />
                 ) : (
-                  <Text style={styles.buttonText}>Импортировать коллекцию</Text>
+                  <Text style={styles.buttonText}>Импортировать из Discogs</Text>
                 )}
               </TouchableOpacity>
 

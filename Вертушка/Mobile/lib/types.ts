@@ -1229,8 +1229,9 @@ export interface DiscogsImportResult {
   imported: number;
   skipped: number;
   total: number;
-  /** Сколько пластинок ушло в фоновую дозагрузку цен. 0 — добирать нечего. */
-  prices_pending: number;
+  /** Сколько пластинок ушло в фоновую дозагрузку цен. 0 — добирать нечего.
+   *  У импорта вишлиста отсутствует — дозагрузки цен у него нет. */
+  prices_pending?: number;
 }
 
 /** Фаза самого импорта (фонового) — поле `import` статус-ручки. */
