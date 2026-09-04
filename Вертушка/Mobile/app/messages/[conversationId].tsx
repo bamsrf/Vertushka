@@ -2215,7 +2215,7 @@ const styles = StyleSheet.create({
   // низа (над композером), paddingBottom — у визуального верха.
   list: { paddingHorizontal: Spacing.md, paddingTop: Spacing.md, paddingBottom: Spacing.sm },
   emptyOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     justifyContent: 'center',
   },
 
@@ -2309,7 +2309,7 @@ const styles = StyleSheet.create({
   // ширины вместо самого бабла.
   bubbleWrap: { maxWidth: '76%' },
   heartBurstWrap: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -2469,7 +2469,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.surface,
   },
   attachMediaOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     borderRadius: 8,
     backgroundColor: 'rgba(0,0,0,0.35)',
     alignItems: 'center',

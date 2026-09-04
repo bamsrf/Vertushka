@@ -747,7 +747,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.background,
   },
   swipePanelHost: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
   },
   swipePanel: {
     position: 'absolute',

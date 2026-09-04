@@ -164,7 +164,7 @@ const styles = StyleSheet.create({
     height: 60,
   },
   glassOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: Colors.glassBg,
   },
   indicator: {

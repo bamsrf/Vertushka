@@ -493,7 +493,7 @@ const styles = StyleSheet.create({
   coverRing: { width: COVER, height: COVER, borderRadius: COVER / 2, borderWidth: 2.5, overflow: 'hidden', shadowOffset: { width: 0, height: 2 }, elevation: 5 },
   cover: { width: '100%', height: '100%' },
   coverPh: { backgroundColor: '#33333f' },
-  absentScrim: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(120,124,150,0.62)' },
+  absentScrim: { ...StyleSheet.absoluteFill, backgroundColor: 'rgba(120,124,150,0.62)' },
   priceChip: { position: 'absolute', top: COVER + 5, minWidth: 62, paddingVertical: 3, paddingHorizontal: 9, borderRadius: 9999, borderWidth: 1, backgroundColor: 'rgba(6,2,18,0.9)', alignItems: 'center' },
   priceTxt: { fontSize: 11, fontFamily: 'Inter_700Bold', fontVariant: ['tabular-nums'] },
   empty: { alignItems: 'center', paddingHorizontal: 40, marginTop: 30 },

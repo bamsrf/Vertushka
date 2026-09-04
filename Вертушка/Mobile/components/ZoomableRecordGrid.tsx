@@ -711,7 +711,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.background,
   },
   selectedTint: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: 'rgba(59,75,245,0.25)',
   },
   footer: {

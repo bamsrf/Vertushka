@@ -247,7 +247,7 @@ export function VinylSpinner({ colorConfig, size = 220, labelName, onTap }: Viny
           ещё был занят главный поток. С растеризацией это одна отрисовка
           в текстуру и дальше чистый GPU-поворот. */}
       <Animated.View
-        style={[StyleSheet.absoluteFillObject, animatedStyle]}
+        style={[StyleSheet.absoluteFill, animatedStyle]}
         shouldRasterizeIOS
         renderToHardwareTextureAndroid
       >
@@ -391,7 +391,7 @@ export function VinylSpinner({ colorConfig, size = 220, labelName, onTap }: Viny
         width={size}
         height={size}
         viewBox={`0 0 ${size} ${size}`}
-        style={StyleSheet.absoluteFillObject}
+        style={StyleSheet.absoluteFill}
         pointerEvents="none"
       >
         <Defs>

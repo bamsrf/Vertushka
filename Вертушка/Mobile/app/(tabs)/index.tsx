@@ -280,7 +280,7 @@ export default function ScannerScreen() {
       <CameraView
         ref={cameraRef}
         active={isFocused}
-        style={StyleSheet.absoluteFillObject}
+        style={StyleSheet.absoluteFill}
         facing="back"
         barcodeScannerSettings={
           scanMode === 'barcode'
@@ -494,7 +494,7 @@ const styles = StyleSheet.create({
     minWidth: 200,
   },
   overlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: 'rgba(0, 0, 0, 0.25)',
   },
   header: {

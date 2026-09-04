@@ -211,7 +211,7 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   overlayTouch: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
   },
   sheet: {
     backgroundColor: Colors.background,

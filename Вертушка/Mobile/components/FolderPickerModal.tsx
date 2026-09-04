@@ -235,7 +235,7 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   overlayTouch: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
   },
   sheet: {
     backgroundColor: Colors.background,
@@ -276,7 +276,7 @@ const styles = StyleSheet.create({
     opacity: 0.4,
   },
   busyOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: BorderRadius.sm,

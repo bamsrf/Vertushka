@@ -11,9 +11,17 @@
  * "u" у ассетов) и белый экран на старте вместо анимации. Видео этих граблей
  * лишено; Lottie остался только для лоадера (`MascotLoader`).
  *
- * Устойчивость: `expo-video` — нативный модуль, его нет в Expo Go. Если модуль
- * не подгрузился — интро тихо пропускается (onFinish зовётся сразу), пользователь
- * просто попадает в приложение без заставки.
+ * Устойчивость: `expo-video` — нативный модуль; в Expo Go до SDK 57 его не было
+ * (с SDK 57 — есть, интро играет и там). Если модуль не подгрузился — интро тихо
+ * пропускается (onFinish зовётся сразу), пользователь просто попадает в
+ * приложение без заставки.
+ *
+ * История (SDK 57): RN 0.86 удалил StyleSheet.absoluteFillObject. Спред
+ * `...absoluteFillObject` молча давал {} — оверлей терял position:absolute,
+ * вставал В ПОТОК под корневой Stack и на время интро сжимал всё приложение
+ * ровно на высоту квадрата видео (82% ширины). Отсюда же «пропавшая камера»
+ * на скане: её style стал undefined. Лечится absoluteFill (с 0.86 это
+ * обычный объект, годится и для спреда).
  *
  * Фон интро = Colors.background — тот же цвет, что у splash.backgroundColor
  * (app.json) и у контента приложения, и тот же, что у фона кадров ролика: он
@@ -22,7 +30,15 @@
  * «splash → интро». Прогонять скрипт при каждой замене ролика.
  */
 import { useEffect, useRef, useState } from 'react';
-import { Animated, StyleSheet } from 'react-native';
+import { StyleSheet } from 'react-native';
+// Reanimated вместо легаси Animated — приведение к домашнему стилю проекта
+// (все остальные анимации на reanimated) при починке SDK 57.
+import Animated, {
+  runOnJS,
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+} from 'react-native-reanimated';
 
 import { Colors } from '../constants/theme';
 
@@ -37,7 +53,7 @@ const INTRO_DURATION_MS = 5710;
 /** Затухание перед снятием интро — чтобы стык с UI приложения не мигал. */
 const FADE_OUT_MS = 250;
 
-// expo-video отсутствует в Expo Go: грузим лениво, чтобы не ронять бандл.
+// Грузим лениво: если нативного expo-video нет (старые окружения) — не ронять бандл.
 let videoModule: typeof import('expo-video') | null = null;
 try {
   videoModule = require('expo-video');
@@ -73,7 +89,11 @@ function IntroVideo({
   const { VideoView, useVideoPlayer } = video;
   // Гарантия, что onFinish не выстрелит дважды (статус playToEnd + safety-timeout).
   const finished = useRef(false);
-  const opacity = useRef(new Animated.Value(1)).current;
+  // onFinish зовётся ровно один раз — либо колбэком анимации, либо страховочным
+  // таймером ниже. Двойной канал не паранойя: однажды колбэк анимации уже
+  // замолчал на апгрейде RN, и приложение осталось жить под вечным интро.
+  const onFinishFired = useRef(false);
+  const opacity = useSharedValue(1);
   // Пока первый кадр не отрисован, видео не показываем: иначе на стыке со splash
   // мелькает пустой прямоугольник плеера.
   const [ready, setReady] = useState(false);
@@ -91,14 +111,20 @@ function IntroVideo({
   });
 
   // Гасим интро и только потом отдаём экран приложению.
+  const fireOnFinish = () => {
+    if (onFinishFired.current) return;
+    onFinishFired.current = true;
+    onFinish();
+  };
+
   const finish = () => {
     if (finished.current) return;
     finished.current = true;
-    Animated.timing(opacity, {
-      toValue: 0,
-      duration: FADE_OUT_MS,
-      useNativeDriver: true,
-    }).start(() => onFinish());
+    opacity.value = withTiming(0, { duration: FADE_OUT_MS }, () => {
+      runOnJS(fireOnFinish)();
+    });
+    // Страховка: если колбэк withTiming не придёт, снимаем интро таймером.
+    setTimeout(fireOnFinish, FADE_OUT_MS + 200);
   };
 
   useEffect(() => {
@@ -130,8 +156,10 @@ function IntroVideo({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const fadeStyle = useAnimatedStyle(() => ({ opacity: opacity.value }));
+
   return (
-    <Animated.View style={[styles.fill, { opacity }]} pointerEvents="auto">
+    <Animated.View style={[styles.fill, fadeStyle]} pointerEvents="auto">
       {ready && (
         <VideoView
           player={player}
@@ -148,7 +176,7 @@ function IntroVideo({
 
 const styles = StyleSheet.create({
   fill: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: INTRO_BACKDROP,
     alignItems: 'center',
     justifyContent: 'center',

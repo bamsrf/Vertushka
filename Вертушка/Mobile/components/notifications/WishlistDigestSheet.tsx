@@ -444,7 +444,7 @@ export const WishlistDigestSheet: React.FC<Props> = ({
 const styles = StyleSheet.create({
   flex: { flex: 1 },
   backdrop: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: 'rgba(0,0,0,0.4)',
   },
   sheet: {
@@ -460,7 +460,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.md,
   },
   popupLayer: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: 'rgba(0,0,0,0.35)',
     justifyContent: 'flex-end',
   },
