@@ -62,6 +62,39 @@ STALE_AFTER_DAYS = 7
 MARKET_CACHE_NS = "market"
 MARKET_CACHE_TTL = 900  # 15 мин — карусель не критична к мгновенному обновлению
 
+# WS7 2.2 — версионная инвалидация вместо SCAN.
+# Старая схема: invalidate = scan_iter(match=prefix*) — SCAN с match всегда
+# обходит ВЕСЬ keyspace (фильтр применяется после итерации), а после обхода
+# инвалидируются ~31.5k записей → 31.5k полных сканов, дважды в сутки, плюс
+# повторы 15-минутной джобой. Новая: в cache-key подмешивается версия записи,
+# инвалидация — один INCR (O(1)); устаревшие значения умирают по TTL сами.
+# TTL версии — 2×TTL кэша: если версия истекла, значит истекли и все записи
+# под любой версией, и возврат к «v0» безопасен (просто cache miss).
+_OFFERS_VER_NS = "offers_ver"
+_MARKET_VER_KEY = "feed"
+_VER_TTL = OFFERS_CACHE_TTL * 2
+
+
+async def _cache_version(ns: str, key: str) -> str:
+    """Текущая версия кэш-пространства; без Redis или при ошибке — '0'."""
+    if not cache.available:
+        return "0"
+    try:
+        assert cache._pool is not None
+        raw = await cache._pool.get(cache._key(ns, key))
+        if raw is None:
+            return "0"
+        return raw.decode() if isinstance(raw, bytes) else str(raw)
+    except Exception:
+        return "0"
+
+
+async def _bump_version(ns: str, key: str) -> None:
+    assert cache._pool is not None
+    full = cache._key(ns, key)
+    await cache._pool.incr(full)
+    await cache._pool.expire(full, _VER_TTL)
+
 
 @router.get(
     "/records/{discogs_id}/offers",
@@ -74,7 +107,8 @@ async def get_record_offers(
     limit: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
 ) -> list[OfferResponse]:
-    cache_key = f"{discogs_id}:{sort}:{limit}"
+    ver = await _cache_version(_OFFERS_VER_NS, discogs_id)
+    cache_key = f"{discogs_id}:v{ver}:{sort}:{limit}"
     cached = await cache.get(OFFERS_CACHE_NS, cache_key)
     if cached is not None:
         return [OfferResponse.model_validate(item) for item in cached]
@@ -367,7 +401,8 @@ async def get_market_new_arrivals(
     Кэш — Redis, TTL 15 минут. Инвалидируется при `parse_listing` через
     `invalidate_market_feed` (по аналогии с `invalidate_record_offers`).
     """
-    cache_key = f"new_arrivals:{limit}"
+    ver = await _cache_version(MARKET_CACHE_NS + "_ver", _MARKET_VER_KEY)
+    cache_key = f"new_arrivals:v{ver}:{limit}"
     cached = await cache.get(MARKET_CACHE_NS, cache_key)
     if cached is not None:
         return [MarketCarouselItem.model_validate(item) for item in cached]
@@ -450,10 +485,7 @@ async def invalidate_market_feed() -> None:
     if not cache.available:
         return
     try:
-        assert cache._pool is not None
-        prefix = cache._key(MARKET_CACHE_NS, "new_arrivals:")
-        async for key in cache._pool.scan_iter(match=f"{prefix}*"):
-            await cache._pool.delete(key)
+        await _bump_version(MARKET_CACHE_NS + "_ver", _MARKET_VER_KEY)
     except Exception:
         logger.debug("invalidate market cache failed", exc_info=True)
 
@@ -494,13 +526,31 @@ async def invalidate_record_offers(discogs_id: str) -> None:
     if not cache.available:
         return
     try:
-        assert cache._pool is not None
-        prefix = cache._key(OFFERS_CACHE_NS, f"{discogs_id}:")
-        # SCAN по префиксу
-        async for key in cache._pool.scan_iter(match=f"{prefix}*"):
-            await cache._pool.delete(key)
+        await _bump_version(_OFFERS_VER_NS, discogs_id)
     except Exception:
         logger.debug("invalidate offers cache failed for %s", discogs_id, exc_info=True)
+
+
+async def invalidate_records_offers_bulk(discogs_ids: list[str]) -> int:
+    """Массовая инвалидация после обхода: все INCR+EXPIRE одним pipeline.
+
+    31.5k записей = один roundtrip-пакет вместо 63k отдельных команд
+    (и вместо 31.5k полных SCAN'ов keyspace в старой схеме).
+    """
+    if not cache.available or not discogs_ids:
+        return 0
+    try:
+        assert cache._pool is not None
+        pipe = cache._pool.pipeline(transaction=False)
+        for did in discogs_ids:
+            full = cache._key(_OFFERS_VER_NS, did)
+            pipe.incr(full)
+            pipe.expire(full, _VER_TTL)
+        await pipe.execute()
+        return len(discogs_ids)
+    except Exception:
+        logger.debug("bulk invalidate offers cache failed", exc_info=True)
+        return 0
 
 
 # ============================================================================
