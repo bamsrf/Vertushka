@@ -1238,6 +1238,10 @@ async def get_user_collection(
                 sleeve_condition=item.sleeve_condition,
                 notes=item.notes,
                 shelf_position=item.shelf_position,
+                estimated_price_rub=(
+                    float(item.estimated_price_rub)
+                    if item.estimated_price_rub is not None else None
+                ),
                 added_at=item.added_at,
                 record=item.record
             ) for item in items]

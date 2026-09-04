@@ -465,9 +465,19 @@ async def run_price_backfill_jobs():
         async with async_session_maker() as session:
             job = await session.get(DiscogsPriceJob, job_id)
             if job is not None:
-                job.status = STATUS_FAILED
-                job.error = str(exc)[:500]
-                job.finished_at = datetime.utcnow()
+                if job.error is None:
+                    # Первый сбой батча — почти всегда транзиент (сеть, рестарт
+                    # БД): возвращаем в pending, следующий прогон через минуту
+                    # продолжит с места сбоя — прогресс уже закоммичен. Метка в
+                    # error отличает повторный сбой от первого; удачный батч её
+                    # снимает. Раньше любой сбой хоронил задачу с processed=0.
+                    job.status = STATUS_PENDING
+                    job.heartbeat_at = None
+                    job.error = f"retry: {str(exc)[:400]}"
+                else:
+                    job.status = STATUS_FAILED
+                    job.error = str(exc)[:500]
+                    job.finished_at = datetime.utcnow()
                 await session.commit()
         return
 
@@ -501,36 +511,51 @@ async def _process_price_backfill_batch(
     discogs = DiscogsService()
     limit = settings.price_backfill_batch_size
 
-    processed = 0
-    updated = 0
-
+    # Батч в 50 записей под лимитом 60/min — это ~минута последовательных
+    # HTTP-вызовов. Раньше всё это время висела одна сессия БД, соединение
+    # успевало закрыться, и батч падал целиком «connection is closed» (так
+    # похоронился импорт records2303). Теперь сеть — строго между двумя
+    # короткими сессиями: прочитали кандидатов, сходили в Discogs, записали.
     async with async_session_maker() as session:
         result = await session.execute(records_without_price_query(user_id).limit(limit))
-        records = result.scalars().all()
+        candidates = [(r.id, r.discogs_id) for r in result.scalars().all()]
 
-        for record in records:
-            processed += 1
-            try:
-                stats = await discogs._get_price_stats(record.discogs_id, creds=creds)
-            except Exception:
-                logger.exception(
-                    "price_backfill: stats failed for %s", record.discogs_id
-                )
-                continue
-            if not stats:
-                continue
+    processed = 0
+    stats_by_record_id: dict = {}
+    for record_id, discogs_id in candidates:
+        processed += 1
+        try:
+            stats = await discogs._get_price_stats(discogs_id, creds=creds)
+        except Exception:
+            logger.exception(
+                "price_backfill: stats failed for %s", discogs_id
+            )
+            continue
+        if not stats:
+            continue
 
-            lowest = _price_value(stats.get("lowest_price"))
-            median = _price_value(stats.get("median_price"))
-            highest = _price_value(stats.get("highest_price"))
-            if not (lowest or median):
-                continue
+        lowest = _price_value(stats.get("lowest_price"))
+        median = _price_value(stats.get("median_price"))
+        highest = _price_value(stats.get("highest_price"))
+        if not (lowest or median):
+            continue
+        stats_by_record_id[record_id] = (lowest, median, highest)
 
-            record.estimated_price_min = lowest
-            record.estimated_price_median = median
-            record.estimated_price_max = highest
-            record.price_currency = "USD"
-            updated += 1
+    updated = 0
+    async with async_session_maker() as session:
+        records = []
+        if stats_by_record_id:
+            result = await session.execute(
+                select(Record).where(Record.id.in_(list(stats_by_record_id)))
+            )
+            records = result.scalars().all()
+            for record in records:
+                lowest, median, highest = stats_by_record_id[record.id]
+                record.estimated_price_min = lowest
+                record.estimated_price_median = median
+                record.estimated_price_max = highest
+                record.price_currency = "USD"
+                updated += 1
 
         # Рубли по свежим ценам — в той же транзакции: иначе полка показывала бы
         # «цена есть, рубли пустые» до ближайшего ночного backfill'а.
@@ -563,6 +588,7 @@ async def _process_price_backfill_batch(
         if job is not None:
             job.processed += processed
             job.updated += updated
+            job.error = None
             job.heartbeat_at = datetime.utcnow()
             # Пустой батч при ненулевом remaining означает, что оставшиеся
             # записи Discogs ценой не снабжает (нет лотов). Крутить их вечно
