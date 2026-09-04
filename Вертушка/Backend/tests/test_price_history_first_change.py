@@ -34,6 +34,11 @@ class _Result:
     def one(self):
         return self._row
 
+    def one_or_none(self):
+        # WS7 2.1: условный upsert берёт one_or_none() — при пропуске строки
+        # RETURNING пуст. Здесь мок всегда моделирует состоявшийся апдейт.
+        return self._row
+
 
 class _FakeDB:
     """Сессия-заглушка: отдаёт заранее заданную строку и копит db.add."""
