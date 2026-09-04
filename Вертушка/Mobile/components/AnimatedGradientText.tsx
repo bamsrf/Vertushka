@@ -16,7 +16,7 @@ import Animated, {
   Easing,
   interpolateColor,
 } from 'react-native-reanimated';
-import { useIsFocused } from '@react-navigation/native';
+import { useIsFocused } from 'expo-router';
 import { AnimatedGradientPalette } from '../constants/theme';
 
 const AnimatedLinearGradient = Animated.createAnimatedComponent(LinearGradient);

@@ -17,7 +17,7 @@
  * См. docs/plans/appstore/APPSTORE_LAUNCH_PLAN.md §4.4.
  */
 import { AccessibilityInfo, AppState, AppStateStatus } from 'react-native';
-import { useIsFocused } from '@react-navigation/native';
+import { useIsFocused } from 'expo-router';
 import { create } from 'zustand';
 
 interface AnimationGateState {

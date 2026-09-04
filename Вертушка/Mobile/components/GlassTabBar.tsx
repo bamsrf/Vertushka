@@ -15,7 +15,7 @@ import Animated, {
   useSharedValue,
   useDerivedValue,
 } from 'react-native-reanimated';
-import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
+import type { BottomTabBarProps } from 'expo-router/js-tabs';
 import { Colors, Shadows, Gradients } from '../constants/theme';
 // Единое имя на таб; визуальная разница inactive ↔ active — через weight в <Icon>.
 const TAB_ICONS: Record<string, string> = {
