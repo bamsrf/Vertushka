@@ -763,8 +763,9 @@ export default function SearchScreen() {
     // Если это MasterSearchResult - переходим на страницу мастера
     if ('master_id' in record) {
       router.push({
-        pathname: `/master/${record.master_id}`,
+        pathname: '/master/[id]',
         params: {
+          id: record.master_id,
           title: record.title,
           artist: record.artist,
           year: record.year?.toString() || '',
@@ -1230,12 +1231,15 @@ export default function SearchScreen() {
                 clearSuggestions();
                 addToHistory(`${master.artist} ${master.title}`.trim());
                 router.push({
-                  pathname: `/master/${master.master_id}`,
+                  pathname: '/master/[id]',
                   params: {
+                    id: master.master_id,
                     title: master.title,
                     artist: master.artist,
                     year: master.year?.toString() || '',
-                    cover: master.cover_image_url || '',
+                    // Suggest из dump-индекса несёт только 150px thumb; в слот
+                    // полноразмерной обложки его не отдаём (растянется в кашу).
+                    cover: '',
                   },
                 });
               }}

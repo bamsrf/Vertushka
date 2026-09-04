@@ -10,7 +10,8 @@ import { Gradients } from '../constants/theme';
 
 interface GradientTextProps {
   children: React.ReactNode;
-  colors?: readonly string[];
+  // Tuple под контракт expo-linear-gradient 15: минимум два цвета.
+  colors?: readonly [string, string, ...string[]];
   style?: TextStyle | TextStyle[];
   start?: { x: number; y: number };
   end?: { x: number; y: number };
@@ -30,7 +31,7 @@ export function GradientText({
       }
     >
       <LinearGradient
-        colors={colors as string[]}
+        colors={colors}
         start={start}
         end={end}
       >

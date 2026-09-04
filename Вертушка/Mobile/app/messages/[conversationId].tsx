@@ -248,6 +248,19 @@ function ReadMark({
   status: Message['_local_status'];
   isRead: boolean;
 }) {
+  // Кастомный worklet вместо FadeIn.withInitialValues: reanimated 4.5 сузил
+  // тип initial-значений FadeIn до {opacity}, а сдвиг сюда уже не влезает.
+  const readCheckEntering = () => {
+    'worklet';
+    return {
+      initialValues: { opacity: 0, transform: [{ translateX: -4 }] },
+      animations: {
+        opacity: withTiming(1, { duration: 220 }),
+        transform: [{ translateX: withTiming(0, { duration: 220 }) }],
+      },
+    };
+  };
+
   if (status === 'sending') {
     return <ActivityIndicator size="small" color="rgba(255,255,255,0.7)" />;
   }
@@ -258,10 +271,7 @@ function ReadMark({
       <View style={{ flexDirection: 'row' }}>
         <Icon name="check" size={12} color="#7AE2FF" />
         <Animated.View
-          entering={FadeIn.duration(220).withInitialValues({
-            opacity: 0,
-            transform: [{ translateX: -4 }],
-          })}
+          entering={readCheckEntering}
           style={{ marginLeft: -6 }}
         >
           <Icon name="check" size={12} color="#7AE2FF" />

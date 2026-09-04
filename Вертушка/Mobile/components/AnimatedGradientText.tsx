@@ -69,7 +69,9 @@ export const AnimatedGradientText = React.memo(function AnimatedGradientText({
     const c2 = interpolateColor(t, [0, 1], [presets[fromIdx][2], presets[toIdx][2]]);
 
     return {
-      colors: [c0, c1, c2],
+      // Tuple, а не string[]: expo-linear-gradient 15 требует минимум два
+      // цвета на уровне типов (readonly [ColorValue, ColorValue, ...]).
+      colors: [c0, c1, c2] as [string, string, string],
     };
   });
 
@@ -79,7 +81,7 @@ export const AnimatedGradientText = React.memo(function AnimatedGradientText({
     >
       <AnimatedLinearGradient
         animatedProps={animatedProps}
-        colors={[...presets[0]] as unknown as string[]}
+        colors={[...presets[0]] as [string, string, string]}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 0 }}
       >

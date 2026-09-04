@@ -22,7 +22,8 @@ interface InputProps {
   secureTextEntry?: boolean;
   keyboardType?: 'default' | 'email-address' | 'numeric' | 'phone-pad';
   autoCapitalize?: 'none' | 'sentences' | 'words' | 'characters';
-  autoComplete?: 'email' | 'password' | 'username' | 'off';
+  autoComplete?: 'email' | 'password' | 'password-new' | 'username' | 'off';
+  autoCorrect?: boolean;
   editable?: boolean;
   multiline?: boolean;
   numberOfLines?: number;
@@ -44,6 +45,7 @@ export function Input({
   keyboardType = 'default',
   autoCapitalize = 'none',
   autoComplete = 'off',
+  autoCorrect = true,
   editable = true,
   multiline = false,
   numberOfLines = 1,
@@ -96,6 +98,7 @@ export function Input({
           keyboardType={keyboardType}
           autoCapitalize={autoCapitalize}
           autoComplete={autoComplete}
+          autoCorrect={autoCorrect}
           editable={editable}
           multiline={multiline}
           numberOfLines={numberOfLines}

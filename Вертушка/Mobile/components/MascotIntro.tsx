@@ -166,7 +166,7 @@ function IntroVideo({
           style={styles.video}
           contentFit="contain"
           nativeControls={false}
-          allowsFullscreen={false}
+          fullscreenOptions={{ enable: false }}
           allowsPictureInPicture={false}
         />
       )}

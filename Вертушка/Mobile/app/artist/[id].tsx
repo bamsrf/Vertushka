@@ -309,8 +309,9 @@ export default function ArtistDetailScreen() {
       return;
     }
     router.push({
-      pathname: `/master/${master.master_id}`,
+      pathname: '/master/[id]',
       params: {
+        id: master.master_id,
         title: master.title,
         artist: master.artist,
         year: master.year?.toString() || '',

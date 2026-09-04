@@ -161,8 +161,9 @@ export default function VersionsScreen() {
     const hero = getHeroCoverUrl(version);
     if (hero) void Image.prefetch(hero, 'memory-disk').catch(() => {});
     router.push({
-      pathname: `/record/${version.release_id}`,
+      pathname: '/record/[id]',
       params: {
+        id: version.release_id,
         previewTitle: version.title || title || '',
         previewArtist: artist || '',
         // Мастер и превью — разными параметрами. Раньше здесь стоял

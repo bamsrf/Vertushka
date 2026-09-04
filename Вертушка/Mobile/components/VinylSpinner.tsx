@@ -356,7 +356,6 @@ export function VinylSpinner({ colorConfig, size = 220, labelName, onTap }: Viny
           <SvgText
             x={cx} y={cy - 12 * scale}
             textAnchor="middle"
-            dominantBaseline="middle"
             fontSize={8 * scale}
             fill="#B8BCDB"
             fontFamily="RubikMonoOne-Regular"
@@ -373,7 +372,6 @@ export function VinylSpinner({ colorConfig, size = 220, labelName, onTap }: Viny
           <SvgText
             x={cx} y={cy + 12 * scale}
             textAnchor="middle"
-            dominantBaseline="middle"
             fontSize={5 * scale}
             fill="#5C6080"
             fontFamily="Inter_500Medium"
