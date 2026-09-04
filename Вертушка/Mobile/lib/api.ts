@@ -1437,6 +1437,19 @@ class ApiClient {
     return response.data;
   }
 
+  async getPublicCollection(
+    username: string,
+    page = 1,
+    perPage = 200
+  ): Promise<PublicProfileRecord[]> {
+    // Хвост коллекций свыше инлайновых 200 из PublicProfileResponse.
+    const response = await this.client.get<PublicProfileRecord[]>(
+      `/profile/public/${username}/collection`,
+      { params: { page, per_page: perPage } }
+    );
+    return response.data;
+  }
+
   async getNewReleases(limit = 12): Promise<PublicProfileRecord[]> {
     const response = await this.client.get<PublicProfileRecord[]>(
       `/profile/public/new-releases`,

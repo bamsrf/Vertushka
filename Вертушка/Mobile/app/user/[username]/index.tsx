@@ -148,6 +148,9 @@ function useAnimatedCount(target: number): string {
   return display;
 }
 
+/** Размер страницы дозагрузки коллекции — совпадает с инлайновым кэпом бэкенда. */
+const PROFILE_COLLECTION_PAGE = 200;
+
 /**
  * Адаптер: `PublicProfileRecord` → CollectionItem-shape для RecordGrid.
  * Карточка использует только поля из record (year/title/artist/cover/rarity flags) —
@@ -271,6 +274,13 @@ export default function UserProfileScreen() {
   // Папки чужого юзера — публичный список через api.getUserCollection
   const [folders, setFolders] = useState<Collection[]>([]);
 
+  // Хвост коллекции свыше инлайновых 200 из PublicProfileResponse — дозагрузка
+  // страницами по мере скролла через /profile/public/{username}/collection.
+  const [extraCollection, setExtraCollection] = useState<PublicProfileRecord[]>([]);
+  const [collHasMore, setCollHasMore] = useState(false);
+  const collPageRef = useRef(1);
+  const isLoadingMoreColl = useRef(false);
+
   const isOwn = currentUser?.username === username;
 
   const load = useCallback(async () => {
@@ -321,6 +331,12 @@ export default function UserProfileScreen() {
               }
             : null),
       );
+      // Инлайновая порция обрезана бэкендом на 200 — если пришло ровно столько,
+      // дальше есть хвост для страничной дозагрузки.
+      setExtraCollection([]);
+      collPageRef.current = 1;
+      setCollHasMore((pub?.collection?.length ?? 0) >= PROFILE_COLLECTION_PAGE);
+
       if (userMeta) {
         setProfileUserId(userMeta.id);
         setFollowing(userMeta.is_following);
@@ -637,7 +653,37 @@ export default function UserProfileScreen() {
 
   const wishlistItems = wishlist?.items || [];
 
-  const baseCollection: PublicProfileRecord[] = pubProfile?.collection ?? [];
+  // Инлайновая порция + дозагруженный хвост; дедуп по id — копия из папки
+  // может продублировать запись на границе страниц.
+  const baseCollection: PublicProfileRecord[] = useMemo(() => {
+    const inline = pubProfile?.collection ?? [];
+    if (extraCollection.length === 0) return inline;
+    const seen = new Set(inline.map((r) => r.id));
+    const out = [...inline];
+    for (const r of extraCollection) {
+      if (!seen.has(r.id)) {
+        seen.add(r.id);
+        out.push(r);
+      }
+    }
+    return out;
+  }, [pubProfile, extraCollection]);
+
+  const handleLoadMoreCollection = useCallback(async () => {
+    if (!username || !collHasMore || isLoadingMoreColl.current) return;
+    isLoadingMoreColl.current = true;
+    try {
+      const nextPage = collPageRef.current + 1;
+      const items = await api.getPublicCollection(username, nextPage, PROFILE_COLLECTION_PAGE);
+      collPageRef.current = nextPage;
+      setExtraCollection((prev) => [...prev, ...items]);
+      setCollHasMore(items.length === PROFILE_COLLECTION_PAGE);
+    } catch {
+      // Тихо: следующий onEndReached попробует снова.
+    } finally {
+      isLoadingMoreColl.current = false;
+    }
+  }, [username, collHasMore]);
   // Прокидываем added_at у элемента вишлиста в record, чтобы сортировка работала единообразно
   const baseWishlist: PublicProfileRecord[] = wishlistItems.map((it) => ({
     ...it.record,
@@ -683,6 +729,14 @@ export default function UserProfileScreen() {
     () => applySort(applyFilter(activeTab === 'collection' ? baseCollection : baseWishlist)),
     [applyFilter, applySort, activeTab, baseCollection, baseWishlist]
   );
+
+  // Счётчик в тулбаре: без фильтра — общий размер коллекции из профиля (сетка
+  // страничная, length врал бы «200» на больших коллекциях); с фильтром —
+  // честное число отфильтрованных из загруженного.
+  const toolbarCount =
+    activeTab === 'collection' && formatFilter === 'all'
+      ? Math.max(pubProfile?.collection_count ?? 0, gridData.length)
+      : gridData.length;
 
   // ---- dropdown menu toggles (filter / sort) — два эксклюзивных меню
   const animateMenu = useCallback((anim: Animated.Value, open: boolean) => {
@@ -998,7 +1052,7 @@ export default function UserProfileScreen() {
           </TouchableOpacity>
 
           <Text style={styles.toolbarCount} numberOfLines={1}>
-            {gridData.length} {pluralRu(gridData.length, ['пластинка', 'пластинки', 'пластинок'])}
+            {toolbarCount} {pluralRu(toolbarCount, ['пластинка', 'пластинки', 'пластинок'])}
           </Text>
           <ViewToggle value={viewMode} onChange={setViewMode} />
         </View>
@@ -1116,6 +1170,7 @@ export default function UserProfileScreen() {
             onRecordPress={(it) =>
               handleCardPress((it.record as unknown) as PublicProfileRecord)
             }
+            onEndReached={activeTab === 'collection' ? handleLoadMoreCollection : undefined}
             isRefreshing={isRefreshing}
             onRefresh={handleRefresh}
             rarityContext={isWishlistTab ? 'wishlist' : 'collection'}
