@@ -975,6 +975,45 @@ class DiscogsService:
             page += 1
         return out
 
+    async def get_wantlist_releases(
+        self,
+        username: str,
+        creds: "tuple[str, str]",
+        *,
+        max_items: int = 3000,
+    ) -> list[dict]:
+        """Все релизы из вишлиста (wantlist) юзера — те же basic_information
+        dict'ы, что у get_collection_releases. Идёт под токеном юзера.
+
+        max_items — та же защита от гигантских списков, что у коллекции.
+        """
+        per_page = 100
+        page = 1
+        out: list[dict] = []
+        while True:
+            # BATCH по той же причине, что у коллекции: фоновая задача не
+            # должна занимать слоты интерактивного семафора на минуты.
+            data = await self._get(
+                f"{self.BASE_URL}/users/{username}/wants",
+                params={"per_page": per_page, "page": page},
+                priority=Priority.BATCH,
+                creds=creds,
+            )
+            wants = data.get("wants", [])
+            for entry in wants:
+                basic = entry.get("basic_information")
+                if basic:
+                    out.append(basic)
+                if len(out) >= max_items:
+                    return out
+
+            pagination = data.get("pagination", {})
+            total_pages = pagination.get("pages", page)
+            if page >= total_pages or not wants:
+                break
+            page += 1
+        return out
+
     # ------------------------------------------------------------------
     # Мастер-релизы (кэшируются на 7 дней)
     # ------------------------------------------------------------------

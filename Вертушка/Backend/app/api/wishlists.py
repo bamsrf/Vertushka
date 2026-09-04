@@ -1468,3 +1468,222 @@ async def remove_item_from_wishlist_folder(
     if item_in_folder is not None:
         folder.items.remove(item_in_folder)
         await db.commit()
+
+
+# ==================== Импорт вишлиста из Discogs ====================
+
+# Статус фонового импорта wantlist'а, по user_id. In-memory сознательно — та же
+# логика, что у _discogs_imports в collections.py: задача живёт в этом же
+# процессе (прод = 1 uvicorn-воркер), падение процесса убивает и задачу, и
+# статус. Финальные статусы вычищаются по TTL при обращении к status-ручке.
+_discogs_wishlist_imports: dict[UUID, dict] = {}
+
+
+@router.post("/import/discogs", status_code=status.HTTP_202_ACCEPTED)
+async def import_discogs_wishlist(
+    current_user: User = Depends(get_current_user),
+):
+    """One-time импорт wantlist'а из Discogs в вишлист юзера — фоном.
+
+    Зеркалит импорт коллекции (collections.py): 202 сразу, прогресс — из
+    /wishlists/import/discogs/status. Дедуп по discogs_id; пластинки, уже
+    лежащие в коллекции юзера, пропускаются — как и при ручном добавлении
+    (там это 400 «уже в коллекции», здесь молчаливый skip со счётчиком).
+    """
+    from app.api.collections import _spawn_bg
+    from app.services.discogs_oauth import user_creds
+
+    creds = user_creds(current_user)
+    if not creds or not current_user.discogs_username:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Сначала подключите Discogs в настройках",
+        )
+
+    state = _discogs_wishlist_imports.get(current_user.id)
+    if state and state["status"] == "running":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Импорт вишлиста уже идёт — дождитесь завершения",
+        )
+
+    _discogs_wishlist_imports[current_user.id] = {
+        "status": "running",
+        "imported": 0,
+        "skipped": 0,
+        "total": 0,
+        "error": None,
+        "finished_at": None,
+    }
+    _spawn_bg(_import_discogs_wishlist_background(
+        current_user.id, current_user.discogs_username, creds,
+        current_user.username,
+    ))
+    return {"status": "started", "imported": 0, "skipped": 0, "total": 0}
+
+
+@router.get("/import/discogs/status")
+async def import_discogs_wishlist_status(
+    current_user: User = Depends(get_current_user),
+):
+    """Прогресс фонового импорта вишлиста — для поллинга из мобилки.
+
+    Плоский контракт (без вложенного `import`): в отличие от коллекции, у
+    вишлиста нет спутника-дозагрузки цен, статус здесь один.
+    """
+    import time as _time
+
+    now = _time.monotonic()
+    from app.api.collections import _IMPORT_STATUS_TTL
+
+    for uid in [
+        uid for uid, s in _discogs_wishlist_imports.items()
+        if s.get("finished_at") is not None
+        and now - s["finished_at"] > _IMPORT_STATUS_TTL
+    ]:
+        _discogs_wishlist_imports.pop(uid, None)
+
+    state = _discogs_wishlist_imports.get(current_user.id)
+    if state is None:
+        return {
+            "status": "idle", "imported": 0, "skipped": 0, "total": 0,
+            "error": None,
+        }
+    return {
+        k: state[k] for k in ("status", "imported", "skipped", "total", "error")
+    }
+
+
+async def _import_discogs_wishlist_background(
+    user_id: UUID, discogs_username: str, creds: tuple[str, str],
+    username: str | None,
+) -> None:
+    """Фоновое тело импорта вишлиста. Сеть — ДО открытия сессии БД, как и в
+    импорте коллекции: wantlist качается минутами под личным лимитом юзера."""
+    import logging
+    import time as _time
+
+    from app.database import async_session_maker
+    from app.services.discogs import DiscogsService
+
+    logger = logging.getLogger(__name__)
+    state = _discogs_wishlist_imports[user_id]
+    try:
+        discogs = DiscogsService()
+        releases = await discogs.get_wantlist_releases(discogs_username, creds)
+        state["total"] = len(releases)
+
+        async with async_session_maker() as db:
+            await _write_imported_wants(db, user_id, releases, state)
+
+            # Одно bulk-событие вместо события на каждый пункт — тот же приём,
+            # что у импорта коллекции: серии ачивок, слушающие только это
+            # событие, без него не пересчитались бы никогда.
+            if state["imported"]:
+                from app.services.achievements import emit_event
+                from app.services.achievements.events import WISHLIST_ITEM_ADDED
+
+                await emit_event(
+                    db, user_id, WISHLIST_ITEM_ADDED, {"bulk": True}
+                )
+            await db.commit()
+
+        # Новые пункты должны появиться на публичной странице сразу, а не по TTL.
+        await invalidate_profile_html_cache(username)
+
+        state["status"] = "done"
+        logger.info(
+            "discogs wishlist import done: user=%s imported=%d skipped=%d total=%d",
+            user_id, state["imported"], state["skipped"], state["total"],
+        )
+    except Exception:
+        logger.exception("discogs wishlist import failed for %s", user_id)
+        state["status"] = "failed"
+        state["error"] = "Не удалось импортировать вишлист. Попробуйте позже."
+    finally:
+        state["finished_at"] = _time.monotonic()
+
+
+async def _write_imported_wants(
+    db: AsyncSession, user_id: UUID, releases: list[dict], state: dict,
+) -> None:
+    """Записывает wantlist в вишлист юзера. Дедуп по discogs_id.
+
+    Резолв записей — чанками через общий _resolve_import_chunk (один SELECT на
+    чанк, гонки со вставкой обрабатываются там). Коммит почанково: прогресс в
+    `state` виден мобилке по ходу, транзакция не разрастается. Повторный запуск
+    безопасен — existing/owned-сеты отсекают уже добавленное.
+    """
+    from app.api.collections import _IMPORT_WRITE_CHUNK, _resolve_import_chunk
+    from app.models.collection import Collection, CollectionItem
+    from app.services.discogs_index import enrich_records_from_dump
+
+    wishlist = await db.scalar(
+        select(Wishlist).where(Wishlist.user_id == user_id)
+    )
+    if not wishlist:
+        wishlist = Wishlist(user_id=user_id)
+        db.add(wishlist)
+        await db.commit()
+    wishlist_id = wishlist.id
+
+    existing_result = await db.execute(
+        select(WishlistItem.record_id).where(
+            WishlistItem.wishlist_id == wishlist_id
+        )
+    )
+    existing_record_ids = set(existing_result.scalars().all())
+
+    # Уже в коллекции → в вишлист не добавляем: ручное добавление в этом случае
+    # отвечает 400, у импорта это ожидаемый skip (юзер купил и заволил в
+    # коллекцию, а из wantlist'а на Discogs удалить забыл).
+    owned_result = await db.execute(
+        select(CollectionItem.record_id)
+        .join(Collection, CollectionItem.collection_id == Collection.id)
+        .where(Collection.user_id == user_id)
+    )
+    owned_record_ids = set(owned_result.scalars().all())
+
+    basics_by_id: dict[str, dict] = {}
+    for basic in releases:
+        discogs_id = str(basic.get("id"))
+        if discogs_id and discogs_id != "None" and discogs_id not in basics_by_id:
+            basics_by_id[discogs_id] = basic
+
+    all_ids = list(basics_by_id.keys())
+    created_discogs_ids: list[str] = []
+
+    for start in range(0, len(all_ids), _IMPORT_WRITE_CHUNK):
+        chunk_ids = all_ids[start:start + _IMPORT_WRITE_CHUNK]
+        records_by_did, chunk_created = await _resolve_import_chunk(
+            db, chunk_ids, basics_by_id
+        )
+        created_discogs_ids.extend(chunk_created)
+
+        for did in chunk_ids:
+            record = records_by_did.get(did)
+            if record is None:
+                continue
+            if record.id in existing_record_ids or record.id in owned_record_ids:
+                state["skipped"] += 1
+                continue
+            db.add(WishlistItem(
+                wishlist_id=wishlist_id,
+                record_id=record.id,
+            ))
+            existing_record_ids.add(record.id)
+            state["imported"] += 1
+
+        await db.commit()
+
+    # Достройка «тонких» записей из локального дампа — country/year/label/
+    # master_id нужны Радару и ачивкам так же, как записям коллекции.
+    if created_discogs_ids:
+        enriched = await enrich_records_from_dump(db, created_discogs_ids)
+        if enriched:
+            import logging
+            logging.getLogger(__name__).info(
+                "discogs wishlist import: enriched %d/%d new records from dump",
+                enriched, len(created_discogs_ids),
+            )
+        await db.commit()
