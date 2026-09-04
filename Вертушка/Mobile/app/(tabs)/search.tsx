@@ -351,6 +351,11 @@ export default function SearchScreen() {
   // ?focus=market — auto-commit (slide-up без жеста).
   useEffect(() => {
     if (focus !== 'market') return;
+    // initialCommitted, вопреки имени, перечитывается из стора на каждом
+    // рендере — то есть здесь это «юзер уже в Маркете». Если да, показ витрины
+    // уже посчитан (search_restored или предыдущий commit), и второе событие
+    // на тот же показ раздуло бы знаменатель воронки.
+    if (!initialCommitted) analytics.viewMarket('search_focus_param');
     setCommitted(true);
     committedAnim.value = withSpring(1, {
       damping: 22, stiffness: 200, mass: 0.7, overshootClamping: true,
@@ -360,6 +365,18 @@ export default function SearchScreen() {
   useEffect(() => {
     setMarketCommitted(committed);
   }, [committed, setMarketCommitted]);
+
+  // Таб смонтировался с уже поднятым слоем — юзер уходил из Маркета на другой
+  // таб и вернулся. Занавес при этом не играет, triggerCommit не зовётся, но
+  // витрина на экране, и для воронки это такой же показ.
+  useEffect(() => {
+    if (initialCommitted) analytics.viewMarket('search_restored');
+    // Пустые deps здесь не «потому что так короче»: нужно значение именно
+    // первого рендера. Сама переменная живая — она перечитывается из стора
+    // каждый рендер, и эффект с зависимостью от неё слал бы событие ещё и на
+    // каждый commit занавеса, дублируя search_curtain.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // ─── Haptic ramp ────────────────────────────────────────────────────
   const fireTick = useCallback(() => {
@@ -392,6 +409,10 @@ export default function SearchScreen() {
   const triggerCommit = useCallback(() => {
     if (committingRef.current) return;
     committingRef.current = true;
+    // Занавес доехал до порога — витрина показана. Событие живёт здесь, а не в
+    // mount'е MarketMain: слой смонтирован всегда, и там оно считало бы каждое
+    // открытие таба Поиска заходом в Маркет.
+    analytics.viewMarket('search_curtain');
     setCommitted(true);
     setTimeout(() => { committingRef.current = false; }, 500);
   }, []);
@@ -568,6 +589,7 @@ export default function SearchScreen() {
   const handleMarketShowAll = useCallback(() => {
     // «Смотреть все →» — тот же auto-slide что и при overdrag-commit'е.
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+    analytics.viewMarket('search_show_all');
     setCommitted(true);
     committedAnim.value = withSpring(1, {
       damping: 22, stiffness: 200, mass: 0.7, overshootClamping: true,

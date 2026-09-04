@@ -860,7 +860,14 @@ export default function RecordDetailScreen() {
               </TouchableOpacity>
             ) : null}
             <TouchableOpacity
-              onPress={() => router.push('/market')}
+              onPress={() => {
+                // Событие шлём здесь, а не на экране Маркета: /market
+                // открывается и через navigate с переиспользованием живого
+                // инстанса, который повторно не монтируется. `from` в роуте —
+                // чтобы экран не посчитал этот заход вторым разом как deeplink.
+                analytics.viewMarket('record_chip');
+                router.push('/market?from=record_chip' as any);
+              }}
               hitSlop={8}
               activeOpacity={0.8}
               accessibilityRole="button"
@@ -1147,7 +1154,13 @@ export default function RecordDetailScreen() {
             meta={marketTip.meta}
             analyticsKey={marketTip.meta.key}
             onDismiss={marketTip.dismiss}
-            action={{ label: 'Открыть Маркет', onPress: () => router.push('/market') }}
+            action={{
+              label: 'Открыть Маркет',
+              onPress: () => {
+                analytics.viewMarket('record_coachmark');
+                router.push('/market?from=record_coachmark' as any);
+              },
+            }}
           />
         )}
 

@@ -9,7 +9,7 @@
  */
 import React, { useCallback, useEffect, useRef } from 'react';
 import { StyleSheet, View } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   runOnJS,
@@ -25,6 +25,7 @@ import { MarketPalette } from '../../constants/theme';
 import MarketBackground from '../../components/market/MarketBackground';
 import MarketMain from '../../components/market/MarketMain';
 import { useMarketStore } from '../../lib/marketStore';
+import { analytics } from '../../lib/analytics';
 
 const EXIT_COMMIT_DISTANCE = 110;
 
@@ -37,6 +38,18 @@ export default function MarketIndexScreen() {
     setMarketCommitted(true);
     return () => setMarketCommitted(false);
   }, [setMarketCommitted]);
+
+  // Точка входа приезжает в `from` — но само событие шлёт тот, кто нажал (см.
+  // MarketEntry в lib/analytics.ts). Здесь ловим только заход, который никто
+  // не объявил: диплинк, пуш, ручной ввод роута. Без этой ветки такие сессии
+  // выпадали бы из воронки целиком.
+  const { from } = useLocalSearchParams<{ from?: string }>();
+  useEffect(() => {
+    if (!from) analytics.viewMarket('deeplink');
+    // Mount-only. Экран живёт с тем `from`, с которым открылся, а повторный
+    // прогон эффекта дал бы второе событие на тот же самый заход.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const exitProgress = useSharedValue(0);
   const dragging = useSharedValue(0);

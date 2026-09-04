@@ -6,6 +6,32 @@
 
 import type { ClickSource } from './types';
 
+/**
+ * Точка входа в Маркет. Живёт здесь, а не в types.ts рядом с [ClickSource]:
+ * значение уходит только в аналитику и на бэкенд не едет, поэтому
+ * синхронизировать его со списком на сервере не нужно.
+ *
+ *   search_curtain     — overdrag-занавес внизу Поиска
+ *   search_show_all    — «Смотреть все →» в маркет-рейле Поиска
+ *   search_focus_param — навигация на Поиск с ?focus=market
+ *   search_restored    — таб Поиска смонтировался, когда юзер уже был в Маркете
+ *   record_chip        — чип «В Маркет» в шапке карточки пластинки
+ *   record_offers_cta  — плашка «В МАРКЕТЕ» под блоком «Купить сейчас»
+ *   record_coachmark   — действие контекстной подсказки на карточке
+ *   profile_banner     — баннер Маркета в профиле
+ *   deeplink           — /market открыт без объявленной точки входа
+ */
+export type MarketEntry =
+  | 'search_curtain'
+  | 'search_show_all'
+  | 'search_focus_param'
+  | 'search_restored'
+  | 'record_chip'
+  | 'record_offers_cta'
+  | 'record_coachmark'
+  | 'profile_banner'
+  | 'deeplink';
+
 type AnalyticsProvider = {
   track: (event: string, properties?: Record<string, unknown>) => void;
   identify: (userId: string, properties?: Record<string, unknown>) => void;
@@ -253,8 +279,21 @@ export const analytics = {
   }) => track('offer_click', params),
 
   // --- Market (воронка до перехода в магазин) ---
-  /** Открыли витрину Маркета. Знаменатель для market_record_open. */
-  viewMarket: () => track('view_market'),
+  /**
+   * Витрина Маркета показана — первый шаг воронки
+   * view_market → market_search → market_record_open → offer_click.
+   *
+   * `entry` обязателен. Раньше событие уходило из mount'а MarketMain, а слой
+   * Маркета в Поиске смонтирован ВСЕГДА — даже когда занавес никто не тянул.
+   * Число считало «открыли таб Поиск», разбить его по точкам входа было нечем,
+   * и вопрос «сколько заходов даёт чип с карточки» ответа не имел вовсе.
+   *
+   * Шлётся из точки входа (тап или commit занавеса), а не из mount'а экрана:
+   * `/market` открывается ещё и через `navigate`, который переиспользует живой
+   * инстанс и повторно не монтируется. Заход без объявленной точки входа
+   * (диплинк, пуш) ловит сам экран и шлёт `deeplink`.
+   */
+  viewMarket: (entry: MarketEntry) => track('view_market', { entry }),
   /** Открыли страницу конкретного магазина из Маркета. */
   viewMarketStore: (storeSlug: string) => track('view_market_store', { store_slug: storeSlug }),
   /**
@@ -266,6 +305,24 @@ export const analytics = {
    */
   marketRecordOpen: (params: { record_ref: string; from: 'market' | 'market_store' }) =>
     track('market_record_open', params),
+
+  /**
+   * Поиск или фильтр внутри Маркета — шаг между «зашёл» и «открыл карточку».
+   * Без него человек, который поискал и ничего не нашёл, в воронке неотличим
+   * от того, кто ушёл с витрины сразу.
+   *
+   * Шлём ПОСЛЕ ответа, а не по вводу: смысл события в `results_count`. Ноль
+   * отвечает, не упирается ли Маркет в пустую выдачу — поиск матчит
+   * `artist ILIKE %q% OR title ILIKE %q%`, поэтому строка вида
+   * «исполнитель — альбом» не находит ничего в принципе.
+   *
+   * Сам запрос не шлём, только длину — как и в [search].
+   */
+  marketSearch: (params: {
+    query_length: number;
+    has_filters: boolean;
+    results_count: number;
+  }) => track('market_search', params),
 
   // --- Онбординг ---
   /**

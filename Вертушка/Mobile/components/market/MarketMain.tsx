@@ -170,13 +170,12 @@ export function MarketMain({ onScroll, scrollEnabled = true, paddingTop, pullFra
   const [facets, setFacets] = useState<MarketFacetsResponse | null>(null);
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Знаменатель воронки Маркета: без него market_record_open и offer_click не с
-  // чем сравнивать. Mount-only — компонент живёт и в /market, и слоем в Поиске,
-  // так что это «Маркет показан», а не «переход по роуту».
-  useEffect(() => {
-    analytics.viewMarket();
-  }, []);
-
+  // view_market отсюда НЕ шлётся, хотя место напрашивается. Слой Маркета в
+  // (tabs)/search смонтирован всегда — он просто уведён за нижний край экрана
+  // и ждёт занавеса. Событие на mount'е считало бы каждое открытие таба
+  // Поиска заходом в Маркет, а знаменатель воронки был бы завышен настолько,
+  // что market_record_open к нему не с чем сравнивать. Шлют точки входа —
+  // см. MarketEntry в lib/analytics.ts.
 
   useEffect(() => {
     if (searchTimer.current) clearTimeout(searchTimer.current);
@@ -290,6 +289,32 @@ export function MarketMain({ onScroll, scrollEnabled = true, paddingTop, pullFra
     resetKey: `${effectiveQuery}|${filtersKey}`,
     fetchPage: fetchSearchPage,
   });
+
+  // Шаг воронки между «зашёл в Маркет» и «открыл карточку». Ловим ПЕРЕХОД
+  // searchLoading true→false, а не просто «загрузка закончилась»: эффект
+  // useMarketPagination объявлен выше по коду и на рендере со сменой запроса
+  // ставит loading=true уже ПОСЛЕ того, как этот эффект прочитал старое false.
+  // Условие «не грузимся» пропустило бы тот кадр и отправило results_count
+  // прошлой выдачи — то есть почти всегда ноль, ровно ту цифру, ради которой
+  // событие и заводится.
+  //
+  // Догрузка страниц крутит loadingMore, а не loading, поэтому второго события
+  // на тот же поиск не будет. Быстрый доввод символов не даёт loading упасть
+  // между запросами — уезжает один поиск, финальный.
+  const prevSearchLoading = useRef(false);
+  useEffect(() => {
+    const wasLoading = prevSearchLoading.current;
+    prevSearchLoading.current = searchLoading;
+    if (!isSearchActive || searchLoading || !wasLoading) return;
+    analytics.marketSearch({
+      query_length: effectiveQuery.length,
+      has_filters: hasActiveFilters(filters),
+      results_count: searchItems.length,
+    });
+    // filters читаем через замыкание ради hasActiveFilters — в deps лежит его
+    // сериализованный filtersKey, объект filters новый на каждый рендер.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isSearchActive, searchLoading, effectiveQuery, filtersKey, searchItems.length]);
 
   const handleStorePress = useCallback((slug: string) => {
     analytics.viewMarketStore(slug);

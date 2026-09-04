@@ -218,7 +218,10 @@ export function OffersBlock({
           navigate (не push): если /market уже в стеке (юзер пришёл оттуда) —
           возвращаемся к живому инстансу вместо монтирования нового. */}
       <Pressable
-        onPress={() => router.navigate('/market' as any)}
+        onPress={() => {
+          analytics.viewMarket('record_offers_cta');
+          router.navigate('/market?from=record_offers_cta' as any);
+        }}
         accessibilityRole="button"
         accessibilityLabel="Открыть Маркет"
         style={({ pressed }) => [styles.marketEntryWrap, pressed && { opacity: 0.85 }]}

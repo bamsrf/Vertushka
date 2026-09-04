@@ -66,7 +66,17 @@ function normalizeFormat(raw: string | null | undefined): string {
 // Текст ошибки из ответа бэка — общий парсер `detail` живёт в lib/api.
 const errorText = apiErrorText;
 
-// Сжать фото с camera/library → base64 JPEG (≤1024px), как в режиме скана.
+/**
+ * Снимок или файл из галереи → квадратный base64 JPEG (≤1024px).
+ *
+ * allowsEditing обязателен. Без него из галереи брали исходник целиком: кадр
+ * с полкой, столом и половиной соседней пластинки уезжал в обложку как есть, а
+ * карточка потом обрезала его по центру — то есть кроп всё равно происходил,
+ * просто вслепую и не там, где нужно. Теперь рамку ставит человек.
+ *
+ * aspect работает на Android; на iOS нативный редактор и так квадратный.
+ * Контракт тот же, что у аватара в профиле (app/profile.tsx).
+ */
 async function pickPhotoBase64(fromCamera: boolean): Promise<{ uri: string; base64: string } | null> {
   const perm = fromCamera
     ? await ImagePicker.requestCameraPermissionsAsync()
@@ -77,12 +87,15 @@ async function pickPhotoBase64(fromCamera: boolean): Promise<{ uri: string; base
     });
     return null;
   }
-  const res = fromCamera
-    ? await ImagePicker.launchCameraAsync({ quality: 0.7 })
-    : await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        quality: 0.7,
-      });
+  const launch = fromCamera
+    ? ImagePicker.launchCameraAsync
+    : ImagePicker.launchImageLibraryAsync;
+  const res = await launch({
+    mediaTypes: ['images'],
+    allowsEditing: true,
+    aspect: [1, 1],
+    quality: 0.7,
+  });
   if (res.canceled || !res.assets?.[0]?.uri) return null;
   const manipulated = await ImageManipulator.manipulateAsync(
     res.assets[0].uri,

@@ -39,6 +39,7 @@ import { markProfileShared } from '../lib/onboardingProgress';
 import { CoachPulse } from '../components/onboarding/CoachPulse';
 import { useCoachSpotlight } from '../lib/coachSpotlight';
 import { toast } from '../lib/toast';
+import { analytics } from '../lib/analytics';
 import { Colors, Typography, Spacing, BorderRadius, Shadows } from '../constants/theme';
 import { AchievementsBlock } from '../components/AchievementsBlock';
 import { ArchetypeChip } from '../components/ArchetypeChip';
@@ -488,7 +489,12 @@ export default function ProfileScreen() {
             Маркет — это витрина, а не настройка. Тёмный market-градиент —
             единственный тёмный блок на светлом профиле, поэтому читается как
             «дверь в другой мир», а не как ещё одна строка меню. */}
-        <MarketEntryBanner onPress={() => router.push('/market')} />
+        <MarketEntryBanner
+          onPress={() => {
+            analytics.viewMarket('profile_banner');
+            router.push('/market?from=profile_banner' as any);
+          }}
+        />
 
         {/* Секция «Я дарю» */}
         {!giftsLoaded ? (

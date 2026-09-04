@@ -207,6 +207,16 @@ cd Mobile && npm run update:prod
 | `book_gift` | `record_id` | — |
 | `view_offers` | `discogs_id`, `count` | — |
 | `offer_click` | `listing_id`, `store_slug`, `price_rub`, `discogs_id` | — |
+| `view_market` | `entry` (`MarketEntry`) | точки входа, не `MarketMain` |
+| `market_search` | `query_length`, `has_filters`, `results_count` | `market/MarketMain.tsx` |
+| `market_record_open` | `record_ref`, `from` | `market/MarketMain.tsx`, `market/store/[slug].tsx` |
+| `view_market_store` | `store_slug` | `market/MarketMain.tsx` |
+
+`view_market` шлёт тот, кто нажал, а не экран Маркета: слой Маркета в
+`(tabs)/search` смонтирован всегда, а `/market` открывается ещё и через
+`navigate` с переиспользованием живого инстанса. Список входов — `MarketEntry`
+в [analytics.ts](../../../Mobile/lib/analytics.ts). Заход без объявленной точки
+входа (диплинк) ловит сам экран и шлёт `entry: 'deeplink'`.
 
 ## Воронки, которые должны работать с первого дня
 
