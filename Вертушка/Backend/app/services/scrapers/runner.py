@@ -8,11 +8,11 @@ from __future__ import annotations
 
 import logging
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import Literal
 
-from sqlalchemy import func, select, update
+from sqlalchemy import case, func, select, tuple_, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -47,6 +47,12 @@ _REFRESH_MAX_CONSECUTIVE_ERRORS = 10
 # То же для полного обхода. Битая сессия сама не чинится, а каталог большой:
 # без отсечки один сбой превращается в тысячи одинаковых трейсбеков.
 _CRAWL_MAX_CONSECUTIVE_ERRORS = 20
+
+# WS7 2.1: суточный «пульс» last_seen_at для неизменившихся листингов.
+# 20 ч (а не 12): дневной прогон в 14:00 идёт через ~12 ч после ночного и
+# при меньшем пороге бампал бы весь маркет второй раз в сутки впустую.
+# Grace retire — 25 ч, одна отметка в сутки его покрывает.
+_SEEN_BUMP_HOURS = 20
 
 
 async def crawl_store(slug: str, *, mode: CrawlMode = "full", limit: int | None = None) -> dict:
@@ -338,6 +344,32 @@ async def _upsert_listing(db, store_id, dto: ListingDTO) -> bool:
     old_seen = select(prev.c.last_seen_at).scalar_subquery()
 
     stmt = pg_insert(StoreListing).values(**payload)
+
+    # WS7 2.1 — условный upsert. Раньше DO UPDATE безусловно переписывал все
+    # ~66k строк за обход (и второй раз днём), хотя реально менялись единицы
+    # процентов: WAL, автовакуум, а окна уведомлений и инвалидации офферов
+    # «вбирали весь маркет» (замер 04.09). Теперь строка обновляется только
+    # если (а) изменилось содержимое, либо (б) last_seen_at старше 20 ч —
+    # суточный «пульс» для daily_retire_vanished_listings (его grace 25 ч
+    # одну отметку в сутки покрывает; при упавшем обходе не двигается и
+    # last_successful — якорь retire, так что окно не расходится).
+    _content_now = tuple_(
+        StoreListing.url, StoreListing.title_raw, StoreListing.artist_raw,
+        StoreListing.year_raw, StoreListing.format_raw,
+        StoreListing.vinyl_color_raw, StoreListing.condition,
+        StoreListing.price_rub, StoreListing.price_currency,
+        StoreListing.status, StoreListing.raw_payload,
+    )
+    _content_new = tuple_(
+        stmt.excluded.url, stmt.excluded.title_raw, stmt.excluded.artist_raw,
+        stmt.excluded.year_raw, stmt.excluded.format_raw,
+        stmt.excluded.vinyl_color_raw, stmt.excluded.condition,
+        stmt.excluded.price_rub, stmt.excluded.price_currency,
+        stmt.excluded.status, stmt.excluded.raw_payload,
+    )
+    content_changed = _content_now.op("IS DISTINCT FROM")(_content_new)
+    seen_stale = StoreListing.last_seen_at < now - timedelta(hours=_SEEN_BUMP_HOURS)
+
     stmt = stmt.on_conflict_do_update(
         index_elements=["store_id", "external_id"],
         set_={
@@ -353,8 +385,11 @@ async def _upsert_listing(db, store_id, dto: ListingDTO) -> bool:
             "status": stmt.excluded.status,
             "last_seen_at": stmt.excluded.last_seen_at,
             "raw_payload": stmt.excluded.raw_payload,
-            "updated_at": now,
+            # updated_at — сигнал «содержимое изменилось» (его читают окна
+            # уведомлений). Суточный пульс last_seen_at его НЕ трогает.
+            "updated_at": case((content_changed, now), else_=StoreListing.updated_at),
         },
+        where=content_changed | seen_stale,
     )
     stmt = stmt.add_cte(prev).returning(
         StoreListing.id,
@@ -365,7 +400,11 @@ async def _upsert_listing(db, store_id, dto: ListingDTO) -> bool:
         old_status.label("old_status"),
         old_seen.label("old_seen"),
     )
-    row = (await db.execute(stmt)).one()
+    # WHERE не сработал (содержимое совпало, пульс свежий) → RETURNING пуст:
+    # строка не переписывалась, это и есть «skipped» в счётчиках обхода.
+    row = (await db.execute(stmt)).one_or_none()
+    if row is None:
+        return False
 
     # old_* = None → строки раньше не было (первый показ листинга).
     price_changed = row.old_price != row.price_rub

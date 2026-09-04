@@ -444,7 +444,12 @@ async def invalidate_offers_for_recently_updated(window_minutes: int = 60) -> di
         res = await db.execute(
             select(Record.discogs_id)
             .join(StoreListing, StoreListing.matched_record_id == Record.id)
-            .where(StoreListing.last_seen_at >= since)
+            # WS7 2.1: окно по updated_at, а не last_seen_at — кэш офферов
+            # показывает цену/статус, сбрасывать его надо при их изменении.
+            # updated_at теперь бампается ТОЛЬКО при изменении содержимого
+            # (условный upsert в runner), суточный пульс last_seen сюда
+            # больше не попадает — окно перестало «вбирать весь маркет».
+            .where(StoreListing.updated_at >= since)
             .where(Record.discogs_id.is_not(None))
             .distinct()
         )
