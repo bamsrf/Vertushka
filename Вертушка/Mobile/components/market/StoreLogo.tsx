@@ -83,6 +83,12 @@ const STORE_REGISTRY: Record<string, {
     bgColor: '#FFFFFF',
     logoSource: require('../../assets/store-logos/rotaryrecords.png'),
   },
+  kultura: {
+    name: 'Kultura Record Store',
+    monogram: 'K',
+    bgColor: '#F2F0EB',
+    logoSource: require('../../assets/store-logos/kultura.png'),
+  },
   vinylhouse: {
     name: 'Дом Винила',
     monogram: 'Д',
