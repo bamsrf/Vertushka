@@ -444,12 +444,19 @@ async def invalidate_offers_for_recently_updated(window_minutes: int = 60) -> di
         res = await db.execute(
             select(Record.discogs_id)
             .join(StoreListing, StoreListing.matched_record_id == Record.id)
-            .where(StoreListing.last_seen_at >= since)
+            # WS7 2.1: окно по updated_at, а не last_seen_at — кэш офферов
+            # показывает цену/статус, сбрасывать его надо при их изменении.
+            # updated_at теперь бампается ТОЛЬКО при изменении содержимого
+            # (условный upsert в runner), суточный пульс last_seen сюда
+            # больше не попадает — окно перестало «вбирать весь маркет».
+            .where(StoreListing.updated_at >= since)
             .where(Record.discogs_id.is_not(None))
             .distinct()
         )
         ids = [r[0] for r in res.fetchall() if r[0]]
 
-    for did in ids:
-        await invalidate_record_offers(did)
-    return {"invalidated": len(ids)}
+    # WS7 2.2: одним pipeline (INCR-версии) вместо цикла по-одному —
+    # старый цикл делал полный Redis SCAN на КАЖДУЮ запись.
+    from app.api.offers import invalidate_records_offers_bulk
+    done = await invalidate_records_offers_bulk(ids)
+    return {"invalidated": done}

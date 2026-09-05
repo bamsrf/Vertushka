@@ -1,6 +1,8 @@
 """
 Настройка подключения к базе данных
 """
+import os
+
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy.orm import declarative_base
@@ -16,11 +18,12 @@ engine = create_async_engine(
     future=True,
     pool_pre_ping=True,
     # Прод = ОДИН uvicorn-воркер (CLIP живёт в том же процессе) + отдельный
-    # scheduler-контейнер на тех же настройках: 2 × (10+20) = 60 макс — в
-    # рамках max_connections=100. Старый комментарий «× 4 воркера» врал:
-    # воркер один, и 5+10 на процесс упирались в потолок при наплыве.
-    pool_size=10,
-    max_overflow=20,
+    # scheduler-контейнер: api живёт на дефолтных 10+20, scheduler капится
+    # через env (WS7 1.2: DB_POOL_SIZE=5 / DB_MAX_OVERFLOW=5 в compose) —
+    # иначе фон мог занять 30 из 60 max_connections и запускать столько же
+    # параллельных тяжёлых запросов внутри Postgres.
+    pool_size=int(os.getenv("DB_POOL_SIZE", "10")),
+    max_overflow=int(os.getenv("DB_MAX_OVERFLOW", "20")),
     # statement_timeout: ни один запрос не висит вечно, воркер не залипает
     # (инцидент 07-10: лок-вейт морозил корутины на часы → тотальный аут).
     # 30с с запасом покрывает любой user-запрос (замеры <1с). Только для

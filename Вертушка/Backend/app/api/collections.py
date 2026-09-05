@@ -1062,6 +1062,73 @@ async def _import_discogs_background(
         state["finished_at"] = time.monotonic()
 
 
+async def _resolve_import_chunk(
+    db: AsyncSession, chunk_ids: list[str], basics_by_id: dict[str, dict],
+) -> tuple[dict[str, "Record"], list[str]]:
+    """Резолвит чанк discogs_id в Record'ы: существующие — одним SELECT,
+    недостающие создаёт из basic_information. Общий для импорта коллекции и
+    вишлиста. Возвращает (map discogs_id→Record, созданные discogs_id).
+
+    В гоночной ветке коммитит/роллбэчит текущую транзакцию — вызывать только
+    на границе чанка, когда незакоммиченного прогресса нет.
+    """
+    created: list[str] = []
+
+    # Один SELECT на чанк вместо SELECT на релиз.
+    rec_result = await db.execute(
+        select(Record).where(Record.discogs_id.in_(chunk_ids))
+    )
+    records_by_did: dict[str, Record] = {
+        r.discogs_id: r for r in rec_result.scalars().all()
+    }
+
+    missing = [did for did in chunk_ids if did not in records_by_did]
+    new_records = {
+        did: _record_from_basic_information(basics_by_id[did])
+        for did in missing
+    }
+    for rec in new_records.values():
+        db.add(rec)
+    if new_records:
+        try:
+            await db.flush()
+            records_by_did.update(new_records)
+            created.extend(new_records.keys())
+        except IntegrityError:
+            # Гонка: параллельная вставка тех же discogs_id (drip-задачи,
+            # чужой импорт). Откатываем чанк и добираем штучно — путь
+            # редкий, скорость здесь не важна.
+            await db.rollback()
+            rec_result = await db.execute(
+                select(Record).where(Record.discogs_id.in_(chunk_ids))
+            )
+            records_by_did = {
+                r.discogs_id: r for r in rec_result.scalars().all()
+            }
+            for did in chunk_ids:
+                if did in records_by_did:
+                    continue
+                record = _record_from_basic_information(basics_by_id[did])
+                db.add(record)
+                try:
+                    # commit, а не flush: rollback у следующей строки не
+                    # должен утянуть за собой уже вставленные (flush без
+                    # commit'а откатился бы вместе с ними).
+                    await db.commit()
+                    records_by_did[did] = record
+                    created.append(did)
+                except IntegrityError:
+                    await db.rollback()
+                    rec_res = await db.execute(
+                        select(Record).where(Record.discogs_id == did)
+                    )
+                    existing = rec_res.scalar_one_or_none()
+                    if existing is not None:
+                        records_by_did[did] = existing
+
+    return records_by_did, created
+
+
 async def _write_imported_releases(
     db: AsyncSession, user_id: UUID, releases: list[dict], state: dict,
 ) -> None:
@@ -1117,58 +1184,10 @@ async def _write_imported_releases(
 
     for start in range(0, len(all_ids), _IMPORT_WRITE_CHUNK):
         chunk_ids = all_ids[start:start + _IMPORT_WRITE_CHUNK]
-
-        # Один SELECT на чанк вместо SELECT на релиз.
-        rec_result = await db.execute(
-            select(Record).where(Record.discogs_id.in_(chunk_ids))
+        records_by_did, chunk_created = await _resolve_import_chunk(
+            db, chunk_ids, basics_by_id
         )
-        records_by_did: dict[str, Record] = {
-            r.discogs_id: r for r in rec_result.scalars().all()
-        }
-
-        missing = [did for did in chunk_ids if did not in records_by_did]
-        new_records = {
-            did: _record_from_basic_information(basics_by_id[did])
-            for did in missing
-        }
-        for rec in new_records.values():
-            db.add(rec)
-        if new_records:
-            try:
-                await db.flush()
-                records_by_did.update(new_records)
-                created_discogs_ids.extend(new_records.keys())
-            except IntegrityError:
-                # Гонка: параллельная вставка тех же discogs_id (drip-задачи,
-                # чужой импорт). Откатываем чанк и добираем штучно — путь
-                # редкий, скорость здесь не важна.
-                await db.rollback()
-                rec_result = await db.execute(
-                    select(Record).where(Record.discogs_id.in_(chunk_ids))
-                )
-                records_by_did = {
-                    r.discogs_id: r for r in rec_result.scalars().all()
-                }
-                for did in chunk_ids:
-                    if did in records_by_did:
-                        continue
-                    record = _record_from_basic_information(basics_by_id[did])
-                    db.add(record)
-                    try:
-                        # commit, а не flush: rollback у следующей строки не
-                        # должен утянуть за собой уже вставленные (flush без
-                        # commit'а откатился бы вместе с ними).
-                        await db.commit()
-                        records_by_did[did] = record
-                        created_discogs_ids.append(did)
-                    except IntegrityError:
-                        await db.rollback()
-                        rec_res = await db.execute(
-                            select(Record).where(Record.discogs_id == did)
-                        )
-                        existing = rec_res.scalar_one_or_none()
-                        if existing is not None:
-                            records_by_did[did] = existing
+        created_discogs_ids.extend(chunk_created)
 
         for did in chunk_ids:
             record = records_by_did.get(did)

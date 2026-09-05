@@ -139,6 +139,10 @@ services:
     # Кап памяти: здесь крутятся краул-крон + (опц.) backfill@3. Runaway
     # прибьётся внутри контейнера, api и хост не затронуты.
     mem_limit: 600m
+    # WS7 1.1: фон уступает CPU api/db/nginx (у них дефолтные 1024) при
+    # конкуренции, а в тихие ночные часы по-прежнему забирает всё. Работает
+    # только при борьбе за CPU — ночную мощность не режет (в отличие от cpus:).
+    cpu_shares: 256
     labels:
       - autoheal=true
     env_file:
@@ -147,6 +151,11 @@ services:
       - DATABASE_URL=postgresql+asyncpg://${DB_USER}:${DB_PASSWORD}@db:5432/vertushka
       - REDIS_URL=redis://redis:6379/0
       - IS_SCHEDULER=true
+      # WS7 1.2: кап пула = кап параллелизма фона ВНУТРИ Postgres. Батчи
+      # матчера последовательны — 10 соединений фону хватает, а api
+      # гарантированно получает свои 30 из max_connections=60.
+      - DB_POOL_SIZE=5
+      - DB_MAX_OVERFLOW=5
     command: uvicorn app.main:app --host 0.0.0.0 --port 8001 --workers 1 --proxy-headers --forwarded-allow-ips '*'
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import httpx,sys; sys.exit(0 if httpx.get('http://localhost:8001/health',timeout=3).status_code==200 else 1)\""]

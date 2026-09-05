@@ -297,6 +297,10 @@ class Settings(BaseSettings):
     feature_market_enabled: bool = Field(default=True, alias="FEATURE_MARKET_ENABLED")
     feature_shop_scrapers_enabled: bool = Field(default=True, alias="FEATURE_SHOP_SCRAPERS_ENABLED")
     feature_user_submitted_enabled: bool = Field(default=True, alias="FEATURE_USER_SUBMITTED_ENABLED")
+    # Системное окно «оцените приложение». Рубильник нужен потому, что показов
+    # у Apple всего 3 в год на устройство и они невозвратные: если окно полезет
+    # не в тот момент, ждать релиза с фиксом — значит сжечь их у всех разом.
+    feature_review_prompt_enabled: bool = Field(default=True, alias="FEATURE_REVIEW_PROMPT_ENABLED")
 
     # ── Дневные квоты на дорогие операции ───────────────────────────────────
     # Распознавание обложки стоит денег за вызов. Per-user режет абьюзера,

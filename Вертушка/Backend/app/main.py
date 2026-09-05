@@ -294,7 +294,11 @@ async def lifespan(app: FastAPI):
                 scheduler.add_job(daily_incremental_crawl_browser, 'cron', hour=5, minute=30, id='scrape_incremental_browser')
                 scheduler.add_job(incremental_market_sync, 'cron', hour=14, minute=0, id='scrape_incremental')
                 scheduler.add_job(stock_refresh_active, 'interval', hours=6, id='scrape_stock_refresh')
-                scheduler.add_job(hourly_match_unmatched, 'interval', minutes=60, id='scrape_match_unmatched')
+                # WS7 1.3: interval-джобы стартуют с фазой запуска контейнера —
+                # часовой матчер (до 42 мин работы) попадал в случайные окна.
+                # Cron с явной минутой делает фазу предсказуемой: матчер в :05,
+                # обложки в :20, тамбы в :40 — пики не складываются.
+                scheduler.add_job(hourly_match_unmatched, 'cron', minute=5, id='scrape_match_unmatched')
                 scheduler.add_job(weekly_cleanup_stale, 'cron', day_of_week='sun', hour=4, minute=0, id='scrape_cleanup_stale')
                 # Сразу после ночного обхода: снимаем с витрины то, чего больше нет
                 # в каталоге. Обход к 02:30 заканчивается с запасом (23 мин).
@@ -308,8 +312,8 @@ async def lifespan(app: FastAPI):
                 # rematch в 04:15 в неё не попадёт — он правит привязки, а не
                 # свежесть обхода, ради которой сводку и читают.
                 scheduler.add_job(daily_market_health_report, 'cron', hour=4, minute=0, id='market_health_report')
-                scheduler.add_job(hourly_backfill_store_covers, 'interval', minutes=60, id='store_cover_backfill', max_instances=1, coalesce=True)
-                scheduler.add_job(hourly_enrich_artist_thumbs, 'interval', minutes=60, id='enrich_artist_thumbs')
+                scheduler.add_job(hourly_backfill_store_covers, 'cron', minute=20, id='store_cover_backfill', max_instances=1, coalesce=True)
+                scheduler.add_job(hourly_enrich_artist_thumbs, 'cron', minute=40, id='enrich_artist_thumbs')
                 logger.info("✅ Scraper jobs зарегистрированы (SCRAPERS_ENABLED=true)")
 
             scheduler.start()

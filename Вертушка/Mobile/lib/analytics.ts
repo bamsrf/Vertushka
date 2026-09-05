@@ -363,4 +363,20 @@ export const analytics = {
    * пошёл делать и не дошёл.
    */
   onboardingStepDone: (key: string) => track('onboarding_step_done', { key }),
+
+  // --- Оценка в сторе ---
+  /**
+   * Мы попросили систему показать окно оценки.
+   *
+   * Именно ПОПРОСИЛИ, а не «показали»: `SKStoreReviewController` не возвращает
+   * ни факта показа, ни поставленной звезды, и второго события тут быть не
+   * может в принципе. Апдейт считается косвенно — число попыток против
+   * прироста оценок в App Store Connect, а `trigger` разделяет моменты, из
+   * которых просили, чтобы было что с чем сравнивать. См. lib/reviewPrompt.ts.
+   */
+  ratePromptRequested: (params: {
+    trigger: string;
+    collection_size: number;
+    account_age_days: number;
+  }) => track('rate_prompt_requested', params),
 };

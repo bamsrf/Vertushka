@@ -27,6 +27,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuthStore, useCollectionStore, useFollowStore, useGiftStore, useProfileStore } from '../lib/store';
 import { useMessagesStore } from '../lib/messagesStore';
+import { useRemoteConfigStore } from '../lib/remoteConfig';
 import { ms } from '../lib/responsive';
 import { CollectionTab, GiftGivenItem } from '../lib/types';
 import { Button } from '../components/ui';
@@ -111,6 +112,17 @@ function FollowRequestsMenuItem({ onPress }: { onPress: () => void }) {
   );
 }
 
+/**
+ * Куда вести, если /api/config не доехал (fail-open, см. lib/remoteConfig.ts).
+ * Ровно тот адрес, что Apple отдаёт в trackViewUrl: с витриной и слагом —
+ * короткие формы доезжают редиректом не везде. Зеркало Backend/app/config.py.
+ */
+const APP_STORE_FALLBACK_URL =
+  'https://apps.apple.com/ru/app/' +
+  '%D0%B2%D0%B5%D1%80%D1%82%D1%83%D1%88%D0%BA%D0%B0-' +
+  '%D0%BA%D0%BE%D0%BB%D0%BB%D0%B5%D0%BA%D1%86%D0%B8%D1%8F-' +
+  '%D0%B2%D0%B8%D0%BD%D0%B8%D0%BB%D0%B0/id6774999020';
+
 export default function ProfileScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -121,6 +133,7 @@ export default function ProfileScreen() {
   const { collectionItems, wishlistItems, stats, setActiveTab, fetchCollectionItems, fetchWishlistItems, fetchStats } = useCollectionStore();
   const { followers, following, fetchFollowers, fetchFollowing } = useFollowStore();
   const { given: givenGifts, isLoaded: giftsLoaded, loadAll: loadGifts } = useGiftStore();
+  const storeUrl = useRemoteConfigStore((s) => s.config?.store_url);
 
   const handleClose = () => {
     router.back();
@@ -272,6 +285,22 @@ export default function ProfileScreen() {
   const handleOpenWishlistsTab = useCallback(() => {
     router.push('/settings/wishlists?tab=given' as any);
   }, [router]);
+
+  /**
+   * Ручной путь к оценке — для тех, кто захотел сам, и для тех, у кого лимит
+   * системного окна (3 показа в год) уже исчерпан.
+   *
+   * Открываем карточку в сторе, а НЕ `requestReview()`: по нажатию система
+   * вправе не показать ничего, и человек решит, что кнопка сломана. Адрес
+   * берём из /api/config — там он канонический, тот же, что у force-update;
+   * короткие формы Apple доводит редиректом, на котором ловили ошибку.
+   */
+  const handleRateApp = useCallback(() => {
+    const url = storeUrl || APP_STORE_FALLBACK_URL;
+    Linking.openURL(`${url}?action=write-review`).catch(() => {
+      toast.error('Не удалось открыть App Store');
+    });
+  }, [storeUrl]);
 
   const handleDeleteAccount = useCallback(async () => {
     try {
@@ -687,6 +716,11 @@ export default function ProfileScreen() {
           >
             <Icon name="map-outline" size={24} color={Colors.royalBlue} />
             <Text style={styles.settingsItemText}>Планы Вертушки</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.settingsItem} onPress={handleRateApp}>
+            <Icon name="star-outline" size={24} color={Colors.royalBlue} />
+            <Text style={styles.settingsItemText}>Оценить в App Store</Text>
           </TouchableOpacity>
 
           <TouchableOpacity

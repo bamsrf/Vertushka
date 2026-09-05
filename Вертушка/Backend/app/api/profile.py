@@ -5,7 +5,7 @@ import logging
 from datetime import datetime, timedelta
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select, func, or_, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -149,14 +149,23 @@ async def _get_top_expensive(user_id: UUID, db: AsyncSession, limit: int = 12) -
     return [_record_to_public(r) for r in records[:limit]]
 
 
-async def _get_full_collection(user_id: UUID, db: AsyncSession, limit: int = 200) -> list[PublicProfileRecord]:
-    """Полная коллекция пользователя с дедупом по record_id (по последнему added_at)."""
+async def _get_full_collection(
+    user_id: UUID, db: AsyncSession, limit: int = 200, offset: int = 0,
+) -> list[PublicProfileRecord]:
+    """Коллекция пользователя с дедупом по record_id (по последнему added_at).
+
+    offset — для страничной дозагрузки с мобилки: в профиль инлайном едет только
+    первая порция, хвост больших коллекций доезжает через
+    /public/{username}/collection. Дедуп работает в пределах страницы; копия из
+    папки может продублировать запись на границе страниц — клиент дедупит по id.
+    """
     result = await db.execute(
         select(CollectionItem)
         .join(Collection)
         .where(Collection.user_id == user_id)
         .options(selectinload(CollectionItem.record))
-        .order_by(CollectionItem.added_at.desc())
+        .order_by(CollectionItem.added_at.desc(), CollectionItem.id)
+        .offset(offset)
         .limit(limit)
     )
     items = result.scalars().all()
@@ -642,6 +651,35 @@ async def get_public_profile(
     )
 
     return await get_public_profile_payload(user, profile, db)
+
+
+@router.get("/public/{username}/collection", response_model=list[PublicProfileRecord])
+async def get_public_collection(
+    username: str,
+    page: int = Query(1, ge=1),
+    per_page: int = Query(100, ge=1, le=200),
+    db: AsyncSession = Depends(get_db),
+):
+    """Страничная дозагрузка публичной коллекции.
+
+    В PublicProfileResponse инлайном едет только первая порция (200): полная
+    коллекция на 2000+ пластинок раздувала бы каждый показ профиля на мегабайты.
+    Хвост мобилка добирает отсюда по мере скролла.
+    """
+    result = await db.execute(
+        select(User)
+        .where(User.username == username, User.is_active == True)
+        .options(selectinload(User.profile_share))
+    )
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="Пользователь не найден")
+    profile = user.profile_share
+    if not profile or not profile.is_active or not profile.show_collection:
+        raise HTTPException(status_code=404, detail="Коллекция не публикуется")
+    return await _get_full_collection(
+        user.id, db, limit=per_page, offset=(page - 1) * per_page
+    )
 
 
 @router.get("/public/{username}/top-expensive", response_model=list[PublicProfileRecord])
