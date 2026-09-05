@@ -23,3 +23,4 @@ from app.services.scrapers.shops import rotaryrecords  # noqa: F401
 from app.services.scrapers.shops import long_play  # noqa: F401
 from app.services.scrapers.shops import vinylhouse  # noqa: F401
 from app.services.scrapers.shops import kultura  # noqa: F401
+from app.services.scrapers.shops import vinylfamily  # noqa: F401
