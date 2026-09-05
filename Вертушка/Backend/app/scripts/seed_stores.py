@@ -169,6 +169,19 @@ STORES: list[dict] = [
         "avg_shipping_rub": Decimal("450.00"),
         "affiliate_program": None,
     },
+    {
+        "slug": "kultura",
+        "name": "Kultura Record Store",
+        "domain": "kulturarecordstore.ru",
+        "base_url": "https://kulturarecordstore.ru",
+        "parser_class": "kultura",
+        "logo_url": None,  # Mobile рендерит локальный assets/kultura.png по slug
+        "rating": Decimal("4.6"),  # Tilda store-API, ~4.3k, электроника/эксперимент/хип-хоп/джаз, есть катномера
+        "is_active": True,
+        "requires_browser": False,
+        "avg_shipping_rub": Decimal("400.00"),
+        "affiliate_program": None,
+    },
 ]
 
 
