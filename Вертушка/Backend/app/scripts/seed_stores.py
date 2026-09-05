@@ -182,6 +182,19 @@ STORES: list[dict] = [
         "avg_shipping_rub": Decimal("400.00"),
         "affiliate_program": None,
     },
+    {
+        "slug": "vinylfamily",
+        "name": "Vinyl Family",
+        "domain": "vinylfamily.shop",
+        "base_url": "https://vinylfamily.shop",
+        "parser_class": "vinylfamily",
+        "logo_url": None,  # Mobile рендерит локальный assets/vinylfamily.png по slug
+        "rating": Decimal("4.4"),  # Tilda store-API, ~1.4k, новьё метал/рок/электроника, катномер у 100%
+        "is_active": True,
+        "requires_browser": False,
+        "avg_shipping_rub": Decimal("400.00"),
+        "affiliate_program": None,
+    },
 ]
 
 
