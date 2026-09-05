@@ -492,9 +492,10 @@ async def _process_price_backfill_batch(
 ) -> tuple[int, int, int]:
     """Один батч задачи. Возвращает (обработано, с ценой, осталось).
 
-    Задача не закрывается, пока остались записи без цены: следующий прогон
-    шедулера возьмёт её снова. Это и есть механика «долгой» работы без долгого
-    HTTP-запроса.
+    Задача живёт батчами: незавершённая возвращается в pending, и следующий
+    минутный прогон шедулера продолжает её. Это и есть механика «долгой» работы
+    без долгого HTTP-запроса. Потолок — один полный проход по объёму задачи
+    (processed >= total): что не оценилось за проход, у Discogs цены не имеет.
     """
     from app.models.discogs_price_job import STATUS_DONE, DiscogsPriceJob
     from app.services.discogs import DiscogsService
@@ -590,12 +591,23 @@ async def _process_price_backfill_batch(
             job.updated += updated
             job.error = None
             job.heartbeat_at = datetime.utcnow()
-            # Пустой батч при ненулевом remaining означает, что оставшиеся
-            # записи Discogs ценой не снабжает (нет лотов). Крутить их вечно
-            # незачем — закрываем.
-            if remaining == 0 or processed == 0:
+            # Закрываем: всё оценено (remaining == 0), кандидатов не осталось
+            # (processed == 0) — либо сделан полный проход по объёму задачи
+            # (processed >= total). Последнее ловит вечный цикл: записи, для
+            # которых Discogs цену не отдаёт вообще (нет лотов, таймауты),
+            # остаются «без цены» навсегда, запрос выбирает их снова и снова —
+            # джоб крутился бесконечно с updated=0. Хвост без лотов доедет
+            # (или нет) ночным update_prices_batch.
+            if remaining == 0 or processed == 0 or job.processed >= job.total:
                 job.status = STATUS_DONE
                 job.finished_at = datetime.utcnow()
+            else:
+                # Обратно в pending: воркер берёт pending или running с
+                # протухшим (15 мин) heartbeat, и джоб, остававшийся в running,
+                # получал следующий батч раз в ~16 минут вместо минуты —
+                # «цены за минуты» из докстринга не работали.
+                from app.models.discogs_price_job import STATUS_PENDING
+                job.status = STATUS_PENDING
             await session.commit()
 
     return processed, updated, remaining
