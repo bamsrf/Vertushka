@@ -157,7 +157,7 @@ class VinylFamilyParser(TildaStoreParser):
             year_raw=year,
             format_raw=fmt_raw,
             vinyl_color_raw=infer_vinyl_color(
-                f"{fmt_tail} {text}", exclude=[artist, album]
+                f"{fmt_tail} {text}", exclude=[artist, album, label]
             ),
             condition="Новый (Mint)",
             price_rub=price,

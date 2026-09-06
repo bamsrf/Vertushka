@@ -124,8 +124,8 @@ class FoundParser(TildaStoreParser):
             year_raw=year or parse_year(full_text),
             format_raw=infer_format(full_text) or "LP",
             vinyl_color_raw=(
-                infer_vinyl_color(fmt_src, exclude=[artist, album])
-                or infer_vinyl_color(full_text, exclude=[artist, album])
+                infer_vinyl_color(fmt_src, exclude=[artist, album, label])
+                or infer_vinyl_color(full_text, exclude=[artist, album, label])
             ),
             condition="Новый (Mint)",
             price_rub=price,
