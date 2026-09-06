@@ -201,7 +201,7 @@ class KulturaParser(TildaStoreParser):
             artist_raw=artist,
             year_raw=year,
             format_raw=infer_format(f"{fmt_src} {full_text}") or "LP",
-            vinyl_color_raw=infer_vinyl_color(full_text, exclude=[artist, album]),
+            vinyl_color_raw=infer_vinyl_color(full_text, exclude=[artist, album, label]),
             condition="Новый (Mint)",
             price_rub=price,
             price_currency="RUB",

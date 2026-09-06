@@ -340,7 +340,10 @@ def _parse_card(card, base_url: str) -> ListingDTO | None:
         artist_raw=artist,
         year_raw=year,
         format_raw=infer_format(full_text) or "LP",
-        vinyl_color_raw=infer_vinyl_color(full_text, exclude=[artist, album]),
+        # Лейбл в exclude: og:description несёт «Лейбл: Blue Note», и без выреза
+        # свободный проход читал его как синий винил (аудит 06.09: 57 из 85
+        # blue у plastinka — от Blue Note).
+        vinyl_color_raw=infer_vinyl_color(full_text, exclude=[artist, album, label]),
         condition=condition,
         price_rub=price,
         price_currency="RUB",
