@@ -10,12 +10,33 @@
 впервые открытый/добавленный Discogs-релиз обогащает индекс.
 """
 import logging
+import re
 from datetime import date
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.scrapers.extractors import normalize_barcode, normalize_catalog
+
+# Нормализация названия для дедупа store-native против Discogs-дискографии.
+# Суть плана B: Discogs приоритетен, магазины ДОПОЛНЯЮТ новыми релизами, а не
+# ПЕРЕКРАИВАЮТ существующие. Поэтому store-native, совпавший по названию с
+# Discogs-релизом (пусть и с иным написанием — «Abbey Road (Remastered)» vs
+# «Abbey Road»), в дискографию не добавляем: показываем Discogs с его обложкой.
+_TITLE_PAREN_RE = re.compile(r"\([^()]*\)|\[[^\[\]]*\]")
+_TITLE_NONWORD_RE = re.compile(r"[^\w\s]", re.UNICODE)
+_TITLE_WS_RE = re.compile(r"\s+")
+
+
+def _norm_title(title: str | None) -> str:
+    """«Abbey Road (Remastered)» → «abbey road». Скобочные хвосты (издание/
+    ремастер/год), пунктуация и регистр убираются, чтобы near-дубль Discogs-
+    релиза не проскочил как «новый» store-native и не перекрыл его обложку."""
+    if not title:
+        return ""
+    t = _TITLE_PAREN_RE.sub(" ", title.lower())
+    t = _TITLE_NONWORD_RE.sub(" ", t)
+    return _TITLE_WS_RE.sub(" ", t).strip()
 
 logger = logging.getLogger(__name__)
 
@@ -89,8 +110,8 @@ async def _store_native_masters_for_artist(
     out = []
     for r in rows:
         title = r["title"] or ""
-        if title.strip().lower() in exclude_titles:
-            continue  # этот релиз уже есть в Discogs-дискографии
+        if _norm_title(title) in exclude_titles:
+            continue  # этот релиз уже есть в Discogs — не перекраиваем его
         out.append(MasterSearchResult(
             master_id=f"s{r['id']}",
             title=title,
@@ -277,7 +298,7 @@ async def get_artist_masters_local(
     # на первой странице (их единицы на артиста) и с дедупом по названию против
     # Discogs-мастеров. Сорт по году — как остальная дискография.
     if include_store_native and page == 1:
-        exclude_titles = {r.title.strip().lower() for r in results if r.title}
+        exclude_titles = {_norm_title(r.title) for r in results if r.title}
         store_native = await _store_native_masters_for_artist(
             db, name_row, exclude_titles, covers_base, sort_order,
         )

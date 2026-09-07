@@ -46,12 +46,25 @@ async def test_matches_by_normalized_name(db, make_store_record):
 
 
 async def test_title_dedup_excludes_discogs_release(db, make_store_record):
+    from app.services.discogs_index import _norm_title
     name = f"Artist {uuid.uuid4().hex[:6]}"
     await make_store_record(name, "Известный Альбом")
     out = await _store_native_masters_for_artist(
-        db, name, {"известный альбом"}, "https://cov", "desc"
+        db, name, {_norm_title("Известный Альбом")}, "https://cov", "desc"
     )
     assert out == []                                # уже есть в Discogs → не дублируем
+
+
+async def test_near_duplicate_title_excluded(db, make_store_record):
+    # Discogs приоритетен: store-native «Альбом (Remastered)» не перекраивает
+    # Discogs-релиз «Альбом» — near-дубль по нормализованному названию отсеян.
+    from app.services.discogs_index import _norm_title
+    name = f"Artist {uuid.uuid4().hex[:6]}"
+    await make_store_record(name, "Мой Альбом (Переиздание 2024)")
+    out = await _store_native_masters_for_artist(
+        db, name, {_norm_title("Мой Альбом")}, "https://cov", "desc"
+    )
+    assert out == []
 
 
 async def test_different_artist_not_matched(db, make_store_record):
