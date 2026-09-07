@@ -1205,11 +1205,24 @@ export interface AchievementStats {
  * Ответ GET /api/config — force-update gate и kill-switch фич.
  * См. Backend/app/api/app_config.py, docs/plans/appstore/APPSTORE_LAUNCH_PLAN.md §4.2.
  */
-export interface AppConfig {
+/** Платформенная часть конфига: гейт и ссылка на стор. */
+export interface PlatformAppConfig {
   min_supported_version: string;
+  store_url: string;
+}
+
+export interface AppConfig {
+  /** Legacy (iOS): равно platforms.ios. Читают iOS 1.0.0/1.0.1. */
+  min_supported_version: string;
+  /** Legacy (iOS): равно platforms.ios.store_url. */
   store_url: string;
   update_message: string;
   flags: Record<string, boolean>;
+  /**
+   * По платформам. Опционально: старый бэкенд блока не отдаёт — клиент
+   * падает обратно на legacy-поля (lib/remoteConfig.ts).
+   */
+  platforms?: Partial<Record<'ios' | 'android', PlatformAppConfig>>;
 }
 
 /**

@@ -8,7 +8,7 @@
  * См. lib/remoteConfig.ts, docs/plans/appstore/APPSTORE_LAUNCH_PLAN.md §4.2.
  */
 import { useCallback } from 'react';
-import { Linking, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Linking, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { BorderRadius, Colors, Spacing, Typography } from '../constants/theme';
 
@@ -17,11 +17,17 @@ interface ForceUpdateScreenProps {
   storeUrl: string;
 }
 
+// iOS-строка не меняется (App Review видел именно её); Android получает свою.
+const OPEN_STORE_LABEL = Platform.select({
+  android: 'Открыть Google Play',
+  default: 'Открыть App Store',
+});
+
 export function ForceUpdateScreen({ message, storeUrl }: ForceUpdateScreenProps) {
   const handleOpenStore = useCallback(() => {
     Linking.openURL(storeUrl).catch(() => {
       // Ссылка не открылась — экран остаётся на месте, пользователь может
-      // обновиться из App Store вручную. Падать тут нечему.
+      // обновиться из стора вручную. Падать тут нечему.
     });
   }, [storeUrl]);
 
@@ -36,7 +42,7 @@ export function ForceUpdateScreen({ message, storeUrl }: ForceUpdateScreenProps)
           style={styles.button}
           onPress={handleOpenStore}
           accessibilityRole="button"
-          accessibilityLabel="Открыть App Store"
+          accessibilityLabel={OPEN_STORE_LABEL}
         >
           <Text style={styles.buttonText}>Обновить</Text>
         </TouchableOpacity>

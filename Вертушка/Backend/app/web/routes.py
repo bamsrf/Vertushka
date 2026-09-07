@@ -302,6 +302,18 @@ async def terms_of_service(request: Request):
     return templates.TemplateResponse("terms.html", {"request": request})
 
 
+@router.get("/delete-account", response_class=HTMLResponse)
+async def delete_account_page(request: Request):
+    """Как удалить аккаунт — публичная страница без логина.
+
+    Google Play требует её от любого приложения с регистрацией (ссылка
+    указывается в Data safety → Data deletion). Само удаление живёт в
+    приложении (DELETE /api/users/me), здесь только инструкция, сроки и
+    контакт. См. ANDROID_PORT_PLAN.md WS2.
+    """
+    return templates.TemplateResponse("delete_account.html", {"request": request})
+
+
 @router.get("/admin/reports", response_class=HTMLResponse, include_in_schema=False)
 async def admin_reports_page(request: Request):
     """Разбор жалоб на UGC — единственный интерфейс модерации.
@@ -664,6 +676,11 @@ async def public_profile_page(
         "support_plans_url": settings.support_plans_url,
         # CTA внизу страницы ведёт прямо в стор (раньше — в waitlist-модалку).
         "app_store_url": settings.app_store_url,
+        # Пусто, пока приложения нет в Google Play (PLAY_STORE_PUBLISHED=false):
+        # бейдж, ведущий в 404, хуже отсутствия бейджа.
+        "play_store_url": (
+            settings.play_store_url if settings.play_store_published else ""
+        ),
     })
 
     # TemplateResponse рендерит тело в конструкторе — body уже готов.

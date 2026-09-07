@@ -285,6 +285,22 @@ class Settings(BaseSettings):
         ),
         alias="APP_STORE_URL",
     )
+    # Android-двойник APP_STORE_URL. Уходит в /api/config как
+    # platforms.android.store_url (цель force-update на Android) и, за флагом
+    # PLAY_STORE_PUBLISHED, в CTA публичного профиля. Legacy-поле store_url
+    # в /api/config всегда равно APP_STORE_URL — его читают iOS 1.0.0/1.0.1.
+    play_store_url: str = Field(
+        default="https://play.google.com/store/apps/details?id=com.vertushka.app",
+        alias="PLAY_STORE_URL",
+    )
+    # Пока приложения нет в Google Play, бейдж на сайте вёл бы в 404 —
+    # держим выключенным до публикации. См. ANDROID_PORT_PLAN.md WS2.
+    play_store_published: bool = Field(default=False, alias="PLAY_STORE_PUBLISHED")
+    # Минимальная версия для Android — отдельно от iOS: бамп «под Android»
+    # не должен выгонять на обновление всех iOS-пользователей (B2 в плане).
+    min_supported_app_version_android: str = Field(
+        default="1.0.0", alias="MIN_SUPPORTED_APP_VERSION_ANDROID"
+    )
     force_update_message: str = Field(
         default="Вышла новая версия Вертушки. Обнови приложение, чтобы продолжить.",
         alias="FORCE_UPDATE_MESSAGE",

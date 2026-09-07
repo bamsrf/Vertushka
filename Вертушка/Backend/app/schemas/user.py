@@ -2,7 +2,7 @@
 Схемы для пользователей
 """
 from datetime import datetime
-from typing import Annotated
+from typing import Literal, Annotated
 from uuid import UUID
 from pydantic import AfterValidator, BaseModel, EmailStr, Field, ConfigDict, model_validator
 
@@ -138,6 +138,11 @@ class NotificationSettingsUpdate(BaseModel):
 
 
 class PushTokenUpdate(BaseModel):
-    """Сохранение push token"""
+    """Сохранение push token.
+
+    `platform` опционален: iOS 1.0.0/1.0.1 его не шлют. Новые клиенты передают
+    Platform.OS (Mobile/lib/push.ts).
+    """
     push_token: str = Field(..., max_length=255)
+    platform: Literal["ios", "android"] | None = None
 
