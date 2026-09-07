@@ -26,7 +26,7 @@ import * as Haptics from 'expo-haptics';
 import * as Sharing from 'expo-sharing';
 import { LinearGradient } from 'expo-linear-gradient';
 import { api } from '../lib/api';
-import { Colors, Spacing, BorderRadius } from '../constants/theme';
+import { Colors, Spacing, BorderRadius, androidShadow } from '../constants/theme';
 import { ms } from '../lib/responsive';
 import { AchievementPin } from '../components/AchievementPin';
 import { prewarmAchievementPins, prefetchAchievementAsset } from '../lib/achievementAssets';
@@ -825,6 +825,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.8,
     shadowRadius: 6,
     shadowOffset: { width: 0, height: 0 },
+    ...androidShadow({ color: M_GOLD, opacity: 0.8, radius: 6 }),
   },
   seriesProgressDot: {
     position: 'absolute',
@@ -840,6 +841,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.9,
     shadowRadius: 4,
     shadowOffset: { width: 0, height: 0 },
+    ...androidShadow({ color: M_GOLD, opacity: 0.9, radius: 4 }),
   },
   surpriseDivider: {
     height: 1,

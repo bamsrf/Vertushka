@@ -71,7 +71,14 @@ export function AchievementsTourOverlay() {
   if (!visible) return null;
 
   return (
-    <Modal transparent visible animationType="none" onRequestClose={handleClose} statusBarTranslucent>
+    <Modal
+      transparent
+      visible
+      animationType="none"
+      onRequestClose={handleClose}
+      statusBarTranslucent
+      navigationBarTranslucent
+    >
       <Animated.View style={[styles.backdrop, { opacity }]}>
         <View style={styles.card}>
           <Text style={styles.emoji}>🏆</Text>

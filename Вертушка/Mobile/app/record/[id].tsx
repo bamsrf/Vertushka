@@ -27,7 +27,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import { BlurView } from 'expo-blur';
+import { BlurViewCompat } from '@/components/ui/BlurViewCompat';
 import { Header } from '../../components/Header';
 import { GradientText } from '../../components/GradientText';
 import { FolderPickerModal } from '../../components/FolderPickerModal';
@@ -1281,7 +1281,7 @@ export default function RecordDetailScreen() {
         // ========== СТАТУС: В КОЛЛЕКЦИИ ==========
         if (recordStatus.status === 'in_collection') {
           return (
-            <BlurView intensity={60} tint="light" style={[styles.actionsContainer, { paddingBottom: insets.bottom + Spacing.md }]}>
+            <BlurViewCompat intensity={60} tint="light" style={[styles.actionsContainer, { paddingBottom: insets.bottom + Spacing.md }]}>
               <View style={styles.addedButtonContainer}>
                 <View style={styles.addedButton}>
                   <Icon name="checkmark-circle" size={20} color={Colors.textSecondary} />
@@ -1299,7 +1299,7 @@ export default function RecordDetailScreen() {
                   <Icon name="ellipsis-vertical" size={24} color={Colors.background} />
                 </TouchableOpacity>
               </View>
-            </BlurView>
+            </BlurViewCompat>
           );
         }
 
@@ -1307,7 +1307,7 @@ export default function RecordDetailScreen() {
         if (recordStatus.status === 'in_wishlist') {
           const subscribed = recordStatus.wishlistNotifyMode === 'subscribed';
           return (
-            <BlurView intensity={60} tint="light" style={[styles.actionsContainer, { paddingBottom: insets.bottom + Spacing.md }]}>
+            <BlurViewCompat intensity={60} tint="light" style={[styles.actionsContainer, { paddingBottom: insets.bottom + Spacing.md }]}>
               <Button
                 title="Добавить"
                 onPress={handleAddToCollection}
@@ -1336,13 +1336,13 @@ export default function RecordDetailScreen() {
               >
                 <Text style={styles.removeButtonText}>Удалить</Text>
               </TouchableOpacity>
-            </BlurView>
+            </BlurViewCompat>
           );
         }
 
         // ========== СТАТУС: НЕ ДОБАВЛЕНА ==========
         return (
-          <BlurView intensity={60} tint="light" style={[styles.actionsContainer, { paddingBottom: insets.bottom + Spacing.md }]}>
+          <BlurViewCompat intensity={60} tint="light" style={[styles.actionsContainer, { paddingBottom: insets.bottom + Spacing.md }]}>
             <Button
               title="Добавить"
               onPress={handleAddToCollection}
@@ -1354,7 +1354,7 @@ export default function RecordDetailScreen() {
               variant="outline"
               style={{ ...styles.actionButton, backgroundColor: Colors.surface }}
             />
-          </BlurView>
+          </BlurViewCompat>
         );
       })()}
 

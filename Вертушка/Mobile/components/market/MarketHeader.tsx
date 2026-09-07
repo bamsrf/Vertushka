@@ -16,7 +16,7 @@
  */
 import React from 'react';
 import { Platform, Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
-import { BlurView } from 'expo-blur';
+import { BlurViewCompat } from '@/components/ui/BlurViewCompat';
 
 import { Icon } from '../ui/Icon';
 import { MarketPalette } from '../../constants/theme';
@@ -79,7 +79,7 @@ export function MarketHeader({
 }: MarketHeaderProps) {
   if (mode === 'sticky') {
     return (
-      <BlurView
+      <BlurViewCompat
         intensity={24}
         tint="dark"
         style={[
@@ -105,7 +105,7 @@ export function MarketHeader({
             </Pressable>
           )}
         </View>
-      </BlurView>
+      </BlurViewCompat>
     );
   }
 

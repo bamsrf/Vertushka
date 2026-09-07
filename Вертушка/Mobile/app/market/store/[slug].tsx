@@ -25,7 +25,7 @@ import {
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { BlurView } from 'expo-blur';
+import { BlurViewCompat } from '@/components/ui/BlurViewCompat';
 import { LinearGradient } from 'expo-linear-gradient';
 import MaskedView from '@react-native-masked-view/masked-view';
 
@@ -240,7 +240,7 @@ export default function StorePage() {
           />
         }
       >
-        <BlurView intensity={24} tint="dark" style={{ flex: 1 }} />
+        <BlurViewCompat intensity={24} tint="dark" style={{ flex: 1 }} />
         <LinearGradient
           colors={['rgba(14,7,38,0.55)', 'rgba(14,7,38,0)']}
           locations={[0, 1]}

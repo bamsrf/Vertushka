@@ -202,6 +202,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.25,
     shadowRadius: 16,
     shadowOffset: { width: 0, height: 6 },
+    elevation: 8,
   },
   iconWrap: {
     width: 36,

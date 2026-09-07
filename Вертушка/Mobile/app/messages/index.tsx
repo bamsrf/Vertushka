@@ -901,6 +901,7 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.3,
     shadowRadius: 12,
+    elevation: 6,
   },
   emptyBtnTxt: { color: '#fff', fontWeight: '600', fontSize: ms(14) },
 

@@ -22,6 +22,7 @@
 import React from 'react';
 import { StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { androidShadow } from '@/constants/theme';
 
 export type OfferBadgeKind = 'inStock' | 'alt';
 export type OfferBadgeSize = 'sm' | 'md';
@@ -75,6 +76,7 @@ export function OfferBadge({ kind, size = 'md', style }: OfferBadgeProps) {
             shadowOffset: { width: 0, height: 0 },
             shadowOpacity: 0.6,
             shadowRadius: 4,
+            ...androidShadow({ color: '#FFFFFF', opacity: 0.6, radius: 4 }),
           }}
         />
         <Text style={[styles.label, { fontSize: sz.fs, letterSpacing: sz.ls, color: '#FFFFFF' }]}>
@@ -118,6 +120,7 @@ export function OfferBadge({ kind, size = 'md', style }: OfferBadgeProps) {
           shadowOffset: { width: 0, height: 0 },
           shadowOpacity: 0.7,
           shadowRadius: 5,
+          ...androidShadow({ color: '#5C7AE8', opacity: 0.7, radius: 5 }),
         }}
       >
         <LinearGradient

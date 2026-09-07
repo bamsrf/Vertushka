@@ -1412,6 +1412,7 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.08,
     shadowRadius: 12,
+    elevation: 2,
   },
   valueLabel: {
     fontSize: 10, color: PP.slate, textTransform: 'uppercase', letterSpacing: 0.8,
@@ -1533,6 +1534,7 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.08,
     shadowRadius: 12,
+    elevation: 4,
   },
   dropdownItem: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
@@ -1627,6 +1629,7 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
     backgroundColor: PP.cobalt,
     shadowColor: PP.cobalt, shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.45, shadowRadius: 14,
+    elevation: 8,
   },
   confirmBtnTxt: { color: '#fff', fontWeight: '700', fontSize: ms(14) },
 });
