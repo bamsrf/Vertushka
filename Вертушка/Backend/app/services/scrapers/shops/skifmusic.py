@@ -275,7 +275,19 @@ class SkifmusicParser(BaseStoreParser):
         # === Vinyl color ===
         # exclude=artist/album — иначе «Deep Purple» или «Красный Свет» в
         # названии прочитается как цвет пресса (см. infer_vinyl_color).
-        vinyl_color = infer_vinyl_color(name, exclude=[artist, album])
+        #
+        # Цвет магазин НЕ кладёт в JSON-LD name (он чистый), но кладёт в
+        # URL-слаг: `/product/{id}-artist-album-blue-yellow-vinyl-new-sealed`.
+        # Аудит 06.09: ~4200 in-stock листингов имели цвет в слаге при пустом
+        # vinyl_color_raw. Слаг уже пришёл в `url` (ноль доп. запросов) —
+        # добавляем его в текст поиска. Дефисы → пробелы, чтобы exclude вырезал
+        # артиста/альбом (иначе album «...Blues» не вычтется и `\bblue\b` его
+        # не тронет — но и цвет-в-альбоме не даст ложный тег). cue-проход
+        # («... vinyl») и границы слов не дают «blues»/имена стать цветом.
+        slug_text = _slug_words(url)
+        vinyl_color = infer_vinyl_color(
+            f"{name} {slug_text}", exclude=[artist, album]
+        )
 
         return ListingDTO(
             external_id=external_id,
@@ -324,6 +336,17 @@ def _log_coverage(slug: str, page: int, emitted: int, expected: int | None) -> N
 def _extract_id_from_url(url: str) -> str | None:
     m = _URL_ID_RE.search(url or "")
     return m.group(1) if m else None
+
+
+_SLUG_TAIL_RE = re.compile(r"/product/\d+-(.+?)/?$")
+
+
+def _slug_words(url: str) -> str:
+    """`/product/769107-flypaper-forget-the-rush-blue-yellow-vinyl` → строка
+    «flypaper forget the rush blue yellow vinyl» для поиска цвета в слаге.
+    Пусто, если url не product-вида."""
+    m = _SLUG_TAIL_RE.search(url or "")
+    return m.group(1).replace("-", " ") if m else ""
 
 
 def _extract_item_list(html: str) -> dict | None:
