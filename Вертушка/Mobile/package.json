@@ -8,7 +8,9 @@
     "android": "expo run:android",
     "ios": "expo run:ios",
     "web": "expo start --web",
-    "update:prod": "eas update --environment production"
+    "typecheck": "tsc --noEmit",
+    "update:prod:ios": "eas update --environment production --channel production --platform ios",
+    "update:prod:android": "eas update --environment production --channel production-android --platform android"
   },
   "dependencies": {
     "@amplitude/analytics-react-native": "^1.5.52",

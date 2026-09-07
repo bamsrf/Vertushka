@@ -1,0 +1,223 @@
+{
+  "ios": {
+    "supportsTablet": false,
+    "bundleIdentifier": "com.vertushka.app",
+    "usesAppleSignIn": true,
+    "privacyManifests": {
+      "NSPrivacyAccessedAPITypes": [
+        {
+          "NSPrivacyAccessedAPIType": "NSPrivacyAccessedAPICategoryUserDefaults",
+          "NSPrivacyAccessedAPITypeReasons": [
+            "CA92.1"
+          ]
+        },
+        {
+          "NSPrivacyAccessedAPIType": "NSPrivacyAccessedAPICategoryFileTimestamp",
+          "NSPrivacyAccessedAPITypeReasons": [
+            "C617.1"
+          ]
+        },
+        {
+          "NSPrivacyAccessedAPIType": "NSPrivacyAccessedAPICategorySystemBootTime",
+          "NSPrivacyAccessedAPITypeReasons": [
+            "35F9.1"
+          ]
+        },
+        {
+          "NSPrivacyAccessedAPIType": "NSPrivacyAccessedAPICategoryDiskSpace",
+          "NSPrivacyAccessedAPITypeReasons": [
+            "E174.1"
+          ]
+        }
+      ],
+      "NSPrivacyCollectedDataTypes": [
+        {
+          "NSPrivacyCollectedDataType": "NSPrivacyCollectedDataTypeName",
+          "NSPrivacyCollectedDataTypeLinked": true,
+          "NSPrivacyCollectedDataTypeTracking": false,
+          "NSPrivacyCollectedDataTypePurposes": [
+            "NSPrivacyCollectedDataTypePurposeAppFunctionality"
+          ]
+        },
+        {
+          "NSPrivacyCollectedDataType": "NSPrivacyCollectedDataTypeEmailsorTextMessages",
+          "NSPrivacyCollectedDataTypeLinked": true,
+          "NSPrivacyCollectedDataTypeTracking": false,
+          "NSPrivacyCollectedDataTypePurposes": [
+            "NSPrivacyCollectedDataTypePurposeAppFunctionality"
+          ]
+        },
+        {
+          "NSPrivacyCollectedDataType": "NSPrivacyCollectedDataTypeEmailAddress",
+          "NSPrivacyCollectedDataTypeLinked": true,
+          "NSPrivacyCollectedDataTypeTracking": false,
+          "NSPrivacyCollectedDataTypePurposes": [
+            "NSPrivacyCollectedDataTypePurposeAppFunctionality"
+          ]
+        },
+        {
+          "NSPrivacyCollectedDataType": "NSPrivacyCollectedDataTypeUserID",
+          "NSPrivacyCollectedDataTypeLinked": true,
+          "NSPrivacyCollectedDataTypeTracking": false,
+          "NSPrivacyCollectedDataTypePurposes": [
+            "NSPrivacyCollectedDataTypePurposeAppFunctionality"
+          ]
+        },
+        {
+          "NSPrivacyCollectedDataType": "NSPrivacyCollectedDataTypePhotosorVideos",
+          "NSPrivacyCollectedDataTypeLinked": true,
+          "NSPrivacyCollectedDataTypeTracking": false,
+          "NSPrivacyCollectedDataTypePurposes": [
+            "NSPrivacyCollectedDataTypePurposeAppFunctionality"
+          ]
+        },
+        {
+          "NSPrivacyCollectedDataType": "NSPrivacyCollectedDataTypeOtherUserContent",
+          "NSPrivacyCollectedDataTypeLinked": true,
+          "NSPrivacyCollectedDataTypeTracking": false,
+          "NSPrivacyCollectedDataTypePurposes": [
+            "NSPrivacyCollectedDataTypePurposeAppFunctionality"
+          ]
+        },
+        {
+          "NSPrivacyCollectedDataType": "NSPrivacyCollectedDataTypeProductInteraction",
+          "NSPrivacyCollectedDataTypeLinked": true,
+          "NSPrivacyCollectedDataTypeTracking": false,
+          "NSPrivacyCollectedDataTypePurposes": [
+            "NSPrivacyCollectedDataTypePurposeAnalytics"
+          ]
+        },
+        {
+          "NSPrivacyCollectedDataType": "NSPrivacyCollectedDataTypeDeviceID",
+          "NSPrivacyCollectedDataTypeLinked": true,
+          "NSPrivacyCollectedDataTypeTracking": false,
+          "NSPrivacyCollectedDataTypePurposes": [
+            "NSPrivacyCollectedDataTypePurposeAnalytics"
+          ]
+        },
+        {
+          "NSPrivacyCollectedDataType": "NSPrivacyCollectedDataTypeCrashData",
+          "NSPrivacyCollectedDataTypeLinked": true,
+          "NSPrivacyCollectedDataTypeTracking": false,
+          "NSPrivacyCollectedDataTypePurposes": [
+            "NSPrivacyCollectedDataTypePurposeAppFunctionality"
+          ]
+        },
+        {
+          "NSPrivacyCollectedDataType": "NSPrivacyCollectedDataTypePerformanceData",
+          "NSPrivacyCollectedDataTypeLinked": true,
+          "NSPrivacyCollectedDataTypeTracking": false,
+          "NSPrivacyCollectedDataTypePurposes": [
+            "NSPrivacyCollectedDataTypePurposeAppFunctionality"
+          ]
+        }
+      ]
+    },
+    "infoPlist": {
+      "CADisableMinimumFrameDurationOnPhone": true,
+      "CFBundleAllowMixedLocalizations": true,
+      "CFBundleDevelopmentRegion": "$(DEVELOPMENT_LANGUAGE)",
+      "CFBundleExecutable": "$(EXECUTABLE_NAME)",
+      "CFBundleIdentifier": "$(PRODUCT_BUNDLE_IDENTIFIER)",
+      "CFBundleInfoDictionaryVersion": "6.0",
+      "CFBundleName": "$(PRODUCT_NAME)",
+      "CFBundlePackageType": "$(PRODUCT_BUNDLE_PACKAGE_TYPE)",
+      "CFBundleShortVersionString": "1.0.1",
+      "CFBundleSignature": "????",
+      "CFBundleURLTypes": [
+        {
+          "CFBundleURLSchemes": [
+            "vertushka",
+            "com.vertushka.app"
+          ]
+        },
+        {
+          "CFBundleURLSchemes": [
+            "exp+vertushka"
+          ]
+        }
+      ],
+      "CFBundleVersion": "1",
+      "ITSAppUsesNonExemptEncryption": false,
+      "LSMinimumSystemVersion": "12.0",
+      "LSRequiresIPhoneOS": true,
+      "NSAppTransportSecurity": {
+        "NSAllowsArbitraryLoads": false,
+        "NSAllowsLocalNetworking": true
+      },
+      "NSBonjourServices": [
+        "_expo._tcp"
+      ],
+      "NSCameraUsageDescription": "Приложению нужен доступ к камере для сканирования штрихкодов и распознавания обложек пластинок",
+      "NSLocalNetworkUsageDescription": "Expo Dev Launcher uses the local network to discover and connect to development servers running on your computer.",
+      "NSPhotoLibraryAddUsageDescription": "Чтобы сохранять обложки пластинок в галерею",
+      "NSPhotoLibraryUsageDescription": "Чтобы выбрать фото для аватара и обложек пластинок из вашей галереи",
+      "NSUserActivityTypes": [
+        "$(PRODUCT_BUNDLE_IDENTIFIER).expo.index_route"
+      ],
+      "RCTMetroPort": "$(RCT_METRO_PORT)",
+      "UILaunchStoryboardName": "SplashScreen",
+      "UIRequiredDeviceCapabilities": [
+        "arm64"
+      ],
+      "UIRequiresFullScreen": false,
+      "UIStatusBarStyle": "UIStatusBarStyleDefault",
+      "UISupportedInterfaceOrientations": [
+        "UIInterfaceOrientationPortrait",
+        "UIInterfaceOrientationPortraitUpsideDown"
+      ],
+      "UIViewControllerBasedStatusBarAppearance": false,
+      "CFBundleDisplayName": "Вертушка",
+      "UIUserInterfaceStyle": "Light"
+    },
+    "entitlements": {
+      "aps-environment": "development",
+      "com.apple.developer.applesignin": [
+        "Default"
+      ]
+    }
+  },
+  "plugins": [
+    "expo-router",
+    [
+      "expo-splash-screen",
+      {
+        "image": "./assets/images/splash-icon.png",
+        "resizeMode": "contain",
+        "backgroundColor": "#FAFBFF",
+        "ios": {
+          "enableFullScreenImage_legacy": true
+        }
+      }
+    ],
+    [
+      "expo-secure-store",
+      {
+        "faceIDPermission": false
+      }
+    ],
+    "expo-apple-authentication",
+    [
+      "expo-camera",
+      {
+        "cameraPermission": "Приложению нужен доступ к камере для сканирования штрихкодов и распознавания обложек пластинок",
+        "microphonePermission": false
+      }
+    ],
+    "@sentry/react-native",
+    "./plugins/withSentryDisableLocalUpload",
+    "expo-notifications",
+    "expo-font",
+    "expo-web-browser",
+    "expo-video"
+  ],
+  "runtimeVersion": {
+    "policy": "appVersion"
+  },
+  "updates": {
+    "url": "https://u.expo.dev/a603ba4b-61d4-4179-9384-e5f3ed4e4bca"
+  },
+  "newArchEnabled": true,
+  "version": "1.0.1",
+  "sdkVersion": "57.0.0"
+}

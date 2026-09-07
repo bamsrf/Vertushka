@@ -8,11 +8,6 @@
     "scheme": "vertushka",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
-    "splash": {
-      "image": "./assets/images/splash-icon.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#FAFBFF"
-    },
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.vertushka.app",
@@ -136,6 +131,17 @@
     },
     "plugins": [
       "expo-router",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/images/splash-icon.png",
+          "resizeMode": "contain",
+          "backgroundColor": "#FAFBFF",
+          "ios": {
+            "enableFullScreenImage_legacy": true
+          }
+        }
+      ],
       [
         "expo-secure-store",
         {

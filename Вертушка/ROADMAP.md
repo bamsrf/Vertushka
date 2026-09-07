@@ -332,9 +332,11 @@ ROADMAP.md — это _верхнеуровневый зонтик_. Кажды�
 
 #### Связанные артефакты
 - [PLAN_RELEASE_v2.md](docs/plans/appstore/PLAN_RELEASE_v2.md), [PLAN_RELEASE.md](docs/plans/appstore/PLAN_RELEASE.md) (исторический), [BUGS.md](docs/BUGS.md)
+- [ANDROID_PORT_PLAN.md](docs/plans/appstore/ANDROID_PORT_PLAN.md) — Android-порт: принципы изоляции iOS (из PACE), аудит, workstream'ы WS0–WS10, календарь 4–5 недель (2026-09-07)
 - `Mobile/eas.json`, `Mobile/app.json`, `Backend/scripts/restore_drill.sh`, `Backend/tests/`
 
 #### Changelog
+- **2026-09-07** — Android-порт стартовал: план + adversarial review ([ANDROID_PORT_PLAN.md](docs/plans/appstore/ANDROID_PORT_PLAN.md)); страховка iOS — `mobile-ci` (tsc + гейт iOS-конфига по baseline), OTA-каналы врозь (`production-android`), splash-регрессия SDK 57 закрыта плагином `expo-splash-screen`
 - **2026-07-24** — blue-green деплой API: zero-downtime cutover через `Backend/nginx/active_upstream.conf` + `deploy.sh`
 - **2026-07-13** — support/demo email переехал на `@vinyl-vertushka.store` (ящик на .store, web/API на .ru); `eas.json` заполнен (`ascAppId`, `appleTeamId`, `serviceAccountKeyPath`)
 - **2026-07-02** — UGC-модерация (Guideline 1.2): `api/reports.py` + pre-release compliance pack; `supportsTablet=false` для v1.0 (iPhone-only, audit A3)
