@@ -319,15 +319,20 @@ async def hourly_enrich_artist_thumbs(batch_size: int = 100) -> dict:
 async def daily_rematch_store_native() -> dict:
     """Раз в сутки — store-native записи прогоняются через Discogs search.
 
-    Если релиз появился на Discogs, в records.discogs_id_candidate записывается
-    кандидат + счётчик подтверждений. При 2-м подтверждении подряд срабатывает
-    safe_merge_store_native_into → листинги перепривязываются на Discogs-запись,
-    store-native soft-delete'ится через merged_into_id. См. listing_matcher.
+    Если релиз появился/нашёлся на Discogs, в records.discogs_id_candidate
+    записывается кандидат + счётчик подтверждений. При STORE_NATIVE_MERGE_MIN_
+    CONFIRMATIONS (=3) подтверждениях подряд срабатывает safe_merge_store_native_
+    into → листинги перепривязываются на Discogs-запись, store-native soft-
+    delete'ится через merged_into_id. См. listing_matcher.
 
-    batch_size 300/день × 7 = 2100/нед, при ~5500 листингов и ~30% store-native
-    полный круг ≤ недели. Discogs API нагрузка ≈ 12 req/час (лимит 2000/час).
+    batch_size 1000/день (поднят с 300 07.09): store-native накопилось ~5.4k
+    (слито 424, в процессе 254), при 300/день полный круг × 3 подтверждения
+    тянулся неделями. 1000/день × 3 прохода ≈ 5k за ~2.5 недели вместо ~8.
+    Названия store-native теперь чистые (title-фиксы), text-match находит
+    больше. Нагрузка Discogs: до ~1000 search-запросов одним ночным всплеском
+    в 03:30 (лимит 2000/час, DAU ночью ≈ 0) — в бюджете.
     """
-    return await rematch_store_native_batch(batch_size=300)
+    return await rematch_store_native_batch(batch_size=1000)
 
 
 async def daily_rematch_format_conflicts() -> dict:
