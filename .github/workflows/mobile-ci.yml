@@ -1,0 +1,67 @@
+# CI мобилки: страховка iOS на время Android-порта.
+#
+# Два гейта, оба без macOS-раннера:
+#  1. typecheck — `tsc --noEmit`. После апгрейда SDK именно tsc находил
+#     рантайм-баги, которые никто не смотрел (docs/plans/quality/SDK_UPGRADE_CHECKLIST.md).
+#  2. ios-config-guard — чистый `expo prebuild -p ios --no-install` на ubuntu
+#     (pods вне darwin пропускаются) и дифф сгенерированного iOS-конфига с
+#     baseline в Mobile/ci/ios-baseline/. Ловит config-плагин или правку
+#     app.json, которая незаметно меняет iOS. Обновлять baseline —
+#     только осознанно, скриптом Mobile/ci/update-ios-baseline.sh, в PR с
+#     меткой ios-config-change.
+#
+# Ограничение гейта 2: плагины, срабатывающие только внутри `pod install`,
+# он не увидит. Для них — `eas build -p ios --profile preview` перед мерджем WS.
+#
+# Git-корень репо — Cursor/, поэтому пути начинаются с Вертушка/.
+name: mobile-ci
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "Вертушка/Mobile/**"
+      - ".github/workflows/mobile-ci.yml"
+  pull_request:
+    paths:
+      - "Вертушка/Mobile/**"
+      - ".github/workflows/mobile-ci.yml"
+
+concurrency:
+  group: mobile-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  typecheck:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: Вертушка/Mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: Вертушка/Mobile/package-lock.json
+      - name: Установить зависимости
+        run: npm ci --no-audit --no-fund
+      - name: tsc --noEmit
+        run: npm run typecheck
+
+  ios-config-guard:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: Вертушка/Mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: Вертушка/Mobile/package-lock.json
+      - name: Установить зависимости
+        run: npm ci --no-audit --no-fund
+      - name: Сгенерировать iOS-конфиг и сравнить с baseline
+        run: bash ci/check-ios-baseline.sh

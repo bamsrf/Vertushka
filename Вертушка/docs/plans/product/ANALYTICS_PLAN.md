@@ -51,7 +51,7 @@ retention: знаменатели маленькие, вес одного лиш
 | Профиль `preview` (не используется) | `AMPLITUDE_API_KEY_DEV` | EAS environment `preview` |
 
 **Прод-ключ бьёт dev-ключ**, а не наоборот. Порядок неочевидный, но
-единственно безопасный: `npm run update:prod` подтягивает серверный
+единственно безопасный: `npm run update:prod:ios` (или `update:prod:android`) подтягивает серверный
 `AMPLITUDE_API_KEY`, и при этом Expo CLI всё равно грузит локальный `.env` с
 dev-ключом. Выигрывай dev — каждая публикация обновления с ноутбука тихо
 уводила бы прод-аудиторию в dev-проект.
@@ -121,7 +121,8 @@ Amplitude всё равно уезжает внутрь бандла и публ
 **Правило: публиковать обновления только так.**
 
 ```bash
-cd Mobile && npm run update:prod
+cd Mobile && npm run update:prod:ios      # iOS, канал production
+cd Mobile && npm run update:prod:android  # Android, канал production-android
 ```
 
 Скрипт заведён в `Mobile/package.json` именно для этого — чтобы правило было

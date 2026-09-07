@@ -19,15 +19,18 @@ const appJson = require('./app.json');
  * - `AMPLITUDE_API_KEY_DEV` — dev-проект. Локальный `.env` и EAS-окружения
  *                             `development` / `preview`.
  *
- * Порядок именно такой, а не «dev важнее», из-за OTA: `npm run update:prod`
- * (`eas update --environment production`) подтягивает серверный
+ * Порядок именно такой, а не «dev важнее», из-за OTA: `npm run update:prod:ios`
+ * (`eas update --environment production --channel production --platform ios`) подтягивает серверный
  * `AMPLITUDE_API_KEY`, но локальный `.env` с dev-ключом при этом тоже
  * загружается. Если бы dev выигрывал, любая публикация обновления с машины
  * разработчика тихо переводила бы прод-аудиторию в dev-проект.
  *
  * Обратная сторона: `eas update` БЕЗ `--environment production` уведёт события
  * в dev-проект. Раньше в этом случае аналитика просто выключалась — теперь
- * врёт, что стало ещё одной причиной публиковать только через `update:prod`.
+ * врёт, что стало ещё одной причиной публиковать только через `update:prod:*`.
+ * Скрипты разведены по платформам (`update:prod:ios` / `update:prod:android`)
+ * и каналам: у iOS канал `production`, у Android — `production-android`, чтобы
+ * Android-хотфикс не приезжал OTA на iOS-бинарник с той же runtimeVersion.
  * См. docs/plans/product/ANALYTICS_PLAN.md.
  */
 const prodKey = process.env.AMPLITUDE_API_KEY ?? '';

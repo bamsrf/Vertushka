@@ -21,6 +21,9 @@
       "ios": {
         "simulator": false,
         "image": "macos-sequoia-15.6-xcode-26.0"
+      },
+      "android": {
+        "channel": "preview-android"
       }
     },
     "production": {
@@ -32,6 +35,9 @@
       },
       "ios": {
         "image": "macos-sequoia-15.6-xcode-26.0"
+      },
+      "android": {
+        "channel": "production-android"
       }
     }
   },
