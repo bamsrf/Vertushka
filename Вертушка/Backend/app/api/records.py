@@ -3697,6 +3697,12 @@ async def get_artist_masters(
     per_page: int = Query(100, ge=1, le=100, description="Записей на страницу"),
     load_all: bool = Query(False, description="Загрузить все страницы сразу"),
     sort_order: str = Query("desc", regex="^(asc|desc)$", description="Порядок по году"),
+    include_store_native: bool = Query(
+        False,
+        description="Вливать store-native записи (нет в Discogs, есть в магазинах) "
+                    "в дискографию. OFF по умолчанию: старые сборки приложения не "
+                    "умеют открывать master_id='s...'; новая сборка включает флаг.",
+    ),
     current_user: User | None = Depends(get_current_user_optional),
     db: AsyncSession = Depends(get_db),
 ):
@@ -3719,6 +3725,7 @@ async def get_artist_masters(
 
         local = await get_artist_masters_local(
             db, artist_id, page=page, per_page=per_page, sort_order=sort_order,
+            include_store_native=include_store_native,
         )
         if local is not None:
             # Заглушки на странице → no-store: batch-прогрев уже запущен,

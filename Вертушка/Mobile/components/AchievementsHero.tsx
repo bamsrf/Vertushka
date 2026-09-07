@@ -35,8 +35,6 @@ import { levelTheme, type LevelTheme } from './achievement-mockup/levelTheme';
 import {
   M_GOLD_RIM_SOFT,
   M_IVORY,
-  M_IVORY_DIM,
-  M_IVORY_MUTED,
   M_NAVY,
   M_NAVY_MID,
 } from './achievement-mockup/palette';
@@ -369,7 +367,7 @@ export function AchievementsHero({
       : `Все ступени пройдены · ${archetype.score} XP`;
 
   return (
-    <View style={[styles.wrap, { borderColor: theme.rim }]}>
+    <View style={[styles.wrap, { borderColor: theme.rim, backgroundColor: theme.surface }]}>
       {/* Двойной gradient: основной fade ступени + тёплый radial из угла */}
       <LinearGradient
         colors={theme.bg}
@@ -403,7 +401,7 @@ export function AchievementsHero({
           />
         </Animated.View>
       ) : null}
-      <WavesBg opacity={theme.grooveOpacity} />
+      <WavesBg opacity={theme.grooveOpacity} color={theme.ink} />
       <GrainOverlay opacity={0.07} />
       <GoldCorners />
 
@@ -422,8 +420,8 @@ export function AchievementsHero({
             {latest ? (
               <AchievementPin item={latest} size={isCompact ? 72 : 96} />
             ) : (
-              <View style={styles.gnezdoEmpty}>
-                <Text style={styles.gnezdoEmptyText}>?</Text>
+              <View style={[styles.gnezdoEmpty, { backgroundColor: theme.veil, borderColor: theme.rim }]}>
+                <Text style={[styles.gnezdoEmptyText, { color: theme.inkDim }]}>?</Text>
               </View>
             )}
           </View>
@@ -483,7 +481,7 @@ export function AchievementsHero({
               каждый по отдельности и ломал общую базовую линию. Кегль общий,
               посчитан выше под измеренную ширину колонки. */}
           <View style={styles.counterRow}>
-            <Text style={[styles.countBig, { fontSize: countSize }]} numberOfLines={1}>
+            <Text style={[styles.countBig, { fontSize: countSize, color: theme.ink }]} numberOfLines={1}>
               {displayCount}
             </Text>
             <Text
@@ -496,26 +494,26 @@ export function AchievementsHero({
               /
             </Text>
             <Text
-              style={[styles.countSmall, { fontSize: countSize * 0.7 }]}
+              style={[styles.countSmall, { fontSize: countSize * 0.7, color: theme.inkMuted }]}
               numberOfLines={1}
             >
               {data.total}
             </Text>
           </View>
-          <Text style={styles.counterCaption}>
+          <Text style={[styles.counterCaption, { color: theme.inkMuted }]}>
             {username ? `@${username}` : 'АЧИВОК ОТКРЫТО'}
           </Text>
         </View>
       </View>
 
       {/* Flavor */}
-      <Text style={styles.flavor} numberOfLines={2}>
+      <Text style={[styles.flavor, { color: theme.inkMuted }]} numberOfLines={2}>
         «{shownLevel.flavor}»
       </Text>
 
       {/* Progress bar к следующему уровню + маркер-точка */}
       <View style={styles.progressBlock}>
-        <View style={styles.progressTrack}>
+        <View style={[styles.progressTrack, { backgroundColor: theme.trackBg }]}>
           <Animated.View
             style={[
               styles.progressFill,
@@ -544,7 +542,7 @@ export function AchievementsHero({
             />
           </Animated.View>
         </View>
-        <Text style={styles.progressText}>{progressCaption}</Text>
+        <Text style={[styles.progressText, { color: theme.inkMuted }]}>{progressCaption}</Text>
       </View>
 
       {/* Bottom row — pasxalka + (optional) recent */}
@@ -567,7 +565,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: M_GOLD_RIM_SOFT,
     minHeight: 260,
-    backgroundColor: M_NAVY,
   },
   archChip: {
     flexDirection: 'row',
@@ -625,16 +622,13 @@ const styles = StyleSheet.create({
     width: 60,
     height: 60,
     borderRadius: 30,
-    backgroundColor: 'rgba(244,238,230,0.08)',
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: M_GOLD_RIM_SOFT,
     borderStyle: 'dashed',
   },
   gnezdoEmptyText: {
     fontSize: 28,
-    color: M_IVORY_DIM,
     fontWeight: '800',
   },
   counterWrap: {
@@ -646,7 +640,6 @@ const styles = StyleSheet.create({
     alignItems: 'baseline',
   },
   countBig: {
-    color: M_IVORY,
     fontFamily: 'RubikMonoOne-Regular',
     letterSpacing: -1,
   },
@@ -656,7 +649,6 @@ const styles = StyleSheet.create({
     marginHorizontal: COUNT_SEP_GAP,
   },
   countSmall: {
-    color: M_IVORY_MUTED,
     fontFamily: 'RubikMonoOne-Regular',
   },
   counterCaption: {
@@ -666,13 +658,11 @@ const styles = StyleSheet.create({
     fontSize: 11,
     letterSpacing: 1.6,
     textTransform: 'uppercase',
-    color: M_IVORY_MUTED,
     fontWeight: '600',
   },
   flavor: {
     marginTop: Spacing.md,
     fontSize: ms(13),
-    color: M_IVORY_MUTED,
     fontStyle: 'italic',
     lineHeight: ms(18),
   },
@@ -682,7 +672,6 @@ const styles = StyleSheet.create({
   progressTrack: {
     height: 6,
     borderRadius: 3,
-    backgroundColor: 'rgba(244,238,230,0.12)',
   },
   progressFill: {
     height: '100%',
@@ -724,7 +713,6 @@ const styles = StyleSheet.create({
     marginTop: 6,
     fontSize: ms(11),
     fontWeight: '600',
-    color: M_IVORY_MUTED,
     letterSpacing: 0.3,
   },
   bottomRow: {

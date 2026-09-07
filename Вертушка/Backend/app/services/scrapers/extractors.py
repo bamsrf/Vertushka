@@ -390,10 +390,29 @@ def infer_vinyl_color(
         for tok in tokens:
             if tok and tok.strip():
                 text = re.sub(re.escape(tok.strip()), " ", text, flags=re.I)
+    # «Финишные» дескрипторы — сами по себе означают цветной/нестандартный
+    # пресс, даже рядом с чёрным: «Translucent Black», «Yellow Splatter & Black»,
+    # «Black Marble» — это НЕ обычный чёрный винил.
+    _FINISH = ("clear", "splatter", "marble")
+
+    free_hits = [canon for canon, rx in _COMPILED_COLORS if rx.search(text)]
+
     # 1) Приоритет — цвет, примыкающий к «vinyl/винил/LP» (цвет пресса).
-    for canon, rx in _COLOR_NEAR_CUE:
-        if rx.search(text):
-            return canon
+    cue_hits = [canon for canon, rx in _COLOR_NEAR_CUE if rx.search(text)]
+    if cue_hits:
+        non_black_cue = [c for c in cue_hits if c != "black"]
+        if non_black_cue:
+            return non_black_cue[0]
+        # cue дал только `black`. Но если в тексте есть финишный дескриптор или
+        # другой цвет — это цветной пресс с чёрным в описании, а не обычный
+        # чёрный (аудит 06.09: «Translucent Black Vinyl» прятался как black).
+        finish = [c for c in free_hits if c in _FINISH]
+        if finish:
+            return finish[0]
+        other = [c for c in free_hits if c not in _FINISH and c != "black"]
+        if other:
+            return other[0]
+        return "black"
     # 2) Общий маркер «цветной винил» — без уточнения, какой именно. Так пишет
     # plastinka_com: на 28.08 у 883 позиций в наличии «(цветной винил)» стоит
     # прямо в заголовке и ни у одной нет конкретного цвета. Раньше эти листинги
@@ -404,11 +423,15 @@ def infer_vinyl_color(
     # (цветной винил)» — не стать чёрным по слову из названия альбома.
     if _COLORED_MARKER_RE.search(text):
         return COLORED_UNSPECIFIED
-    # 3) Fallback — первый известный цвет по приоритету, строго по границам
-    # слова. Работает только когда вызывающий вырезал название альбома.
+    # 3) Fallback — известный цвет по приоритету, строго по границам слова.
+    # Работает только когда вызывающий вырезал название альбома.
     if require_cue:
         return None
-    for canon, rx in _COMPILED_COLORS:
-        if rx.search(text):
-            return canon
-    return None
+    if not free_hits:
+        return None
+    # Одинокий `black` в свободном проходе — почти всегда протечка из лейбла
+    # («Black Lion»), жанра («black metal») или артворка, а не цвет пресса.
+    # Чёрный и так дефолт, поэтому из свободного прохода его не берём — только
+    # из cue-прохода №1 («black vinyl»). Не-чёрный сигнал по-прежнему отдаём.
+    non_black = [c for c in free_hits if c != "black"]
+    return non_black[0] if non_black else None

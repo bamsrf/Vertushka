@@ -10,12 +10,58 @@
 впервые открытый/добавленный Discogs-релиз обогащает индекс.
 """
 import logging
+import re
 from datetime import date
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.scrapers.extractors import normalize_barcode, normalize_catalog
+
+# Нормализация названия для дедупа store-native против Discogs-дискографии.
+# Суть плана B: Discogs приоритетен, магазины ДОПОЛНЯЮТ новыми релизами, а не
+# ПЕРЕКРАИВАЮТ существующие. Поэтому store-native, совпавший по названию с
+# Discogs-релизом (пусть и с иным написанием — «Abbey Road (Remastered)» vs
+# «Abbey Road»), в дискографию не добавляем: показываем Discogs с его обложкой.
+_TITLE_PAREN_RE = re.compile(r"\([^()]*\)|\[[^\[\]]*\]")
+_TITLE_NONWORD_RE = re.compile(r"[^\w\s]", re.UNICODE)
+_TITLE_WS_RE = re.compile(r"\s+")
+_TITLE_YEAR_RE = re.compile(r"\b(?:19|20)\d{2}\b")
+# Формат-шум в замусоренных store-native названиях (legacy vinylhouse/plastinka,
+# до чистки title_raw): «Артист – 2021 – Альбом — Виниловая пластинка».
+_TITLE_FORMAT_NOISE_RE = re.compile(
+    r"\b(?:винилов\w*\s+пластинк\w*|винил|vinyl|\d*\s*x?\s*lp|\bcd\b|"
+    r"кассет\w*|cassette|пластинк\w*|предзаказ|pre[\s-]?sale|pre[\s-]?order)\b",
+    re.I | re.UNICODE,
+)
+
+
+def _norm_title(title: str | None) -> str:
+    """«Abbey Road (Remastered)» → «abbey road». Скобочные хвосты (издание/
+    ремастер/год), пунктуация и регистр убираются, чтобы near-дубль Discogs-
+    релиза не проскочил как «новый» store-native и не перекрыл его обложку."""
+    if not title:
+        return ""
+    t = _TITLE_PAREN_RE.sub(" ", title.lower())
+    t = _TITLE_NONWORD_RE.sub(" ", t)
+    return _TITLE_WS_RE.sub(" ", t).strip()
+
+
+def _store_native_dedup_key(title: str | None, artist: str | None) -> str:
+    """Ключ store-native названия для сравнения с чистыми Discogs-названиями.
+
+    У части store-native названия замусорены (legacy до чистки title_raw):
+    «ABBA – 2021 – Voyage — Виниловая пластинка». Прямой _norm_title дал бы
+    «abba 2021 voyage виниловая пластинка» ≠ «voyage», и store-native дубль
+    альбома, который ЕСТЬ в Discogs, показался бы рядом — перекраивание.
+    Срезаем имя артиста, год и формат-шум → «voyage», совпадает с Discogs.
+    """
+    t = title or ""
+    if artist and artist.strip():
+        t = re.sub(re.escape(artist.strip()), " ", t, flags=re.I)
+    t = _TITLE_YEAR_RE.sub(" ", t)
+    t = _TITLE_FORMAT_NOISE_RE.sub(" ", t)
+    return _norm_title(t)
 
 logger = logging.getLogger(__name__)
 
@@ -48,12 +94,72 @@ async def filter_artist_names_with_releases(
         return norm  # все «прошли» → дропа не будет
 
 
+async def _store_native_masters_for_artist(
+    db: AsyncSession,
+    artist_name: str,
+    discogs_titles: set[str],
+    covers_base: str,
+    sort_order: str,
+):
+    """Store-native записи артиста (source='store', альбомы не из Discogs) в
+    той же схеме, что мастера дампа — для вливания в дискографию (план B).
+
+    Матчинг по НОРМАЛИЗОВАННОМУ имени: у store-native нет Discogs artist_id
+    (только 11 из ~5800 его имеют), но страница артиста знает каноничное имя,
+    и store-native.artist = написание магазина. lower+trim+схлопывание пробелов
+    ловит совпадение без хрупкого резолвинга id.
+
+    `discogs_titles` — множество _norm_title ВСЕХ Discogs-релизов артиста (не
+    только текущей страницы: у 50 Cent/AC-DC оригинал лежит за 100-й позицией,
+    а store-native инжектится на page 1). Если релиз есть в Discogs — показываем
+    Discogs с его обложкой, store-native дубль не добавляем (не перекраиваем).
+
+    master_id='s{uuid}' — маркер для мобилки (аналог 'r{}' у release-only):
+    по нему открывается store-native карточка (get_record по Record.id).
+    """
+    from app.schemas.record import MasterSearchResult
+    from app.services.release_type import classify_group
+
+    order = "DESC" if sort_order != "asc" else "ASC"
+    rows = (await db.execute(
+        text(f"""
+            SELECT id, title, year, format_type, cover_image_url
+            FROM records
+            WHERE source = 'store'
+              AND merged_into_id IS NULL
+              AND lower(btrim(regexp_replace(artist, '\\s+', ' ', 'g')))
+                  = lower(btrim(regexp_replace(:name, '\\s+', ' ', 'g')))
+            ORDER BY year {order} NULLS LAST, title
+        """),
+        {"name": artist_name},
+    )).mappings().all()
+
+    out = []
+    for r in rows:
+        title = r["title"] or ""
+        key = _store_native_dedup_key(title, artist_name)
+        if key and key in discogs_titles:
+            continue  # этот релиз уже есть в Discogs — не перекраиваем его
+        out.append(MasterSearchResult(
+            master_id=f"s{r['id']}",
+            title=title,
+            artist=artist_name,
+            year=r["year"],
+            main_release_id=str(r["id"]),
+            cover_image_url=r["cover_image_url"] or None,
+            thumb_image_url=None,
+            release_type=classify_group([r["format_type"]] if r["format_type"] else []),
+        ))
+    return out
+
+
 async def get_artist_masters_local(
     db: AsyncSession,
     artist_id: str,
     page: int = 1,
     per_page: int = 100,
     sort_order: str = "desc",
+    include_store_native: bool = False,
 ):
     """Дискография артиста из ЛОКАЛЬНОГО дамп-индекса — ноль вызовов Discogs.
 
@@ -215,6 +321,33 @@ async def get_artist_masters_local(
     if uncovered_master_ids:
         from app.services.cover_warm import schedule_warm_masters_by_id
         schedule_warm_masters_by_id(uncovered_master_ids)
+
+    # План B: вливаем store-native записи артиста в общую дискографию. Только
+    # на первой странице (их единицы на артиста) и с дедупом по названию против
+    # Discogs-мастеров. Сорт по году — как остальная дискография.
+    if include_store_native and page == 1:
+        # Полный набор Discogs-названий артиста (ВСЯ дискография, не только эта
+        # страница) — эталон дедупа. GIN по artist_ids, дёшево.
+        discogs_titles = {
+            _norm_title(t) for (t,) in (await db.execute(
+                text(
+                    "SELECT DISTINCT title FROM discogs_releases_index "
+                    "WHERE artist_ids @> ARRAY[CAST(:aid AS bigint)] "
+                    "AND NOT is_unofficial"
+                ),
+                {"aid": int(artist_id)},
+            )).all() if t
+        }
+        store_native = await _store_native_masters_for_artist(
+            db, name_row, discogs_titles, covers_base, sort_order,
+        )
+        if store_native:
+            results = results + store_native
+            results.sort(
+                key=lambda r: (r.year is None, r.year or 0),
+                reverse=(sort_order != "asc"),
+            )
+            total += len(store_native)
 
     has_more = page * per_page < total
     return MasterSearchResponse(

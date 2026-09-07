@@ -1188,8 +1188,11 @@ class ApiClient {
   ): Promise<MasterSearchResponse> {
     // sort_order задаёт направление пагинации на бэке: desc = новые→старые,
     // asc = старые→новые. Кэш-ключ на бэке включает направление.
+    // include_store_native: вливаем в дискографию store-native релизы (нет в
+    // Discogs, есть в магазинах) — приходят с master_id='s{uuid}'. Флаг новой
+    // сборки; бэк по умолчанию OFF, чтобы старые сборки их не получали.
     return this.deduplicatedGet<MasterSearchResponse>(`/records/artists/${artistId}/masters`, {
-      params: { page: cursor, per_page: perPage, sort_order: sortOrder },
+      params: { page: cursor, per_page: perPage, sort_order: sortOrder, include_store_native: true },
     });
   }
 

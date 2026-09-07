@@ -143,7 +143,18 @@ class DoctorHeadParser(BaseStoreParser):
         seen: set[str] = set()
         emitted = 0
         # Бюджет общий на все категории: сайт лежит целиком, а не по разделам.
-        budget = PageErrorBudget(self.slug)
+        #
+        # Doctorhead-специфика (06.09): их Bitrix под нагрузкой отдаёт HTTP 500
+        # пачками на соседних страницах и оживает через минуты (проба показала
+        # стр.23 то 500, то 200 за 2.8–4.7 c). Дефолтные max_consecutive=3 /
+        # ratio 5% рвали обход на коротком «плохом окне» — магазин падал третьи
+        # сутки подряд, хотя каталог цел. Терпим дольше: 6 подряд (сайт правда
+        # лёг) и 8% пропусков (≈9 страниц из 115 = потеря ~260 карточек в худшем
+        # случае вместо всего каталога). last_successful двигается, retire не
+        # трогает витрину.
+        budget = PageErrorBudget(
+            self.slug, max_consecutive=6, max_error_ratio=0.08
+        )
 
         for category in _MEDIA_CATEGORIES:
             base = f"{self.base_url}{_CATALOG_ROOT}/{category}/"
@@ -155,6 +166,12 @@ class DoctorHeadParser(BaseStoreParser):
                 html = await self.fetch_page(
                     url, budget,
                     page_label=f"{category} стр. {page} из {max_page or '?'}",
+                    # Их 500-ки нагрузочные и отпускают за минуты, поэтому даём
+                    # больше попыток (backoff до ~31 c) и длинную вторую попытку
+                    # через 30 c — она ложится уже после спайка. Каждая ступень
+                    # ограничена page_deadline_sec=120, так что суммарно безопасно.
+                    retries=5,
+                    second_chance_delay=30.0,
                 )
                 if html is None:
                     # Страница в бюджете пропусков: теряем ~30 карточек, но не
