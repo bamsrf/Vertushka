@@ -97,7 +97,7 @@ async def filter_artist_names_with_releases(
 async def _store_native_masters_for_artist(
     db: AsyncSession,
     artist_name: str,
-    exclude_titles: set[str],
+    discogs_titles: set[str],
     covers_base: str,
     sort_order: str,
 ):
@@ -109,8 +109,10 @@ async def _store_native_masters_for_artist(
     и store-native.artist = написание магазина. lower+trim+схлопывание пробелов
     ловит совпадение без хрупкого резолвинга id.
 
-    Дедуп по названию против уже собранных Discogs-мастеров: если релиз есть в
-    Discogs, показываем его, а не store-native дубль.
+    `discogs_titles` — множество _norm_title ВСЕХ Discogs-релизов артиста (не
+    только текущей страницы: у 50 Cent/AC-DC оригинал лежит за 100-й позицией,
+    а store-native инжектится на page 1). Если релиз есть в Discogs — показываем
+    Discogs с его обложкой, store-native дубль не добавляем (не перекраиваем).
 
     master_id='s{uuid}' — маркер для мобилки (аналог 'r{}' у release-only):
     по нему открывается store-native карточка (get_record по Record.id).
@@ -135,7 +137,8 @@ async def _store_native_masters_for_artist(
     out = []
     for r in rows:
         title = r["title"] or ""
-        if _store_native_dedup_key(title, artist_name) in exclude_titles:
+        key = _store_native_dedup_key(title, artist_name)
+        if key and key in discogs_titles:
             continue  # этот релиз уже есть в Discogs — не перекраиваем его
         out.append(MasterSearchResult(
             master_id=f"s{r['id']}",
@@ -323,9 +326,20 @@ async def get_artist_masters_local(
     # на первой странице (их единицы на артиста) и с дедупом по названию против
     # Discogs-мастеров. Сорт по году — как остальная дискография.
     if include_store_native and page == 1:
-        exclude_titles = {_norm_title(r.title) for r in results if r.title}
+        # Полный набор Discogs-названий артиста (ВСЯ дискография, не только эта
+        # страница) — эталон дедупа. GIN по artist_ids, дёшево.
+        discogs_titles = {
+            _norm_title(t) for (t,) in (await db.execute(
+                text(
+                    "SELECT DISTINCT title FROM discogs_releases_index "
+                    "WHERE artist_ids @> ARRAY[CAST(:aid AS bigint)] "
+                    "AND NOT is_unofficial"
+                ),
+                {"aid": int(artist_id)},
+            )).all() if t
+        }
         store_native = await _store_native_masters_for_artist(
-            db, name_row, exclude_titles, covers_base, sort_order,
+            db, name_row, discogs_titles, covers_base, sort_order,
         )
         if store_native:
             results = results + store_native
