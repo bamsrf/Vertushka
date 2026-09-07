@@ -11,12 +11,12 @@ import {
   StyleSheet,
   TouchableOpacity,
   ScrollView,
-  Alert,
   ActivityIndicator,
   Animated,
   Easing,
 } from 'react-native';
 import { toast } from '../lib/toast';
+import { promptText } from '../lib/promptCompat';
 import { Icon } from '@/components/ui';
 import { useCollectionStore } from '../lib/store';
 import { api } from '../lib/api';
@@ -111,24 +111,18 @@ export function WishlistFolderPickerModal({
     return selectedWishlistItemIds.some(id => itemIds.has(id));
   };
 
-  const handleCreateFolder = () => {
-    Alert.prompt(
-      'Новая папка',
-      'Введите название папки',
-      async (name) => {
-        if (!name?.trim()) return;
-        setIsCreating(true);
-        try {
-          const folder = await createWishlistFolder(name.trim());
-          setIsCreating(false);
-          onSelectFolder(folder.id);
-        } catch {
-          setIsCreating(false);
-          toast.error('Не удалось создать папку');
-        }
-      },
-      'plain-text',
-    );
+  const handleCreateFolder = async () => {
+    const name = await promptText({ title: 'Новая папка', message: 'Введите название папки' });
+    if (!name?.trim()) return;
+    setIsCreating(true);
+    try {
+      const folder = await createWishlistFolder(name.trim());
+      setIsCreating(false);
+      onSelectFolder(folder.id);
+    } catch {
+      setIsCreating(false);
+      toast.error('Не удалось создать папку');
+    }
   };
 
   const translateY = progress.interpolate({

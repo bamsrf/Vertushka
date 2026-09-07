@@ -5,6 +5,7 @@
 import { useEffect, useCallback, useState, useRef, useMemo } from 'react';
 import { View, StyleSheet, Alert, TouchableOpacity, Text, Animated, ScrollView, LayoutAnimation, UIManager, Platform, Easing } from 'react-native';
 import { toast } from '../../lib/toast';
+import { promptText } from '../../lib/promptCompat';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { Icon } from '@/components/ui';
@@ -676,32 +677,20 @@ export default function CollectionScreen() {
     }
   };
 
-  const handleCreateFolder = () => {
-    Alert.prompt(
-      'Новая папка',
-      'Введите название папки',
-      async (name) => {
-        if (!name?.trim()) return;
-        await createFolder(name.trim());
-      },
-      'plain-text',
-    );
+  const handleCreateFolder = async () => {
+    const name = await promptText({ title: 'Новая папка', message: 'Введите название папки' });
+    if (!name?.trim()) return;
+    await createFolder(name.trim());
   };
 
-  const handleCreateWishlistFolder = () => {
-    Alert.prompt(
-      'Новая папка',
-      'Введите название папки',
-      async (name) => {
-        if (!name?.trim()) return;
-        try {
-          await createWishlistFolder(name.trim());
-        } catch {
-          toast.error('Не удалось создать папку');
-        }
-      },
-      'plain-text',
-    );
+  const handleCreateWishlistFolder = async () => {
+    const name = await promptText({ title: 'Новая папка', message: 'Введите название папки' });
+    if (!name?.trim()) return;
+    try {
+      await createWishlistFolder(name.trim());
+    } catch {
+      toast.error('Не удалось создать папку');
+    }
   };
 
   const handleAddToWishlistFolder = async (folderId: string) => {

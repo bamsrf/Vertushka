@@ -25,7 +25,6 @@ import {
   AppState,
   AppStateStatus,
   ListRenderItem,
-  ActionSheetIOS,
   Alert,
   Keyboard,
   Pressable,
@@ -73,6 +72,7 @@ import { useMessagesStore } from '../../lib/messagesStore';
 import { api, resolveMediaUrl } from '../../lib/api';
 import { messagesApi } from '../../lib/messagesApi';
 import { toast } from '../../lib/toast';
+import { showActionSheet } from '../../lib/actionSheetCompat';
 import { cleanArtistName } from '../../lib/format';
 import { messagesSocket } from '../../lib/messagesWs';
 import type {
@@ -1593,23 +1593,12 @@ export default function ConversationScreen() {
       'day',
       'forever',
     ];
-    if (Platform.OS === 'ios') {
-      ActionSheetIOS.showActionSheetWithOptions(
-        { options, cancelButtonIndex: 4, title: 'Отключить уведомления' },
-        (i) => {
-          if (i < 4) setMuteDurationAction(conversationId, map[i]);
-        },
-      );
-    } else {
-      Alert.alert(
-        'Отключить уведомления',
-        undefined,
-        options.slice(0, 4).map((label, i) => ({
-          text: label,
-          onPress: () => setMuteDurationAction(conversationId, map[i]),
-        })),
-      );
-    }
+    showActionSheet(
+      { options, cancelButtonIndex: 4, title: 'Отключить уведомления' },
+      (i) => {
+        if (i < 4) setMuteDurationAction(conversationId, map[i]);
+      },
+    );
   }, [conversationId, setMuteDurationAction]);
 
   const handleMenu = useCallback(() => {
@@ -1686,21 +1675,13 @@ export default function ConversationScreen() {
       }
     };
 
-    if (Platform.OS === 'ios') {
-      ActionSheetIOS.showActionSheetWithOptions(
-        { options, cancelButtonIndex: cancel, destructiveButtonIndex: destructive },
-        exec,
-      );
-    } else {
-      Alert.alert(`@${partner.username}`, undefined, [
-        { text: muteLabel, onPress: () => exec(0) },
-        { text: 'Очистить историю', style: 'destructive', onPress: () => exec(1) },
-        { text: 'Пожаловаться', onPress: () => exec(2) },
-        { text: `Заблокировать @${partner.username}`, style: 'destructive', onPress: () => exec(3) },
-        { text: 'Скрыть диалог', style: 'destructive', onPress: () => exec(4) },
-        { text: 'Отмена', style: 'cancel' },
-      ]);
-    }
+    // Все шесть пунктов видны на обеих платформах: на Android — OptionsSheet
+    // без лимита в три кнопки, «Пожаловаться» и «Заблокировать» обязаны быть
+    // на виду (UGC-политика Play).
+    showActionSheet(
+      { options, cancelButtonIndex: cancel, destructiveButtonIndex: destructive },
+      exec,
+    );
   }, [
     conversationId,
     partner,

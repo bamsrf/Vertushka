@@ -10,6 +10,7 @@ import {
   BottomSheetBackdrop,
   type BottomSheetBackdropProps,
 } from '@gorhom/bottom-sheet';
+import { useAndroidBackClose } from '../../lib/useAndroidBackClose';
 import { useRouter } from 'expo-router';
 import { Colors, Typography, Spacing, BorderRadius } from '../../constants/theme';
 import { PriceHistoryCollapsible } from './PriceHistoryCollapsible';
@@ -87,6 +88,11 @@ const STATUS_PILL: Record<RadarStatus, { label: string; color: string; bg: strin
 export const PriceHistorySheet = forwardRef<PriceHistorySheetRef, Props>(
   ({ onOpenStore, onEditThreshold, onRemoved, onAltChanged }, ref) => {
     const sheetRef = useRef<BottomSheetModal>(null);
+    // Android: системная «Назад» закрывает шит, а не уводит с экрана (B8).
+    // Подписка живёт только пока шит открыт — onChange(-1) её снимает.
+    const [sheetOpen, setSheetOpen] = useState(false);
+    const closeSheet = useCallback(() => sheetRef.current?.dismiss(), []);
+    useAndroidBackClose(sheetOpen, closeSheet);
     const router = useRouter();
     const removeRadar = useCollectionStore((s) => s.removeWishlistRadar);
     const setAcceptAlt = useCollectionStore((s) => s.setWishlistAcceptAlt);
@@ -200,6 +206,7 @@ export const PriceHistorySheet = forwardRef<PriceHistorySheetRef, Props>(
     return (
       <BottomSheetModal
         ref={sheetRef}
+        onChange={(i) => setSheetOpen(i >= 0)}
         snapPoints={['82%']}
         onDismiss={runPending}
         backdropComponent={renderBackdrop}

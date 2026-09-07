@@ -12,9 +12,6 @@ import {
   Animated,
   Pressable,
   Linking,
-  Platform,
-  ActionSheetIOS,
-  Alert,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Icon, Toggle } from '@/components/ui';
@@ -23,6 +20,7 @@ import * as Notifications from 'expo-notifications';
 import { registerPushToken } from '../../lib/push';
 import { api } from '../../lib/api';
 import { toast } from '../../lib/toast';
+import { showActionSheet } from '../../lib/actionSheetCompat';
 import { NotificationSettings } from '../../lib/types';
 import { Colors, Typography, Spacing, BorderRadius } from '../../constants/theme';
 import { ms } from '../../lib/responsive';
@@ -83,30 +81,16 @@ function pickPreset(
   current: string | null,
   onPick: (value: string) => void,
 ) {
-  if (Platform.OS === 'ios') {
-    ActionSheetIOS.showActionSheetWithOptions(
-      {
-        title,
-        options: [...presets, 'Отмена'],
-        cancelButtonIndex: presets.length,
-      },
-      (idx) => {
-        if (idx >= 0 && idx < presets.length) onPick(presets[idx]);
-      },
-    );
-  } else {
-    Alert.alert(
+  showActionSheet(
+    {
       title,
-      undefined,
-      [
-        ...presets.map((p) => ({
-          text: p === current ? `✓ ${p}` : p,
-          onPress: () => onPick(p),
-        })),
-        { text: 'Отмена', style: 'cancel' as const },
-      ],
-    );
-  }
+      options: [...presets, 'Отмена'],
+      cancelButtonIndex: presets.length,
+    },
+    (idx) => {
+      if (idx >= 0 && idx < presets.length) onPick(presets[idx]);
+    },
+  );
 }
 
 /**

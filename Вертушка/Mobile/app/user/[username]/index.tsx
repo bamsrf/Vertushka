@@ -24,7 +24,6 @@ import {
   Easing,
   Pressable,
   Share,
-  ActionSheetIOS,
   Alert,
 } from 'react-native';
 import { Image } from 'expo-image';
@@ -52,6 +51,7 @@ import {
   WishlistPublicResponse,
 } from '../../../lib/types';
 import { toast } from '../../../lib/toast';
+import { showActionSheet } from '../../../lib/actionSheetCompat';
 import { cleanArtistName } from '../../../lib/format';
 import { AchievementsBlock } from '../../../components/AchievementsBlock';
 import { ArchetypeChip } from '../../../components/ArchetypeChip';
@@ -455,7 +455,7 @@ export default function UserProfileScreen() {
 
   /**
    * Меню действий по кнопке «Вы подписаны ⋯» — пока единственный пункт «Отписаться».
-   * iOS — ActionSheetIOS, Android — Alert.
+   * iOS — ActionSheetIOS, Android — OptionsSheet (lib/actionSheetCompat).
    */
   const handleFollowMenu = useCallback(() => {
     if (!profileUserId) return;
@@ -472,29 +472,18 @@ export default function UserProfileScreen() {
       }
     };
 
-    if (Platform.OS === 'ios') {
-      ActionSheetIOS.showActionSheetWithOptions(
-        {
-          title: `@${pubProfile?.username ?? ''}`,
-          options: ['Отписаться', 'Отмена'],
-          cancelButtonIndex: 1,
-          destructiveButtonIndex: 0,
-          userInterfaceStyle: 'light',
-        },
-        (idx) => {
-          if (idx === 0) doUnfollow();
-        },
-      );
-    } else {
-      Alert.alert(
-        `@${pubProfile?.username ?? ''}`,
-        undefined,
-        [
-          { text: 'Отписаться', style: 'destructive', onPress: doUnfollow },
-          { text: 'Отмена', style: 'cancel' },
-        ],
-      );
-    }
+    showActionSheet(
+      {
+        title: `@${pubProfile?.username ?? ''}`,
+        options: ['Отписаться', 'Отмена'],
+        cancelButtonIndex: 1,
+        destructiveButtonIndex: 0,
+        userInterfaceStyle: 'light',
+      },
+      (idx) => {
+        if (idx === 0) doUnfollow();
+      },
+    );
   }, [profileUserId, unfollowUser, pubProfile?.username]);
 
   /**
@@ -572,27 +561,19 @@ export default function UserProfileScreen() {
       );
     };
 
-    if (Platform.OS === 'ios') {
-      ActionSheetIOS.showActionSheetWithOptions(
-        {
-          title: `@${pubProfile?.username ?? ''}`,
-          options: ['Пожаловаться', 'Заблокировать', 'Отмена'],
-          cancelButtonIndex: 2,
-          destructiveButtonIndex: 1,
-          userInterfaceStyle: 'light',
-        },
-        (idx) => {
-          if (idx === 0) doReport();
-          if (idx === 1) doBlock();
-        },
-      );
-    } else {
-      Alert.alert(`@${pubProfile?.username ?? ''}`, undefined, [
-        { text: 'Пожаловаться', onPress: doReport },
-        { text: 'Заблокировать', style: 'destructive', onPress: doBlock },
-        { text: 'Отмена', style: 'cancel' },
-      ]);
-    }
+    showActionSheet(
+      {
+        title: `@${pubProfile?.username ?? ''}`,
+        options: ['Пожаловаться', 'Заблокировать', 'Отмена'],
+        cancelButtonIndex: 2,
+        destructiveButtonIndex: 1,
+        userInterfaceStyle: 'light',
+      },
+      (idx) => {
+        if (idx === 0) doReport();
+        if (idx === 1) doBlock();
+      },
+    );
   }, [profileUserId, pubProfile?.username]);
 
   // Возвращает true, если действие выполнено (modal открыт / редирект на auth / показан toast).

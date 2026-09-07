@@ -65,11 +65,9 @@ import { initDeviceMetrics } from '../lib/deviceMetrics';
 import { noteAppLaunch } from '../lib/reviewPrompt';
 import { useRemoteConfigStore } from '../lib/remoteConfig';
 import { ForceUpdateScreen } from '../components/ForceUpdateScreen';
-import { clampSystemFontScale } from '../lib/responsive';
-
-// Ограничиваем системный font-scale до старта рендера — крупный «Размер текста»
-// в настройках устройства не должен ломать верстку (ms() уже даёт нужный размер).
-clampSystemFontScale();
+import { AndroidSheetsHost } from '../components/ui/AndroidSheetsHost';
+// Системный font-scale клэмпится через metro-alias react-native →
+// lib/fontScale/scaledText.tsx (maxFontSizeMultiplier), см. metro.config.js.
 
 Notifications.setNotificationHandler({
   handleNotification: async () => {
@@ -570,6 +568,9 @@ function RootLayout() {
           />
         </Stack>
         <AchievementUnlockHost />
+        {/* Android-замены Alert.prompt / ActionSheetIOS (lib/promptCompat,
+            lib/actionSheetCompat). На iOS — null. */}
+        <AndroidSheetsHost />
         {/* Спрашивает «это подарок?», когда добавленная пластинка совпала
             с забронированным пунктом вишлиста. Живёт здесь, а не на экранах:
             добавить в коллекцию можно из скана, поиска и карточки релиза. */}

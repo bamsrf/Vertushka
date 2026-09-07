@@ -29,8 +29,6 @@ import {
   FlatList,
   TextInput,
   Keyboard,
-  Alert,
-  ActionSheetIOS,
 } from 'react-native';
 import { useRouter, Stack, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -41,6 +39,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Icon } from '@/components/ui';
 import { Button, Input, Card } from '../../components/ui';
 import { toast } from '../../lib/toast';
+import { showActionSheet } from '../../lib/actionSheetCompat';
 import { api, apiErrorText, getCoverUrl } from '../../lib/api';
 import { useCollectionStore } from '../../lib/store';
 import type { SpotifyAlbumCandidate, VinylRecord, PreflightResponse, RecordSearchResult } from '../../lib/types';
@@ -119,26 +118,14 @@ function askPhotoSource(hasPhoto: boolean): Promise<'library' | 'camera' | 'remo
     : ['library', 'camera'];
 
   return new Promise((resolve) => {
-    if (Platform.OS === 'ios') {
-      ActionSheetIOS.showActionSheetWithOptions(
-        {
-          options,
-          cancelButtonIndex: cancelIndex,
-          destructiveButtonIndex: hasPhoto ? 2 : undefined,
-        },
-        (index) => resolve(map[index] ?? null),
-      );
-      return;
-    }
-    const buttons: any[] = [
-      { text: 'Выбрать из галереи', onPress: () => resolve('library') },
-      { text: 'Сделать фото', onPress: () => resolve('camera') },
-    ];
-    if (hasPhoto) {
-      buttons.push({ text: 'Убрать фото', style: 'destructive', onPress: () => resolve('remove') });
-    }
-    buttons.push({ text: 'Отмена', style: 'cancel', onPress: () => resolve(null) });
-    Alert.alert('Обложка', undefined, buttons, { cancelable: true, onDismiss: () => resolve(null) });
+    showActionSheet(
+      {
+        options,
+        cancelButtonIndex: cancelIndex,
+        destructiveButtonIndex: hasPhoto ? 2 : undefined,
+      },
+      (index) => resolve(map[index] ?? null),
+    );
   });
 }
 

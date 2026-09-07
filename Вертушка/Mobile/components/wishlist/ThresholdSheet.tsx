@@ -22,6 +22,7 @@ import {
   BottomSheetBackdrop,
   type BottomSheetBackdropProps,
 } from '@gorhom/bottom-sheet';
+import { useAndroidBackClose } from '../../lib/useAndroidBackClose';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, {
@@ -139,6 +140,11 @@ function groupWorklet(n: number): string {
 
 export const ThresholdSheet = forwardRef<ThresholdSheetRef, Props>(({ onSaved, onOpenRadar }, ref) => {
   const sheetRef = useRef<BottomSheetModal>(null);
+  // Android: системная «Назад» закрывает шит, а не уводит с экрана (B8).
+  // Подписка живёт только пока шит открыт — onChange(-1) её снимает.
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const closeSheet = useCallback(() => sheetRef.current?.dismiss(), []);
+  useAndroidBackClose(sheetOpen, closeSheet);
   const insets = useSafeAreaInsets();
   const saveRadar = useCollectionStore((s) => s.saveWishlistRadar);
   const removeRadar = useCollectionStore((s) => s.removeWishlistRadar);
@@ -380,6 +386,7 @@ export const ThresholdSheet = forwardRef<ThresholdSheetRef, Props>(({ onSaved, o
   return (
     <BottomSheetModal
       ref={sheetRef}
+      onChange={(i) => setSheetOpen(i >= 0)}
       enableDynamicSizing
       topInset={insets.top + 8}
       backdropComponent={renderBackdrop}

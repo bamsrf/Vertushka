@@ -16,7 +16,8 @@
  * ось, ms() её не трогает. Контролируется через allowFontScaling /
  * maxFontSizeMultiplier на <Text>.
  */
-import { Dimensions, PixelRatio, Text, TextInput } from 'react-native';
+import { Dimensions, PixelRatio } from 'react-native';
+import { MAX_FONT_SCALE } from './fontScale/maxFontScale';
 
 const { width } = Dimensions.get('window');
 
@@ -54,22 +55,10 @@ export const s = (size: number): number =>
   Math.round(PixelRatio.roundToNearestPixel(size * scale));
 
 /**
- * Максимальный множитель СИСТЕМНОГО font-scale (настройка «Размер текста» в
- * iOS/Android). ms() уже даёт крупный шрифт на compact, поэтому системному
- * увеличению хватает +15% — дальше верстка ломается (наезды/обрезка). Не
- * меньше 1, иначе на дефолте текст не сжимается.
+ * Потолок системного font-scale — см. `lib/fontScale/maxFontScale.ts`.
+ * Сам clamp живёт в `lib/fontScale/scaledText.tsx`: `Text`/`TextInput` с
+ * дефолтным `maxFontSizeMultiplier`, подставленные вместо RN-экспортов через
+ * alias в `metro.config.js`. Прежний `Text.defaultProps` на RN 0.86 / React 19
+ * был no-op — function-компоненты `defaultProps` больше не читают.
  */
-export const MAX_FONT_SCALE = 1.15;
-
-/**
- * Глобальный clamp системного font-scale. Ставит maxFontSizeMultiplier в
- * defaultProps для <Text> и <TextInput>, чтобы гигантский системный текст не
- * разносил верстку. Вызывать ОДИН раз при старте (root layout, до рендера).
- */
-export const clampSystemFontScale = (): void => {
-  const T = Text as unknown as { defaultProps?: Record<string, unknown> };
-  T.defaultProps = { ...(T.defaultProps ?? {}), maxFontSizeMultiplier: MAX_FONT_SCALE };
-
-  const TI = TextInput as unknown as { defaultProps?: Record<string, unknown> };
-  TI.defaultProps = { ...(TI.defaultProps ?? {}), maxFontSizeMultiplier: MAX_FONT_SCALE };
-};
+export { MAX_FONT_SCALE };
