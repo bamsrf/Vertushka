@@ -301,6 +301,13 @@ export default function ArtistDetailScreen() {
   }, [hasMore, isLoadingMasters, hasLoadError]);
 
   const handleMasterPress = useCallback((master: MasterSearchResult) => {
+    // Store-native релиз (нет в Discogs, есть в магазинах) приходит с
+    // master_id='s{uuid}' и main_release_id = Record.id (UUID). Открываем
+    // карточку напрямую по UUID — /record/[id] резолвит его через getRecord.
+    if (master.master_id?.startsWith('s')) {
+      router.push(`/record/${master.main_release_id}`);
+      return;
+    }
     // Release-only айтем (нет master-группировки на Discogs) приходит с пустым
     // master_id → открываем карточку релиза напрямую по main_release_id
     // (discogs release id, [id].tsx резолвит через getRecordByDiscogsId).
