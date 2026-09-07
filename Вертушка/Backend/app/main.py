@@ -71,7 +71,7 @@ if _settings_early.sentry_dsn:
     logger.info("Sentry initialised")
 
 # API роутеры
-from app.api import auth, records, collections, wishlists, users, gifts, profile, export, covers, user_photos, waitlist, achievements, offers, market, messages, notifications, discogs_oauth, admin, reports, app_config
+from app.api import auth, records, collections, wishlists, users, gifts, profile, export, covers, user_photos, waitlist, achievements, offers, market, messages, notifications, discogs_oauth, admin, reports, app_config, internal
 
 # Web роутеры (HTML страницы)
 from app.web import routes as web_routes
@@ -174,6 +174,16 @@ async def lifespan(app: FastAPI):
                 await cache.set("health", "scheduler_heartbeat", int(time.time()), ttl=300)
             scheduler.add_job(_scheduler_heartbeat, 'interval', minutes=1,
                               id='scheduler_heartbeat', max_instances=1, coalesce=True)
+            # Почта support@ → Telegram. Адрес обещан в Terms («жалобы в
+            # течение 24 часов») — без пуша это обещание держится на том,
+            # что кто-то вспомнит зайти в веб-морду Beget.
+            if settings.mailbox_imap_user and settings.mailbox_imap_password:
+                from app.tasks.mailbox_tasks import poll_support_mailbox
+                scheduler.add_job(
+                    poll_support_mailbox, 'interval',
+                    minutes=settings.mailbox_poll_interval_minutes,
+                    id='support_mailbox_poll', max_instances=1, coalesce=True,
+                )
             # Метрика покрытия обложек (§4.2): 6:15, после ночного прогрева/enrichment.
             scheduler.add_job(report_cover_coverage, 'cron', hour=6, minute=15, id='cover_coverage_report', max_instances=1, coalesce=True)
             scheduler.add_job(enrich_market_covers, 'interval', hours=2, id='enrich_market_covers')
@@ -480,6 +490,9 @@ app.include_router(notifications.router, prefix="/api/notifications", tags=["У�
 
 app.include_router(admin.router, prefix="/api/admin", tags=["Модерация"])
 app.include_router(reports.router, prefix="/api/reports", tags=["Жалобы"])
+# Приёмник webhook'ов от GlitchTip. Секрет в path, не в заголовке: GlitchTip
+# кастомные заголовки не умеет. include_in_schema=False — ручка не для людей.
+app.include_router(internal.router, prefix="/api/internal", tags=["Internal"])
 
 # Remote config: публичный конфиг для клиента + staff-флип без деплоя
 app.include_router(app_config.router, prefix="/api/config", tags=["Конфиг"])

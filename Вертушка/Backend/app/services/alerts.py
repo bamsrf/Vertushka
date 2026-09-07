@@ -70,13 +70,36 @@ async def send_alert(
     if not allowed:
         return
 
-    settings = get_settings()
     text = f"{emoji} <b>{html.escape(title)}</b>"
     if body:
         text += f"\n\n<pre>{html.escape(body[:1500])}</pre>"
     if suppressed:
         text += f"\n\n<i>+{suppressed} таких же за окно троттлинга</i>"
 
+    await _deliver(text)
+
+
+async def send_notice(title: str, body: str = "", emoji: str = "✉️") -> None:
+    """Отправить сообщение МИМО троттлинга. Не бросает исключение наружу.
+
+    Для событий, которые нельзя схлопывать: письмо в поддержку — не шторм
+    одинаковых ошибок, и «+5 таких же» вместо пяти текстов теряет ровно то,
+    ради чего канал заводили. Защита от флуда здесь — на стороне вызывающего
+    (лимит на проход), а не общий троттл по ключу.
+    """
+    if not _enabled():
+        return
+
+    text = f"{emoji} <b>{html.escape(title)}</b>"
+    if body:
+        text += f"\n\n<pre>{html.escape(body[:2500])}</pre>"
+
+    await _deliver(text)
+
+
+async def _deliver(text: str) -> None:
+    """Положить готовый HTML-текст в чат. Все ошибки проглатываются."""
+    settings = get_settings()
     try:
         async with httpx.AsyncClient(timeout=_SEND_TIMEOUT_SECONDS) as client:
             response = await client.post(

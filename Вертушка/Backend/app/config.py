@@ -319,6 +319,23 @@ class Settings(BaseSettings):
     telegram_alert_chat_id: str = Field(default="", alias="TELEGRAM_ALERT_CHAT_ID")
     telegram_alert_throttle_seconds: int = Field(default=300, alias="TELEGRAM_ALERT_THROTTLE_SECONDS")
 
+    # ── GlitchTip → Telegram (api/internal.py) ──────────────────────────────
+    # Отдельный секрет, а не INTERNAL_API_TOKEN: URL webhook'а лежит в чужой
+    # БД (GlitchTip) и светится в его логах, поэтому им нельзя дёргать
+    # остальные внутренние ручки. Пустой → эндпоинт отвечает 404.
+    glitchtip_webhook_secret: str = Field(default="", alias="GLITCHTIP_WEBHOOK_SECRET")
+
+    # ── Почта support@ → Telegram (tasks/mailbox_tasks.py) ──────────────────
+    # Ящик на Beget. Пустой user → джоб не регистрируется.
+    mailbox_imap_host: str = Field(default="imap.beget.com", alias="MAILBOX_IMAP_HOST")
+    mailbox_imap_port: int = Field(default=993, alias="MAILBOX_IMAP_PORT")
+    mailbox_imap_user: str = Field(default="", alias="MAILBOX_IMAP_USER")
+    mailbox_imap_password: str = Field(default="", alias="MAILBOX_IMAP_PASSWORD")
+    mailbox_poll_interval_minutes: int = Field(default=2, alias="MAILBOX_POLL_INTERVAL_MINUTES")
+    # Потолок на один проход: рассылка или спам-волна не должна выжечь
+    # flood-limit бота. Остаток разберётся на следующем проходе.
+    mailbox_max_per_poll: int = Field(default=10, alias="MAILBOX_MAX_PER_POLL")
+
     # ── Пороги здоровья (services/health_metrics.py) ────────────────────────
     # Ловят то, что не ловит аларм на исключения: 504 от таймаутов, ползучую
     # деградацию p99 без ошибок и шторм 429.
