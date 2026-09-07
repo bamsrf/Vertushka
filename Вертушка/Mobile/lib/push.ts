@@ -10,11 +10,36 @@ import * as Notifications from 'expo-notifications';
 import Constants from 'expo-constants';
 import { api } from './api';
 
+/**
+ * Android notification channel, в который прилетает каждый пуш.
+ * Должен совпадать с `ANDROID_PUSH_CHANNEL_ID` в `Backend/app/services/push.py` —
+ * бэкенд кладёт этот `channelId` в каждое сообщение Expo Push API.
+ */
+export const ANDROID_PUSH_CHANNEL_ID = 'default';
+
+/**
+ * Создаёт канал уведомлений на Android. Гвард внутри (П4 ANDROID_PORT_PLAN):
+ * вызывается безусловно, на iOS — no-op. Обязан отработать ДО
+ * getExpoPushTokenAsync: на Android 13+ без канала системный запрос
+ * разрешения не появляется.
+ */
+export async function ensureAndroidPushChannel(): Promise<void> {
+  if (Platform.OS !== 'android') return;
+  await Notifications.setNotificationChannelAsync(ANDROID_PUSH_CHANNEL_ID, {
+    name: 'Уведомления',
+    importance: Notifications.AndroidImportance.MAX,
+    sound: 'default',
+    vibrationPattern: [0, 250, 250, 250],
+  });
+}
+
 export async function registerPushToken(
   { requestIfNeeded }: { requestIfNeeded: boolean },
 ): Promise<boolean> {
   try {
     if (Platform.OS !== 'ios' && Platform.OS !== 'android') return false;
+
+    await ensureAndroidPushChannel();
 
     const perms = await Notifications.getPermissionsAsync();
     let granted = perms.status === 'granted';

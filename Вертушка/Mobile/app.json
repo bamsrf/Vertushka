@@ -158,7 +158,14 @@
       ],
       "@sentry/react-native",
       "./plugins/withSentryDisableLocalUpload",
-      "expo-notifications",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/notification-icon.png",
+          "color": "#2A4BD7",
+          "defaultChannel": "default"
+        }
+      ],
       "expo-font",
       "expo-web-browser",
       "expo-video"
