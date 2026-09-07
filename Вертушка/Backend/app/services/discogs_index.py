@@ -48,12 +48,69 @@ async def filter_artist_names_with_releases(
         return norm  # все «прошли» → дропа не будет
 
 
+async def _store_native_masters_for_artist(
+    db: AsyncSession,
+    artist_name: str,
+    exclude_titles: set[str],
+    covers_base: str,
+    sort_order: str,
+):
+    """Store-native записи артиста (source='store', альбомы не из Discogs) в
+    той же схеме, что мастера дампа — для вливания в дискографию (план B).
+
+    Матчинг по НОРМАЛИЗОВАННОМУ имени: у store-native нет Discogs artist_id
+    (только 11 из ~5800 его имеют), но страница артиста знает каноничное имя,
+    и store-native.artist = написание магазина. lower+trim+схлопывание пробелов
+    ловит совпадение без хрупкого резолвинга id.
+
+    Дедуп по названию против уже собранных Discogs-мастеров: если релиз есть в
+    Discogs, показываем его, а не store-native дубль.
+
+    master_id='s{uuid}' — маркер для мобилки (аналог 'r{}' у release-only):
+    по нему открывается store-native карточка (get_record по Record.id).
+    """
+    from app.schemas.record import MasterSearchResult
+    from app.services.release_type import classify_group
+
+    order = "DESC" if sort_order != "asc" else "ASC"
+    rows = (await db.execute(
+        text(f"""
+            SELECT id, title, year, format_type, cover_image_url
+            FROM records
+            WHERE source = 'store'
+              AND merged_into_id IS NULL
+              AND lower(btrim(regexp_replace(artist, '\\s+', ' ', 'g')))
+                  = lower(btrim(regexp_replace(:name, '\\s+', ' ', 'g')))
+            ORDER BY year {order} NULLS LAST, title
+        """),
+        {"name": artist_name},
+    )).mappings().all()
+
+    out = []
+    for r in rows:
+        title = r["title"] or ""
+        if title.strip().lower() in exclude_titles:
+            continue  # этот релиз уже есть в Discogs-дискографии
+        out.append(MasterSearchResult(
+            master_id=f"s{r['id']}",
+            title=title,
+            artist=artist_name,
+            year=r["year"],
+            main_release_id=str(r["id"]),
+            cover_image_url=r["cover_image_url"] or None,
+            thumb_image_url=None,
+            release_type=classify_group([r["format_type"]] if r["format_type"] else []),
+        ))
+    return out
+
+
 async def get_artist_masters_local(
     db: AsyncSession,
     artist_id: str,
     page: int = 1,
     per_page: int = 100,
     sort_order: str = "desc",
+    include_store_native: bool = False,
 ):
     """Дискография артиста из ЛОКАЛЬНОГО дамп-индекса — ноль вызовов Discogs.
 
@@ -215,6 +272,22 @@ async def get_artist_masters_local(
     if uncovered_master_ids:
         from app.services.cover_warm import schedule_warm_masters_by_id
         schedule_warm_masters_by_id(uncovered_master_ids)
+
+    # План B: вливаем store-native записи артиста в общую дискографию. Только
+    # на первой странице (их единицы на артиста) и с дедупом по названию против
+    # Discogs-мастеров. Сорт по году — как остальная дискография.
+    if include_store_native and page == 1:
+        exclude_titles = {r.title.strip().lower() for r in results if r.title}
+        store_native = await _store_native_masters_for_artist(
+            db, name_row, exclude_titles, covers_base, sort_order,
+        )
+        if store_native:
+            results = results + store_native
+            results.sort(
+                key=lambda r: (r.year is None, r.year or 0),
+                reverse=(sort_order != "asc"),
+            )
+            total += len(store_native)
 
     has_more = page * per_page < total
     return MasterSearchResponse(
