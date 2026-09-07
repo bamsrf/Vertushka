@@ -26,6 +26,14 @@ from app.services.scrapers.extractors import normalize_barcode, normalize_catalo
 _TITLE_PAREN_RE = re.compile(r"\([^()]*\)|\[[^\[\]]*\]")
 _TITLE_NONWORD_RE = re.compile(r"[^\w\s]", re.UNICODE)
 _TITLE_WS_RE = re.compile(r"\s+")
+_TITLE_YEAR_RE = re.compile(r"\b(?:19|20)\d{2}\b")
+# Формат-шум в замусоренных store-native названиях (legacy vinylhouse/plastinka,
+# до чистки title_raw): «Артист – 2021 – Альбом — Виниловая пластинка».
+_TITLE_FORMAT_NOISE_RE = re.compile(
+    r"\b(?:винилов\w*\s+пластинк\w*|винил|vinyl|\d*\s*x?\s*lp|\bcd\b|"
+    r"кассет\w*|cassette|пластинк\w*|предзаказ|pre[\s-]?sale|pre[\s-]?order)\b",
+    re.I | re.UNICODE,
+)
 
 
 def _norm_title(title: str | None) -> str:
@@ -37,6 +45,23 @@ def _norm_title(title: str | None) -> str:
     t = _TITLE_PAREN_RE.sub(" ", title.lower())
     t = _TITLE_NONWORD_RE.sub(" ", t)
     return _TITLE_WS_RE.sub(" ", t).strip()
+
+
+def _store_native_dedup_key(title: str | None, artist: str | None) -> str:
+    """Ключ store-native названия для сравнения с чистыми Discogs-названиями.
+
+    У части store-native названия замусорены (legacy до чистки title_raw):
+    «ABBA – 2021 – Voyage — Виниловая пластинка». Прямой _norm_title дал бы
+    «abba 2021 voyage виниловая пластинка» ≠ «voyage», и store-native дубль
+    альбома, который ЕСТЬ в Discogs, показался бы рядом — перекраивание.
+    Срезаем имя артиста, год и формат-шум → «voyage», совпадает с Discogs.
+    """
+    t = title or ""
+    if artist and artist.strip():
+        t = re.sub(re.escape(artist.strip()), " ", t, flags=re.I)
+    t = _TITLE_YEAR_RE.sub(" ", t)
+    t = _TITLE_FORMAT_NOISE_RE.sub(" ", t)
+    return _norm_title(t)
 
 logger = logging.getLogger(__name__)
 
@@ -110,7 +135,7 @@ async def _store_native_masters_for_artist(
     out = []
     for r in rows:
         title = r["title"] or ""
-        if _norm_title(title) in exclude_titles:
+        if _store_native_dedup_key(title, artist_name) in exclude_titles:
             continue  # этот релиз уже есть в Discogs — не перекраиваем его
         out.append(MasterSearchResult(
             master_id=f"s{r['id']}",
