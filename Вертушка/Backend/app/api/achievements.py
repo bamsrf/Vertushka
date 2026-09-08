@@ -42,7 +42,10 @@ from app.services.achievements.registry import (
     all_definitions,
     get_definition,
 )
-from app.services.achievements.share_card import render_for_format
+from app.services.achievements.share_card import (
+    rarity_share_line,
+    render_for_format,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -507,6 +510,28 @@ class AchievementStats(BaseModel):
     total_users: int               # всего активных юзеров на платформе
     unlocked_users: int            # из них открыли эту ачивку
     unlocked_pct: float            # 0.0–1.0 (для UI можно умножить на 100)
+    #: Готовая строка редкости для share-карточки, либо None — «не показываем»
+    #: (ачивка массовая или юзеров слишком мало, чтобы процент что-то значил).
+    #: Клиент её только рисует: политика и формулировка живут в share_card.py,
+    #: иначе мобильная карточка и серверный PNG разъедутся.
+    share_rarity_line: str | None = None
+
+
+async def _count_unlocks(db: AsyncSession, code: str) -> tuple[int, int]:
+    """(всего активных юзеров, из них открывших `code`)."""
+    total_users = await db.scalar(
+        select(func.count(User.id)).where(User.is_active.is_(True))
+    ) or 0
+    unlocked_users = await db.scalar(
+        select(func.count(UserAchievement.id))
+        .join(User, User.id == UserAchievement.user_id)
+        .where(
+            UserAchievement.code == code,
+            UserAchievement.is_unlocked.is_(True),
+            User.is_active.is_(True),
+        )
+    ) or 0
+    return int(total_users), int(unlocked_users)
 
 
 @router.get("/{code}/stats", response_model=AchievementStats)
@@ -527,26 +552,14 @@ async def get_achievement_stats(
     if defn is None:
         raise HTTPException(status_code=404, detail="Ачивка не найдена")
 
-    total_users = await db.scalar(
-        select(func.count(User.id)).where(User.is_active.is_(True))
-    ) or 0
-
-    unlocked_users = await db.scalar(
-        select(func.count(UserAchievement.id))
-        .join(User, User.id == UserAchievement.user_id)
-        .where(
-            UserAchievement.code == code,
-            UserAchievement.is_unlocked.is_(True),
-            User.is_active.is_(True),
-        )
-    ) or 0
-
+    total_users, unlocked_users = await _count_unlocks(db, code)
     pct = (unlocked_users / total_users) if total_users > 0 else 0.0
     return AchievementStats(
         code=code,
-        total_users=int(total_users),
-        unlocked_users=int(unlocked_users),
+        total_users=total_users,
+        unlocked_users=unlocked_users,
         unlocked_pct=round(pct, 4),
+        share_rarity_line=rarity_share_line(pct, total_users),
     )
 
 
@@ -577,12 +590,15 @@ async def get_share_card(
     if not ua or not ua.is_unlocked:
         raise HTTPException(status_code=403, detail="Ачивка ещё не открыта")
 
+    total_users, unlocked_users = await _count_unlocks(db, code)
+    pct = (unlocked_users / total_users) if total_users > 0 else 0.0
     png_bytes = render_for_format(
         defn,
         username=current_user.username,
         unlocked_at=ua.unlocked_at,
         fmt=fmt,
         evidence_text=evidence_text(ua.ach_metadata),
+        rarity_text=rarity_share_line(pct, total_users),
     )
     return Response(
         content=png_bytes,
