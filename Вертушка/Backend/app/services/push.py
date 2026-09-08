@@ -29,6 +29,13 @@ EXPO_PUSH_URL = "https://exp.host/--/api/v2/push/send"
 EXPO_RECEIPTS_URL = "https://exp.host/--/api/v2/push/getReceipts"
 EXPO_CHUNK_SIZE = 100
 PUSH_RETRY_DELAYS = (1.0, 2.0, 4.0)
+
+# Android notification channel, в который Expo/FCM кладёт каждый пуш.
+# Должен совпадать с ANDROID_PUSH_CHANNEL_ID в Mobile/lib/push.ts — там канал
+# создаётся через setNotificationChannelAsync до запроса токена. Без channelId
+# на Android 8+ пуш падает в системный "Miscellaneous" без звука/приоритета.
+# APNs-путь (iOS) поле игнорирует, для iOS это no-op.
+ANDROID_PUSH_CHANNEL_ID = "default"
 FREQ_CAP_TTL_SECONDS = 60 * 60  # 1 час
 
 # Очередь receipt-id для отложенной проверки доставки (см. check_push_receipts).
@@ -148,6 +155,7 @@ async def send_push(
         "body": body,
         "sound": "default",
         "priority": "high",
+        "channelId": ANDROID_PUSH_CHANNEL_ID,
         "data": payload_data,
     }
 
@@ -283,8 +291,20 @@ async def send_pushes_batch(messages: list[dict[str, Any]]) -> list[dict[str, An
     return flat
 
 
+def with_android_channel(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Проставить channelId каждому сообщению, у которого его нет.
+
+    Единая точка для send_push и send_pushes_batch: батч собирает сообщения
+    снаружи, и без этого Android-получатели молча теряли бы канал."""
+    return [
+        m if m.get("channelId") else {**m, "channelId": ANDROID_PUSH_CHANNEL_ID}
+        for m in messages
+    ]
+
+
 async def _post_with_retry(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """POST на Expo с retry на 5xx и network errors. Возвращает массив tickets."""
+    messages = with_android_channel(messages)
     payload: Any = messages[0] if len(messages) == 1 else messages
 
     last_exc: Exception | None = None
