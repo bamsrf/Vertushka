@@ -24,6 +24,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Animated,
   Easing,
+  Keyboard,
   Modal,
   Platform,
   Pressable,
@@ -70,6 +71,11 @@ export function presentPromptSheet(opts: PromptSheetOptions): Promise<string | n
 
 const SLIDE_IN_MS = 220;
 const SLIDE_OUT_MS = 160;
+// Фокус в поле: первая попытка после того, как окно модалки стало
+// фокусируемым, дальше — редкие повторы, пока IME не поднимется (A9).
+const FOCUS_FIRST_MS = 60;
+const FOCUS_RETRY_MS = 250;
+const FOCUS_RETRIES = 3;
 
 export function PromptSheetHost() {
   const insets = useSafeAreaInsets();
@@ -129,6 +135,39 @@ export function PromptSheetHost() {
   const submit = useCallback(() => finish(value), [finish, value]);
   const cancel = useCallback(() => finish(null), [finish]);
 
+  // Фокус — только после того, как окно модалки стало фокусируемым (A9).
+  // RN на Android показывает Dialog с FLAG_NOT_FOCUSABLE и снимает флаг уже
+  // ПОСЛЕ `show()`, то есть после `onShow`. `autoFocus` и `focus()` прямо в
+  // `onShow` попадали в окно, которое IME не обслуживает: поле помечалось
+  // focused, а клавиатура оставалась у DecorView Activity. Поэтому ждём
+  // следующего тика, а если IME так и не поднялся — повторяем через паузу
+  // (окно получает фокус асинхронно).
+  const focusTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const clearFocusTimers = useCallback(() => {
+    focusTimers.current.forEach(clearTimeout);
+    focusTimers.current = [];
+  }, []);
+  const focusInputWhenWindowReady = useCallback(() => {
+    clearFocusTimers();
+    const attempt = (delay: number, retriesLeft: number) => {
+      focusTimers.current.push(
+        setTimeout(() => {
+          const input = inputRef.current;
+          if (!input) return;
+          if (Keyboard.isVisible() && input.isFocused()) return;
+          if (input.isFocused()) input.blur();
+          input.focus();
+          if (retriesLeft > 0) attempt(FOCUS_RETRY_MS, retriesLeft - 1);
+        }, delay),
+      );
+    };
+    attempt(FOCUS_FIRST_MS, FOCUS_RETRIES);
+  }, [clearFocusTimers]);
+  useEffect(() => clearFocusTimers, [clearFocusTimers]);
+  useEffect(() => {
+    if (!req) clearFocusTimers();
+  }, [req, clearFocusTimers]);
+
   if (Platform.OS !== 'android' || !req) return null;
 
   const translateY = progress.interpolate({ inputRange: [0, 1], outputRange: [320, 0] });
@@ -140,9 +179,7 @@ export function PromptSheetHost() {
       transparent
       animationType="none"
       onRequestClose={cancel}
-      // autoFocus внутри Android-Modal срабатывает не всегда — добираем фокус
-      // после показа окна.
-      onShow={() => inputRef.current?.focus()}
+      onShow={focusInputWhenWindowReady}
     >
       <Animated.View style={[styles.backdrop, { opacity: progress }]}>
         <Pressable style={StyleSheet.absoluteFill} onPress={cancel} accessibilityLabel="Закрыть" />
@@ -164,7 +201,8 @@ export function PromptSheetHost() {
             onChangeText={setValue}
             placeholder={req.placeholder}
             placeholderTextColor={Colors.textMuted}
-            autoFocus
+            // Без autoFocus: он срабатывает до того, как окно Dialog стало
+            // фокусируемым, и «съедает» фокус у IME — см. onShow.
             selectTextOnFocus
             returnKeyType="done"
             onSubmitEditing={canSubmit ? submit : undefined}

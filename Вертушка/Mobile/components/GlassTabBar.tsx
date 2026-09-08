@@ -180,8 +180,12 @@ const styles = StyleSheet.create({
   },
   // Android: у контейнера нет фона, elevation без него тень не рисует —
   // тень через boxShadow (те же цвет/offset/радиус, что у Shadows.tabBar).
+  // borderRadius нужен и самому контейнеру: на Fabric boxShadow берёт форму
+  // с view, на котором объявлен, — без радиуса тень рисовалась прямоугольником
+  // и её угол читался как «квадратный» угол пилюли (A8 в docs/BUGS.md).
   containerAndroid: {
     elevation: 0,
+    borderRadius: 36,
     ...androidShadow({ color: '#3B4BF5', opacity: 0.12, radius: 24, offsetY: -4 }),
   },
   blurContainer: {

@@ -13,6 +13,7 @@ import {
   ActivityIndicator,
   Linking,
   InteractionManager,
+  Platform,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { File, Paths } from 'expo-file-system';
@@ -38,6 +39,7 @@ import { markProfileShared } from '../lib/onboardingProgress';
 import { CoachPulse } from '../components/onboarding/CoachPulse';
 import { useCoachSpotlight } from '../lib/coachSpotlight';
 import { toast } from '../lib/toast';
+import { rateAppLabel, rateAppUrls, storeName } from '../lib/storeLinks';
 import { showActionSheet } from '../lib/actionSheetCompat';
 import { analytics } from '../lib/analytics';
 import { Colors, Typography, Spacing, BorderRadius, Shadows } from '../constants/theme';
@@ -111,16 +113,10 @@ function FollowRequestsMenuItem({ onPress }: { onPress: () => void }) {
   );
 }
 
-/**
- * Куда вести, если /api/config не доехал (fail-open, см. lib/remoteConfig.ts).
- * Ровно тот адрес, что Apple отдаёт в trackViewUrl: с витриной и слагом —
- * короткие формы доезжают редиректом не везде. Зеркало Backend/app/config.py.
- */
-const APP_STORE_FALLBACK_URL =
-  'https://apps.apple.com/ru/app/' +
-  '%D0%B2%D0%B5%D1%80%D1%82%D1%83%D1%88%D0%BA%D0%B0-' +
-  '%D0%BA%D0%BE%D0%BB%D0%BB%D0%B5%D0%BA%D1%86%D0%B8%D1%8F-' +
-  '%D0%B2%D0%B8%D0%BD%D0%B8%D0%BB%D0%B0/id6774999020';
+// Подпись и адреса магазина по платформе — lib/storeLinks.ts (A12):
+// iOS — App Store с `?action=write-review`, Android — Google Play.
+const RATE_APP_LABEL = rateAppLabel();
+const RATE_APP_ERROR = `Не удалось открыть ${storeName()}`;
 
 export default function ProfileScreen() {
   const router = useRouter();
@@ -268,11 +264,17 @@ export default function ProfileScreen() {
    * берём из /api/config — там он канонический, тот же, что у force-update;
    * короткие формы Apple доводит редиректом, на котором ловили ошибку.
    */
-  const handleRateApp = useCallback(() => {
-    const url = storeUrl || APP_STORE_FALLBACK_URL;
-    Linking.openURL(`${url}?action=write-review`).catch(() => {
-      toast.error('Не удалось открыть App Store');
-    });
+  const handleRateApp = useCallback(async () => {
+    // Кандидаты по порядку (Android: market:// → веб-Play; iOS — один URL).
+    for (const url of rateAppUrls(Platform.OS, storeUrl)) {
+      try {
+        await Linking.openURL(url);
+        return;
+      } catch {
+        // пробуем следующий
+      }
+    }
+    toast.error(RATE_APP_ERROR);
   }, [storeUrl]);
 
   const handleDeleteAccount = useCallback(async () => {
@@ -685,7 +687,7 @@ export default function ProfileScreen() {
 
           <TouchableOpacity style={styles.settingsItem} onPress={handleRateApp}>
             <Icon name="star-outline" size={24} color={Colors.royalBlue} />
-            <Text style={styles.settingsItemText}>Оценить в App Store</Text>
+            <Text style={styles.settingsItemText}>{RATE_APP_LABEL}</Text>
           </TouchableOpacity>
 
           <TouchableOpacity

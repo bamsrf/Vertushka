@@ -79,7 +79,7 @@ export function AchievementsBlock({ username, compact = false }: Props) {
           <Text style={styles.title}>🏆 Ачивки</Text>
         </View>
         <View style={styles.loaderRow}>
-          <ActivityIndicator />
+          <ActivityIndicator color={Colors.royalBlue} />
         </View>
       </View>
     );

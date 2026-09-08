@@ -289,6 +289,8 @@ LogBox: «Can't perform a React state update on a component that hasn't mounted 
 
 **Гипотеза:** `presets[fromIdx]` оказывается `undefined` — индекс вне диапазона, когда `progress.value` на момент вычисления не число (NaN после `cancelAnimation`/`freezeOnBlur` при уходе с таба — `Math.floor(NaN) % PRESET_COUNT` = NaN). Нужен guard: `Number.isFinite(raw)` + клемп индексов, либо не отменять анимацию, а ставить `progress.value = 0` при потере фокуса. Проверить, воспроизводится ли на iOS (код общий). Скриншоты: `09-3btn-now`, `04-after-2-backs`. **P1.**
 
+**Статус:** ✅ закрыт 2026-09-08, PR #175 — `lib/gradientFrame.ts`: чистая `resolveGradientFrame()` с гвардом на NaN/undefined/отрицательный прогресс, индексы всегда в `[0, count)`; unit-тест `__tests__/gradientFrame.test.ts`. Общий код, на iOS результат для валидных значений тот же.
+
 ---
 
 ### A8. [android] Таб-бар: пилюля скруглена только справа — левый верхний угол квадратный
@@ -297,6 +299,8 @@ LogBox: «Can't perform a React state update on a component that hasn't mounted 
 **Шаги:** любой таб, посмотреть на пилюлю таб-бара (зум на углы).
 
 **Ожидаемое:** все четыре угла со скруглением 36. **Фактическое:** заливка пилюли скруглена по правому и нижнему краям, левый верхний угол прямой (на кропе `05-tab-tl.png` — прямой угол заливки, `05-tab-br.png` — правильный радиус). Похоже на конфликт `boxShadow` родителя без фона с `overflow: hidden` у дочернего скруглённого view на Fabric. Проверить: дать `borderRadius: 36` самому контейнеру с тенью, либо перенести `boxShadow` на тот же view, что и радиус. Скриншоты: `05-search-tab`, кропы `05-tab-tl.png`, `05-tab-br.png`. **P2.**
+
+**Статус:** ✅ закрыт 2026-09-08, PR #175 — `containerAndroid` получил `borderRadius: 36`. Корень: на Fabric `boxShadow` рисует интерьер тени по форме view, где объявлен; контейнер без радиуса и фона → прямоугольная тень торчала из-под скруглённых углов дочернего стекла (на `05-tab-br` виден тот же прямоугольник справа-снизу). iOS-ветка и снапшот не тронуты. Визуально на эмуляторе не подтверждено — сессия dev-client была разлогинена до старта ветки, нужен прогон после входа.
 
 ---
 
@@ -309,6 +313,8 @@ LogBox: «Can't perform a React state update on a component that hasn't mounted 
 
 **Статус:** ⚠️ воспроизведено 2 из 3 попыток, нужна перепроверка на реальном устройстве без аппаратной клавиатуры. Если подтвердится — сравнить с `OptionsSheet`/`ThresholdSheet` и попробовать `focus()` с задержкой после `onShow` либо `Keyboard`-вызов через `InteractionManager`. Скриншоты: `54-prompt-sheet`, `57-prompt-kbd-up`, `63-rename-tap2`. **P1 (если подтвердится).**
 
+**Статус:** ✅ закрыт 2026-09-08, PR #175 — корень в RN `ReactModalHostView`: Dialog показывается с `FLAG_NOT_FOCUSABLE`, флаг снимается **после** `show()` (т.е. после `onShow`), поэтому `autoFocus` и `focus()` в `onShow` уходили в окно, которое IME не обслуживает (`mServedView=DecorView[MainActivity]`). Теперь без `autoFocus`; фокус через 60 мс после `onShow`, до 3 повторов по 250 мс, пока `Keyboard.isVisible()`; таймеры чистятся при закрытии. Компонент Android-only. На эмуляторе не прогнано (сессия разлогинена) — проверить несколько раз подряд после входа, желательно на устройстве без аппаратной клавиатуры.
+
 ---
 
 ### A10. [android] Ачивки: хардверный Back на `DetailsSheet` закрывает весь экран, а не шит
@@ -317,6 +323,8 @@ LogBox: «Can't perform a React state update on a component that hasn't mounted 
 **Шаги:** Ачивки → тап по открытой ачивке («Хотелка») → шит с деталями → хардверный Back.
 
 **Ожидаемое:** закрывается только шит, экран ачивок остаётся. **Фактическое:** Back выполняет `router.back()` — уходим на Коллекцию (`94-after-back`), шит и экран пропали вместе. Нарушает сценарий 15 («Назад» закрывает шит, а не уводит с экрана). Фикс: `useAndroidBackClose(!!selected, close)` (как у других шитов) или обернуть в `Modal` с `onRequestClose`. Скриншоты: `91-achievement-detail`, `94-after-back`. **P2.**
+
+**Статус:** ✅ закрыт 2026-09-08, PR #175 — `useAndroidBackClose(!!selected, closeSelected)` в `app/achievements.tsx`; iOS no-op. На эмуляторе не прогнано (сессия разлогинена).
 
 ---
 
@@ -327,6 +335,8 @@ LogBox: «Can't perform a React state update on a component that hasn't mounted 
 
 **Ожидаемое:** кнопка возвращается в «Поделиться». **Фактическое:** кнопка остаётся «Готовим…» и задизейблена (`93-after-share`); повторный share без переоткрытия шита невозможен. Вероятно, `setSharing(false)` стоит только в success-ветке, а на Android отмена chooser'а резолвится как `dismissedAction`/без ошибки. Фикс — `finally`. Не Android-специфично по коду, проверить iOS. **P3.**
 
+**Статус:** ✅ закрыт 2026-09-08, PR #175 — `finally` там уже был; висел сам промис `Sharing.shareAsync` (expo-sharing на Android резолвит его только из `onActivityResult`, который при закрытии чузера «Назад» может не прийти). `lib/shareCompat.ts`: на Android шаринг гонится с возвратом `AppState` в `active`, iOS — ровно `await share()`. На эмуляторе не прогнано (сессия разлогинена).
+
 ---
 
 ### A12. [android] Профиль: «Оценить в App Store» и Apple-URL на Android
@@ -335,6 +345,8 @@ LogBox: «Can't perform a React state update on a component that hasn't mounted 
 **Шаги:** Профиль → скролл вниз → блок ссылок.
 
 **Ожидаемое:** на Android — «Оценить в Google Play» и ссылка `market://details?id=com.vertushka.app` (или `https://play.google.com/store/apps/details?id=…`) из `platforms.android.store_url`. **Фактическое:** подпись «App Store», фолбэк ведёт в apps.apple.com, к любому URL дописывается `?action=write-review`. Пока Play-листинга нет — хотя бы платформенная подпись и фолбэк-заглушка; после WS8 — реальный URL в `/api/config/`. Скриншот: `72-profile-bottom`. **P2.**
+
+**Статус:** ✅ закрыт 2026-09-08, PR #175 — `lib/storeLinks.ts`: Android — «Оценить в Google Play», `market://details?id=com.vertushka.app` → `platforms.android.store_url` из remoteConfig либо веб-Play, без `?action=write-review`; iOS — прежний URL + `write-review`. Тест `__tests__/storeLinks.test.ts`. После WS8 подставить реальный Play URL в `/api/config/` — клиент уже его подхватит.
 
 ---
 
@@ -379,6 +391,8 @@ LogBox: «Can't perform a React state update on a component that hasn't mounted 
 
 **Ожидаемое:** индикатор в цвете бренда (`Colors.primary`), как в `messages/new.tsx`, `share-record.tsx`, `ui/Button.tsx`. **Фактическое:** Android-дефолт `colorAccent` (teal) — `88-achievements`. На iOS дефолт серый, поэтому не бросалось в глаза. **P3.**
 
+**Статус:** ✅ закрыт 2026-09-08, PR #175 — `color={Colors.royalBlue}` в обоих местах (как в остальных 37 спиннерах приложения; `Colors.primary` в теме нет).
+
 ---
 
 ### A17. [android] Коллекция: пустое состояние при первом рендере лежит под таб-баром
@@ -387,6 +401,8 @@ LogBox: «Can't perform a React state update on a component that hasn't mounted 
 **Шаги:** пустая коллекция, открыть таб без скролла.
 
 **Ожидаемое:** «Здесь будут твои пластинки» и кнопки видны целиком над таб-баром. **Фактическое:** заголовок и подпись перекрыты пилюлей таб-бара (`01-home`, `13-collection-3btn-c`); после скролла всё доступно (`03-home-scrolled`, `94-after-back`) — контент не обрезан, только начальная позиция. Добавить нижний отступ = высота таб-бара + `insets.bottom`. **P3.**
+
+**Статус:** ✅ закрыт 2026-09-08, PR #175 — нижний отступ (`tabBarHeight + insets.bottom`) там уже был; по геометрии `01-home` шапка + «Первые шаги» + папки занимают ~650dp, до пилюли остаётся ~190dp, а блок с 48dp отступа и 96dp кольцом — ~300dp, т.е. не вмещается физически. `RecordGrid`: на Android при `ListHeaderComponent` компактный вариант пустого состояния (без кольца, `paddingTop: 16`) — заголовок, подпись и кнопки над пилюлей без скролла. iOS — прежняя раскладка (там та же геометрия, стоит глянуть на iPhone с «Первыми шагами»). На эмуляторе не прогнано (сессия разлогинена).
 
 ---
 
