@@ -3,7 +3,7 @@
  * Переиспользует PriceHistoryCollapsible + /records/{id}/price-history. Кнопки «В магазин»/«Порог».
  */
 import React, { forwardRef, useImperativeHandle, useRef, useState, useCallback } from 'react';
-import { StyleSheet, Text, View, TouchableOpacity, Image, Alert } from 'react-native';
+import { StyleSheet, Text, View, TouchableOpacity, Image, Alert, Platform } from 'react-native';
 import {
   BottomSheetModal,
   BottomSheetScrollView,
@@ -206,7 +206,7 @@ export const PriceHistorySheet = forwardRef<PriceHistorySheetRef, Props>(
     return (
       <BottomSheetModal
         ref={sheetRef}
-        onChange={(i) => setSheetOpen(i >= 0)}
+        onChange={Platform.OS === 'android' ? (i) => setSheetOpen(i >= 0) : undefined}
         snapPoints={['82%']}
         onDismiss={runPending}
         backdropComponent={renderBackdrop}

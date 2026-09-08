@@ -17,7 +17,7 @@
  */
 import { api } from '@/lib/api';
 import React, { forwardRef, useImperativeHandle, useMemo, useRef } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View, Platform } from 'react-native';
 import {
   BottomSheetModal,
   BottomSheetScrollView,
@@ -97,7 +97,7 @@ export const OffersBottomSheet = forwardRef<OffersBottomSheetRef, OffersBottomSh
     return (
       <BottomSheetModal
         ref={sheetRef}
-        onChange={(i) => setSheetOpen(i >= 0)}
+        onChange={Platform.OS === 'android' ? (i) => setSheetOpen(i >= 0) : undefined}
         snapPoints={snapPoints}
         index={0}
         backdropComponent={renderBackdrop}

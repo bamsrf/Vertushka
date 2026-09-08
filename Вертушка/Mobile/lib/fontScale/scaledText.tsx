@@ -22,6 +22,7 @@
  */
 import React, { forwardRef } from 'react';
 import {
+  Platform,
   Text as RNText,
   TextInput as RNTextInput,
   type TextInputProps,
@@ -29,15 +30,23 @@ import {
 } from 'react-native';
 import { MAX_FONT_SCALE } from './maxFontScale';
 
+/**
+ * Пока только Android. На iOS клэмпа не было ни в одном отгруженном билде
+ * (1.0.0 — тот же no-op через defaultProps), и включение = видимое изменение
+ * для людей с «Размером текста» выше 115% — это отдельное решение, а не часть
+ * Android-порта (ANDROID_PORT_PLAN §2). Включить на iOS = убрать гвард.
+ */
+const DEFAULT_MAX_FONT_SCALE = Platform.OS === 'android' ? MAX_FONT_SCALE : undefined;
+
 export const Text = forwardRef<React.ElementRef<typeof RNText>, TextProps>(function ScaledText(
   props,
   ref,
 ) {
-  return <RNText ref={ref} maxFontSizeMultiplier={MAX_FONT_SCALE} {...props} />;
+  return <RNText ref={ref} maxFontSizeMultiplier={DEFAULT_MAX_FONT_SCALE} {...props} />;
 });
 
 export const TextInput = forwardRef<React.ElementRef<typeof RNTextInput>, TextInputProps>(
   function ScaledTextInput(props, ref) {
-    return <RNTextInput ref={ref} maxFontSizeMultiplier={MAX_FONT_SCALE} {...props} />;
+    return <RNTextInput ref={ref} maxFontSizeMultiplier={DEFAULT_MAX_FONT_SCALE} {...props} />;
   },
 );
