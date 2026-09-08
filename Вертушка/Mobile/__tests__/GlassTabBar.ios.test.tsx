@@ -51,11 +51,8 @@ describe('GlassTabBar (iOS)', () => {
     act(() => {
       tree = renderer.create(
         <GlassTabBar
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           state={state as any}
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           descriptors={descriptors as any}
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           navigation={navigation as any}
           insets={{ top: 59, bottom: 34, left: 0, right: 0 }}
         />,

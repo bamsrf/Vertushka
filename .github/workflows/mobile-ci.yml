@@ -1,8 +1,9 @@
 # CI мобилки: страховка iOS на время Android-порта.
 #
 # Два гейта, оба без macOS-раннера:
-#  1. typecheck — `tsc --noEmit`. После апгрейда SDK именно tsc находил
+#  1. typecheck — `tsc --noEmit` + `expo lint`. После апгрейда SDK именно tsc находил
 #     рантайм-баги, которые никто не смотрел (docs/plans/quality/SDK_UPGRADE_CHECKLIST.md).
+#     ESLint: ошибки = красный, варнинги допустимы (Mobile/eslint.config.js).
 #  2. ios-config-guard — чистый `expo prebuild -p ios --no-install` на ubuntu
 #     (pods вне darwin пропускаются) и дифф сгенерированного iOS-конфига с
 #     baseline в Mobile/ci/ios-baseline/. Ловит config-плагин или правку
@@ -48,6 +49,9 @@ jobs:
         run: npm ci --no-audit --no-fund
       - name: tsc --noEmit
         run: npm run typecheck
+      - name: ESLint (expo lint)
+        # Ошибки красят гейт, варнинги — нет (политика в Mobile/eslint.config.js).
+        run: npm run lint
 
   ios-config-guard:
     runs-on: ubuntu-latest
