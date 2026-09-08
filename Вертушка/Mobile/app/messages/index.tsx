@@ -49,6 +49,7 @@ import { resolveMediaUrl } from '../../lib/api';
 import { registerPushToken } from '../../lib/push';
 import type { Conversation } from '../../lib/messagesTypes';
 import { Header } from '../../components/Header';
+import { parseServerDate } from '@/lib/serverDate';
 
 type Folder = 'primary' | 'requests';
 
@@ -59,7 +60,7 @@ const SEGMENTS: { key: Folder; label: string }[] = [
 
 function formatTime(iso: string | null): string {
   if (!iso) return '';
-  const d = new Date(iso);
+  const d = parseServerDate(iso);
   const now = new Date();
   const sameDay = d.toDateString() === now.toDateString();
   if (sameDay) {
@@ -471,12 +472,15 @@ function SkeletonRow() {
 }
 
 function InboxSkeleton() {
+  // Без exiting-анимации: skeleton живёт только до первой загрузки списка,
+  // а exiting на ListEmptyComponent на Android (Fabric) оставлял «призрак»
+  // skeleton'а поверх пустого состояния (BUGS A13).
   return (
-    <Animated.View exiting={FadeOut.duration(160)}>
+    <View>
       {Array.from({ length: 6 }, (_, i) => (
         <SkeletonRow key={i} />
       ))}
-    </Animated.View>
+    </View>
   );
 }
 
@@ -526,6 +530,7 @@ export default function MessagesInboxScreen() {
   const primary = useMessagesStore((s) => s.conversationsPrimary);
   const requests = useMessagesStore((s) => s.conversationsRequests);
   const isLoading = useMessagesStore((s) => s.isLoadingList);
+  const listLoadedOnce = useMessagesStore((s) => s.listLoadedOnce);
   const loadConversations = useMessagesStore((s) => s.loadConversations);
   const refreshUnread = useMessagesStore((s) => s.refreshUnread);
   const acceptRequest = useMessagesStore((s) => s.acceptRequest);
@@ -601,7 +606,9 @@ export default function MessagesInboxScreen() {
   );
 
   const renderEmpty = () => {
-    if (isLoading) return <InboxSkeleton />;
+    // Skeleton — только до первого ответа сервера. Дальше пустой список —
+    // это пустое состояние; pull-to-refresh показывает свой спиннер.
+    if (isLoading && !listLoadedOnce) return <InboxSkeleton />;
     if (folder === 'primary') {
       return (
         <Animated.View entering={FadeIn.duration(200)} style={styles.empty}>

@@ -345,6 +345,8 @@ LogBox: «Can't perform a React state update on a component that hasn't mounted 
 
 **Ожидаемое:** пустое состояние «нет сообщений» через секунду-две. **Фактическое:** обе вкладки бесконечно показывают skeleton (`97-messages-list`, `100-messages-refresh`, `101-messages-remount`, `99-requests`); в Metro нет `loadConversations failed`, в logcat нет сетевых ошибок; параллельно `/notifications` и остальные API отвечают нормально, `devApiUrl` в `messagesApi.ts` тот же, что в `api.ts`. Причина не найдена в рамках прогона — подозрение на зависание `getClient()`/интерцептора или на skeleton-условие для пустого ответа `[]`. Блокирует сценарий 7 (меню чата, клавиатура чата не проверены). Проверить на iOS с пустым аккаунтом — вероятно, не Android-специфично. **P1.**
 
+**Статус:** ✅ закрыт 2026-09-08, PR #174 — корень в клиенте: `loadConversations('primary')`/`('requests')` летят параллельно с одним `isLoadingList` (первый ответ гасил флаг, пока второй в полёте), skeleton монтировался на каждый refresh, а `exiting={FadeOut}` на `InboxSkeleton` в `ListEmptyComponent` на Android (Fabric) оставлял «призрак» поверх пустого состояния. Теперь счётчик in-flight запросов + `listLoadedOnce` (skeleton только до первого ответа, `[]` = пустое состояние), exiting снят. Бэкенд для юзера без диалогов честно отдаёт `[]`/200. Jest: `__tests__/messagesStore.test.ts`. Эмулятор не проверялся — подтвердить на следующем QA-прогоне.
+
 ---
 
 ### A14. [android] Уведомления/профиль: «3 ч» для ачивки, открытой минуту назад — naive UTC без офсета
@@ -353,6 +355,8 @@ LogBox: «Can't perform a React state update on a component that hasn't mounted 
 **Шаги:** получить ачивку → Профиль → блок «Уведомления» / экран Уведомлений.
 
 **Ожидаемое:** «1 мин». **Фактическое:** «3 ч» / «4 ч» (`102-notifications`, `70-profile`) — эмулятор в Europe/Moscow (UTC+3), строка без офсета парсится как локальное время. Не Android-специфично (Hermes на обеих платформах трактует ISO без зоны как local). Фикс на бэке: `datetime.now(timezone.utc)` + сериализация с офсетом (или `model_serializer` → `isoformat()` с `Z`); на клиенте — парсить naive как UTC. **P2.**
+
+**Статус:** ✅ закрыт 2026-09-08, PR #174 — `Backend/app/schemas/utc.py`: `UtcDatetime` (naive → UTC при сериализации, в JSON `Z`) на всех datetime-полях `schemas/message.py` и `schemas/notification.py`, `utc_isoformat()` в WS-событиях `message.read`/`message.edited` и ответе `mute-duration`; хранение (naive колонки, сравнения с `utcnow()`) не тронуто. Клиент: `Mobile/lib/serverDate.ts::parseServerDate` трактует naive ISO как UTC в `NotificationItem`/`ActivityCard`/`SocialFeedRow`/инбокс/presence/пузырь. Тесты: `Backend/tests/test_utc_datetime_serialization.py`, `Mobile/__tests__/serverDate.test.ts`.
 
 ---
 

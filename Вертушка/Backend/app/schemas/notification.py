@@ -1,11 +1,13 @@
 """
 Схемы для уведомлений и социальной ленты
 """
-from datetime import datetime
+
 from typing import Any
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
+
+from app.schemas.utc import UtcDatetime
 
 
 class NotificationActor(BaseModel):
@@ -28,11 +30,11 @@ class NotificationResponse(BaseModel):
     entity_type: str | None = None
     entity_id: str | None = None
     data: dict[str, Any] = Field(default_factory=dict)
-    created_at: datetime
-    bumped_at: datetime
+    created_at: UtcDatetime
+    bumped_at: UtcDatetime
     occurrences: int = 1
-    snoozed_until: datetime | None = None
-    read_at: datetime | None = None
+    snoozed_until: UtcDatetime | None = None
+    read_at: UtcDatetime | None = None
     actor: NotificationActor | None = None
 
 
@@ -43,7 +45,7 @@ class SnoozeRequest(BaseModel):
 
 class SnoozeResponse(BaseModel):
     """Подтверждение snooze."""
-    snoozed_until: datetime
+    snoozed_until: UtcDatetime
 
 
 class NotificationListResponse(BaseModel):
@@ -94,7 +96,7 @@ class SocialFeedItem(BaseModel):
     """Событие в социальной ленте подписок."""
     type: str  # collection_add, wishlist_add, gift_completed, friend_achievement, friend_new_following
     actor: FeedActor
-    created_at: datetime
+    created_at: UtcDatetime
     record: FeedRecord | None = None
     target_user: FeedActor | None = None
     payload: dict[str, Any] = Field(default_factory=dict)

@@ -82,6 +82,7 @@ import type {
   MessageReaction,
   PresenceInfo,
 } from '../../lib/messagesTypes';
+import { parseServerDate } from '@/lib/serverDate';
 
 // Safety-net на случай отвалившегося WS, а не основной транспорт: доставку
 // держит messagesWs.ts. Каждый тик перезапрашивает тред целиком — на 8с это
@@ -138,7 +139,7 @@ function popEntering(_values: EntryAnimationsValues) {
 
 function formatLastSeen(iso: string | null): string {
   if (!iso) return 'был(а) в сети давно';
-  const d = new Date(iso);
+  const d = parseServerDate(iso);
   const now = new Date();
   const diffMin = Math.floor((now.getTime() - d.getTime()) / 60_000);
   if (diffMin < 1) return 'был(а) только что';
@@ -149,7 +150,7 @@ function formatLastSeen(iso: string | null): string {
 }
 
 function formatBubbleTime(iso: string): string {
-  const d = new Date(iso);
+  const d = parseServerDate(iso);
   return d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
 }
 
