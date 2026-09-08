@@ -56,7 +56,10 @@ export async function initAmplitude(apiKey: string): Promise<void> {
     // Проект заведён в EU-регионе. Без serverZone SDK шлёт в US-endpoint,
     // и события не появляются в дашборде вообще — без единой ошибки в логах.
     serverZone: 'EU',
-    trackingOptions: { ipAddress: false, adid: false, dma: false, carrier: false },
+    // appSetId: на Android SDK по умолчанию тянет App Set ID через Play Services —
+    // это «Device or other IDs» в Data safety Google Play. Нам он не нужен:
+    // device_id у Amplitude и так случайный UUID. На iOS ключ игнорируется.
+    trackingOptions: { ipAddress: false, adid: false, dma: false, carrier: false, appSetId: false },
   }).promise;
   setAnalyticsProvider({
     track: (event, properties) => {
