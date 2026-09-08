@@ -69,6 +69,7 @@ declare module 'phosphor-react-native' {
   export const ImageIcon: Icon;
   export const KeyholeIcon: Icon;
   export const ListIcon: Icon;
+  export const LockIcon: Icon;
   export const LockOpenIcon: Icon;
   export const MagnifyingGlassIcon: Icon;
   export const MapPinIcon: Icon;

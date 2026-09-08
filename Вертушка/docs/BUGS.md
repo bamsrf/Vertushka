@@ -217,6 +217,8 @@ if (isLoading) {
 
 **Фикс:** собирать подпись из фактически показанных провайдеров (`Platform.OS === 'ios' ? 'Apple или Discogs' : 'Discogs'`), либо вынести строку в `SocialAuthButtons`, где список провайдеров уже известен. P2, простая.
 
+**Статус:** ✅ закрыт 2026-09-08, PR `fix/android-bugs-a1-a6` — `SOCIAL_PROVIDERS_LABEL` в `register.tsx`, на iOS текст прежний буква в букву.
+
 ---
 
 ### A2. [android] Иконки статус-бара светлые на светлом фоне во время splash и интро
@@ -225,6 +227,8 @@ if (isLoading) {
 Первые ~6 с холодного старта (нативный splash + `MascotIntro`) часы/сеть/батарея рисуются белым на #FAFBFF — не читаются. `<StatusBar style="dark" />` из JS применяется, но визуально стиль появляется только к моменту логина. В сгенерированном `android/app/src/main/res/values/styles.xml` нет `windowLightStatusBar`, т.е. нативно тема статус-бара не задана и до маунта JS действует системный дефолт.
 
 **Фикс:** задать стиль нативно — `"androidStatusBar": {"barStyle": "dark-content"}` в `app.json` (prebuild пропишет `windowLightStatusBar=true` в тему), перепроверить после `prebuild --clean`. P3, простая.
+
+**Статус:** ✅ закрыт 2026-09-08, PR `fix/android-bugs-a1-a6` — `androidStatusBar: {barStyle: dark-content, backgroundColor: #FAFBFF}` (ключи по `@expo/config-types` SDK 57; `translucent` не задан — под edge-to-edge не нужен). iOS-секции `expo config --type introspect` не касается, `ci/check-ios-baseline.sh` зелёный без обновления baseline. Перепроверить визуально после `prebuild --clean` на эмуляторе.
 
 ---
 
@@ -235,6 +239,8 @@ if (isLoading) {
 
 **Фикс:** проверить в `expo-video` (SDK 57), проходит ли проверка PiP независимо от пропа; если да — либо включить `["expo-video", {"supportsPictureInPicture": true}]` (снимет лог ценой флага на Activity), либо завести issue. P3.
 
+**Статус:** ⏸ won't fix / upstream (2026-09-08). Проверено по коду `expo-video@57.0.x`: лог пишет `runWithPiPMisconfigurationSoftHandling` (`android/src/main/java/expo/modules/video/utils/PictureInPictureUtils.kt:68–72`) — `Log.e` на `IllegalStateException` из `Activity.setPictureInPictureParams`. Туда ведёт `PictureInPictureManager.findAndSetupPipCandidate()` (`managers/PictureInPictureManager.kt:68–84`), который зовётся при регистрации КАЖДОГО `VideoView` и вызывает `applyPiPParams(activity, autoEnterPiP)` безусловно — проп `allowsPictureInPicture={false}` на это не влияет, он лишь выключает auto-enter. Единственный способ убрать лог — `android:supportsPictureInPicture="true"` на MainActivity через `["expo-video", {"supportsPictureInPicture": true}]` (`plugin/build/withExpoVideo.js:24–27`), т.е. лишний флаг Activity ради одного немого интро — не включаем. Уровень E безвреден (исключение проглочено).
+
 ---
 
 ### A4. [android] Console error expo-router при холодном старте dev-client
@@ -243,6 +249,8 @@ if (isLoading) {
 LogBox: «Can't perform a React state update on a component that hasn't mounted yet». Код приложения в стеке отсутствует — это `Linking.getInitialURL().then(setState)` внутри expo-router, срабатывающий до маунта при запуске через `exp+vertushka://expo-development-client/?url=…`. Воспроизведено на каждом холодном старте dev-client.
 
 **Фикс:** на стороне приложения нет. Проверить на release-APK (там нет dev-launcher deep link); если воспроизводится — issue в expo-router (SDK 57 / React 19). P3.
+
+**Статус:** ⏸ upstream / dev-client-only (2026-09-08). Код не трогаем. **Проверить на release APK** (`eas build -p android --profile production` или `expo run:android --variant release`); если воспроизводится без dev-launcher — issue в expo-router.
 
 ---
 
@@ -253,6 +261,8 @@ LogBox: «Can't perform a React state update on a component that hasn't mounted 
 
 **Фикс (опционально):** под `VideoView` показывать статичный первый кадр (png) до `readyToPlay`, чтобы таймаут не выглядел как зависание. P3.
 
+**Статус:** ✅ закрыт 2026-09-08, PR `fix/android-bugs-a1-a6` — `assets/video/intro-mascot-first-frame.png` (960×960, первый кадр mp4 через ffmpeg, фон #FAFBFF как у ролика) рендерится в `MascotIntro` вместо `VideoView` строго пока `!ready`; в момент `readyToPlay` подменяется плеером, картинка и кадр совпадают попиксельно — мигания нет, iOS-поведение не меняется. Команда перевытаскивания кадра — в комментарии к `INTRO_FIRST_FRAME`.
+
 ---
 
 ### A6. [android] Иконка замка в полях пароля рисуется как «+»
@@ -261,3 +271,5 @@ LogBox: «Can't perform a React state update on a component that hasn't mounted 
 `leftIcon="lock-closed-outline"` передаётся в `<Icon>`, но в registry есть только `lock-open` / `lock-open-outline`; неизвестное имя уходит в фолбэк `'plus'` (Icon.tsx:145). На экране логина слева от поля «Пароль» — плюс вместо замка. Не Android-специфично — тот же путь на iOS, просто замечено на эмуляторе.
 
 **Фикс:** добавить в карту `'lock-closed'`/`'lock-closed-outline'` → `LockIcon` (phosphor `Lock`); в `user/[username]` — та же строка. P2, простая.
+
+**Статус:** ✅ закрыт 2026-09-08, PR `fix/android-bugs-a1-a6` — `'lock-closed'` → `LockIcon` в registry, `'lock-closed-outline'` в alias-таблице, `LockIcon` добавлен в ambient-шим `types/phosphor-react-native.d.ts`. Покрывает login/register/reset-password и `user/[username]` (все шли через `<Icon>`, правок в экранах не нужно). Общий баг — чинится и для iOS.
