@@ -117,6 +117,40 @@ class TestMinVersion:
 
         assert await app_config.get_min_supported_version() == "1.0.0"
 
+    async def test_android_bump_does_not_touch_ios(self):
+        """Сломанный Android-билд — не повод выгонять iOS на обновление."""
+        await app_config.set_min_supported_version("2.0.0", "android")
+
+        assert await app_config.get_min_supported_version("android") == "2.0.0"
+        assert await app_config.get_min_supported_version("ios") == "1.0.0"
+        assert await app_config.get_min_supported_version() == "1.0.0", (
+            "вызов без платформы = iOS = legacy-поле"
+        )
+
+    async def test_ios_bump_does_not_touch_android(self):
+        await app_config.set_min_supported_version("3.0.0", "ios")
+
+        assert await app_config.get_min_supported_version("android") == "1.0.0"
+
+    async def test_ios_redis_key_is_legacy_one(self, fake_cache):
+        """Оверрайд, поставленный до появления Android, должен пережить деплой."""
+        fake_cache.store[("appcfg", "min_version")] = "1.5.0"
+
+        assert await app_config.get_min_supported_version("ios") == "1.5.0"
+        assert await app_config.get_min_supported_version("android") == "1.0.0"
+
+    async def test_unknown_platform_rejected(self):
+        with pytest.raises(ValueError, match="Неизвестная платформа"):
+            await app_config.set_min_supported_version("1.0.0", "web")
+
+    async def test_reset_clears_both_platforms(self):
+        await app_config.set_min_supported_version("2.0.0", "ios")
+        await app_config.set_min_supported_version("2.0.0", "android")
+        await app_config.clear_overrides()
+
+        assert await app_config.get_min_supported_version("ios") == "1.0.0"
+        assert await app_config.get_min_supported_version("android") == "1.0.0"
+
 
 class TestLocalCache:
     async def test_write_invalidates_local_cache_immediately(self):
@@ -158,10 +192,54 @@ class TestConfigEndpoint:
             "store_url",
             "update_message",
             "flags",
+            "platforms",
         }
         assert body["min_supported_version"] == "1.0.0"
         assert body["store_url"].startswith("https://")
         assert body["update_message"]
+
+    def test_legacy_fields_equal_ios(self, client):
+        """Контракт iOS 1.0.0/1.0.1: legacy-поля — это ровно iOS.
+
+        Старый клиент читает только min_supported_version и store_url
+        (Mobile/lib/remoteConfig.ts). Если они хоть раз разъедутся с
+        platforms.ios, у уже отгруженных билдов сломается гейт.
+        """
+        body = client.get("/api/config/").json()
+
+        assert set(body["platforms"]) == {"ios", "android"}
+        ios = body["platforms"]["ios"]
+        assert body["min_supported_version"] == ios["min_supported_version"]
+        assert body["store_url"] == ios["store_url"]
+        assert ios["store_url"].startswith("https://apps.apple.com/")
+
+    def test_android_platform_points_to_play(self, client):
+        android = client.get("/api/config/").json()["platforms"]["android"]
+
+        assert android["store_url"].startswith("https://play.google.com/")
+        assert android["min_supported_version"] == "1.0.0"
+
+    async def test_android_bump_leaves_legacy_and_ios_intact(self, client):
+        """Бамп android через сервис не меняет ни legacy, ни platforms.ios."""
+        await app_config.set_min_supported_version("9.0.0", "android")
+
+        body = client.get("/api/config/").json()
+        assert body["platforms"]["android"]["min_supported_version"] == "9.0.0"
+        assert body["platforms"]["ios"]["min_supported_version"] == "1.0.0"
+        assert body["min_supported_version"] == "1.0.0"
+        assert body["store_url"] == body["platforms"]["ios"]["store_url"]
+
+    def test_min_version_request_requires_platform(self):
+        """Без платформы бамп значил бы «всем сразу» — именно от этого уходим."""
+        from pydantic import ValidationError
+
+        from app.schemas.app_config import MinVersionUpdateRequest
+
+        with pytest.raises(ValidationError):
+            MinVersionUpdateRequest(version="1.0.1")
+        with pytest.raises(ValidationError):
+            MinVersionUpdateRequest(version="1.0.1", platform="web")
+        assert MinVersionUpdateRequest(version="1.0.1", platform="android").platform == "android"
 
     def test_all_flags_present_and_enabled_by_default(self, client):
         flags = client.get("/api/config/").json()["flags"]
@@ -175,7 +253,7 @@ class TestConfigEndpoint:
 
     def test_admin_endpoints_require_auth(self, client):
         assert client.put("/api/admin/config/flags/", json={"flags": {"market": False}}).status_code in (401, 403)
-        assert client.put("/api/admin/config/min-version/", json={"version": "1.0.1"}).status_code in (401, 403)
+        assert client.put("/api/admin/config/min-version/", json={"version": "1.0.1", "platform": "ios"}).status_code in (401, 403)
         assert client.post("/api/admin/config/reset/").status_code in (401, 403)
 
 

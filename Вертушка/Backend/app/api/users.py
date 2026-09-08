@@ -621,9 +621,12 @@ async def update_push_token(
         await db.execute(
             update(User)
             .where(User.push_token == data.push_token, User.id != current_user.id)
-            .values(push_token=None)
+            .values(push_token=None, push_platform=None)
         )
     current_user.push_token = data.push_token
+    # Платформа живёт вместе с токеном: старый клиент её не шлёт — обнуляем,
+    # чтобы не остался «android» от прошлого устройства при iOS-токене.
+    current_user.push_platform = data.platform
     await db.commit()
     return {"status": "ok"}
 
@@ -638,6 +641,7 @@ async def clear_push_token(
     Без этого юзер продолжает получать пуши на устройство после выхода.
     """
     current_user.push_token = None
+    current_user.push_platform = None
     await db.commit()
     return {"status": "ok"}
 

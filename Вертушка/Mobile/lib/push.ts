@@ -61,7 +61,7 @@ export async function registerPushToken(
       projectId ? { projectId } : undefined,
     );
     if (tokenResp?.data) {
-      await api.savePushToken(tokenResp.data);
+      await api.savePushToken(tokenResp.data, Platform.OS);
       return true;
     }
     return false;

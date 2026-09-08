@@ -663,8 +663,9 @@ class ApiClient {
 
   // ==================== Notifications ====================
 
-  async savePushToken(token: string): Promise<void> {
-    await this.client.put('/users/me/push-token', { push_token: token });
+  /** `platform` — Platform.OS; старый бэкенд лишнее поле игнорирует (extra=ignore). */
+  async savePushToken(token: string, platform?: 'ios' | 'android'): Promise<void> {
+    await this.client.put('/users/me/push-token', { push_token: token, platform });
   }
 
   /** Сброс push-токена на сервере (при логауте, пока auth ещё валиден). */

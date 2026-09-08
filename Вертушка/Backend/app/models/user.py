@@ -151,6 +151,14 @@ class User(Base):
         String(255),
         nullable=True
     )
+    # Платформа устройства, с которого пришёл push_token: "ios" | "android".
+    # Один токен на юзера (last-wins) — устройство, вошедшее последним,
+    # получает пуши. Нужна, чтобы различать платформы в статистике и при
+    # отладке доставки (Android-канал, см. ANDROID_PORT_PLAN.md WS3).
+    push_platform: Mapped[str | None] = mapped_column(
+        String(16),
+        nullable=True
+    )
     notify_new_follower: Mapped[bool] = mapped_column(
         Boolean,
         default=True,

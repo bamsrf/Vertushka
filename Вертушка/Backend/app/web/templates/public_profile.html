@@ -883,6 +883,15 @@
             transition: transform 240ms ease;
         }
         .cta:hover { transform: translateY(-2px); }
+        /* Ряд сторов под CTA — только когда есть Google Play (play_store_url). */
+        .store-badges {
+            display: flex; justify-content: center; align-items: center; gap: 10px;
+            margin-top: -2px; padding-bottom: 8px;
+            font-size: 12px; font-weight: 600; letter-spacing: 0.02em;
+        }
+        .store-badge { color: var(--cobalt); text-decoration: none; }
+        .store-badge:hover { text-decoration: underline; }
+        .store-badges-sep { color: var(--mute); }
         .cta::after {
             content: ''; position: absolute; top: 0; left: 0;
             width: 30%; height: 100%;
@@ -1322,6 +1331,15 @@
                 Попробовать приложение Вертушка
             </a>
         </div>
+        {% if play_store_url %}
+        {# Play-бейдж появляется только после публикации (PLAY_STORE_PUBLISHED).
+           Главная кнопка остаётся App Store — её ссылку старые шары уже знают. #}
+        <div class="store-badges">
+            <a class="store-badge" href="{{ app_store_url }}" target="_blank" rel="noopener">App Store</a>
+            <span class="store-badges-sep">·</span>
+            <a class="store-badge" href="{{ play_store_url }}" target="_blank" rel="noopener">Google Play</a>
+        </div>
+        {% endif %}
         <div class="footer-line">VINYL-VERTUSHKA.RU</div>
     </div>
 

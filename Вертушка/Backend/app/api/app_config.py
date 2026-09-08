@@ -16,6 +16,7 @@ from app.schemas.app_config import (
     AppConfigResponse,
     FlagsUpdateRequest,
     MinVersionUpdateRequest,
+    PlatformConfig,
 )
 from app.services import app_config
 
@@ -62,11 +63,21 @@ async def get_app_config():
     моргнувшей сети, хуже отсутствия гейта.
     """
     settings = get_settings()
-    return AppConfigResponse(
-        min_supported_version=await app_config.get_min_supported_version(),
+    ios = PlatformConfig(
+        min_supported_version=await app_config.get_min_supported_version("ios"),
         store_url=settings.app_store_url,
+    )
+    android = PlatformConfig(
+        min_supported_version=await app_config.get_min_supported_version("android"),
+        store_url=settings.play_store_url,
+    )
+    # Legacy-поля жёстко равны iOS: их читают уже отгруженные iOS-билды.
+    return AppConfigResponse(
+        min_supported_version=ios.min_supported_version,
+        store_url=ios.store_url,
         update_message=settings.force_update_message,
         flags=await app_config.get_flags(),
+        platforms={"ios": ios, "android": android},
     )
 
 
@@ -98,16 +109,21 @@ async def update_min_version(
     payload: MinVersionUpdateRequest,
     staff: User = Depends(require_staff),
 ):
-    """Поднять минимальную версию — выгнать сломанный билд на обновление."""
+    """Поднять минимальную версию — выгнать сломанный билд на обновление.
+
+    Только для одной платформы (`platform` обязателен): сломанный Android-билд
+    не повод выгонять iOS.
+    """
     try:
-        await app_config.set_min_supported_version(payload.version)
+        await app_config.set_min_supported_version(payload.version, payload.platform)
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
         ) from exc
 
     logger.warning(
-        "min_supported_version поднята пользователем %s: %s", staff.id, payload.version
+        "min_supported_version[%s] поднята пользователем %s: %s",
+        payload.platform, staff.id, payload.version,
     )
     return await get_app_config()
 

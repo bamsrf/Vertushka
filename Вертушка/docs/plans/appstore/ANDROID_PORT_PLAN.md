@@ -156,7 +156,7 @@ L1 дубль `CAMERA` · L2 `adaptiveIcon.backgroundColor #ffffff` ≠ splash `
 **Приёмка:** аккаунт верифицирован; closed track с ≥12 приглашёнными; оба JSON локально и в EAS; `eas credentials -p android` показывает FCM key и keystore.
 **Оценка:** 1 день работы + 2–5 рабочих дней ожидания Google.
 
-### WS2 — Backend: конфиг по платформам, удаление аккаунта, push_platform (B1, B2, L6)
+### WS2 — Backend: конфиг по платформам, удаление аккаунта, push_platform (B1, B2, L6) ✅ 2026-09-07
 **Файлы:** `Backend/app/config.py`, `api/app_config.py`, `services/app_config.py`, `schemas/app_config.py`, `schemas/user.py:140-142`, `models/user.py:150`, `api/users.py:608` (`PUT /me/push-token`), `web/routes.py:666`, новый шаблон `web/templates/delete_account.html`, alembic-миграция, `tests/test_app_config.py:156` (проверка `set(body)` упадёт на новых ключах — обновить); Mobile: `lib/remoteConfig.ts:43`, `lib/version.ts`, `lib/types.ts:1215`, `components/ForceUpdateScreen.tsx` (`accessibilityLabel` параметризовать, iOS-строку не менять)
 **Дизайн `GET /api/config/`** — обе платформы в ответе, legacy-поля остаются и жёстко равны iOS:
 ```json

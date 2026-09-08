@@ -27,7 +27,13 @@ logger = logging.getLogger(__name__)
 
 _NAMESPACE = "appcfg"
 _FLAGS_KEY = "flags"
-_MIN_VERSION_KEY = "min_version"
+
+# Минимальная версия хранится по платформе. Ключ iOS остался прежним
+# ("min_version"), а не "min_version:ios": оверрайд, поставленный до появления
+# Android, обязан пережить деплой — иначе поднятая на инциденте планка
+# молча откатится к env-дефолту.
+PLATFORMS = ("ios", "android")
+_MIN_VERSION_KEYS = {"ios": "min_version", "android": "min_version:android"}
 
 # 90 дней — оверрайд не должен протухать сам по себе посреди инцидента.
 RUNTIME_OVERRIDE_TTL = 90 * 24 * 3600
@@ -119,37 +125,65 @@ async def set_flags(updates: dict[str, bool]) -> dict[str, bool]:
     return await get_flags()
 
 
-async def get_min_supported_version() -> str:
-    """Минимальная версия приложения, которой разрешено работать."""
-    cached = _local_get(_MIN_VERSION_KEY)
+def _min_version_key(platform: str) -> str:
+    try:
+        return _MIN_VERSION_KEYS[platform]
+    except KeyError:
+        raise ValueError(
+            f"Неизвестная платформа: {platform!r}. Ожидается одна из {PLATFORMS}"
+        ) from None
+
+
+def _min_version_env_default(platform: str) -> str:
+    s = get_settings()
+    if platform == "android":
+        return s.min_supported_app_version_android
+    return s.min_supported_app_version
+
+
+async def get_min_supported_version(platform: str = "ios") -> str:
+    """Минимальная версия приложения, которой разрешено работать.
+
+    Платформа по умолчанию — iOS: это значение уходит и в legacy-поле
+    `min_supported_version`, которое читают iOS 1.0.0/1.0.1.
+    """
+    key = _min_version_key(platform)
+    cached = _local_get(key)
     if cached is not None:
         return cached
 
-    override = await cache.get(_NAMESPACE, _MIN_VERSION_KEY)
+    override = await cache.get(_NAMESPACE, key)
     version = override if isinstance(override, str) and override else (
-        get_settings().min_supported_app_version
+        _min_version_env_default(platform)
     )
 
-    _local_set(_MIN_VERSION_KEY, version)
+    _local_set(key, version)
     return version
 
 
-async def set_min_supported_version(version: str) -> str:
-    """Поднять минимальную версию без деплоя (аварийная кнопка)."""
+async def set_min_supported_version(version: str, platform: str = "ios") -> str:
+    """Поднять минимальную версию без деплоя (аварийная кнопка).
+
+    Только для указанной платформы: бамп Android не трогает iOS и наоборот.
+    """
+    key = _min_version_key(platform)
     if not _is_valid_version(version):
         raise ValueError(f"Некорректная версия: {version!r}. Ожидается вид 1.2.3")
 
-    await cache.set(_NAMESPACE, _MIN_VERSION_KEY, version, ttl=RUNTIME_OVERRIDE_TTL)
+    await cache.set(_NAMESPACE, key, version, ttl=RUNTIME_OVERRIDE_TTL)
     _local_invalidate()
 
-    logger.warning("min_supported_app_version поднята через API: %s", version)
+    logger.warning(
+        "min_supported_app_version[%s] поднята через API: %s", platform, version
+    )
     return version
 
 
 async def clear_overrides() -> None:
     """Сбросить все рантайм-оверрайды к env-дефолтам."""
     await cache.delete(_NAMESPACE, _FLAGS_KEY)
-    await cache.delete(_NAMESPACE, _MIN_VERSION_KEY)
+    for key in _MIN_VERSION_KEYS.values():
+        await cache.delete(_NAMESPACE, key)
     _local_invalidate()
     logger.warning("Рантайм-оверрайды конфига сброшены")
 
