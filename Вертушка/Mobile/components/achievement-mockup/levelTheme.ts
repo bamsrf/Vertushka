@@ -3,7 +3,14 @@
  *
  * Все десять ступеней «Физики звука» стоят на одном градиенте, снятом с
  * `Design/Color palette.jpeg`: от почти чёрного фиолетового через кобальт к
- * почти белому розовому. Ступень — точка на этой ленте, и ничего кроме позиции
+ * чистому белому. Верх ленты доведён до #FFFFFF, а десять точек разложены
+ * равными шагами по светлоте: прежняя выборка давала неровные шаги (ΔE от
+ * 7.1 до 10.3) и упиралась в бледно-розовый, теперь шаг 9.3–10.7 при том же
+ * тоне и насыщенности — они берутся из кривой самого градиента.
+ *
+ * Белый верх обязан иметь контур: тело «Первозвука» неотличимо от светлого
+ * фона приложения. Роль контура несёт `deep` — он затемнён от `base` по
+ * построению и потому виден на любой ступени (контраст к фону ≥ 2.6). Ступень — точка на этой ленте, и ничего кроме позиции
  * её не отличает: «выше» значит ровно «светлее». Отсюда цвет папок, иконки
  * повышения, карточки уровня в разделе ачивок и chip-а в профиле.
  *
@@ -31,7 +38,7 @@ export interface LevelPalette {
   base: string;
   /** Осветлённый: верх корпуса папки, светлая сторона диска иконки. */
   light: string;
-  /** Затемнённый: низ клапана папки, тёмная сторона диска иконки, гнездо пина. */
+  /** Затемнённый: низ клапана, тёмная сторона диска, контур силуэта папки. */
   deep: string;
   /** Контрастный к base: стрелка, канавки и обводка диска иконки повышения. */
   ink: string;
@@ -44,104 +51,105 @@ export interface LevelPalette {
 export const LEVEL_PALETTE: Record<string, LevelPalette> = {
   // Тишь — почти чёрный фиолетовый низ градиента. Ещё ничего не звучит.
   silence: {
-    base: '#0D0A24',
+    base: '#0E0A25',
     light: '#565466',
-    deep: '#070513',
+    deep: '#090617',
     ink: '#F4EEE6',
-    soft: '#DDDDE0',
-    softInk: '#0D0A24',
-    softBorder: '#7F7E8B',
+    soft: '#D4D3D8',
+    softInk: '#0E0A25',
+    softBorder: '#7B7987',
   },
   // Шорох — тьма начинает синеть.
   rustle: {
-    base: '#1A1746',
-    light: '#5B587A',
-    deep: '#0E0D26',
+    base: '#1B1A4B',
+    light: '#5F5F81',
+    deep: '#11102E',
     ink: '#F4EEE6',
-    soft: '#D7D7DF',
-    softInk: '#1A1746',
-    softBorder: '#82819A',
+    soft: '#D6D6DF',
+    softInk: '#1B1A4B',
+    softBorder: '#82819C',
   },
   // Эхо — синий проступил, но глухой.
   echo: {
-    base: '#202C72',
-    light: '#5B6497',
-    deep: '#121942',
+    base: '#212C77',
+    light: '#646BA0',
+    deep: '#141B4A',
     ink: '#F4EEE6',
-    soft: '#D1D3E2',
-    softInk: '#202C72',
-    softBorder: '#8188B0',
+    soft: '#D7D9E7',
+    softInk: '#212C77',
+    softBorder: '#858BB5',
   },
   // Волна — чистый глубокий синий.
   wave: {
-    base: '#1C3FA8',
-    light: '#546EBD',
-    deep: '#112666',
+    base: '#2240A6',
+    light: '#6479C1',
+    deep: '#152867',
     ink: '#F4EEE6',
-    soft: '#C9D1EA',
-    softInk: '#1C3FA8',
-    softBorder: '#7B8FCC',
+    soft: '#D7DDEF',
+    softInk: '#2240A6',
+    softBorder: '#8696CE',
   },
   // Резонанс — кобальт, самая насыщенная точка ленты.
   resonance: {
-    base: '#2A5AD8',
-    light: '#5B80E1',
-    deep: '#1B3989',
+    base: '#2F57CB',
+    light: '#6D89DB',
+    deep: '#1D367E',
     ink: '#F4EEE6',
-    soft: '#C5D2F4',
-    softInk: '#2651C2',
-    softBorder: '#7D98DE',
+    soft: '#DAE1F6',
+    softInk: '#2F57CB',
+    softBorder: '#8DA3E3',
   },
   // Обертон — кобальт светлеет в барвинок.
   overtone: {
-    base: '#5B79DB',
-    light: '#7E95E3',
-    deep: '#3C5092',
+    base: '#6E86DD',
+    light: '#9AAAE7',
+    deep: '#445389',
     ink: '#0B0A22',
-    soft: '#CDD6F4',
-    softInk: '#405599',
-    softBorder: '#8E9CCB',
+    soft: '#E5E9F9',
+    softInk: '#5162A3',
+    softBorder: '#A2ACD2',
   },
   // Амплитуда — цвет отдаёт светлоту, насыщенность падает.
   amplitude: {
-    base: '#8193DF',
-    light: '#99A8E5',
-    deep: '#59669B',
+    base: '#9AA2E1',
+    light: '#B8BEEA',
+    deep: '#5F648C',
     ink: '#0B0A22',
-    soft: '#D4DAF4',
-    softInk: '#4D5886',
-    softBorder: '#97A0C2',
+    soft: '#EDEEFA',
+    softInk: '#646892',
+    softBorder: '#AFB2CB',
   },
   // Частота — бледная лаванда.
   frequency: {
-    base: '#A9AEE3',
-    light: '#B8BCE8',
-    deep: '#7A7EA4',
+    base: '#C8BEE0',
+    light: '#D8D2E9',
+    deep: '#7C768B',
     ink: '#0B0A22',
-    soft: '#DFE1F5',
-    softInk: '#5D607D',
-    softBorder: '#A4A7BF',
+    soft: '#F5F3F9',
+    softInk: '#6C6778',
+    softBorder: '#B7B4BF',
   },
   // Камертон — сирень уходит в розовое.
   tuning_fork: {
-    base: '#CDC3DF',
-    light: '#D5CCE4',
-    deep: '#9A92A7',
+    base: '#F5D9E0',
+    light: '#F8E4E9',
+    deep: '#98878B',
     ink: '#0B0A22',
-    soft: '#EBE7F2',
-    softInk: '#66616F',
-    softBorder: '#AFABB7',
+    soft: '#FDF8F9',
+    softInk: '#7C6E71',
+    softBorder: '#C3BABC',
   },
   // Первозвук — почти белый розовый. Предел ленты.
   primal_sound: {
-    base: '#F2D3DC',
-    light: '#F4D9E1',
-    deep: '#BDA5AC',
+    base: '#FFFFFF',
+    light: '#FFFFFF',
+    deep: '#9E9E9E',
     ink: '#0B0A22',
-    soft: '#F9ECF0',
-    softInk: '#79696E',
-    softBorder: '#BFB1B6',
-  },};
+    soft: '#FFFFFF',
+    softInk: '#727272',
+    softBorder: '#C0C0C0',
+  },
+};
 
 /** Палитра ступени по ключу. Неизвестный ключ → «Эхо». */
 export function levelPalette(key: string): LevelPalette {
