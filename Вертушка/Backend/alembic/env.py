@@ -106,6 +106,15 @@ async def run_async_migrations() -> None:
 
     async with connectable.connect() as connection:
         await connection.run_sync(do_run_migrations)
+        # КОММИТ ОБЯЗАТЕЛЕН. `SET lock_timeout` в do_run_migrations открывает
+        # транзакцию ДО context.configure(); alembic видит соединение уже в
+        # транзакции, считает её внешней (_in_external_transaction) и снимает с
+        # себя COMMIT — begin_transaction() возвращает nullcontext(). Без строки
+        # ниже выход из `async with` откатывает и DDL, и обновление
+        # alembic_version, при этом лог печатает «Running upgrade ...», а код
+        # возврата остаётся нулевым. Так 08.09.2026 прод три часа лежал с кодом
+        # впереди схемы (users.push_platform).
+        await connection.commit()
 
     await connectable.dispose()
 

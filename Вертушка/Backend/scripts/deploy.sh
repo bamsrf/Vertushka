@@ -102,6 +102,29 @@ $COMPOSE build api-blue scheduler   # api-blue и api-green делят image ver
 echo "📊 Применяю миграции базы данных (backward-compatible)..."
 $COMPOSE run --rm -e PYTHONPATH=/app api-blue alembic upgrade head
 
+# ГЕЙТ. Нулевой код возврата alembic НЕ доказывает, что миграция применилась:
+# при откате внутри env.py команда печатает «Running upgrade ...» и выходит с 0
+# (см. комментарий к connection.commit() в alembic/env.py). Такой деплой поднимает
+# новый цвет с кодом впереди схемы — прод отдаёт 500 на каждой затронутой таблице,
+# а контейнеры при этом healthy. Поэтому сверяем факт: current против heads.
+echo "🔎 Сверяю применённую версию схемы с head..."
+MIG_CURRENT=$($COMPOSE run --rm -e PYTHONPATH=/app api-blue alembic current 2>/dev/null \
+    | grep -oE '^[0-9a-z_]+' | tail -1)
+MIG_HEAD=$($COMPOSE run --rm -e PYTHONPATH=/app api-blue alembic heads 2>/dev/null \
+    | grep -oE '^[0-9a-z_]+' | tail -1)
+if [ -z "$MIG_CURRENT" ] || [ -z "$MIG_HEAD" ]; then
+    echo -e "${YELLOW}❌ Не смог прочитать версию схемы (current='$MIG_CURRENT' head='$MIG_HEAD').${NC}"
+    echo "   Деплой остановлен, трафик остался на текущем цвете."
+    exit 1
+fi
+if [ "$MIG_CURRENT" != "$MIG_HEAD" ]; then
+    echo -e "${YELLOW}❌ Миграции не доехали: в базе '$MIG_CURRENT', ожидался '$MIG_HEAD'.${NC}"
+    echo "   Скорее всего транзакция миграции откатилась молча. Деплой остановлен,"
+    echo "   трафик остался на текущем цвете — новый код с чужой схемой не поднимаем."
+    exit 1
+fi
+echo "   Схема на $MIG_CURRENT — совпадает с head."
+
 # --- Одноразовый cutover со старой single-api схемы -------------------------
 # Если ещё жив легаси-контейнер vertushka_api (до перехода на blue-green) —
 # переводим стенд на api-blue и пересоздаём nginx (нужно, чтобы подхватить новый
