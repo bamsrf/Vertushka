@@ -30,7 +30,7 @@
  * «splash → интро». Прогонять скрипт при каждой замене ролика.
  */
 import { useEffect, useRef, useState } from 'react';
-import { StyleSheet } from 'react-native';
+import { Image, StyleSheet } from 'react-native';
 // Reanimated вместо легаси Animated — приведение к домашнему стилю проекта
 // (все остальные анимации на reanimated) при починке SDK 57.
 import Animated, {
@@ -62,6 +62,15 @@ try {
 }
 
 const INTRO_SOURCE = require('../assets/video/intro-mascot.mp4');
+/**
+ * Первый кадр ролика (960×960, снят ffmpeg'ом с intro-mascot.mp4). Показывается
+ * ровно до `readyToPlay`: на медленной отдаче mp4 (Metro по сети, бюджетный
+ * флеш/декодер) плеер может ехать к первому кадру секунды, и без подложки
+ * весь safety-timeout выглядит как зависший белый экран (BUGS.md A5).
+ * Перевытаскивать при каждой замене ролика:
+ *   ffmpeg -i assets/video/intro-mascot.mp4 -frames:v 1 assets/video/intro-mascot-first-frame.png
+ */
+const INTRO_FIRST_FRAME = require('../assets/video/intro-mascot-first-frame.png');
 
 interface MascotIntroProps {
   /** Вызывается когда интро отыграло (или сразу, если expo-video недоступен). */
@@ -95,7 +104,9 @@ function IntroVideo({
   const onFinishFired = useRef(false);
   const opacity = useSharedValue(1);
   // Пока первый кадр не отрисован, видео не показываем: иначе на стыке со splash
-  // мелькает пустой прямоугольник плеера.
+  // мелькает пустой прямоугольник плеера. Вместо него на том же месте лежит
+  // статичный первый кадр — снимается в момент `readyToPlay`, так что мигания
+  // нет: картинка и видео совпадают попиксельно.
   const [ready, setReady] = useState(false);
 
   const player = useVideoPlayer(INTRO_SOURCE, (p) => {
@@ -160,7 +171,7 @@ function IntroVideo({
 
   return (
     <Animated.View style={[styles.fill, fadeStyle]} pointerEvents="auto">
-      {ready && (
+      {ready ? (
         <VideoView
           player={player}
           style={styles.video}
@@ -168,6 +179,13 @@ function IntroVideo({
           nativeControls={false}
           fullscreenOptions={{ enable: false }}
           allowsPictureInPicture={false}
+        />
+      ) : (
+        <Image
+          source={INTRO_FIRST_FRAME}
+          style={styles.video}
+          resizeMode="contain"
+          accessible={false}
         />
       )}
     </Animated.View>

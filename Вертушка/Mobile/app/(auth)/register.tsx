@@ -21,6 +21,9 @@ import { SocialAuthButtons } from '../../components/SocialAuthButtons';
 import { useAuthStore } from '../../lib/store';
 import { Colors, Typography, Spacing } from '../../constants/theme';
 
+/** Провайдеры, которые SocialAuthButtons реально рисует на этой платформе. */
+const SOCIAL_PROVIDERS_LABEL = Platform.OS === 'ios' ? 'Apple или Discogs' : 'Discogs';
+
 export default function RegisterScreen() {
   const insets = useSafeAreaInsets();
   const { register, isLoading } = useAuthStore();
@@ -179,10 +182,12 @@ export default function RegisterScreen() {
 
           <SocialAuthButtons mode="register" />
 
-          {/* Google-кнопка выключена (SocialAuthButtons: showGoogle = false),
-              поэтому не обещаем вход, которого нет. */}
+          {/* Подпись собирается из реально показанных провайдеров: Google-кнопка
+              выключена (SocialAuthButtons: showGoogle = false), Apple есть только
+              на iOS (showApple = Platform.OS === 'ios' && …) — не обещаем вход,
+              которого нет. На iOS текст прежний, буква в букву. */}
           <Text style={styles.socialTermsNote}>
-            Вход через Apple или Discogs — тоже согласие с ними
+            {`Вход через ${SOCIAL_PROVIDERS_LABEL} — тоже согласие с ними`}
           </Text>
         </View>
       </ScrollView>
