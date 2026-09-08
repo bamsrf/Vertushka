@@ -18,6 +18,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useIsFocused } from 'expo-router';
 import { AnimatedGradientPalette } from '../constants/theme';
+import { resolveGradientFrame } from '../lib/gradientFrame';
 
 const AnimatedLinearGradient = Animated.createAnimatedComponent(LinearGradient);
 
@@ -59,14 +60,15 @@ export const AnimatedGradientText = React.memo(function AnimatedGradientText({
   }, [duration, focused]);
 
   const animatedProps = useAnimatedProps(() => {
-    const raw = progress.value % PRESET_COUNT;
-    const fromIdx = Math.floor(raw) % PRESET_COUNT;
-    const toIdx = (fromIdx + 1) % PRESET_COUNT;
-    const t = raw - Math.floor(raw);
+    // Индексы всегда в диапазоне, прогресс-не-число → нулевой кадр
+    // (A7: `presets[NaN]` ронял worklet на UI-потоке). См. lib/gradientFrame.ts.
+    const { fromIdx, toIdx, t } = resolveGradientFrame(progress.value, PRESET_COUNT);
+    const from = presets[fromIdx] ?? presets[0];
+    const to = presets[toIdx] ?? presets[0];
 
-    const c0 = interpolateColor(t, [0, 1], [presets[fromIdx][0], presets[toIdx][0]]);
-    const c1 = interpolateColor(t, [0, 1], [presets[fromIdx][1], presets[toIdx][1]]);
-    const c2 = interpolateColor(t, [0, 1], [presets[fromIdx][2], presets[toIdx][2]]);
+    const c0 = interpolateColor(t, [0, 1], [from[0], to[0]]);
+    const c1 = interpolateColor(t, [0, 1], [from[1], to[1]]);
+    const c2 = interpolateColor(t, [0, 1], [from[2], to[2]]);
 
     return {
       // Tuple, а не string[]: expo-linear-gradient 15 требует минимум два

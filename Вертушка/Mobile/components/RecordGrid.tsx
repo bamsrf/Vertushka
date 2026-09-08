@@ -4,6 +4,7 @@
 import React, { memo, useEffect, useRef } from 'react';
 import {
   FlatList,
+  Platform,
   StyleSheet,
   View,
   Text,
@@ -239,9 +240,17 @@ function RecordGridComponent<T extends RecordItem = RecordItem>({
       );
     }
 
+    // A17 (Android): под высокой шапкой («Первые шаги» + папки) блок уезжал
+    // под плавающий таб-бар — заголовок читался из-под пилюли, кнопки за
+    // экраном. Экран Pixel-класса не вмещает шапку + 48dp отступа + кольцо
+    // 96dp + текст + кнопки, поэтому на Android при наличии ListHeaderComponent
+    // — компактный вариант: без кольца и с малым верхним отступом, всё
+    // остальное как есть. iOS — прежняя раскладка.
+    const compact = Platform.OS === 'android' && !!ListHeaderComponent;
+
     return (
-      <View style={[styles.emptyContainer, emptyPad]}>
-        {emptyIcon && (
+      <View style={[styles.emptyContainer, emptyPad, compact && styles.emptyContainerCompact]}>
+        {emptyIcon && !compact && (
           <View style={styles.emptyIconRing}>
             <Icon name={emptyIcon} size={36} color={Colors.royalBlue} />
           </View>
@@ -365,6 +374,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.lg,
     paddingVertical: Spacing.xxl,
     gap: Spacing.sm,
+  },
+  // Android под высокой шапкой (A17): без декоративного верхнего отступа.
+  emptyContainerCompact: {
+    paddingTop: Spacing.md,
   },
   emptyIconRing: {
     width: 96,

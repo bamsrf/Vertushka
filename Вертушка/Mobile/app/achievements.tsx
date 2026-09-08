@@ -28,6 +28,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { api } from '../lib/api';
 import { Colors, Spacing, BorderRadius, androidShadow } from '../constants/theme';
 import { ms } from '../lib/responsive';
+import { shareWithForegroundFallback } from '../lib/shareCompat';
+import { useAndroidBackClose } from '../lib/useAndroidBackClose';
 import { AchievementPin } from '../components/AchievementPin';
 import { prewarmAchievementPins, prefetchAchievementAsset } from '../lib/achievementAssets';
 import { AchievementsHero } from '../components/AchievementsHero';
@@ -90,6 +92,10 @@ export default function AchievementsScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [selected, setSelected] = useState<AchievementItem | null>(null);
+  const closeSelected = useCallback(() => setSelected(null), []);
+  // DetailsSheet — absolute-оверлей, не Modal: системный «Назад» без этого
+  // уводил с экрана целиком вместо закрытия шита (A10). iOS: no-op.
+  useAndroidBackClose(!!selected, closeSelected);
 
   const load = useCallback(async () => {
     try {
@@ -168,7 +174,7 @@ export default function AchievementsScreen() {
       <>
         <Stack.Screen options={{ title: 'Ачивки' }} />
         <View style={[styles.center, { paddingTop: insets.top + 60 }]}>
-          <ActivityIndicator size="large" />
+          <ActivityIndicator size="large" color={Colors.royalBlue} />
         </View>
       </>
     );
@@ -231,7 +237,7 @@ export default function AchievementsScreen() {
       </ScrollView>
 
       {/* Bottom-sheet с деталями */}
-      {selected && <DetailsSheet item={selected} username={username} onClose={() => setSelected(null)} />}
+      {selected && <DetailsSheet item={selected} username={username} onClose={closeSelected} />}
 
       {/* Onboarding tour — только на своём профиле */}
       {!username && <AchievementsTourOverlay />}
@@ -527,10 +533,14 @@ function DetailsSheet({
       const uri = await captureRef(shareCardRef, opts);
       const available = await Sharing.isAvailableAsync();
       if (available) {
-        await Sharing.shareAsync(uri, {
-          mimeType: 'image/png',
-          dialogTitle: item.title_ru || 'Ачивка',
-        });
+        // Android: чузер, закрытый «Назад», может не вернуть activity result —
+        // промис shareAsync висел бы вечно, кнопка залипала в «Готовим…» (A11).
+        await shareWithForegroundFallback(() =>
+          Sharing.shareAsync(uri, {
+            mimeType: 'image/png',
+            dialogTitle: item.title_ru || 'Ачивка',
+          }),
+        );
       } else {
         await Share.share({
           message: `Открыл ачивку «${item.title_ru}» в Вертушке 🎵`,
