@@ -13,6 +13,9 @@
       "env": {
         "SENTRY_DISABLE_AUTO_UPLOAD": "true",
         "SENTRY_ALLOW_FAILURE": "true"
+      },
+      "android": {
+        "buildType": "apk"
       }
     },
     "preview": {
@@ -23,7 +26,8 @@
         "image": "macos-sequoia-15.6-xcode-26.0"
       },
       "android": {
-        "channel": "preview-android"
+        "channel": "preview-android",
+        "buildType": "apk"
       }
     },
     "production": {
@@ -37,7 +41,8 @@
         "image": "macos-sequoia-15.6-xcode-26.0"
       },
       "android": {
-        "channel": "production-android"
+        "channel": "production-android",
+        "buildType": "app-bundle"
       }
     }
   },
@@ -48,7 +53,7 @@
         "appleTeamId": "G47JLHB869"
       },
       "android": {
-        "serviceAccountKeyPath": "./google-services.json",
+        "serviceAccountKeyPath": "./play-service-account.json",
         "track": "internal"
       }
     }
