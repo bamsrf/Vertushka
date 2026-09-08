@@ -12,6 +12,7 @@ import {
   BottomSheetBackdrop,
   type BottomSheetBackdropProps,
 } from '@gorhom/bottom-sheet';
+import { useAndroidBackClose } from '../../lib/useAndroidBackClose';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -48,6 +49,11 @@ export const AltVersionSheet = forwardRef<AltVersionSheetRef, Props>(({ onConfir
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const sheetRef = useRef<BottomSheetModal>(null);
+  // Android: системная «Назад» закрывает шит, а не уводит с экрана (B8).
+  // Подписка живёт только пока шит открыт — onChange(-1) её снимает.
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const closeSheet = useCallback(() => sheetRef.current?.dismiss(), []);
+  useAndroidBackClose(sheetOpen, closeSheet);
   const [data, setData] = useState<AltVersionSheetData | null>(null);
   const setAcceptAlt = useCollectionStore((s) => s.setWishlistAcceptAlt);
   const rejectAlt = useCollectionStore((s) => s.rejectWishlistAlt);
@@ -130,6 +136,7 @@ export const AltVersionSheet = forwardRef<AltVersionSheetRef, Props>(({ onConfir
   return (
     <BottomSheetModal
       ref={sheetRef}
+      onChange={(i) => setSheetOpen(i >= 0)}
       enableDynamicSizing
       topInset={insets.top + 8}
       onDismiss={runPending}

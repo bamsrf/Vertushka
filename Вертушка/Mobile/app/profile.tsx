@@ -10,8 +10,6 @@ import {
   Alert,
   ScrollView,
   Share,
-  ActionSheetIOS,
-  Platform,
   ActivityIndicator,
   Linking,
   InteractionManager,
@@ -40,6 +38,7 @@ import { markProfileShared } from '../lib/onboardingProgress';
 import { CoachPulse } from '../components/onboarding/CoachPulse';
 import { useCoachSpotlight } from '../lib/coachSpotlight';
 import { toast } from '../lib/toast';
+import { showActionSheet } from '../lib/actionSheetCompat';
 import { analytics } from '../lib/analytics';
 import { Colors, Typography, Spacing, BorderRadius, Shadows } from '../constants/theme';
 import { AchievementsBlock } from '../components/AchievementsBlock';
@@ -222,50 +221,24 @@ export default function ProfileScreen() {
     const cancelIndex = options.length - 1;
     const destructiveIndex = hasAvatar ? 2 : undefined;
 
-    if (Platform.OS === 'ios') {
-      ActionSheetIOS.showActionSheetWithOptions(
-        { options, cancelButtonIndex: cancelIndex, destructiveButtonIndex: destructiveIndex },
-        async (index) => {
-          if (index === 0) pickImage('library');
-          else if (index === 1) pickImage('camera');
-          else if (hasAvatar && index === 2) {
-            setAvatarUploading(true);
-            try {
-              await api.deleteAvatar();
-              setUser({ ...user!, avatar_url: undefined as any });
-            } catch {
-              toast.error('Не удалось удалить аватарку');
-            } finally {
-              setAvatarUploading(false);
-            }
+    showActionSheet(
+      { options, cancelButtonIndex: cancelIndex, destructiveButtonIndex: destructiveIndex },
+      async (index) => {
+        if (index === 0) pickImage('library');
+        else if (index === 1) pickImage('camera');
+        else if (hasAvatar && index === 2) {
+          setAvatarUploading(true);
+          try {
+            await api.deleteAvatar();
+            setUser({ ...user!, avatar_url: undefined as any });
+          } catch {
+            toast.error('Не удалось удалить аватарку');
+          } finally {
+            setAvatarUploading(false);
           }
-        },
-      );
-    } else {
-      const buttons: any[] = [
-        { text: 'Выбрать из галереи', onPress: () => pickImage('library') },
-        { text: 'Сделать фото', onPress: () => pickImage('camera') },
-      ];
-      if (hasAvatar) {
-        buttons.push({
-          text: 'Удалить аватарку',
-          style: 'destructive',
-          onPress: async () => {
-            setAvatarUploading(true);
-            try {
-              await api.deleteAvatar();
-              setUser({ ...user!, avatar_url: undefined as any });
-            } catch {
-              toast.error('Не удалось удалить аватарку');
-            } finally {
-              setAvatarUploading(false);
-            }
-          },
-        });
-      }
-      buttons.push({ text: 'Отмена', style: 'cancel' });
-      Alert.alert('Аватарка', undefined, buttons);
-    }
+        }
+      },
+    );
   }, [user, setUser, pickImage]);
 
   useEffect(() => {
@@ -368,21 +341,13 @@ export default function ProfileScreen() {
     const options = ['Коллекция (CSV)', 'Вишлист (CSV)', 'Отмена'];
     const cancelButtonIndex = 2;
 
-    if (Platform.OS === 'ios') {
-      ActionSheetIOS.showActionSheetWithOptions(
-        { options, cancelButtonIndex, title: 'Экспорт данных' },
-        (buttonIndex) => {
-          if (buttonIndex === 0) handleExport('collection');
-          else if (buttonIndex === 1) handleExport('wishlist');
-        },
-      );
-    } else {
-      Alert.alert('Экспорт данных', 'Выберите что экспортировать', [
-        { text: 'Коллекция (CSV)', onPress: () => handleExport('collection') },
-        { text: 'Вишлист (CSV)', onPress: () => handleExport('wishlist') },
-        { text: 'Отмена', style: 'cancel' },
-      ]);
-    }
+    showActionSheet(
+      { options, cancelButtonIndex, title: 'Экспорт данных' },
+      (buttonIndex) => {
+        if (buttonIndex === 0) handleExport('collection');
+        else if (buttonIndex === 1) handleExport('wishlist');
+      },
+    );
   }, [handleExport]);
 
   const statCards = [
@@ -725,7 +690,11 @@ export default function ProfileScreen() {
 
           <TouchableOpacity
             style={styles.settingsItem}
-            onPress={() => Linking.openURL('mailto:support@vinyl-vertushka.store')}
+            onPress={() =>
+              Linking.openURL('mailto:support@vinyl-vertushka.store').catch(() =>
+                toast.error('Нет почтового приложения', 'Напишите на support@vinyl-vertushka.store'),
+              )
+            }
           >
             <Icon name="paper-plane-outline" size={24} color={Colors.royalBlue} />
             <Text style={styles.settingsItemText}>Напишите нам</Text>

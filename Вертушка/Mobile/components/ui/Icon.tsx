@@ -24,7 +24,7 @@
  */
 
 import React from 'react';
-import { useColorScheme, View, type StyleProp, type ViewStyle } from 'react-native';
+import { View, type StyleProp, type ViewStyle } from 'react-native';
 
 // Phosphor — основной icon set (используем `fill` weight + внешний halo
 // wrapper). Для двух имён (`x`, `dots-three-vertical` и их пары) пользователь
@@ -106,7 +106,7 @@ import { XV2, XCircleV2, DotsThreeV2, DotsThreeVerticalV2 } from '../icons/v2';
 
 import { DiscGrooves, TrophyDisc, VinylLabel } from '../icons/hero';
 
-import { T } from '../../constants/theme';
+import { T, THEME_MODE } from '../../constants/theme';
 
 // ───────────────────────────────────────────────────────────────────────────
 // Public API types
@@ -424,8 +424,9 @@ export const Icon: React.FC<IconProps> = ({
   testID,
   style,
 }) => {
-  const scheme = useColorScheme();
-  const mode: 'light' | 'dark' = scheme === 'dark' ? 'dark' : 'light';
+  // Палитра от режима приложения, а не от useColorScheme(): тема зафиксирована
+  // светлой, и системная тёмная тема Android не должна перекрашивать иконки.
+  const mode: 'light' | 'dark' = THEME_MODE;
 
   const resolvedSize = typeof size === 'number' ? size : SIZE_MAP[size];
 

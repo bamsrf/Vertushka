@@ -12,9 +12,6 @@ import {
   RefreshControl,
   TouchableOpacity,
   ActivityIndicator,
-  ActionSheetIOS,
-  Alert,
-  Platform,
 } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -34,6 +31,7 @@ import { groupByDateBucket } from '@/lib/notificationsGrouping';
 import { api } from '@/lib/api';
 import { countPull } from '@/lib/eggTracker';
 import { toast } from '@/lib/toast';
+import { showActionSheet } from '@/lib/actionSheetCompat';
 import type { NotificationItem as NotificationItemType, SocialFeedItem } from '@/lib/types';
 
 type Tab = 'personal' | 'social';
@@ -256,27 +254,15 @@ export default function NotificationsScreen() {
       }
       actions.push({ label: 'Отмена', run: () => {} });
 
-      if (Platform.OS === 'ios') {
-        const labels = actions.map((a) => a.label);
-        ActionSheetIOS.showActionSheetWithOptions(
-          {
-            options: labels,
-            cancelButtonIndex: labels.length - 1,
-            destructiveButtonIndex: actions.findIndex((a) => a.destructive),
-          },
-          (idx) => actions[idx]?.run(),
-        );
-      } else {
-        Alert.alert(
-          'Уведомление',
-          undefined,
-          actions.map((a) => ({
-            text: a.label,
-            style: a.destructive ? 'destructive' : a.label === 'Отмена' ? 'cancel' : 'default',
-            onPress: a.run,
-          })),
-        );
-      }
+      const labels = actions.map((a) => a.label);
+      showActionSheet(
+        {
+          options: labels,
+          cancelButtonIndex: labels.length - 1,
+          destructiveButtonIndex: actions.findIndex((a) => a.destructive),
+        },
+        (idx) => actions[idx]?.run(),
+      );
     },
     [markRead, removePersonal, snoozePersonal, muteType],
   );

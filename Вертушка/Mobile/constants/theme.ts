@@ -30,6 +30,13 @@ import { ms } from '../lib/responsive';
 
 type ThemeMode = 'light' | 'dark';
 const MODE: ThemeMode = 'light';
+/**
+ * Режим темы приложения — единственный источник для всех, кто выбирает
+ * light/dark swatch в рантайме (Icon.tsx). Не `useColorScheme()`: приложение
+ * зафиксировано светлым (`userInterfaceStyle: light`), а на Android системная
+ * тёмная тема иначе давала тёмные иконки на светлом фоне.
+ */
+export const THEME_MODE: ThemeMode = MODE;
 const L = <T,>(role: { light: T; dark: T }): T => role[MODE];
 
 // ───────────────────────────────────────────────────────────────────────────

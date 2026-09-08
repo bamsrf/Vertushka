@@ -8,6 +8,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Icon } from '@/components/ui';
 import { Colors, Typography, Spacing } from '../constants/theme';
 import { ms } from '../lib/responsive';
+import { toast } from '../lib/toast';
 
 export const SUPPORT_EMAIL = 'support@vinyl-vertushka.store';
 
@@ -57,7 +58,14 @@ export function LegalScreen({
         <Text style={styles.heading}>Контакты</Text>
         <Text style={styles.paragraph}>
           По всем вопросам и жалобам:{' '}
-          <Text style={styles.link} onPress={() => Linking.openURL(`mailto:${SUPPORT_EMAIL}`)}>
+          <Text
+            style={styles.link}
+            onPress={() =>
+              Linking.openURL(`mailto:${SUPPORT_EMAIL}`).catch(() =>
+                toast.error('Нет почтового приложения', `Напишите на ${SUPPORT_EMAIL}`),
+              )
+            }
+          >
             {SUPPORT_EMAIL}
           </Text>
         </Text>

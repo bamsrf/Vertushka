@@ -24,6 +24,7 @@ import {
   BottomSheetBackdrop,
   type BottomSheetBackdropProps,
 } from '@gorhom/bottom-sheet';
+import { useAndroidBackClose } from '../../lib/useAndroidBackClose';
 
 import HotStockTag, { formatPrice } from '../HotStockTag';
 import OfferDetailCard, { type OfferDetailData } from './OfferDetailCard';
@@ -60,6 +61,11 @@ export interface OffersBottomSheetRef {
 export const OffersBottomSheet = forwardRef<OffersBottomSheetRef, OffersBottomSheetProps>(
   function OffersBottomSheet({ onBuyPress, onCardPress, buyingListingId }, ref) {
     const sheetRef = useRef<BottomSheetModal>(null);
+    // Android: системная «Назад» закрывает шит, а не уводит с экрана (B8).
+    // Подписка живёт только пока шит открыт — onChange(-1) её снимает.
+    const [sheetOpen, setSheetOpen] = React.useState(false);
+    const closeSheet = React.useCallback(() => sheetRef.current?.dismiss(), []);
+    useAndroidBackClose(sheetOpen, closeSheet);
     const [data, setData] = React.useState<OffersBottomSheetData | null>(null);
 
     useImperativeHandle(ref, () => ({
@@ -91,6 +97,7 @@ export const OffersBottomSheet = forwardRef<OffersBottomSheetRef, OffersBottomSh
     return (
       <BottomSheetModal
         ref={sheetRef}
+        onChange={(i) => setSheetOpen(i >= 0)}
         snapPoints={snapPoints}
         index={0}
         backdropComponent={renderBackdrop}

@@ -25,6 +25,7 @@ import { useCollectionStore } from '../../lib/store';
 import { WishlistFolder, WishlistItem } from '../../lib/types';
 import { Colors, Typography, Spacing, BorderRadius } from '../../constants/theme';
 import { toast } from '../../lib/toast';
+import { promptText } from '../../lib/promptCompat';
 
 export default function WishlistFolderScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -86,23 +87,20 @@ export default function WishlistFolderScreen() {
     router.push(`/record/${recordId}`);
   };
 
-  const handleRename = () => {
+  const handleRename = async () => {
     if (!folder) return;
-    Alert.prompt(
-      'Переименовать папку',
-      'Введите новое название',
-      async (name) => {
-        if (!name?.trim()) return;
-        try {
-          await renameWishlistFolder(folder.id, name.trim());
-          setFolder({ ...folder, name: name.trim() });
-        } catch {
-          toast.error('Не удалось переименовать папку');
-        }
-      },
-      'plain-text',
-      folder.name,
-    );
+    const name = await promptText({
+      title: 'Переименовать папку',
+      message: 'Введите новое название',
+      defaultValue: folder.name,
+    });
+    if (!name?.trim()) return;
+    try {
+      await renameWishlistFolder(folder.id, name.trim());
+      setFolder({ ...folder, name: name.trim() });
+    } catch {
+      toast.error('Не удалось переименовать папку');
+    }
   };
 
   const handleDelete = () => {

@@ -245,6 +245,7 @@ cd Mobile && npx expo run:android
 - `mailto:` — `.catch` + тост
 **Приёмка:** на эмуляторе/устройстве: создание папки работает, меню чата показывает все 6 пунктов, «Назад» закрывает любой sheet/оверлей, Discogs-вход завершается без «Страница не найдена», тёмная системная тема не меняет вид приложения. iOS: snapshot/визуал без изменений.
 **Оценка:** 3–4 дня. **Должен войти в билд для closed testing.**
+**Статус 2026-09-07 (код, без устройства):** `lib/promptCompat.ts` + `components/ui/PromptSheet.tsx` (6 мест `Alert.prompt`), `lib/actionSheetCompat.ts` + `components/ui/OptionsSheet.tsx` (9 мест `ActionSheetIOS`, хост `AndroidSheetsHost` в `_layout.tsx`), `lib/useAndroidBackClose.ts` в 4 gorhom-шитах (кастомные оверлеи и `RootModalOverlay` уже RN `Modal` с `onRequestClose` — хук не нужен), `app/+native-intent.ts`, `Icon.tsx` → `THEME_MODE`, font-scale через metro-alias `react-native` → `lib/fontScale/` (`Text.defaultProps` был no-op), `.catch` на `mailto:`. iOS-ветки — прежние нативные вызовы (Q6). `predictiveBackGestureEnabled` не трогали (Q7). Приёмка на устройстве — WS7.
 
 ### WS6 — Ассеты и splash Android (M2, L2)
 **Файлы:** `app.json` (плагин `expo-splash-screen` → секция `android`: `image` ≤200 dp, `backgroundColor`, `dark`; `android.adaptiveIcon.monochromeImage`), `assets/images/*`

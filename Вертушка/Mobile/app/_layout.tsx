@@ -65,6 +65,7 @@ import { initDeviceMetrics } from '../lib/deviceMetrics';
 import { noteAppLaunch } from '../lib/reviewPrompt';
 import { useRemoteConfigStore } from '../lib/remoteConfig';
 import { ForceUpdateScreen } from '../components/ForceUpdateScreen';
+import { AndroidSheetsHost } from '../components/ui/AndroidSheetsHost';
 import { clampSystemFontScale } from '../lib/responsive';
 
 // Ограничиваем системный font-scale до старта рендера — крупный «Размер текста»
@@ -570,6 +571,9 @@ function RootLayout() {
           />
         </Stack>
         <AchievementUnlockHost />
+        {/* Android-замены Alert.prompt / ActionSheetIOS (lib/promptCompat,
+            lib/actionSheetCompat). На iOS — null. */}
+        <AndroidSheetsHost />
         {/* Спрашивает «это подарок?», когда добавленная пластинка совпала
             с забронированным пунктом вишлиста. Живёт здесь, а не на экранах:
             добавить в коллекцию можно из скана, поиска и карточки релиза. */}
