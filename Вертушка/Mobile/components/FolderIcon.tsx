@@ -18,6 +18,9 @@
  * Ступень приходит из `useCurrentLevelKey` — общего стора, который
  * `achievementsBus` обновляет с уже запрашиваемых ответов `/achievements/me`.
  * Свой запрос иконка не делает: их в скролле десяток.
+ *
+ * Три варианта: `filled` — цвет ступени, `empty` — он же с прочерком,
+ * `new` — нейтральная карточка с плюсом.
  */
 import Svg, {
   Defs,
@@ -54,20 +57,41 @@ export interface FolderPalette {
   backBottom: string;
   /** Низ клапана. */
   deep: string;
+  /** Контрастный к корпусу тон для метки пустой папки. */
+  mark: string;
 }
 
 /** Палитра папки для ступени — см. LEVEL_PALETTE в levelTheme. */
 export function folderPalette(levelKey: string): FolderPalette {
   const p = levelPalette(levelKey);
-  return { backTop: p.light, backBottom: p.base, deep: p.deep };
+  return { backTop: p.light, backBottom: p.base, deep: p.deep, mark: p.ink };
 }
 
-/** Пустая папка и карточка «Новая» вне цвета ступени: хвастаться нечем. */
+/** Карточка «Новая» вне цвета ступени: папки ещё нет, красить нечего. */
 const NEUTRAL_PALETTE: FolderPalette = {
   backTop: '#4A5060',
   backBottom: '#2E3340',
   deep: '#1B1F28',
+  mark: '#F4EEE6',
 };
+
+/**
+ * Пустая папка — та же ступень плюс метка-прочерк.
+ *
+ * Светлотой это состояние закодировать нельзя ни в какую сторону, и обе
+ * попытки провалились на разных концах ленты. Фиксированный серый (L* 32)
+ * оказывался СВЕТЛЕЕ «Тиши» (L* 17) и «Шороха» (24) — полка читалась
+ * наоборот, пустые выглядели живее полных. Прозрачный призрак ломался
+ * симметрично сверху: тело «Первозвука» само отстоит от фона коллекции всего
+ * на ΔE 10, и ослабленная версия сливалась с фоном (ΔE 4.2) — окна, где
+ * призрак отличим и от фона, и от полной папки, у двух верхних ступеней не
+ * существует вовсе.
+ *
+ * Поэтому признак взят вне тонального ряда: `ink` ступени подобран к её
+ * `base` по WCAG, так что прочерк читается на любой точке ленты по
+ * построению. Грамматика та же, что у «Новой» с её плюсом.
+ */
+const EMPTY_MARK = 'M26.5 42 h11';
 
 /** Градиенты живут в общем неймспейсе документа: одинаковые id перетирают
  *  друг друга, и вторая папка в скролле берёт чужой градиент. */
@@ -84,7 +108,7 @@ interface FolderIconProps {
 
 export function FolderIcon({ size = 80, variant = 'filled', level }: FolderIconProps) {
   const currentLevel = useCurrentLevelKey();
-  const p = variant === 'filled' ? folderPalette(level ?? currentLevel) : NEUTRAL_PALETTE;
+  const p = variant === 'new' ? NEUTRAL_PALETTE : folderPalette(level ?? currentLevel);
 
   const k = (defsSeq += 1);
   const id = {
@@ -130,6 +154,15 @@ export function FolderIcon({ size = 80, variant = 'filled', level }: FolderIconP
           d={PLUS_PATH}
           stroke="#FFFFFF"
           strokeOpacity={0.82}
+          strokeWidth={2}
+          strokeLinecap="round"
+        />
+      ) : null}
+      {variant === 'empty' ? (
+        <Path
+          d={EMPTY_MARK}
+          stroke={p.mark}
+          strokeOpacity={0.85}
           strokeWidth={2}
           strokeLinecap="round"
         />
