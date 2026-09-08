@@ -45,6 +45,36 @@ TIER_BG_COLORS: dict[AchievementTier, tuple[str, str]] = {
 }
 
 
+#: Порог «редкости» для публичной карточки. Строку показываем, только если
+#: ачивку открыли не больше четверти коллекционеров: «всего у 3%» читается
+#: как флекс, «у 87%» — как антифлекс, и в Stories это работает против юзера.
+RARITY_SHARE_MAX_PCT = 0.25
+
+#: Ниже этого числа активных юзеров процент — шум (1 человек из 4 = «25%»).
+#: Тот же порог, что у строки статистики в шите приложения.
+RARITY_MIN_USERS = 5
+
+
+def rarity_share_line(unlocked_pct: float, total_users: int) -> str | None:
+    """Строка редкости для share-карточки, либо None — если её не показываем.
+
+    Единственное место, где живёт политика: и PNG-рендер, и мобильная карточка
+    (через поле `share_rarity_line` в /achievements/{code}/stats) берут текст
+    отсюда, чтобы формулировка и пороги не разъехались между платформами.
+    """
+    if total_users < RARITY_MIN_USERS:
+        return None
+    if unlocked_pct <= 0 or unlocked_pct > RARITY_SHARE_MAX_PCT:
+        return None
+    pct = unlocked_pct * 100
+    if pct < 1:
+        return "Меньше 1% коллекционеров"
+    # До 10% дробная часть осмысленна (2.4% ≠ 2%), но «3.0%» выглядит
+    # опечаткой — хвостовой ноль убираем.
+    shown = f"{pct:.1f}".rstrip("0").rstrip(".") if pct < 10 else f"{pct:.0f}"
+    return f"Всего у {shown}% коллекционеров"
+
+
 @dataclass
 class ShareCardSize:
     width: int
@@ -147,6 +177,55 @@ def _draw_text_centered(
     return bbox[3] - bbox[1]
 
 
+def _draw_pill_centered(
+    canvas: Image.Image,
+    text: str,
+    y: int,
+    width: int,
+    font: ImageFont.ImageFont,
+) -> None:
+    """Текст в полупрозрачной плашке по центру.
+
+    Строка редкости — единственное на карточке, что читается как достижение
+    относительно других людей, поэтому ей нужен контраст с градиентом, а не
+    ещё один серый абзац под уликой.
+
+    Полупрозрачную заливку кладём отдельным RGBA-слоем: канвас в режиме RGB,
+    и альфа в fill= там просто игнорируется — плашка вышла бы глухо-белой.
+    """
+    draw = ImageDraw.Draw(canvas)
+    bbox = draw.textbbox((0, 0), text, font=font)
+    tw = bbox[2] - bbox[0]
+    th = bbox[3] - bbox[1]
+    pad_x = int(width * 0.035)
+    pad_y = int(width * 0.020)
+    box = [
+        (width - tw) / 2 - pad_x,
+        y - pad_y,
+        (width + tw) / 2 + pad_x,
+        y + bbox[1] + th + pad_y,
+    ]
+    radius = int((box[3] - box[1]) / 2)
+
+    overlay = Image.new("RGBA", canvas.size, (0, 0, 0, 0))
+    ImageDraw.Draw(overlay).rounded_rectangle(
+        box,
+        radius=radius,
+        fill=(255, 255, 255, 38),
+        outline=(255, 255, 255, 235),
+        width=2,
+    )
+    if canvas.mode == "RGBA":
+        canvas.alpha_composite(overlay)
+    else:
+        merged = Image.alpha_composite(canvas.convert("RGBA"), overlay)
+        canvas.paste(merged.convert("RGB"), (0, 0))
+
+    ImageDraw.Draw(canvas).text(
+        ((width - tw) / 2, y), text, fill=(255, 255, 255), font=font
+    )
+
+
 def render_share_card(
     defn: AchievementDefinition,
     *,
@@ -154,8 +233,14 @@ def render_share_card(
     unlocked_at: datetime | None = None,
     size: ShareCardSize = SIZE_STORIES,
     evidence_text: str | None = None,
+    rarity_text: str | None = None,
 ) -> bytes:
-    """Рендерит PNG share-card. Возвращает bytes для возврата в API."""
+    """Рендерит PNG share-card. Возвращает bytes для возврата в API.
+
+    `rarity_text` — готовая строка из `rarity_share_line()`; None означает
+    «не показываем», а не «посчитай сам»: политика редкости живёт в одном
+    месте, рендер её только рисует.
+    """
     top, bottom = TIER_BG_COLORS[defn.tier]
     canvas = _vertical_gradient(size, top, bottom)
     draw = ImageDraw.Draw(canvas)
@@ -195,15 +280,28 @@ def render_share_card(
 
     # Улика «за какую музыку» — короткая строка под тиром. Только музыка,
     # без людей и цен (карточка уходит в публичные Stories).
+    cursor_y = title_y + int(size.width * 0.16)
     if evidence_text:
         ev_font = _load_font(int(size.width * 0.030))
         _draw_text_centered(
             draw,
             evidence_text,
-            title_y + int(size.width * 0.16),
+            cursor_y,
             size.width,
             ev_font,
             fill=(210, 210, 220),
+        )
+        cursor_y += int(size.width * 0.075)
+
+    # Редкость. Курсор, а не фиксированный отступ: без улики плашка
+    # поднимается на её место, иначе в карточке зияет дыра.
+    if rarity_text:
+        _draw_pill_centered(
+            canvas,
+            rarity_text,
+            cursor_y,
+            size.width,
+            _load_font(int(size.width * 0.032)),
         )
 
     # Нижний блок: username + домен
@@ -232,6 +330,7 @@ def render_for_format(
     unlocked_at: datetime | None,
     fmt: str,
     evidence_text: str | None = None,
+    rarity_text: str | None = None,
 ) -> bytes:
     """fmt: 'stories' | 'feed' | 'portrait'."""
     size_map = {
@@ -246,4 +345,5 @@ def render_for_format(
         unlocked_at=unlocked_at,
         size=size,
         evidence_text=evidence_text,
+        rarity_text=rarity_text,
     )

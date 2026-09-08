@@ -1197,6 +1197,13 @@ export interface AchievementStats {
   total_users: number;
   unlocked_users: number;
   unlocked_pct: number;
+  /**
+   * Готовая строка редкости для share-карточки («Всего у 3% коллекционеров»),
+   * либо null — значит не показываем: ачивка массовая или юзеров слишком мало.
+   * Порог и формулировку задаёт бэкенд (share_card.py), чтобы клиентская
+   * карточка и серверный PNG не разъехались.
+   */
+  share_rarity_line: string | null;
 }
 
 // ==================== Remote config ====================

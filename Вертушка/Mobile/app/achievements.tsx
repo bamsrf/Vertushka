@@ -476,6 +476,9 @@ function DetailsSheet({
   const [stats, setStats] = useState<AchievementStats | null>(null);
   const [sharing, setSharing] = useState(false);
   const shareCardRef = useRef<View>(null);
+  // Держим сам запрос: карточку снимаем по нажатию, и без ожидания снимок
+  // уходит без строки редкости, если юзер жмёт «Поделиться» сразу.
+  const statsRequest = useRef<Promise<unknown> | null>(null);
 
   // Подтягиваем статистику для не-скрытых ачивок (для скрытых до анлока — нет смысла)
   useEffect(() => {
@@ -485,7 +488,7 @@ function DetailsSheet({
       return;
     }
     let cancelled = false;
-    api
+    statsRequest.current = api
       .getAchievementStats(item.code)
       .then((s) => {
         if (!cancelled) setStats(s);
@@ -513,6 +516,12 @@ function DetailsSheet({
       // снимает пустой пин. Детерминированно ждём декода именно этого пина
       // (мгновенно, если уже прогрет prewarm'ом), затем даём кадру осесть в layout.
       await prefetchAchievementAsset(item);
+      // Редкость приходит отдельным запросом. Ждём, но недолго — карточка без
+      // процента лучше, чем подвисшая кнопка.
+      await Promise.race([
+        statsRequest.current ?? Promise.resolve(),
+        new Promise((r) => setTimeout(r, 1500)),
+      ]);
       await new Promise((r) => requestAnimationFrame(() => r(null)));
       await captureRef(shareCardRef, opts);
       const uri = await captureRef(shareCardRef, opts);
@@ -693,6 +702,13 @@ function DetailsSheet({
               <Text style={styles.shareCardEvidence} numberOfLines={2}>
                 ♪ {item.evidence_text}
               </Text>
+            )}
+            {stats?.share_rarity_line && (
+              <View style={styles.shareCardRarityPill}>
+                <Text style={styles.shareCardRarityText}>
+                  {stats.share_rarity_line}
+                </Text>
+              </View>
             )}
             {item.unlocked_at && (
               <Text style={styles.shareCardDate}>Открыто {formatDate(item.unlocked_at)}</Text>
@@ -981,6 +997,24 @@ const styles = StyleSheet.create({
     marginTop: 12,
     lineHeight: 19,
     paddingHorizontal: 16,
+  },
+  // Плашка, а не ещё одна строка текста: редкость — единственное на карточке,
+  // что сравнивает юзера с другими, и она не должна теряться под уликой.
+  shareCardRarityPill: {
+    marginTop: 18,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.9)',
+    backgroundColor: 'rgba(255,255,255,0.14)',
+  },
+  shareCardRarityText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    textAlign: 'center',
+    letterSpacing: 0.3,
   },
   shareCardDate: {
     fontSize: 13,

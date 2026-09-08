@@ -221,6 +221,25 @@ function UnlockModal({
   const ribbonTranslateY = useRef(new Animated.Value(20)).current;
   const [sharing, setSharing] = useState(false);
   const shareCardRef = useRef<View>(null);
+  // Редкость приходит отдельным запросом, а карточку снимаем по нажатию —
+  // держим промис, чтобы шаринг мог дождаться цифру, а не снять кадр без неё.
+  const [rarityLine, setRarityLine] = useState<string | null>(null);
+  const rarityRequest = useRef<Promise<unknown> | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    rarityRequest.current = api
+      .getAchievementStats(main.code)
+      .then((s) => {
+        if (!cancelled) setRarityLine(s.share_rarity_line ?? null);
+      })
+      .catch(() => {
+        // Статистика — украшение карточки, без неё шеринг работает как раньше.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [main.code]);
 
   useEffect(() => {
     // Haptic — сразу
@@ -289,6 +308,14 @@ function UnlockModal({
       // Ленивый require: view-shot — нативный модуль, его нет в Expo Go.
       // Статический импорт ронял старт; здесь падение ловит catch ниже.
       const { captureRef } = require('react-native-view-shot');
+      // Оверлей живёт секунды: юзер жмёт «Поделиться» раньше, чем ответит
+      // /stats. Ждём цифру, но недолго — карточка без редкости лучше, чем
+      // подвисшая кнопка. Затем даём кадру осесть в layout после setState.
+      await Promise.race([
+        rarityRequest.current ?? Promise.resolve(),
+        new Promise((r) => setTimeout(r, 1500)),
+      ]);
+      await new Promise((r) => requestAnimationFrame(() => r(null)));
       const uri = await captureRef(shareCardRef, {
         format: 'png',
         quality: 1,
@@ -454,6 +481,11 @@ function UnlockModal({
             {main.flavor_ru && (
               <Text style={styles.shareCardFlavor}>«{main.flavor_ru}»</Text>
             )}
+            {rarityLine && (
+              <View style={styles.shareCardRarityPill}>
+                <Text style={styles.shareCardRarityText}>{rarityLine}</Text>
+              </View>
+            )}
           </LinearGradient>
         </View>
       </View>
@@ -528,6 +560,24 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 8,
     lineHeight: 21,
+  },
+  // Единственная строка на карточке, которая сравнивает юзера с другими, —
+  // ей нужна плашка, иначе она теряется среди описания и flavor'а.
+  shareCardRarityPill: {
+    marginTop: 18,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.9)',
+    backgroundColor: 'rgba(255,255,255,0.14)',
+  },
+  shareCardRarityText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    textAlign: 'center',
+    letterSpacing: 0.3,
   },
   shareCardBrand: {
     position: 'absolute',
