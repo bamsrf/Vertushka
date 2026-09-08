@@ -28,7 +28,10 @@ export async function ensureAndroidPushChannel(): Promise<void> {
   await Notifications.setNotificationChannelAsync(ANDROID_PUSH_CHANNEL_ID, {
     name: 'Уведомления',
     importance: Notifications.AndroidImportance.MAX,
-    sound: 'default',
+    // `sound` не задаём: у канала и так системный звук по умолчанию, а строка
+    // 'default' в NotificationChannelInput трактуется как имя кастомного файла
+    // из плагина expo-notifications — в dev-client это красный LogBox
+    // «Custom sound 'default' not found in native app».
     vibrationPattern: [0, 250, 250, 250],
   });
 }
