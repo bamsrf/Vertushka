@@ -140,7 +140,7 @@ curl -X PUT https://api.vinyl-vertushka.ru/api/admin/config/flags/ -H "Authoriza
 
 Выгнать сломанный билд на обновление:
 ```bash
-curl -X PUT https://api.vinyl-vertushka.ru/api/admin/config/min-version/ -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d '{"version": "1.0.1"}'
+curl -X PUT https://api.vinyl-vertushka.ru/api/admin/config/min-version/ -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d '{"version": "1.0.1", "platform": "ios"}'   # platform обязателен с 2026-09-07 (Android-порт): ios | android
 ```
 
 Проверить, что применилось:

@@ -14,7 +14,7 @@ import {
   TextInput,
   TouchableOpacity,
   Alert,
-  type LayoutChangeEvent,
+  type LayoutChangeEvent, Platform
 } from 'react-native';
 import {
   BottomSheetModal,
@@ -386,7 +386,7 @@ export const ThresholdSheet = forwardRef<ThresholdSheetRef, Props>(({ onSaved, o
   return (
     <BottomSheetModal
       ref={sheetRef}
-      onChange={(i) => setSheetOpen(i >= 0)}
+      onChange={Platform.OS === 'android' ? (i) => setSheetOpen(i >= 0) : undefined}
       enableDynamicSizing
       topInset={insets.top + 8}
       backdropComponent={renderBackdrop}

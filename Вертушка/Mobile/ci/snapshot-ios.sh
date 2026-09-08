@@ -24,7 +24,7 @@ sed -E 's/ id="[^"]*"//g' "$APP_DIR/SplashScreen.storyboard" >"$OUT/SplashScreen
     printf '%s %s %s\n' "$f" "$(wc -c <"$f" | tr -d ' ')" "$(md5sum "$f" 2>/dev/null | cut -d' ' -f1 || md5 -q "$f")"
   done ) >"$OUT/Images.xcassets.manifest"
 
-npx expo config --type introspect --json 2>/dev/null \
+npx expo config --type introspect --json \
   | node -e '
     let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{
       const c=JSON.parse(s);

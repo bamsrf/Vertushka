@@ -5,7 +5,7 @@
  * дальше он считается подходящим (статус «в продаже»).
  */
 import React, { forwardRef, useImperativeHandle, useRef, useState, useCallback } from 'react';
-import { StyleSheet, Text, View, TouchableOpacity, Image } from 'react-native';
+import { StyleSheet, Text, View, TouchableOpacity, Image, Platform } from 'react-native';
 import {
   BottomSheetModal,
   BottomSheetScrollView,
@@ -136,7 +136,7 @@ export const AltVersionSheet = forwardRef<AltVersionSheetRef, Props>(({ onConfir
   return (
     <BottomSheetModal
       ref={sheetRef}
-      onChange={(i) => setSheetOpen(i >= 0)}
+      onChange={Platform.OS === 'android' ? (i) => setSheetOpen(i >= 0) : undefined}
       enableDynamicSizing
       topInset={insets.top + 8}
       onDismiss={runPending}
