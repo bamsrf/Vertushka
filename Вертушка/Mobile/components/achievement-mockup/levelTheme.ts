@@ -128,23 +128,23 @@ export const LEVEL_PALETTE: Record<string, LevelPalette> = {
   },
   // Частота — бледная лаванда.
   frequency: {
-    base: '#E9AEDB',
-    light: '#F0C6E6',
-    deep: '#906C88',
+    base: '#F2ACCA',
+    light: '#F6C5DA',
+    deep: '#966B7D',
     ink: '#0B0A22',
-    soft: '#FBF0F9',
-    softInk: '#85647D',
-    softBorder: '#C6B1C1',
+    soft: '#FDF0F5',
+    softInk: '#8A6275',
+    softBorder: '#C9B0BB',
   },
   // Камертон — сирень уходит в розовое.
   tuning_fork: {
-    base: '#FFD3E5',
-    light: '#FFE0ED',
-    deep: '#9E838E',
+    base: '#FDDDA0',
+    light: '#FEE7BC',
+    deep: '#9D8963',
     ink: '#0B0A22',
-    soft: '#FFF7FA',
-    softInk: '#816A75',
-    softBorder: '#C6B8BE',
+    soft: '#FFF9EE',
+    softInk: '#807051',
+    softBorder: '#C6BBA7',
   },
   // Первозвук — почти белый розовый. Предел ленты.
   primal_sound: {
