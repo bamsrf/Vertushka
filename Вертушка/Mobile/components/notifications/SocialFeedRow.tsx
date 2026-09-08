@@ -12,6 +12,7 @@ import { Colors, Spacing, BorderRadius, Typography } from '@/constants/theme';
 import { Icon } from '@/components/ui';
 import { resolveMediaUrl, getCoverUrl, sizedCoverUrl } from '@/lib/api';
 import type { SocialFeedItem, SocialFeedRecord } from '@/lib/types';
+import { parseServerDate } from '@/lib/serverDate';
 
 interface Props {
   item: SocialFeedItem;
@@ -19,7 +20,7 @@ interface Props {
 }
 
 function formatRelative(iso: string): string {
-  const diffSec = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
+  const diffSec = Math.max(0, (Date.now() - parseServerDate(iso).getTime()) / 1000);
   if (diffSec < 60) return 'только что';
   if (diffSec < 3600) return `${Math.floor(diffSec / 60)} мин`;
   if (diffSec < 86400) return `${Math.floor(diffSec / 3600)} ч`;

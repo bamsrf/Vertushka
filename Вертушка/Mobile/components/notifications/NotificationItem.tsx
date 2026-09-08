@@ -26,6 +26,7 @@ import { DESIGN_PNGS } from '@/assets/achievements/designs';
 import type { NotificationItem as NotificationItemType, NotificationType } from '@/lib/types';
 import { FollowRequestActions } from './FollowRequestActions';
 import { NotificationSwipe } from './NotificationSwipe';
+import { parseServerDate } from '@/lib/serverDate';
 
 interface Props {
   item: NotificationItemType;
@@ -45,7 +46,7 @@ interface Props {
 }
 
 function formatRelativeTime(iso: string): string {
-  const created = new Date(iso).getTime();
+  const created = parseServerDate(iso).getTime();
   const diffSec = Math.max(0, (Date.now() - created) / 1000);
   if (diffSec < 60) return 'только что';
   if (diffSec < 3600) return `${Math.floor(diffSec / 60)} мин`;
@@ -53,7 +54,7 @@ function formatRelativeTime(iso: string): string {
   const days = Math.floor(diffSec / 86400);
   if (days < 7) return `${days} д`;
   if (days < 30) return `${Math.floor(days / 7)} нед`;
-  return new Date(iso).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' });
+  return parseServerDate(iso).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' });
 }
 
 function iconForType(type: NotificationType): { name: string; tint: string } {

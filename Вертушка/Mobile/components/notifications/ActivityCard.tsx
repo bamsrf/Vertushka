@@ -9,9 +9,10 @@ import { useRouter } from 'expo-router';
 import { Colors, Spacing, BorderRadius, Typography } from '@/constants/theme';
 import { BellV2, CaretRightV2 } from '@/components/icons/v2';
 import { useNotificationsStore } from '@/lib/notificationsStore';
+import { parseServerDate } from '@/lib/serverDate';
 
 function formatRelative(iso: string): string {
-  const diffSec = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
+  const diffSec = Math.max(0, (Date.now() - parseServerDate(iso).getTime()) / 1000);
   if (diffSec < 60) return 'только что';
   if (diffSec < 3600) return `${Math.floor(diffSec / 60)} мин`;
   if (diffSec < 86400) return `${Math.floor(diffSec / 3600)} ч`;

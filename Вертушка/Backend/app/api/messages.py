@@ -38,6 +38,7 @@ from app.models.follow_request import FollowRequest
 from app.models.user import User
 from app.models.user_block import UserBlock
 from app.api.auth import get_current_user
+from app.schemas.utc import utc_isoformat
 from app.schemas.message import (
     AttachedRecord,
     ConversationCreate,
@@ -660,7 +661,7 @@ async def mark_conversation_read(
                 "conversation_id": str(conversation_id),
                 "reader_id": str(current_user.id),
                 "up_to_message_id": str(data.up_to_message_id),
-                "last_read_at": me_part.last_read_at.isoformat() if me_part.last_read_at else None,
+                "last_read_at": utc_isoformat(me_part.last_read_at),
             },
         )
     return {"status": "ok"}
@@ -720,7 +721,7 @@ async def edit_message(
             "conversation_id": str(message.conversation_id),
             "message_id": str(message_id),
             "body": payload.body,
-            "edited_at": message.edited_at.isoformat() if message.edited_at else None,
+            "edited_at": utc_isoformat(message.edited_at),
         }
         await messages_ws_hub.push_event(current_user.id, event)
         await messages_ws_hub.push_event(partner_id, event)
@@ -948,7 +949,7 @@ async def set_mute_duration(
     return {
         "status": "ok",
         "muted": me_part.muted,
-        "muted_until": me_part.muted_until.isoformat() if me_part.muted_until else None,
+        "muted_until": utc_isoformat(me_part.muted_until),
     }
 
 

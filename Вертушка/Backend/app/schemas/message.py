@@ -1,11 +1,13 @@
 """
 Pydantic-схемы для личных сообщений.
 """
-from datetime import datetime
+
 from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
+
+from app.schemas.utc import UtcDatetime
 
 
 RequestStatus = Literal["accepted", "pending"]
@@ -30,7 +32,7 @@ class ReplyPreview(BaseModel):
     id: UUID
     sender_id: UUID
     body: str | None = None
-    deleted_at: datetime | None = None
+    deleted_at: UtcDatetime | None = None
 
 
 class AttachedRecord(BaseModel):
@@ -61,9 +63,9 @@ class MessageRead(BaseModel):
     conversation_id: UUID
     sender_id: UUID
     body: str | None = None
-    created_at: datetime
-    edited_at: datetime | None = None
-    deleted_at: datetime | None = None
+    created_at: UtcDatetime
+    edited_at: UtcDatetime | None = None
+    deleted_at: UtcDatetime | None = None
     client_nonce: str | None = None
     reply_to_message_id: UUID | None = None
     reply_to: ReplyPreview | None = None
@@ -86,7 +88,7 @@ class PinnedMessagePreview(BaseModel):
     id: UUID
     sender_id: UUID
     body: str | None = None
-    deleted_at: datetime | None = None
+    deleted_at: UtcDatetime | None = None
 
 
 class ConversationRead(BaseModel):
@@ -96,20 +98,20 @@ class ConversationRead(BaseModel):
     id: UUID
     partner: ConversationPartner
     last_message_preview: str | None = None
-    last_message_at: datetime | None = None
+    last_message_at: UtcDatetime | None = None
     last_message_sender_id: UUID | None = None
     unread_count: int = 0
     muted: bool = False
     request_status: RequestStatus = "accepted"
     is_blocked: bool = False
     # last_read_at собеседника — для отрисовки read-receipt ✓✓ на своих сообщениях
-    partner_last_read_at: datetime | None = None
+    partner_last_read_at: UtcDatetime | None = None
     # Закреплено пользователем (Telegram-style pinned chat)
     pinned: bool = False
     # Закреплённое сообщение в треде (TG pin)
     pinned_message: PinnedMessagePreview | None = None
     # Когда заканчивается mute — null если mute навсегда (при muted=true) или нет
-    muted_until: datetime | None = None
+    muted_until: UtcDatetime | None = None
 
 
 class ConversationDetail(BaseModel):
@@ -158,4 +160,4 @@ class UnreadCount(BaseModel):
 class PresenceResponse(BaseModel):
     """Статус собеседника: онлайн / был N мин назад."""
     online: bool
-    last_seen_at: datetime | None = None
+    last_seen_at: UtcDatetime | None = None

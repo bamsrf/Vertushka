@@ -29,6 +29,10 @@ interface MessagesState {
   hasMoreBefore: Record<string, boolean>;
   unread: UnreadCount;
   isLoadingList: boolean;
+  // Хотя бы одна загрузка списка (любой папки) завершилась — успехом или
+  // ошибкой. Skeleton инбокса показывается только до этого момента; дальше
+  // пустой ответ `[]` — это честное пустое состояние, а не «ещё грузим».
+  listLoadedOnce: boolean;
   isLoadingThread: Record<string, boolean>;
   // Хендофф «прикрепить пластинку»: share-record кладёт выбор сюда и делает
   // router.back(), экран треда забирает. Раньше выбор возвращался через
@@ -96,6 +100,9 @@ function sortConversations(list: Conversation[]): Conversation[] {
   });
 }
 
+/** Сколько запросов списка диалогов сейчас в полёте (см. loadConversations). */
+let listInFlight = 0;
+
 export const useMessagesStore = create<MessagesState>((set, get) => ({
   conversationsPrimary: [],
   conversationsRequests: [],
@@ -103,10 +110,16 @@ export const useMessagesStore = create<MessagesState>((set, get) => ({
   hasMoreBefore: {},
   unread: { primary: 0, requests: 0 },
   isLoadingList: false,
+  listLoadedOnce: false,
   isLoadingThread: {},
   pendingAttach: {},
 
   loadConversations: async (folder) => {
+    // Инбокс грузит primary и requests параллельно одним флагом: без
+    // счётчика первый завершившийся запрос сбрасывал isLoadingList, пока
+    // второй ещё летел, а последний — гасил флаг окончательно только если
+    // сам завершался. Счётчик держит флаг ровно пока есть in-flight запросы.
+    listInFlight += 1;
     set({ isLoadingList: true });
     try {
       const items = await messagesApi.listConversations(folder);
@@ -115,7 +128,8 @@ export const useMessagesStore = create<MessagesState>((set, get) => ({
     } catch (e) {
       console.warn('loadConversations failed', e);
     } finally {
-      set({ isLoadingList: false });
+      listInFlight = Math.max(0, listInFlight - 1);
+      set({ isLoadingList: listInFlight > 0, listLoadedOnce: true });
     }
   },
 
@@ -722,7 +736,8 @@ export const useMessagesStore = create<MessagesState>((set, get) => ({
     }
   },
 
-  reset: () =>
+  reset: () => {
+    listInFlight = 0;
     set({
       conversationsPrimary: [],
       conversationsRequests: [],
@@ -730,9 +745,11 @@ export const useMessagesStore = create<MessagesState>((set, get) => ({
       hasMoreBefore: {},
       unread: { primary: 0, requests: 0 },
       isLoadingList: false,
+      listLoadedOnce: false,
       isLoadingThread: {},
       pendingAttach: {},
-    }),
+    });
+  },
 }));
 
 
