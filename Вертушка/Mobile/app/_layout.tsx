@@ -66,8 +66,11 @@ import { noteAppLaunch } from '../lib/reviewPrompt';
 import { useRemoteConfigStore } from '../lib/remoteConfig';
 import { ForceUpdateScreen } from '../components/ForceUpdateScreen';
 import { AndroidSheetsHost } from '../components/ui/AndroidSheetsHost';
-// Системный font-scale клэмпится через metro-alias react-native →
-// lib/fontScale/scaledText.tsx (maxFontSizeMultiplier), см. metro.config.js.
+import { clampSystemFontScale } from '../lib/responsive';
+
+// Ограничиваем системный font-scale до старта рендера — крупный «Размер текста»
+// в настройках устройства не должен ломать верстку (ms() уже даёт нужный размер).
+clampSystemFontScale();
 
 Notifications.setNotificationHandler({
   handleNotification: async () => {
