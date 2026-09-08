@@ -24,7 +24,7 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 
 import { Icon } from '../ui/Icon';
-import { Gradients } from '../../constants/theme';
+import { Gradients, androidShadow } from '../../constants/theme';
 import { formatPrice } from '../HotStockTag';
 import StoreLogo, { getStoreName } from './StoreLogo';
 import { ms } from '../../lib/responsive';
@@ -233,6 +233,7 @@ export function OfferDetailCard({
               shadowOffset: { width: 0, height: 0 },
               shadowOpacity: 0.20,
               shadowRadius: 18,
+              ...androidShadow({ color: '#E85A2A', opacity: 0.2, radius: 18 }),
             },
           ]}
         >
@@ -272,6 +273,7 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 1,
     shadowRadius: 18,
+    ...androidShadow({ color: 'rgba(232,90,42,0.20)', opacity: 1, radius: 18, offsetY: 6 }),
   },
   topRow: {
     flexDirection: 'row',

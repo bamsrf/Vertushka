@@ -21,7 +21,7 @@ import {
   ScrollView,
   useWindowDimensions,
 } from 'react-native';
-import { BlurView } from 'expo-blur';
+import { BlurViewCompat } from '@/components/ui/BlurViewCompat';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -134,6 +134,7 @@ export function MessageContextMenu({
       animationType="fade"
       onRequestClose={onClose}
       statusBarTranslucent
+      navigationBarTranslucent
     >
       <TouchableWithoutFeedback onPress={onClose}>
         <View
@@ -142,7 +143,7 @@ export function MessageContextMenu({
             anchoredTop === null && styles.backdropCentered,
           ]}
         >
-          <BlurView intensity={20} tint="dark" style={StyleSheet.absoluteFill} />
+          <BlurViewCompat intensity={20} tint="dark" style={StyleSheet.absoluteFill} />
           <TouchableWithoutFeedback>
             <Animated.View
               style={[

@@ -390,6 +390,7 @@ export const WishlistDigestSheet: React.FC<Props> = ({
       animationType="none"
       onRequestClose={offersFor ? () => setOffersFor(null) : onClose}
       statusBarTranslucent
+      navigationBarTranslucent
     >
       <View style={styles.flex}>
         <Animated.View style={[styles.backdrop, backdropStyle]}>

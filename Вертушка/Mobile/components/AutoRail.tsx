@@ -437,6 +437,7 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.18,
     shadowRadius: 14,
+    elevation: 4,
   },
   railArtist: {
     fontFamily: Platform.select({ ios: 'Menlo', android: 'monospace' }),

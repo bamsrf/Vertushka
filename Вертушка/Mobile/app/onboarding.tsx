@@ -17,7 +17,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { View, Text, StyleSheet, Pressable, Dimensions, Platform } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { BlurView } from 'expo-blur';
+import { BlurViewCompat } from '@/components/ui/BlurViewCompat';
 import { Icon } from '@/components/ui';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
@@ -275,7 +275,7 @@ export default function OnboardingScreen() {
           {STEPS.map((s, i) => (
             <View key={i} style={[styles.slide, { width: SCREEN_WIDTH }]}>
               <View style={[styles.cardWrap, { paddingTop: insets.top + 60 }]}>
-                <BlurViewCompat>
+                <BlurViewCompat intensity={28} tint="light" style={styles.cardBlur}>
                   <View style={styles.card}>
                     <View style={styles.iconRing}>
                       <Icon name={s.icon} size={56} color="#fff" />
@@ -349,17 +349,6 @@ export default function OnboardingScreen() {
         </Pressable>
       </Animated.View>
     </View>
-  );
-}
-
-function BlurViewCompat({ children }: { children: React.ReactNode }) {
-  if (Platform.OS === 'android') {
-    return <View style={styles.cardAndroidFallback}>{children}</View>;
-  }
-  return (
-    <BlurView intensity={28} tint="light" style={styles.cardBlur}>
-      {children}
-    </BlurView>
   );
 }
 
@@ -464,14 +453,9 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.28)',
-  },
-  cardAndroidFallback: {
-    width: '100%',
-    borderRadius: 26,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.28)',
-    backgroundColor: 'rgba(255,255,255,0.18)',
+    // Android: светлый AndroidGlass слишком плотный для белого текста на тёмном
+    // градиенте — оставляем прежнюю прозрачную подложку (iOS-ключи не меняются).
+    ...Platform.select({ android: { backgroundColor: 'rgba(255,255,255,0.18)' } }),
   },
   card: {
     backgroundColor: 'rgba(255,255,255,0.16)',

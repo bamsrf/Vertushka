@@ -3,8 +3,16 @@
  * По референсу Trove: floating pill, равные табы, spring zoom, indicator
  */
 import React from 'react';
-import { View, TouchableOpacity, StyleSheet, Platform, useWindowDimensions } from 'react-native';
-import { BlurView } from 'expo-blur';
+import {
+  View,
+  TouchableOpacity,
+  StyleSheet,
+  Platform,
+  useWindowDimensions,
+  type StyleProp,
+  type ViewStyle,
+} from 'react-native';
+import { BlurViewCompat } from '@/components/ui/BlurViewCompat';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Icon } from '@/components/ui';
 import * as Haptics from 'expo-haptics';
@@ -16,7 +24,7 @@ import Animated, {
   useDerivedValue,
 } from 'react-native-reanimated';
 import type { BottomTabBarProps } from 'expo-router/js-tabs';
-import { Colors, Shadows, Gradients } from '../constants/theme';
+import { Colors, Shadows, Gradients, androidShadow } from '../constants/theme';
 // Единое имя на таб; визуальная разница inactive ↔ active — через weight в <Icon>.
 const TAB_ICONS: Record<string, string> = {
   search: 'magnifying-glass',
@@ -74,9 +82,21 @@ function TabIcon({
   );
 }
 
-export function GlassTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
+export function GlassTabBar({ state, descriptors, navigation, insets }: BottomTabBarProps) {
   const tabCount = state.routes.length;
   const { width: screenWidth } = useWindowDimensions();
+
+  // Edge-to-edge на Android: бар висит над системной панелью (жесты ~24dp,
+  // 3-кнопочная навигация 48dp). iOS — прежний хардкод `bottom: 28`, объект
+  // стиля тот же (snapshot-гейт __tests__/GlassTabBar.ios.test.tsx).
+  const containerStyle = Platform.select<StyleProp<ViewStyle>>({
+    ios: styles.container,
+    default: [
+      styles.container,
+      styles.containerAndroid,
+      { bottom: Math.max(insets.bottom, 16) + 12 },
+    ],
+  });
 
   const indicatorPosition = useDerivedValue(() => {
     return withTiming(state.index, { duration: 250 });
@@ -93,8 +113,8 @@ export function GlassTabBar({ state, descriptors, navigation }: BottomTabBarProp
   });
 
   return (
-    <View style={styles.container}>
-      <BlurView
+    <View style={containerStyle}>
+      <BlurViewCompat
         intensity={60}
         tint="light"
         style={styles.blurContainer}
@@ -145,7 +165,7 @@ export function GlassTabBar({ state, descriptors, navigation }: BottomTabBarProp
             );
           })}
         </View>
-      </BlurView>
+      </BlurViewCompat>
     </View>
   );
 }
@@ -157,6 +177,12 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     width: '65%',
     ...Shadows.tabBar,
+  },
+  // Android: у контейнера нет фона, elevation без него тень не рисует —
+  // тень через boxShadow (те же цвет/offset/радиус, что у Shadows.tabBar).
+  containerAndroid: {
+    elevation: 0,
+    ...androidShadow({ color: '#3B4BF5', opacity: 0.12, radius: 24, offsetY: -4 }),
   },
   blurContainer: {
     borderRadius: 36,

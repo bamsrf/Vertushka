@@ -20,7 +20,7 @@ import {
   type TextInputProps,
   type ViewStyle,
 } from 'react-native';
-import { BlurView } from 'expo-blur';
+import { BlurViewCompat } from '@/components/ui/BlurViewCompat';
 
 import { Icon } from '../ui/Icon';
 import { MarketPalette } from '../../constants/theme';
@@ -56,7 +56,7 @@ export function MarketSearchInput({
   };
 
   return (
-    <BlurView
+    <BlurViewCompat
       intensity={20}
       tint="dark"
       style={[
@@ -106,7 +106,7 @@ export function MarketSearchInput({
           />
         </Pressable>
       )}
-    </BlurView>
+    </BlurViewCompat>
   );
 }
 

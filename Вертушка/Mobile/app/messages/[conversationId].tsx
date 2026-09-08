@@ -66,7 +66,7 @@ import {
 } from '../../components/messages/MessageContextMenu';
 import { ImageLightbox } from '../../components/messages/ImageLightbox';
 import { TypingIndicator } from '../../components/messages/TypingIndicator';
-import { Colors, Spacing, BorderRadius } from '../../constants/theme';
+import { Colors, Spacing, BorderRadius, androidShadow } from '../../constants/theme';
 import { ms } from '../../lib/responsive';
 import { useAuthStore } from '../../lib/store';
 import { useMessagesStore } from '../../lib/messagesStore';
@@ -867,7 +867,13 @@ export default function ConversationScreen() {
 
   // Клавиатура на UI-потоке: контент двигается синхронно с ней кадр в кадр
   // (в т.ч. при interactive dismiss), без JS-ререндеров на каждое событие.
-  const keyboard = useAnimatedKeyboard();
+  // Android edge-to-edge (SDK 57): без этих флагов reanimated считает высоту
+  // клавиатуры без учёта translucent status/navigation bar и контент уезжает
+  // на высоту панели. На iOS опции игнорируются. Проверить на железе — WS7.
+  const keyboard = useAnimatedKeyboard({
+    isStatusBarTranslucentAndroid: true,
+    isNavigationBarTranslucentAndroid: true,
+  });
   const kbWrapStyle = useAnimatedStyle(() => ({
     paddingBottom: Math.max(keyboard.height.value - insets.bottom, 0),
   }));
@@ -2442,6 +2448,8 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.2,
     shadowRadius: 12,
+    // Android: overflow hidden без фона — elevation тень не даст, boxShadow даст.
+    ...androidShadow({ color: Colors.royalBlue, opacity: 0.2, radius: 12, offsetY: 4 }),
   },
   emptyAvatarTxt: {
     fontSize: 22,

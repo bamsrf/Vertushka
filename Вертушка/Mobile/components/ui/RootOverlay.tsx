@@ -84,7 +84,14 @@ export function RootModalOverlay({
   }
 
   return (
-    <Modal transparent visible animationType="none" onRequestClose={onRequestClose} statusBarTranslucent>
+    <Modal
+      transparent
+      visible
+      animationType="none"
+      onRequestClose={onRequestClose}
+      statusBarTranslucent
+      navigationBarTranslucent
+    >
       {children}
     </Modal>
   );

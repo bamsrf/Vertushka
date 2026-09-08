@@ -154,6 +154,7 @@ export function ImageLightbox({ visible, uri, onClose }: Props) {
       animationType="fade"
       onRequestClose={onClose}
       statusBarTranslucent
+      navigationBarTranslucent
     >
       <View style={styles.root}>
         <Animated.View style={[StyleSheet.absoluteFill, styles.backdrop, backdropStyle]} />

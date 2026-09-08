@@ -25,6 +25,7 @@
 // Helper: достать light-hex из роли (для legacy aliases)
 // ───────────────────────────────────────────────────────────────────────────
 
+import { Platform } from 'react-native';
 import { ms } from '../lib/responsive';
 
 type ThemeMode = 'light' | 'dark';
@@ -473,6 +474,33 @@ const SHADOW_COLOR = '#3B4BF5';                         // royalBlue
 const GLOW_COLOR = '#3B4BF5';                           // тоже royalBlue для glow
 const GLOW_EMBER_COLOR = L(T.palette['accent.ember']);  // ember остаётся для B2 hot-rarity
 
+const hexToRgba = (hex: string, alpha: number): string => {
+  if (!hex.startsWith('#')) return hex;
+  const raw = hex.slice(1);
+  const full = raw.length === 3 ? raw.split('').map((c) => c + c).join('') : raw;
+  const n = parseInt(full, 16);
+  return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`;
+};
+
+interface AndroidShadowSpec {
+  color: string;
+  opacity: number;
+  radius: number;
+  offsetY?: number;
+}
+
+/**
+ * Android-only тень через `boxShadow` (RN ≥ 0.76, New Arch). На iOS возвращает
+ * пустой объект — iOS-ключи `shadow*` остаются как есть (П5/П6 ANDROID_PORT_PLAN).
+ * Нужна там, где `elevation` бессилен: свечение с нулевым offset, прозрачный
+ * фон, `overflow: 'hidden'` без backgroundColor.
+ */
+export const androidShadow = ({ color, opacity, radius, offsetY = 0 }: AndroidShadowSpec) =>
+  Platform.select<{ boxShadow?: string }>({
+    android: { boxShadow: `0px ${offsetY}px ${radius}px ${hexToRgba(color, opacity)}` },
+    default: {},
+  });
+
 export const Shadows = {
   xs: {
     shadowColor: SHADOW_COLOR,
@@ -509,12 +537,15 @@ export const Shadows = {
     shadowRadius: 24,
     elevation: 14,
   },
+  // glow*: elevation 0 намеренно (offset 0 — elevation даёт не свечение, а
+  // подложку); на Android свечение рисует boxShadow, на iOS ключ отсутствует.
   glow: {
     shadowColor: GLOW_COLOR,
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.40,
     shadowRadius: 20,
     elevation: 0,
+    ...androidShadow({ color: GLOW_COLOR, opacity: 0.40, radius: 20 }),
   },
   glowEmber: {
     shadowColor: GLOW_EMBER_COLOR,
@@ -522,6 +553,7 @@ export const Shadows = {
     shadowOpacity: 0.45,
     shadowRadius: 24,
     elevation: 0,
+    ...androidShadow({ color: GLOW_EMBER_COLOR, opacity: 0.45, radius: 24 }),
   },
 };
 
