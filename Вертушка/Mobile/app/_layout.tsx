@@ -187,6 +187,8 @@ function RootLayout() {
   const loadRemoteConfig = useRemoteConfigStore((s) => s.load);
   const router = useRouter();
   const notificationListener = useRef<Notifications.EventSubscription | null>(null);
+  // Первый полностью готовый рендер уже был — дальше isLoading не гасит дерево.
+  const bootedRef = useRef(false);
   const responseListener = useRef<Notifications.EventSubscription | null>(null);
   // Запоминаем, был ли пользователь когда-либо авторизован за время сессии,
   // чтобы редирект на /(auth)/login срабатывал только при потере авторизации,
@@ -464,9 +466,17 @@ function RootLayout() {
     }
   }, [pendingRoute, isAuthenticated, isLoading, fontsLoaded, onboardingReady, router]);
 
-  if (!fontsLoaded || isLoading || !onboardingReady) {
+  // Пустой экран допустим только на холодном старте — его прикрывает нативный
+  // splash. Позже (логин, регистрация, логаут) isLoading тоже становится true,
+  // и раньше это размонтировало всё дерево: на время запроса пользователь видел
+  // белый экран, а форма теряла состояние при ошибке. Теперь дерево остаётся,
+  // экраны сами показывают спиннер на кнопке, а <Redirect> в (auth)/(tabs)
+  // переключает маршрут, когда isAuthenticated меняется.
+  const coldStart = isLoading && !bootedRef.current;
+  if (!fontsLoaded || !onboardingReady || coldStart) {
     return null;
   }
+  bootedRef.current = true;
 
   // Версия ниже минимальной — дальше не пускаем. Проверка не блокирует
   // холодный старт (см. remoteConfig.load), поэтому экран может появиться
