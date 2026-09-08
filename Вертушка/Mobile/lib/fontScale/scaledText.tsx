@@ -22,7 +22,6 @@
  */
 import React, { forwardRef } from 'react';
 import {
-  Platform,
   Text as RNText,
   TextInput as RNTextInput,
   type TextInputProps,
@@ -31,12 +30,13 @@ import {
 import { MAX_FONT_SCALE } from './maxFontScale';
 
 /**
- * Пока только Android. На iOS клэмпа не было ни в одном отгруженном билде
- * (1.0.0 — тот же no-op через defaultProps), и включение = видимое изменение
- * для людей с «Размером текста» выше 115% — это отдельное решение, а не часть
- * Android-порта (ANDROID_PORT_PLAN §2). Включить на iOS = убрать гвард.
+ * Обе платформы. Решение владельца 08.09.2026: на iOS клэмпа не было ни в
+ * одном отгруженном билде (1.0.0 — no-op через defaultProps), и на маленьких
+ * экранах с крупным «Размером текста» кнопки ломались на две строки
+ * («Добавит / ь»). Потолок 1.15 — не коэффициент: при 100% масштаба визуал
+ * не меняется.
  */
-const DEFAULT_MAX_FONT_SCALE = Platform.OS === 'android' ? MAX_FONT_SCALE : undefined;
+const DEFAULT_MAX_FONT_SCALE: number = MAX_FONT_SCALE;
 
 export const Text = forwardRef<React.ElementRef<typeof RNText>, TextProps>(function ScaledText(
   props,
