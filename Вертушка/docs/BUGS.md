@@ -203,3 +203,61 @@ if (isLoading) {
 | 11 | Master detail no header | P2 | Простая |
 | 7 | Artist masters N+1 + total | P2 | Средняя |
 | 8 | Artist pagination const 20 | P2 | Простая (зависит от 7) |
+
+---
+
+## 🤖 Android-порт — найдено на эмуляторе (WS4, 2026-09-08)
+
+Прогон debug-сборки (`expo run:android`, dev-client) на `pixel8_api36` (Android 16, arm64). Без учётки пройдены: splash → MascotIntro → логин, регистрация, «Забыли пароль», legal-страницы, валидация пустых форм, хардверный Back. Экраны за логином не проверены — пароль демо-аккаунта не хранится в репо. Тег `[android]`.
+
+### A1. [android] Подпись под соц-кнопками регистрации обещает Apple Sign In
+**Файл:** `Mobile/app/(auth)/register.tsx:185`
+
+Текст «Вход через Apple или Discogs — тоже согласие с ними» показывается и на Android, где Apple-кнопки нет (`SocialAuthButtons.tsx:172`: `showApple = Platform.OS === 'ios' && …`). Пользователь видит обещание входа, которого нет — ровно то, чего комментарий над строкой хотел избежать для Google.
+
+**Фикс:** собирать подпись из фактически показанных провайдеров (`Platform.OS === 'ios' ? 'Apple или Discogs' : 'Discogs'`), либо вынести строку в `SocialAuthButtons`, где список провайдеров уже известен. P2, простая.
+
+---
+
+### A2. [android] Иконки статус-бара светлые на светлом фоне во время splash и интро
+**Файлы:** `Mobile/app.json` (splash `backgroundColor: #FAFBFF`), `Mobile/app/_layout.tsx:495`
+
+Первые ~6 с холодного старта (нативный splash + `MascotIntro`) часы/сеть/батарея рисуются белым на #FAFBFF — не читаются. `<StatusBar style="dark" />` из JS применяется, но визуально стиль появляется только к моменту логина. В сгенерированном `android/app/src/main/res/values/styles.xml` нет `windowLightStatusBar`, т.е. нативно тема статус-бара не задана и до маунта JS действует системный дефолт.
+
+**Фикс:** задать стиль нативно — `"androidStatusBar": {"barStyle": "dark-content"}` в `app.json` (prebuild пропишет `windowLightStatusBar=true` в тему), перепроверить после `prebuild --clean`. P3, простая.
+
+---
+
+### A3. [android] ExpoVideo спамит E-логом про picture-in-picture
+**Файлы:** `Mobile/components/MascotIntro.tsx:164–170`, `Mobile/app.json` (plugin `expo-video`)
+
+На каждый маунт `VideoView` в logcat трижды падает `E ExpoVideo: Current activity does not support picture-in-picture. Make sure you have configured the expo-video config plugin correctly`, хотя `allowsPictureInPicture={false}`. Функционально не мешает, но уровень E попадает в breadcrumbs Sentry и мешает искать реальные ошибки.
+
+**Фикс:** проверить в `expo-video` (SDK 57), проходит ли проверка PiP независимо от пропа; если да — либо включить `["expo-video", {"supportsPictureInPicture": true}]` (снимет лог ценой флага на Activity), либо завести issue. P3.
+
+---
+
+### A4. [android] Console error expo-router при холодном старте dev-client
+**Стек:** `useLinking.native.js:127` (`url.then$argument_0` → `dispatchSetState`) под `<ExpoRoot>`
+
+LogBox: «Can't perform a React state update on a component that hasn't mounted yet». Код приложения в стеке отсутствует — это `Linking.getInitialURL().then(setState)` внутри expo-router, срабатывающий до маунта при запуске через `exp+vertushka://expo-development-client/?url=…`. Воспроизведено на каждом холодном старте dev-client.
+
+**Фикс:** на стороне приложения нет. Проверить на release-APK (там нет dev-launcher deep link); если воспроизводится — issue в expo-router (SDK 57 / React 19). P3.
+
+---
+
+### A5. [android] MascotIntro: при медленной отдаче mp4 — 6.7 с пустого экрана
+**Файл:** `Mobile/components/MascotIntro.tsx:96–160`
+
+Наблюдение, не дефект сборки: при первом запуске (ассет `intro-mascot.mp4`, 2 МБ, ехал по сети из Metro) плеер не успел дойти до `readyToPlay`, `ready` остался `false`, экран был пустым белым до safety-timeout — в логе `[MascotIntro] интро не доиграло за 6710мс`. Повторные запуски играли штатно (ExoPlayer h264 ≈ 6 с). В release ассет внутри APK, но на бюджетниках с медленным флешем/декодером риск тот же.
+
+**Фикс (опционально):** под `VideoView` показывать статичный первый кадр (png) до `readyToPlay`, чтобы таймаут не выглядел как зависание. P3.
+
+---
+
+### A6. [android] Иконка замка в полях пароля рисуется как «+»
+**Файлы:** `Mobile/components/ui/Icon.tsx:228,353` (карта), `Mobile/app/(auth)/login.tsx:134`, `register.tsx:134,144`, `reset-password.tsx:110`, `app/user/[username]/index.tsx:955`
+
+`leftIcon="lock-closed-outline"` передаётся в `<Icon>`, но в registry есть только `lock-open` / `lock-open-outline`; неизвестное имя уходит в фолбэк `'plus'` (Icon.tsx:145). На экране логина слева от поля «Пароль» — плюс вместо замка. Не Android-специфично — тот же путь на iOS, просто замечено на эмуляторе.
+
+**Фикс:** добавить в карту `'lock-closed'`/`'lock-closed-outline'` → `LockIcon` (phosphor `Lock`); в `user/[username]` — та же строка. P2, простая.
