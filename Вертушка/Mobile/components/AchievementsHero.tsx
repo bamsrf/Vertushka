@@ -470,6 +470,7 @@ export function AchievementsHero({
             <Text
               style={[styles.archText, { color: theme.chipFg }]}
               numberOfLines={1}
+              ellipsizeMode="tail"
               adjustsFontSizeToFit
               minimumFontScale={0.75}
             >
@@ -590,6 +591,12 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: M_NAVY,
     letterSpacing: 0.3,
+    // В Yoga flexShrink по умолчанию 0 — без него текст не сжимается, вылезает
+    // за пилюлю и срезается краем карточки (у карточки overflow: hidden).
+    // Заодно это даёт adjustsFontSizeToFit ту границу, без которой он молчит:
+    // «Архетип · Амплитуда» в 12 pt шире колонки, оставшейся от гнезда пина.
+    flexShrink: 1,
+    minWidth: 0,
   },
   mainRow: {
     flexDirection: 'row',
