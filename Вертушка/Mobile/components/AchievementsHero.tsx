@@ -459,6 +459,13 @@ export function AchievementsHero({
                 transform: [{ translateX: chipX }],
                 opacity: chipOpacity,
               },
+              // Граница в ПИКСЕЛЯХ, а не `maxWidth: '100%'`. Процент здесь не
+              // работает: у counterWrap стоит flex: 1, то есть flexBasis: 0, и
+              // на проходе замера его ширина ещё не определена — процент
+              // резолвится в ничто, пилюля остаётся во всю длину содержимого и
+              // вылезает за карточку. Ширину колонки всё равно меряем рядом,
+              // для кегля счётчика. До первого onLayout ограничения нет.
+              colWidth > 0 && { maxWidth: colWidth },
             ]}
           >
             <View
@@ -571,7 +578,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     alignSelf: 'flex-start',
-    maxWidth: '100%',
     marginBottom: 8,
     gap: 6,
     paddingHorizontal: 10,
@@ -591,10 +597,12 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: M_NAVY,
     letterSpacing: 0.3,
-    // В Yoga flexShrink по умолчанию 0 — без него текст не сжимается, вылезает
-    // за пилюлю и срезается краем карточки (у карточки overflow: hidden).
-    // Заодно это даёт adjustsFontSizeToFit ту границу, без которой он молчит:
-    // «Архетип · Амплитуда» в 12 pt шире колонки, оставшейся от гнезда пина.
+    // flexShrink в Yoga по умолчанию 0. Он работает только когда у пилюли есть
+    // ЖЁСТКАЯ ширина (см. maxWidth: colWidth в JSX): сама по себе плашка лежит
+    // в колоночном counterWrap, где ширина — поперечная ось, а на неё flexShrink
+    // не действует. Вместе они и дают adjustsFontSizeToFit ту границу, без
+    // которой он молчит: «Архетип · Амплитуда» в 12 pt — 136 px против 131 px
+    // колонки на 17 Pro.
     flexShrink: 1,
     minWidth: 0,
   },
