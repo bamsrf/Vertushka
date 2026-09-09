@@ -120,21 +120,28 @@ async def get_social_feed(
         }))
 
     # --- gift_completed: друг подарил пластинку другому ---
+    # Время события — completed_at. Колонки updated_at у GiftBooking нет и
+    # никогда не было: обращение к ней роняло весь эндпоинт на AttributeError
+    # при сборке запроса, то есть у КАЖДОГО, у кого есть хоть одна подписка
+    # (без подписок функция выходит раньше — потому четыре месяца и не
+    # замечали). completed_at nullable, поэтому отбираем только заполненные:
+    # иначе NULL уехал бы и в сортировку, и в .isoformat().
     q = (
         select(GiftBooking)
         .where(
             GiftBooking.status == GiftStatus.COMPLETED,
+            GiftBooking.completed_at.isnot(None),
             GiftBooking.booked_by_user_id.in_(following_ids),
         )
         .options(
             selectinload(GiftBooking.wishlist_item).selectinload(WishlistItem.record),
             selectinload(GiftBooking.wishlist_item).selectinload(WishlistItem.wishlist).selectinload(Wishlist.user),
         )
-        .order_by(GiftBooking.updated_at.desc())
+        .order_by(GiftBooking.completed_at.desc())
         .limit(per_source_limit)
     )
     if cutoff is not None:
-        q = q.where(GiftBooking.updated_at < cutoff)
+        q = q.where(GiftBooking.completed_at < cutoff)
     for gb in (await db.execute(q)).scalars().all():
         actor_user = await db.scalar(select(User).where(User.id == gb.booked_by_user_id))
         if not actor_user:
@@ -142,10 +149,10 @@ async def get_social_feed(
         wi = gb.wishlist_item
         target = wi.wishlist.user if (wi and wi.wishlist) else None
         record = wi.record if wi else None
-        items.append((gb.updated_at, {
+        items.append((gb.completed_at, {
             "type": "gift_completed",
             "actor": _actor_payload(actor_user),
-            "created_at": gb.updated_at.isoformat(),
+            "created_at": gb.completed_at.isoformat(),
             "record": _record_payload(record),
             "target_user": _actor_payload(target) if target else None,
             "payload": {},
