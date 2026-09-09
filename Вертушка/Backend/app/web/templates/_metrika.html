@@ -61,6 +61,25 @@
            // Аналитика не должна мешать переходу.
        }
    }, true);
+
+   // Страница-хаб /links. Цель берём из data-goal самого элемента, а не из
+   // класса: блоков там несколько (сторы, канал, роадмап, поддержка) и они
+   // будут добавляться — заводить по CSS-селектору на каждый значит править
+   // этот файл при каждой новой ссылке.
+   //   links_appstore, links_googleplay, links_rustore,
+   //   links_telegram, links_plans, links_support
+   document.addEventListener("click", function (ev) {
+       if (!ev.target || !ev.target.closest) return;
+       var el = ev.target.closest("[data-goal]");
+       if (!el) return;
+       var goal = el.getAttribute("data-goal");
+       if (!goal) return;
+       try {
+           ym({{ metrika_id }}, "reachGoal", goal);
+       } catch (_) {
+           // Метрика заблокирована адблоком — переход всё равно уходит.
+       }
+   }, true);
 </script>
 <noscript><div><img src="https://mc.yandex.ru/watch/{{ metrika_id }}" style="position:absolute; left:-9999px;" alt=""></div></noscript>
 {% endif %}
