@@ -18,11 +18,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Вертушка — приложение, канал, планы</title>
-    <meta name="description" content="Вертушка — бесплатное приложение для коллекционеров винила. Скачать, читать канал «Слушняк», смотреть планы и поддержать проект.">
+    <meta name="description" content="Вертушка — бесплатное приложение для коллекционеров винила: каталог пластинок по РФ, стоимость коллекции, вишлист и сканирование релизов.">
 
     <meta property="og:type" content="website">
     <meta property="og:title" content="Вертушка — коллекция винила в кармане">
-    <meta property="og:description" content="Бесплатное приложение для коллекционеров винила. Скачать, канал «Слушняк», открытые планы.">
+    <meta property="og:description" content="Каталог пластинок по РФ, стоимость коллекции, вишлист и удобное сканирование релизов.">
     <meta property="og:url" content="{{ base_url }}/links">
     <meta property="og:site_name" content="Вертушка">
     <meta property="og:image" content="{{ base_url }}/static/mascot/support-mascot.png">
@@ -143,16 +143,20 @@
             transform: skewX(-22deg);
             opacity: 0; pointer-events: none;
         }
-        .store-btn:not(.secondary):hover::after { animation: links-glint 720ms cubic-bezier(.3,.55,.2,1); }
+        /* Блик бежит сам по циклу, а не по ховеру: на телефоне ховера нет, и
+           главную кнопку страницы никто бы «живой» не увидел. Одна вспышка на
+           4.5 с — заметно, но не мельтешит; сам пролёт занимает 0.8 с,
+           остальное пауза (отсюда дробные проценты в кейфреймах). */
+        .store-btn:not(.secondary)::after { animation: links-glint 4.5s ease-in-out 1.2s infinite; }
         @keyframes links-glint {
-            0%   { left: -30%; opacity: 0; }
-            10%  { opacity: 1; }
-            90%  { opacity: 1; }
-            100% { left: 115%; opacity: 0; }
+            0%    { left: -30%; opacity: 0; }
+            2%    { opacity: 1; }
+            16%   { opacity: 1; }
+            18%   { left: 115%; opacity: 0; }
+            100%  { left: 115%; opacity: 0; }
         }
         @media (hover: none) {
             .store-btn:hover { transform: none; }
-            .store-btn:hover::after { animation: none; }
         }
 
         /* ── Карточки ссылок ───────────────────────────────────────────── */
@@ -193,15 +197,18 @@
         }
         .link-chevron { flex: 0 0 auto; color: var(--mute); }
 
-        /* Поддержка: та же карточка, но тёплого тона — визуально отделена от
-           функциональных ссылок и намеренно живёт последней. */
+        /* Поддержка: та же карточка, но тёплого тона — тёплый акцент вместо
+           отдельной секции с заголовком. */
         .link-card.warm .link-icon { background: rgba(246, 199, 208, 0.42); color: #C2607A; }
-
-        .divider {
-            margin: 26px 4px 14px;
-            font-family: 'JetBrains Mono', monospace;
-            font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase;
-            color: var(--mute);
+        /* Пульс — на самой иконке, а не на плашке: масштабируй мы плашку,
+           дёргалась бы её подложка и вместе с ней строка заголовка. */
+        .link-card.warm .link-icon svg { animation: links-heartbeat 2.4s ease-in-out infinite; }
+        @keyframes links-heartbeat {
+            0%, 100% { transform: scale(1); }
+            8%       { transform: scale(1.16); }
+            16%      { transform: scale(1); }
+            24%      { transform: scale(1.1); }
+            34%      { transform: scale(1); }
         }
 
         .foot {
@@ -219,9 +226,12 @@
             .hero-name { font-size: 32px; }
         }
 
+        /* Обе анимации теперь крутятся сами, без участия человека, — значит
+           отключать их по prefers-reduced-motion обязательно. */
         @media (prefers-reduced-motion: reduce) {
             .store-btn, .link-card { transition: none; }
-            .store-btn:hover::after { animation: none; }
+            .store-btn:not(.secondary)::after { animation: none; }
+            .link-card.warm .link-icon svg { animation: none; }
         }
     </style>
 </head>
@@ -237,8 +247,8 @@
             </div>
             <h1 class="hero-name">Вертушка</h1>
             <p class="hero-tagline">
-                Коллекция винила в кармане: каталог, стоимость, вишлист и полки,
-                которыми не стыдно поделиться.
+                Коллекция винила в кармане: каталог пластинок по РФ, стоимость
+                коллекции, вишлист и удобное сканирование релизов.
             </p>
         </header>
 
@@ -274,6 +284,29 @@
         {% endif %}
 
         <div class="cards">
+            {% if support_url %}
+            {# Второй по счёту блок страницы — так решено сознательно: ссылку на
+               /links не даём из iOS-приложения, поэтому оговорка 3.1.1 про
+               платёжный CTA на первом экране здесь не действует. Появится
+               ссылка из приложения — карточку придётся вернуть под сгиб.
+               Ведёт на свою /support, а не в платёжку: сначала манифест и FAQ. #}
+            <a class="link-card warm" href="{{ support_url }}" data-goal="links_support">
+                <span class="link-icon" aria-hidden="true">
+                    <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+                        <path d="M10 16.6s-6.2-3.7-6.2-8A3.4 3.4 0 0 1 10 6.3a3.4 3.4 0 0 1 6.2 2.3c0 4.3-6.2 8-6.2 8z"
+                              fill="currentColor"/>
+                    </svg>
+                </span>
+                <span class="link-body">
+                    <span class="link-title">Поддержать проект</span>
+                    <span class="link-sub">Приложение бесплатное и таким останется — поддержка помогает его развивать</span>
+                </span>
+                <svg class="link-chevron" width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                    <path d="m6 3.5 5 4.5-5 4.5" stroke="currentColor" stroke-width="1.5"
+                          stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+            </a>
+            {% endif %}
             {% if telegram_url %}
             <a class="link-card" href="{{ telegram_url }}"
                data-goal="links_telegram" target="_blank" rel="noopener">
@@ -286,7 +319,7 @@
                 </span>
                 <span class="link-body">
                     <span class="link-title">Телеграм-канал «Слушняк»</span>
-                    <span class="link-sub">Музыка, находки и то, что крутится у меня на вертушке</span>
+                    <span class="link-sub">Делюсь музыкальными находками</span>
                 </span>
                 <svg class="link-chevron" width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
                     <path d="m6 3.5 5 4.5-5 4.5" stroke="currentColor" stroke-width="1.5"
@@ -308,7 +341,7 @@
                 </span>
                 <span class="link-body">
                     <span class="link-title">Планы проекта</span>
-                    <span class="link-sub">Открытый роадмап: что уже сделано и что дальше</span>
+                    <span class="link-sub">Что сейчас в работе по приложению и какие планы дальше</span>
                 </span>
                 <svg class="link-chevron" width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
                     <path d="m6 3.5 5 4.5-5 4.5" stroke="currentColor" stroke-width="1.5"
@@ -317,29 +350,6 @@
             </a>
             {% endif %}
         </div>
-
-        {% if support_url %}
-        <div class="divider">Проекту можно помочь</div>
-        <div class="cards">
-            {# Ведёт на свою /support, а не в платёжку: сначала манифест и FAQ. #}
-            <a class="link-card warm" href="{{ support_url }}" data-goal="links_support">
-                <span class="link-icon" aria-hidden="true">
-                    <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-                        <circle cx="10" cy="10" r="7.4" stroke="currentColor" stroke-width="1.4"/>
-                        <circle cx="10" cy="10" r="2.3" fill="currentColor"/>
-                    </svg>
-                </span>
-                <span class="link-body">
-                    <span class="link-title">Поддержать проект</span>
-                    <span class="link-sub">Приложение бесплатное и таким останется — поддержка помогает его развивать</span>
-                </span>
-                <svg class="link-chevron" width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                    <path d="m6 3.5 5 4.5-5 4.5" stroke="currentColor" stroke-width="1.5"
-                          stroke-linecap="round" stroke-linejoin="round"/>
-                </svg>
-            </a>
-        </div>
-        {% endif %}
 
         <div class="foot">
             <a href="/links">VINYL-VERTUSHKA.RU</a>
