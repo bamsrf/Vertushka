@@ -234,6 +234,11 @@ STORE_NATIVE_CROSS_SHOP_SCORE = 1.4
 # подтверждение = ещё один день/прогон, прежде чем необратимо перенесём листинги.
 STORE_NATIVE_MERGE_MIN_CONFIRMATIONS = 3
 
+# Подряд идущих ошибок в rematch-батче, после которых обрываем прогон: их
+# причина — смерть соединения (InterfaceError), которая не чинится сама, а
+# 1000 одинаковых трейсбеков подряд бессмысленны (тот же приём, что в runner).
+_REMATCH_MAX_CONSECUTIVE_ERRORS = 10
+
 
 # ---- Discogs Releases Dump (slim local index) -------------------------- #
 
@@ -1570,9 +1575,9 @@ async def rematch_store_native_batch(batch_size: int = 200) -> dict[str, int]:
         )
         records = list(res.scalars().all())
 
+        consecutive_errors = 0
         for rec in records:
             counters["processed"] += 1
-            sp = await db.begin_nested()
             try:
                 # WS3.3 — каскад сигналов от точного к нечёткому: barcode/catalog
                 # (exact, низкий риск ложного кандидата) → текст. NB:
@@ -1592,61 +1597,72 @@ async def rematch_store_native_batch(batch_size: int = 200) -> dict[str, int]:
                         title=rec.title,
                         year=rec.year,
                     )
+
                 if not (found and found.discogs_id and found.id != rec.id):
                     counters["no_match"] += 1
-                    await sp.commit()
-                    continue
-
-                now = datetime.utcnow()
-                if rec.discogs_id_candidate == found.discogs_id:
-                    rec.discogs_id_candidate_confirmations += 1
-                    counters["candidates_confirmed"] += 1
-                elif rec.discogs_id_candidate is None:
-                    rec.discogs_id_candidate = found.discogs_id
-                    rec.discogs_id_candidate_first_seen_at = now
-                    rec.discogs_id_candidate_confirmations = 1
-                    counters["candidates_found"] += 1
                 else:
-                    # candidate сменился — это может быть и шум, и более точный
-                    # match (Discogs обновил indexing). Сбрасываем счётчик: ждём
-                    # повторного подтверждения нового кандидата.
-                    rec.discogs_id_candidate = found.discogs_id
-                    rec.discogs_id_candidate_first_seen_at = now
-                    rec.discogs_id_candidate_confirmations = 1
-                    counters["candidates_changed"] += 1
-                    logger.info(
-                        "rematch store-native: %s candidate changed → %s "
-                        "(artist=%s title=%s)",
-                        rec.id, found.discogs_id, rec.artist, rec.title,
-                    )
-
-                if rec.discogs_id_candidate_confirmations >= STORE_NATIVE_MERGE_MIN_CONFIRMATIONS:
-                    merge_res = await safe_merge_store_native_into(
-                        rec, rec.discogs_id_candidate, db, merged_by="cron",
-                    )
-                    if merge_res["target_found"]:
-                        counters["merged"] += 1
+                    now = datetime.utcnow()
+                    if rec.discogs_id_candidate == found.discogs_id:
+                        rec.discogs_id_candidate_confirmations += 1
+                        counters["candidates_confirmed"] += 1
+                    elif rec.discogs_id_candidate is None:
+                        rec.discogs_id_candidate = found.discogs_id
+                        rec.discogs_id_candidate_first_seen_at = now
+                        rec.discogs_id_candidate_confirmations = 1
+                        counters["candidates_found"] += 1
+                    else:
+                        # candidate сменился — шум или более точный match (Discogs
+                        # обновил indexing). Сбрасываем счётчик: ждём повторного
+                        # подтверждения нового кандидата.
+                        rec.discogs_id_candidate = found.discogs_id
+                        rec.discogs_id_candidate_first_seen_at = now
+                        rec.discogs_id_candidate_confirmations = 1
+                        counters["candidates_changed"] += 1
                         logger.info(
-                            "rematch store-native: AUTO-MERGED %s → discogs_id=%s "
-                            "(remapped %d listings, artist=%s title=%s)",
-                            rec.id, rec.discogs_id_candidate,
-                            merge_res["listings_remapped"], rec.artist, rec.title,
+                            "rematch store-native: %s candidate changed → %s "
+                            "(artist=%s title=%s)",
+                            rec.id, found.discogs_id, rec.artist, rec.title,
                         )
 
-                await sp.commit()
-            except Exception:
-                await sp.rollback()
-                counters["errors"] += 1
-                logger.exception("rematch failed for record %s", rec.id)
+                    if rec.discogs_id_candidate_confirmations >= STORE_NATIVE_MERGE_MIN_CONFIRMATIONS:
+                        merge_res = await safe_merge_store_native_into(
+                            rec, rec.discogs_id_candidate, db, merged_by="cron",
+                        )
+                        if merge_res["target_found"]:
+                            counters["merged"] += 1
+                            logger.info(
+                                "rematch store-native: AUTO-MERGED %s → discogs_id=%s "
+                                "(remapped %d listings, artist=%s title=%s)",
+                                rec.id, rec.discogs_id_candidate,
+                                merge_res["listings_remapped"], rec.artist, rec.title,
+                            )
 
-        try:
-            await db.commit()
-        except Exception:
-            await db.rollback()
-            counters["errors"] += counters["candidates_found"] + counters["merged"]
-            counters["candidates_found"] = 0
-            counters["merged"] = 0
-            logger.exception("commit failed in rematch_store_native_batch")
+                # Коммит ПОСЛЕ КАЖДОЙ записи, а не один финальный на весь батч.
+                # Прод 09-09: смерть соединения в середине прогона (InterfaceError,
+                # тот же класс, что чинили в runner) инвалидировала транзакцию,
+                # `sp.rollback()` савпоинта её не чинил, и финальный db.commit()
+                # падал PendingRollbackError — терялись подтверждения ВСЕХ 1000
+                # записей, поэтому merged годами стоял на месте. Теперь каждое
+                # подтверждение/слияние персистится сразу.
+                await db.commit()
+                consecutive_errors = 0
+            except Exception:
+                # Полный rollback (не савпоинт): при смерти соединения только он
+                # снимает PendingRollbackError и даёт продолжить со следующей
+                # записью.
+                try:
+                    await db.rollback()
+                except Exception:
+                    pass
+                counters["errors"] += 1
+                consecutive_errors += 1
+                logger.exception("rematch failed for record %s", rec.id)
+                if consecutive_errors >= _REMATCH_MAX_CONSECUTIVE_ERRORS:
+                    logger.error(
+                        "rematch store-native: %d ошибок подряд — обрываю батч "
+                        "(соединение мертво?)", consecutive_errors,
+                    )
+                    break
 
     logger.info("rematch store-native batch: %s", counters)
     return counters
