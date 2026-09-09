@@ -1,0 +1,355 @@
+{# Страница-хаб — vinyl-vertushka.ru/links
+
+   Заменяет собой внешние сервисы «link in bio» (Linktree, Taplink): всё то же
+   самое, но на своём домене, без чужих трекеров (CSP на этом хосте —
+   default-src 'self'), без абонентской платы и с полным контролем над
+   порядком блоков.
+
+   Порядок блоков — не вкусовщина, см. links_page() в app/web/routes.py:
+   установка и канал сверху, поддержка ниже сгиба.
+
+   Требует в контексте: base_url, app_store_url, play_store_url, rustore_url,
+   telegram_url, support_url, support_plans_url, metrika_id.
+   Любой пустой URL просто гасит свой блок — страница не ломается.
+#}
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Вертушка — приложение, канал, планы</title>
+    <meta name="description" content="Вертушка — бесплатное приложение для коллекционеров винила. Скачать, читать канал «Слушняк», смотреть планы и поддержать проект.">
+
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="Вертушка — коллекция винила в кармане">
+    <meta property="og:description" content="Бесплатное приложение для коллекционеров винила. Скачать, канал «Слушняк», открытые планы.">
+    <meta property="og:url" content="{{ base_url }}/links">
+    <meta property="og:site_name" content="Вертушка">
+    <meta property="og:image" content="{{ base_url }}/static/mascot/support-mascot.png">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Вертушка — коллекция винила в кармане">
+    <meta name="twitter:image" content="{{ base_url }}/static/mascot/support-mascot.png">
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --pearl: #F7F4EE;
+            --cobalt: #3A4BE0;
+            --cobalt-bright: #4E5BFF;
+            --periwinkle: #9AA8FF;
+            --lavender: #C9B8FF;
+            --blush: #F6C7D0;
+            --ink: #1B1D26;
+            --slate: #6B7080;
+            --mute: #9096A6;
+            --hairline: rgba(27, 29, 38, 0.08);
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        html {
+            overflow-x: hidden;
+            background:
+                radial-gradient(900px 640px at 92% -4%, rgba(154,168,255,0.82), transparent 62%),
+                radial-gradient(680px 520px at 4% 2%, rgba(189,212,255,0.60), transparent 66%),
+                #F5F0EA;
+        }
+        body {
+            font-family: 'Inter Tight', system-ui, -apple-system, sans-serif;
+            background: transparent;
+            color: var(--ink);
+            min-height: 100vh;
+            line-height: 1.55;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        /* Уже, чем /support: это столбец ссылок, а не текстовая страница. */
+        .container {
+            max-width: 560px;
+            margin: 0 auto;
+            padding: 18px 24px 60px;
+        }
+
+        .topbar {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 4px 4px 10px;
+        }
+        .brand {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 11px; letter-spacing: 0.14em;
+            color: var(--slate); text-transform: uppercase;
+            text-decoration: none;
+        }
+        .brand:hover { color: var(--ink); }
+
+        /* ── Шапка ─────────────────────────────────────────────────────── */
+        .hero { text-align: center; margin-top: 26px; }
+        .hero-logo {
+            width: 96px; height: 96px; margin: 0 auto;
+            border-radius: 28px; overflow: hidden;
+            background: #fff;
+            box-shadow: 0 18px 38px -22px rgba(58, 75, 224, 0.55);
+            border: 1px solid var(--hairline);
+        }
+        .hero-logo img { display: block; width: 100%; height: 100%; object-fit: cover; }
+        .hero-name {
+            font-size: 28px; font-weight: 700; letter-spacing: -0.03em;
+            margin-top: 18px;
+        }
+        .hero-tagline {
+            font-size: 15px; line-height: 1.55; color: var(--slate);
+            margin-top: 8px;
+        }
+
+        /* ── Главная кнопка: скачать ───────────────────────────────────── */
+        .stores { margin-top: 26px; display: flex; flex-direction: column; gap: 10px; }
+        .store-btn {
+            position: relative; overflow: hidden;
+            display: flex; align-items: center; justify-content: center; gap: 11px;
+            padding: 17px 24px; border-radius: 18px;
+            background: linear-gradient(180deg, var(--cobalt-bright), var(--cobalt));
+            color: #fff; font-size: 16px; font-weight: 600; letter-spacing: -0.01em;
+            text-decoration: none;
+            box-shadow: 0 16px 34px -16px rgba(58, 75, 224, 0.62);
+            transition: transform 240ms ease, box-shadow 240ms ease;
+        }
+        .store-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 20px 38px -16px rgba(58, 75, 224, 0.72);
+        }
+        .store-btn:active { transform: translateY(0); }
+        .store-btn svg { flex: 0 0 auto; }
+        /* Второй и последующие сторы — тише главного: приоритет у iOS, пока
+           Android только готовится. */
+        .store-btn.secondary {
+            background: rgba(255, 255, 255, 0.66);
+            color: var(--ink);
+            border: 1px solid var(--hairline);
+            box-shadow: 0 12px 26px -22px rgba(27, 29, 38, 0.4);
+            font-size: 15px;
+        }
+        .store-btn.secondary:hover { box-shadow: 0 16px 30px -20px rgba(27, 29, 38, 0.45); }
+
+        /* Блик, как на кнопке поддержки — чтобы страницы выглядели роднёй. */
+        .store-btn:not(.secondary)::after {
+            content: ''; position: absolute;
+            top: -60%; bottom: -60%; left: -30%; width: 40px;
+            background: linear-gradient(90deg,
+                transparent, rgba(255, 255, 255, 0.15) 25%,
+                rgba(255, 255, 255, 0.85) 50%,
+                rgba(255, 255, 255, 0.15) 75%, transparent);
+            transform: skewX(-22deg);
+            opacity: 0; pointer-events: none;
+        }
+        .store-btn:not(.secondary):hover::after { animation: links-glint 720ms cubic-bezier(.3,.55,.2,1); }
+        @keyframes links-glint {
+            0%   { left: -30%; opacity: 0; }
+            10%  { opacity: 1; }
+            90%  { opacity: 1; }
+            100% { left: 115%; opacity: 0; }
+        }
+        @media (hover: none) {
+            .store-btn:hover { transform: none; }
+            .store-btn:hover::after { animation: none; }
+        }
+
+        /* ── Карточки ссылок ───────────────────────────────────────────── */
+        .cards { margin-top: 12px; display: flex; flex-direction: column; gap: 10px; }
+        .link-card {
+            display: flex; align-items: center; gap: 14px;
+            padding: 16px 18px; border-radius: 18px;
+            background: rgba(255, 255, 255, 0.62);
+            border: 1px solid var(--hairline);
+            backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+            text-decoration: none; color: var(--ink);
+            transition: transform 200ms ease, background 200ms ease;
+        }
+        .link-card:hover {
+            transform: translateY(-2px);
+            background: rgba(255, 255, 255, 0.82);
+        }
+        @media (hover: none) { .link-card:hover { transform: none; } }
+
+        .link-icon {
+            flex: 0 0 auto;
+            width: 42px; height: 42px; border-radius: 13px;
+            display: flex; align-items: center; justify-content: center;
+            background: rgba(58, 75, 224, 0.09);
+            color: var(--cobalt);
+        }
+        /* Карточка целиком — <a>, поэтому внутри только строчные элементы:
+           <div> внутри <a> валиден, но ломает семантику ссылки в ряде
+           скринридеров. Отсюда span'ы, которым display задан руками. */
+        .link-body { flex: 1; min-width: 0; }
+        .link-title {
+            display: block;
+            font-size: 15px; font-weight: 600; letter-spacing: -0.01em;
+        }
+        .link-sub {
+            display: block;
+            font-size: 13px; line-height: 1.45; color: var(--slate); margin-top: 2px;
+        }
+        .link-chevron { flex: 0 0 auto; color: var(--mute); }
+
+        /* Поддержка: та же карточка, но тёплого тона — визуально отделена от
+           функциональных ссылок и намеренно живёт последней. */
+        .link-card.warm .link-icon { background: rgba(246, 199, 208, 0.42); color: #C2607A; }
+
+        .divider {
+            margin: 26px 4px 14px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase;
+            color: var(--mute);
+        }
+
+        .foot {
+            margin-top: 34px; text-align: center;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 10px; letter-spacing: 0.1em; color: var(--mute);
+        }
+        .foot a { color: var(--mute); text-decoration: none; }
+        .foot a:hover { color: var(--slate); }
+        .foot .sep { opacity: 0.5; margin: 0 6px; }
+
+        @media (min-width: 721px) {
+            .container { padding: 30px 24px 80px; }
+            .hero-logo { width: 112px; height: 112px; }
+            .hero-name { font-size: 32px; }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .store-btn, .link-card { transition: none; }
+            .store-btn:hover::after { animation: none; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="topbar">
+            <a class="brand" href="/links">ВЕРТУШКА</a>
+        </div>
+
+        <header class="hero">
+            <div class="hero-logo">
+                <img src="/static/mascot/support-logo.png" alt="Вертушка">
+            </div>
+            <h1 class="hero-name">Вертушка</h1>
+            <p class="hero-tagline">
+                Коллекция винила в кармане: каталог, стоимость, вишлист и полки,
+                которыми не стыдно поделиться.
+            </p>
+        </header>
+
+        {% if app_store_url or play_store_url or rustore_url %}
+        <div class="stores">
+            {% if app_store_url %}
+            <a class="store-btn" href="{{ app_store_url }}"
+               data-goal="links_appstore" target="_blank" rel="noopener">
+                <svg width="19" height="19" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                    <path d="M10 2.6v10.2m0 0 3.7-3.7M10 12.8 6.3 9.1" stroke="currentColor"
+                          stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+                    <path d="M3.4 14.2v1.5a1.7 1.7 0 0 0 1.7 1.7h9.8a1.7 1.7 0 0 0 1.7-1.7v-1.5"
+                          stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+                </svg>
+                Скачать в App Store
+            </a>
+            {% endif %}
+
+            {% if play_store_url %}
+            <a class="store-btn secondary" href="{{ play_store_url }}"
+               data-goal="links_googleplay" target="_blank" rel="noopener">
+                Google Play
+            </a>
+            {% endif %}
+
+            {% if rustore_url %}
+            <a class="store-btn secondary" href="{{ rustore_url }}"
+               data-goal="links_rustore" target="_blank" rel="noopener">
+                RuStore
+            </a>
+            {% endif %}
+        </div>
+        {% endif %}
+
+        <div class="cards">
+            {% if telegram_url %}
+            <a class="link-card" href="{{ telegram_url }}"
+               data-goal="links_telegram" target="_blank" rel="noopener">
+                <span class="link-icon" aria-hidden="true">
+                    <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+                        <path d="M17.6 3.6 2.9 9.3c-.7.3-.7 1.3 0 1.5l3.6 1.2 1.4 4.2c.2.6 1 .7 1.4.2l1.9-2.1 3.6 2.7c.5.4 1.2.1 1.3-.5l2.3-11.9c.1-.7-.5-1.2-1.1-1z"
+                              stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>
+                        <path d="m6.5 12 9.6-7.2-6.3 8.6" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>
+                    </svg>
+                </span>
+                <span class="link-body">
+                    <span class="link-title">Телеграм-канал «Слушняк»</span>
+                    <span class="link-sub">Музыка, находки и то, что крутится у меня на вертушке</span>
+                </span>
+                <svg class="link-chevron" width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                    <path d="m6 3.5 5 4.5-5 4.5" stroke="currentColor" stroke-width="1.5"
+                          stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+            </a>
+            {% endif %}
+
+            {% if support_plans_url %}
+            <a class="link-card" href="{{ support_plans_url }}"
+               data-goal="links_plans" target="_blank" rel="noopener">
+                <span class="link-icon" aria-hidden="true">
+                    <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+                        <rect x="2.5" y="3.6" width="15" height="13.4" rx="2.6"
+                              stroke="currentColor" stroke-width="1.4"/>
+                        <path d="M2.5 7.8h15M6.6 2.2v2.8M13.4 2.2v2.8" stroke="currentColor"
+                              stroke-width="1.4" stroke-linecap="round"/>
+                    </svg>
+                </span>
+                <span class="link-body">
+                    <span class="link-title">Планы проекта</span>
+                    <span class="link-sub">Открытый роадмап: что уже сделано и что дальше</span>
+                </span>
+                <svg class="link-chevron" width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                    <path d="m6 3.5 5 4.5-5 4.5" stroke="currentColor" stroke-width="1.5"
+                          stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+            </a>
+            {% endif %}
+        </div>
+
+        {% if support_url %}
+        <div class="divider">Проекту можно помочь</div>
+        <div class="cards">
+            {# Ведёт на свою /support, а не в платёжку: сначала манифест и FAQ. #}
+            <a class="link-card warm" href="{{ support_url }}" data-goal="links_support">
+                <span class="link-icon" aria-hidden="true">
+                    <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+                        <circle cx="10" cy="10" r="7.4" stroke="currentColor" stroke-width="1.4"/>
+                        <circle cx="10" cy="10" r="2.3" fill="currentColor"/>
+                    </svg>
+                </span>
+                <span class="link-body">
+                    <span class="link-title">Поддержать проект</span>
+                    <span class="link-sub">Приложение бесплатное и таким останется — поддержка помогает его развивать</span>
+                </span>
+                <svg class="link-chevron" width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                    <path d="m6 3.5 5 4.5-5 4.5" stroke="currentColor" stroke-width="1.5"
+                          stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+            </a>
+        </div>
+        {% endif %}
+
+        <div class="foot">
+            <a href="/links">VINYL-VERTUSHKA.RU</a>
+            <span class="sep">·</span>
+            <a href="/privacy">Конфиденциальность</a>
+            <span class="sep">·</span>
+            <a href="/terms">Условия</a>
+        </div>
+    </div>
+
+    {% include "_metrika.html" %}
+</body>
+</html>

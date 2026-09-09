@@ -108,6 +108,25 @@ class Settings(BaseSettings):
         alias="SUPPORT_PLANS_URL",
     )
 
+    # ── Страница-хаб /links и умный редирект /get ───────────────────────────
+    # Одна ссылка, которую можно печатать в шапке канала, на визитке, в QR.
+    #
+    # Адреса App Store и Google Play сюда не дублируются: они уже есть ниже
+    # (app_store_url, play_store_url) и уходят мобилке как цель force-update.
+    # Вторые поля означали бы две правды при смене ссылки.
+    #
+    # Google Play на /links показывается только при PLAY_STORE_PUBLISHED — тем
+    # же флагом, что и бейдж в публичном профиле: пока приложения в Play нет,
+    # кнопка и редирект вели бы в 404.
+    rustore_url: str = Field(default="", alias="RUSTORE_URL")
+
+    # Telegram-канал проекта. На /links идёт как «канал проекта», а не как
+    # call-to-action к оплате, — это разрешено (см. PLAN_SUPPORT_PROJECT.md §1).
+    telegram_channel_url: str = Field(
+        default="https://t.me/slushnyaknow",
+        alias="TELEGRAM_CHANNEL_URL",
+    )
+
     # Подтверждение владения сайтом для Google Search Console. Токен публичный
     # по своей природе — он и должен отдаваться любому, кто откроет файл; его
     # единственный смысл в том, что положить его в корень чужого домена нельзя.

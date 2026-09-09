@@ -354,6 +354,69 @@ async def support_page(request: Request):
     })
 
 
+@router.get("/links", response_class=HTMLResponse)
+async def links_page(request: Request):
+    """Страница-хаб: скачать приложение, канал, планы, поддержка.
+
+    Порядок блоков на странице не косметический. Ссылку на /links мы даём в
+    том числе из приложения, а ревьюер App Store открывает такие ссылки и
+    смотрит, что на той стороне: платёжная форма на первом экране читается как
+    обход IAP (Guideline 3.1.1). Поэтому сверху — установка и канал, а блок
+    поддержки уезжает ниже сгиба. См. PLAN_SUPPORT_PROJECT.md §1.
+
+    Страница живёт даже с пустым SUPPORT_URL — в отличие от /support, у неё
+    есть смысл и без донатов. Каждый блок гаснет сам, если его URL не задан.
+    """
+    return templates.TemplateResponse("links.html", {
+        "request": request,
+        "base_url": BASE_URL,
+        "app_store_url": settings.app_store_url,
+        # Тот же флаг, что и у бейджа в публичном профиле: PLAY_STORE_URL
+        # заполнен боевым адресом заранее, но до публикации ведёт в 404.
+        "play_store_url": (
+            settings.play_store_url if settings.play_store_published else ""
+        ),
+        "rustore_url": settings.rustore_url,
+        "telegram_url": settings.telegram_channel_url,
+        # Донат на /links ведёт на СВОЮ страницу /support, а не сразу в
+        # платёжку: там манифест, FAQ и минимальная сумма. Плюс это ещё один
+        # экран между ссылкой из приложения и формой оплаты.
+        "support_url": "/support" if settings.support_url else "",
+        "support_plans_url": settings.support_plans_url,
+        "metrika_id": settings.yandex_metrika_counter_id,
+    })
+
+
+@router.get("/get", include_in_schema=False)
+async def smart_store_redirect(request: Request):
+    """Короткая ссылка «скачать»: сама узнаёт платформу.
+
+    vinyl-vertushka.ru/get — то, что печатается на визитке и в шапке канала.
+    С iPhone ведёт в App Store, с Android — в стор (когда он появится),
+    с десктопа — на /links, где человек выберет сам.
+
+    Ботов не редиректим: краулеру и превьюшке мессенджера нужна страница с
+    OG-разметкой, а не 302 в чужой домен.
+    """
+    ua = request.headers.get("user-agent") or ""
+
+    if not is_bot_ua(ua):
+        ua_low = ua.lower()
+        if any(m in ua_low for m in ("iphone", "ipad", "ipod")) and settings.app_store_url:
+            return RedirectResponse(settings.app_store_url, status_code=302)
+        if "android" in ua_low:
+            # PLAY_STORE_URL заполнен боевым адресом задолго до публикации —
+            # без гейта по PLAY_STORE_PUBLISHED андроидоводы уезжали бы в 404
+            # Google Play. До публикации им лучше показать /links.
+            android_url = (
+                settings.play_store_url if settings.play_store_published else ""
+            ) or settings.rustore_url
+            if android_url:
+                return RedirectResponse(android_url, status_code=302)
+
+    return RedirectResponse("/links", status_code=302)
+
+
 # ── Кэш публичного профиля ──────────────────────────────────────────────────
 # Страница собирается из полутора десятков запросов (стоимость, рейлы,
 # fun stats, офферы) — на популярном профиле это заметная доля бюджета пула БД.
