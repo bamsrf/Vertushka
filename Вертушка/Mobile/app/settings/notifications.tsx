@@ -252,6 +252,16 @@ export default function NotificationsScreen() {
           />
         </Group>
 
+        <Group title="Сообщения">
+          <SettingRow
+            label="Новое сообщение"
+            description="Входящие в диалогах и первые сообщения от незнакомых"
+            value={s.notify_messages}
+            onToggle={(v) => handleToggle('notify_messages', v)}
+            disabled={isSaving}
+          />
+        </Group>
+
         <Group title="Подарки">
           <SettingRow
             label="Подарок забронирован"

@@ -156,6 +156,21 @@ def _effective_muted(me_part: ConversationParticipant) -> tuple[bool, datetime |
     return False, None  # expired
 
 
+def _push_for_request(
+    sender_name: str, preview: str, *, muted: bool
+) -> tuple[str | None, str | None]:
+    """Тексты push для сообщения-запроса. Заглушённый тред отдаёт (None, None).
+
+    Раньше мьют здесь снимал только аватар с пуша, а сам баннер всё равно
+    прилетал: гейт стоял в ветке принятых диалогов и на «Запросы» не
+    распространялся. Запись в ленте «Ты» создаётся в любом случае — мьют
+    глушит звонок, а не прячет сам запрос.
+    """
+    if muted:
+        return None, None
+    return sender_name, preview or "Новое сообщение"
+
+
 def _conv_to_read(
     conv: Conversation,
     partner: User,
@@ -594,6 +609,9 @@ async def send_message(
         # Чужой пишет впервые → запись в ленту «Ты» (Instagram-логика) + push.
         # Дедуп по диалогу: повторные бампают одну нить, не спамят.
         from app.services.notification_service import create_notification
+        request_title, request_body = _push_for_request(
+            sender_name, preview, muted=partner_muted
+        )
         await create_notification(
             db,
             user_id=partner_id,
@@ -606,8 +624,8 @@ async def send_message(
                 "sender_username": current_user.username,
                 "preview": preview,
             },
-            push_title=sender_name,
-            push_body=preview or "Новое сообщение",
+            push_title=request_title,
+            push_body=request_body,
             push_image=avatar_abs if not partner_muted else None,
         )
         await db.commit()

@@ -205,10 +205,37 @@ export default function AchievementsScreen() {
     }
   }, [deepLinkCode, data]);
 
+  const titleText = username ? `Ачивки @${username}` : 'Ачивки';
+
+  // Чужой профиль: заголовок длинный («Ачивки @ник»), а у предыдущего экрана
+  // (user/[username]/index) хедер скрыт и back-title взять неоткуда — нативная
+  // кнопка «назад» на iOS остаётся видимой, но её хит-зона схлопывается и экран
+  // становится ловушкой (выход только свайпом от края). Рисуем свою кнопку с
+  // гарантированной площадью нажатия. Опции нужны и в ранних return'ах
+  // (loading/ошибка): без них экран не выпускает ещё до загрузки данных.
+  const screenOptions = {
+    title: titleText,
+    headerBackTitle: '',
+    ...(username
+      ? {
+          headerBackVisible: false,
+          headerLeft: () => (
+            <TouchableOpacity
+              onPress={() => router.back()}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+              style={styles.headerBackBtn}
+            >
+              <Ionicons name="chevron-back" size={26} color={Colors.text} />
+            </TouchableOpacity>
+          ),
+        }
+      : {}),
+  };
+
   if (loading) {
     return (
       <>
-        <Stack.Screen options={{ title: 'Ачивки' }} />
+        <Stack.Screen options={screenOptions} />
         <View style={[styles.center, { paddingTop: insets.top + 60 }]}>
           <ActivityIndicator size="large" color={Colors.royalBlue} />
         </View>
@@ -219,7 +246,7 @@ export default function AchievementsScreen() {
   if (!data) {
     return (
       <>
-        <Stack.Screen options={{ title: 'Ачивки' }} />
+        <Stack.Screen options={screenOptions} />
         <View style={[styles.center, { paddingTop: insets.top + 60 }]}>
           <Text style={styles.errorText}>Не удалось загрузить ачивки.</Text>
         </View>
@@ -227,11 +254,9 @@ export default function AchievementsScreen() {
     );
   }
 
-  const titleText = username ? `Ачивки @${username}` : 'Ачивки';
-
   return (
     <>
-      <Stack.Screen options={{ title: titleText }} />
+      <Stack.Screen options={screenOptions} />
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={{ paddingBottom: insets.bottom + 40 }}
@@ -798,6 +823,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: Colors.background,
+  },
+  headerBackBtn: {
+    paddingRight: 12,
+    paddingVertical: 6,
   },
   errorText: {
     color: Colors.textMuted,

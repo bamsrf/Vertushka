@@ -112,6 +112,7 @@ class NotificationSettingsResponse(BaseModel):
     notify_gift_confirmed: bool = True
     notify_app_updates: bool = True
     notify_follow_request: bool = True
+    notify_messages: bool = True
     notify_wishlist_in_stock: bool = True
     notify_achievement: bool = True
     notify_milestone: bool = True
@@ -128,6 +129,7 @@ class NotificationSettingsUpdate(BaseModel):
     notify_gift_confirmed: bool | None = None
     notify_app_updates: bool | None = None
     notify_follow_request: bool | None = None
+    notify_messages: bool | None = None
     notify_wishlist_in_stock: bool | None = None
     notify_achievement: bool | None = None
     notify_milestone: bool | None = None

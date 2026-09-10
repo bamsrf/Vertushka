@@ -653,6 +653,7 @@ def _serialize_settings(user: User) -> NotificationSettingsResponse:
         notify_gift_confirmed=user.notify_gift_confirmed,
         notify_app_updates=user.notify_app_updates,
         notify_follow_request=user.notify_follow_request,
+        notify_messages=user.notify_messages,
         notify_wishlist_in_stock=user.notify_wishlist_in_stock,
         notify_achievement=user.notify_achievement,
         notify_milestone=user.notify_milestone,
@@ -702,6 +703,8 @@ async def update_notification_settings(
         current_user.notify_app_updates = data.notify_app_updates
     if data.notify_follow_request is not None:
         current_user.notify_follow_request = data.notify_follow_request
+    if data.notify_messages is not None:
+        current_user.notify_messages = data.notify_messages
     if data.notify_wishlist_in_stock is not None:
         current_user.notify_wishlist_in_stock = data.notify_wishlist_in_stock
     if data.notify_achievement is not None:
