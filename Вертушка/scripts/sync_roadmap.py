@@ -17,6 +17,7 @@ sync_roadmap.py — обновляет Changelog в docs/plans/ROADMAP.md
   3. Дописывает строку в общий Changelog (секция 4) и в Changelog M-блока.
   4. Обновляет timestamp в шапке.
   5. Если запись уже есть (идемпотентность по PR номеру) — skip.
+  6. Собственные sync-PR в ленту не попадают (SYNC_PR_TITLE_RE).
 """
 
 from __future__ import annotations
@@ -32,6 +33,18 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 ROADMAP_PATH = REPO_ROOT / "ROADMAP.md"
+
+# Свои же PR в Changelog не попадают.
+#
+# Workflow слушает ЛЮБОЙ merged PR в main — включая тот, который открыл сам.
+# Без этого фильтра каждый мерж sync-PR порождал запись о самом sync-PR, и
+# следом новый sync-PR о ней: лента наполнялась служебными строками, по одной
+# на каждый мерж.
+#
+# Матчим по заголовку, а не по ветке: он задан константой в
+# .github/workflows/sync-roadmap.yml и одинаков для всех запусков, а имя ветки
+# в payload есть только в режиме --from-event.
+SYNC_PR_TITLE_RE = re.compile(r"^chore\(roadmap\): sync changelog", re.IGNORECASE)
 
 # Маппинг conventional-commit scope → milestone code.
 # Если scope не в словаре — запись попадает только в общий Changelog (секция 4).
@@ -90,7 +103,11 @@ def fetch_prs_since(since_iso: str) -> list[dict]:
     raw = run([
         "gh", "pr", "list",
         "--state", "merged",
-        "--limit", "100",
+        # 300, а не 100: между пересинхронизациями накапливается больше сотни
+        # PR (на 2026-09 — 129 с конца июля). `gh pr list` отдаёт свежие
+        # первыми и молча режет хвост, а добрать его вторым прогоном нельзя —
+        # у --since нет верхней границы, вернётся та же сотня.
+        "--limit", "300",
         "--json", "number,title,mergedAt,url",
         "--search", f"merged:>{since_iso}",
     ])
@@ -112,6 +129,11 @@ def parse_event_payload(event_path: str) -> dict | None:
         "mergedAt": pr["merged_at"],
         "url": pr["html_url"],
     }
+
+
+def is_sync_pr(pr: dict) -> bool:
+    """PR, открытый самим этим workflow, — см. SYNC_PR_TITLE_RE."""
+    return bool(SYNC_PR_TITLE_RE.match(pr.get("title", "")))
 
 
 def detect_milestone(title: str) -> tuple[str | None, str]:
@@ -245,6 +267,14 @@ def main() -> int:
         prs = fetch_prs_since(args.since)
     else:
         parser.error("provide --pr, --since, or --from-event")
+
+    own = [pr for pr in prs if is_sync_pr(pr)]
+    for pr in own:
+        print(f"[sync_roadmap] skipped #{pr['number']} (свой sync-PR)")
+    prs = [pr for pr in prs if not is_sync_pr(pr)]
+    if not prs:
+        print("[sync_roadmap] nothing to sync")
+        return 0
 
     if not ROADMAP_PATH.exists():
         print(f"[sync_roadmap] ROADMAP.md not found at {ROADMAP_PATH}", file=sys.stderr)
