@@ -83,6 +83,30 @@ async def test_owner_can_delete_unused_record():
 
 
 @pytest.mark.asyncio
+async def test_delete_recounts_contribution(monkeypatch):
+    """Удаление обязано пересчитать вклад: иначе «добавил → взял ачивку →
+    удалил» оставляет K8–K10 висеть на релизе, которого нет."""
+    from app.services import achievements as ach
+    from app.services.achievements.events import USER_RECORD_DELETED
+
+    seen = []
+
+    async def fake_emit(_db, user_id, event, payload=None):
+        seen.append((user_id, event, payload))
+        return []
+
+    monkeypatch.setattr(ach, "emit_event", fake_emit)
+
+    owner = uuid4()
+    rec = make_user_record(owner)
+    db = FakeSession(rec, foreign_holders=(0, 0))
+
+    await delete_user_submitted_record(rec.id, current_user=make_user(owner), db=db)
+
+    assert seen == [(owner, USER_RECORD_DELETED, {"record_id": rec.id})]
+
+
+@pytest.mark.asyncio
 async def test_record_held_by_others_survives():
     """Кто-то уже добавил себе — 409, запись остаётся в «Моих релизах»."""
     owner = uuid4()

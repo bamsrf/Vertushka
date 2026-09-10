@@ -280,6 +280,8 @@ async def action_report(
             status_code=status.HTTP_404_NOT_FOUND, detail="Жалоба не найдена"
         )
 
+    hidden_record_author_id: UUID | None = None
+
     if data.action == "dismiss":
         report.status = "dismissed"
 
@@ -309,6 +311,9 @@ async def action_report(
             )
         record.moderation_status = "rejected"
         report.status = "actioned"
+        # Скрытая запись перестаёт быть вкладом в каталог — пересчитываем
+        # K8–K10 автору (эмиссия после commit, ниже).
+        hidden_record_author_id = record.created_by_user_id
 
     elif data.action == "hide_message":
         # Без этого действия оскорбительное сообщение оставалось видимым в
@@ -347,5 +352,17 @@ async def action_report(
         report.status = "actioned"
 
     await db.commit()
+
+    if hidden_record_author_id is not None:
+        from app.services.achievements import emit_event
+        from app.services.achievements.events import USER_RECORD_DELETED
+
+        await emit_event(
+            db,
+            hidden_record_author_id,
+            USER_RECORD_DELETED,
+            {"record_id": report.target_id},
+        )
+
     await db.refresh(report)
     return await _to_response(db, report)

@@ -2050,6 +2050,16 @@ async def delete_user_submitted_record(
 
     await soft_delete_user_record(db=db, record=record, owner_id=current_user.id)
     await db.commit()
+
+    # Вклад в каталог пересчитывается по живым записям: удалённый релиз из
+    # счётчика K8–K10 уходит, а если он был единственным — ачивка снимается
+    # (revocable). Иначе «добавил → забрал ачивку → удалил» было бы бесплатно.
+    from app.services.achievements import emit_event
+    from app.services.achievements.events import USER_RECORD_DELETED
+
+    await emit_event(
+        db, current_user.id, USER_RECORD_DELETED, {"record_id": record_id}
+    )
     return None
 
 

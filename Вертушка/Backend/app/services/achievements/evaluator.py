@@ -76,10 +76,15 @@ async def _emit_impl(
     }
 
     unlocked_now: set[str] = set()
+    revoked_now: set[str] = set()
 
     for defn in defs:
         ua = existing_by_code.get(defn.code)
-        if ua is not None and ua.is_unlocked:
+        was_unlocked = ua is not None and ua.is_unlocked
+        # Открытую ачивку обычно не трогаем — она уже заслужена. Исключение:
+        # revocable (K8–K10), где условие держится на живых записях и юзер
+        # может его откатить, удалив релиз.
+        if was_unlocked and not defn.revocable:
             continue
 
         try:
@@ -95,14 +100,39 @@ async def _emit_impl(
             )
             continue
 
-        if result.unlocked:
+        # Улика — снапшот момента анлока. Для уже открытой revocable-ачивки
+        # переснимать её нельзя: анлок тот же самый, а карточка бы поехала.
+        if result.unlocked and not was_unlocked:
             await _attach_evidence(db, user_id, defn.code, payload, result)
 
         await _persist(db, user_id, defn, ua, result)
-        if result.unlocked:
+        if result.unlocked and not was_unlocked:
             unlocked_now.add(defn.code)
+        elif was_unlocked and not result.unlocked:
+            revoked_now.add(defn.code)
 
     await db.commit()
+
+    if revoked_now:
+        logger.info(
+            "achievements_revoked",
+            extra={
+                "user_id": str(user_id),
+                "event": event,
+                "codes": sorted(revoked_now),
+            },
+        )
+        # Пуш об анлоке уже улетел, но висеть в ленте «ты открыл X» для
+        # ачивки, которой больше нет, — тот же самый фантом, что и сама
+        # ачивка. Чистим; ошибка тут не должна ронять событие.
+        try:
+            await _drop_unlock_notifications(db, user_id, sorted(revoked_now))
+        except Exception:  # noqa: BLE001
+            logger.exception("Failed to drop achievement_unlocked notifications")
+            try:
+                await db.rollback()
+            except Exception:  # noqa: BLE001
+                pass
 
     if unlocked_now:
         logger.info(
@@ -287,18 +317,35 @@ async def _persist(
         return
 
     if result.unlocked:
-        existing.is_unlocked = True
-        existing.unlocked_at = datetime.utcnow()
+        if not existing.is_unlocked:
+            existing.is_unlocked = True
+            existing.unlocked_at = datetime.utcnow()
         if existing.xp_awarded is None:
             existing.xp_awarded = weight_for_code(defn.code)
         if result.progress is not None:
-            existing.progress = max(existing.progress, result.progress)
+            # У revocable счётчик обязан ходить в обе стороны (см. ниже), но
+            # даже наверху шкалы: «20 из 20» после удаления релиза — это 19.
+            existing.progress = (
+                result.progress
+                if defn.revocable
+                else max(existing.progress, result.progress)
+            )
         if result.progress_target is not None:
             existing.progress_target = result.progress_target
         if result.metadata is not None:
             existing.ach_metadata = result.metadata
         await db.flush()
         return
+
+    # Условие revocable-ачивки перестало выполняться → снимаем анлок. XP
+    # обнуляем вместе с ним: иначе замороженные очки продолжали бы держать
+    # уровень за вклад, которого больше нет. Строку не удаляем — прогресс и
+    # metadata остаются, ачивка просто снова становится открываемой.
+    if defn.revocable and existing.is_unlocked:
+        existing.is_unlocked = False
+        existing.unlocked_at = None
+        existing.xp_awarded = None
+        await db.flush()
 
     # Метаданные — это рабочее состояние evaluator-а между событиями (стрик
     # сканов, времена смены аватара, счётчик add/remove по релизу). В отличие
@@ -308,8 +355,32 @@ async def _persist(
         existing.ach_metadata = result.metadata
         await db.flush()
 
-    if result.progress is not None and result.progress > existing.progress:
+    # Гейт «только вверх» защищает от устаревших событий, но revocable
+    # обязан уметь и вниз: удалённый релиз не должен оставаться в счётчике.
+    if result.progress is not None and (
+        result.progress > existing.progress or defn.revocable
+    ):
         existing.progress = result.progress
         if result.progress_target is not None:
             existing.progress_target = result.progress_target
         await db.flush()
+
+
+async def _drop_unlock_notifications(
+    db: AsyncSession,
+    user_id: UUID,
+    codes: list[str],
+) -> None:
+    """Убирает из ленты уведомления об анлоке отозванных ачивок."""
+    from sqlalchemy import delete
+
+    from app.models.notification import Notification
+
+    await db.execute(
+        delete(Notification).where(
+            Notification.user_id == user_id,
+            Notification.type == "achievement_unlocked",
+            Notification.entity_id.in_(codes),
+        )
+    )
+    await db.commit()
