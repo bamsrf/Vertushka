@@ -620,12 +620,32 @@ class DiscogsService:
     HOT_WANT_HAVE_RATIO = 1.5
     HOT_MIN_HAVE = 100
 
-    # Пороги для is_collectible — комбо «дорогая + дефицит на маркете + не массовая»
-    # Подобраны после анализа реальной коллекции (см. analyze_db_pricemin.py):
-    # на 188 записях $50 покрывает 27% (слишком много), $100 — 14% (~1 из 7).
+    # Пороги для is_collectible — «за ней охотятся» ИЛИ «дорогая, и цена устоялась».
+    #
+    # Прежняя формула (цена ≥$100 + лотов ≤3 + владельцев ≤200) ошибалась в обе
+    # стороны. Замер 09.2026 по ВСЕЙ проде (165 записей с ценой ≥$100 — полная
+    # популяция, не выборка): 18 ложных меток из 52 — свежие тиражи, где один
+    # продавец просит дорого («Сироткин — Мрамор»: have=20, want=2, один лот за
+    # $110), и ~60 пропусков — Eminem «Infinite» ($7500, want/have=11), Velvet
+    # Underground & Nico, японский оригинал Ryo Fukui, отсечённые порогом
+    # владельцев.
+    #
+    # Число лотов убрано из формулы совсем: оно меняется по часам (метка мигала
+    # бы от каждой покупки) и растёт как раз у пластинок, которые ищут. У
+    # «Фирюзы» (want=1114) лот ровно один — столько же, сколько у «Мрамора».
     COLLECTIBLE_MIN_PRICE_USD = 100.0
-    COLLECTIBLE_MAX_FOR_SALE = 3
-    COLLECTIBLE_MAX_HAVE = 200
+    # Спросовая ветка: желающих вдвое больше, чем владельцев.
+    COLLECTIBLE_WANT_HAVE_RATIO = 2.0
+    # Шумовой пол: have=3 при want=11 — это не сигнал, а совпадение.
+    COLLECTIBLE_MIN_WANT = 25
+    # Ценовая ветка: дорогая сама по себе — лимитка вроде японского репресса Daft
+    # Punk «Discovery» (5555 копий, $581), которого хватило всем желающим, и
+    # спросовое отношение её не берёт (want/have=1.3).
+    # have здесь — НЕ мера редкости, а доверие к цене: у релиза с сотней
+    # владельцев за спиной история сделок, и минимальный аск анкерится на рынок,
+    # а не на фантазию единственного продавца ($2500 при 12 владельцах).
+    COLLECTIBLE_PRICE_ONLY_USD = 500.0
+    COLLECTIBLE_PRICE_ONLY_MIN_HAVE = 100
 
     # Токены, по которым формат считается «лимиткой» (case-insensitive substring match
     # against каждого элемента formats[].descriptions из Discogs)
@@ -662,34 +682,65 @@ class DiscogsService:
             return None
 
     @classmethod
-    def compute_is_collectible(cls, price_stats: dict | None, have: int | None) -> bool:
-        """is_collectible из price_stats (/marketplace/stats) + community.have.
+    def collectible_price_usd(cls, price_stats: dict | None) -> float | None:
+        """Долларовая цена релиза для rarity-веток, либо None если её нет.
 
-        Вынесено из _compute_rarity_flags, чтобы фоновое обогащение экрана версий
-        считало флаг по ТЕМ ЖЕ порогам, но без полного get_release: have приходит
-        бесплатно из stats.community мастер-versions, а из сети нужен только
-        /marketplace/stats/{id}. Экономит ~2 вызова Discogs на каждую версию.
+        ВАЖНО: /marketplace/stats на практике отдаёт только `num_for_sale`,
+        `lowest_price` и `blocked_from_sale` — `median_price` не приходит НИКОГДА
+        (проверено 09.2026 на релизах с сотнями лотов; в проде медиана заполнена
+        у 0 записей из 2618 с ценой). Значит цена здесь — минимальный АСК, то
+        есть хотелка самого дешёвого продавца, а не цена сделки. Разбор median
+        оставлен на случай, если Discogs вернёт поле, но полагаться на него
+        нельзя — отсюда требование have в ценовой ветке.
         """
         if not price_stats:
-            return False
-        num_for_sale = price_stats.get("num_for_sale")
-        try:
-            num_for_sale_int = int(num_for_sale) if num_for_sale is not None else None
-        except (TypeError, ValueError):
-            return False
-        if num_for_sale_int is None:
-            return False
-        price_usd = (
+            return None
+        return (
             cls._price_stat_value(price_stats, "median_price")
             or cls._price_stat_value(price_stats, "lowest_price")
         )
-        if price_usd is None:
-            return False
-        return (
-            price_usd >= cls.COLLECTIBLE_MIN_PRICE_USD
-            and num_for_sale_int <= cls.COLLECTIBLE_MAX_FOR_SALE
-            and (have or 0) <= cls.COLLECTIBLE_MAX_HAVE
+
+    @classmethod
+    def compute_is_collectible(
+        cls,
+        price_stats: dict | None,
+        have: int | None,
+        want: int | None = None,
+    ) -> bool | None:
+        """is_collectible из price_stats (/marketplace/stats) + community have/want.
+
+        Две ветки, обе требуют цену:
+          - спрос: цена ≥$100 и желающих вдвое больше, чем владельцев;
+          - цена:  ≥$500 у релиза, который есть у сотни человек (цена устоялась).
+
+        Возвращает None, когда цены нет вообще (на маркете пусто, 404, сбой) —
+        «не знаем» это не «не редкая». Вызывающий обязан НЕ трогать флаг на None,
+        иначе редкая пластинка гасла бы каждый раз, когда её никто не продаёт: в
+        проде таких 6 из 52, включая Ryo Fukui «Scenery» с 2476 желающими.
+
+        Вынесено из _compute_rarity_flags, чтобы фоновое обогащение экрана версий
+        считало флаг по ТЕМ ЖЕ порогам, но без полного get_release: have и want
+        приходят бесплатно из stats.community мастер-versions, а из сети нужен
+        только /marketplace/stats/{id}. Экономит ~2 вызова Discogs на версию.
+        """
+        have_i = have or 0
+        want_i = want or 0
+        price_usd = cls.collectible_price_usd(price_stats)
+
+        demand_ok = (
+            want_i >= cls.COLLECTIBLE_MIN_WANT
+            and want_i >= cls.COLLECTIBLE_WANT_HAVE_RATIO * have_i
         )
+        price_branch_possible = have_i >= cls.COLLECTIBLE_PRICE_ONLY_MIN_HAVE
+
+        if price_usd is None:
+            # Ни одна ветка не разрешима без цены. Но если обе невозможны и по
+            # community-счётчикам — это твёрдое «нет», его стоит запомнить.
+            return None if (demand_ok or price_branch_possible) else False
+
+        if price_branch_possible and price_usd >= cls.COLLECTIBLE_PRICE_ONLY_USD:
+            return True
+        return demand_ok and price_usd >= cls.COLLECTIBLE_MIN_PRICE_USD
 
     @classmethod
     def _compute_rarity_flags(
@@ -698,15 +749,17 @@ class DiscogsService:
         master_data: "MasterRelease | None",
         master_versions_count: int | None = None,
         price_stats: dict | None = None,
-    ) -> dict[str, bool]:
+    ) -> dict[str, bool | None]:
         """Compute four rarity flags from raw Discogs payloads.
 
         See Mobile/components/RarityAura.tsx.
 
         - is_canon: release is the master.main_release (community-edited canonical
           version per Discogs editors).
-        - is_collectible: combo signal of actual market scarcity — высокая цена +
-          мало на маркетплейсе + не массовая. Самый объективный сигнал «редкости».
+        - is_collectible: рыночная редкость — либо за релизом охотятся (желающих
+          вдвое больше владельцев при цене ≥$100), либо он дорог сам по себе
+          (≥$500 при устоявшейся цене). Может быть None — «цены нет, вердикта
+          нет»; вызывающий на None флаг не трогает. См. compute_is_collectible.
         - is_limited: structural marker in formats[].descriptions
           (Limited Edition / Test Pressing / Promo / Numbered / White Label).
         - is_hot: high want/have ratio with non-trivial owner base.
@@ -725,13 +778,11 @@ class DiscogsService:
 
         is_first_press = False  # тир закрыт — см. docstring
 
-        # is_collectible: дорогая + дефицит на маркете + не массовая.
-        # Цену берём median_price, при отсутствии — fallback на lowest_price
-        # (median Discogs возвращает только если было ≥2 продаж — у редких
-        # часто null, тогда lowest_price это «единственное предложение»).
+        # is_collectible: спрос (want/have) или высокая устоявшаяся цена.
         community = release_data.get("community") or {}
         have = community.get("have") or 0
-        is_collectible = cls.compute_is_collectible(price_stats, have)
+        want = community.get("want") or 0
+        is_collectible = cls.compute_is_collectible(price_stats, have, want)
 
         # is_limited: any structural marker in formats[].descriptions
         is_limited = False
@@ -748,7 +799,6 @@ class DiscogsService:
 
         # is_hot: high want/have ratio with non-trivial owner base
         is_hot = False
-        want = community.get("want") or 0
         if have >= cls.HOT_MIN_HAVE and have > 0:
             ratio = want / have
             if ratio >= cls.HOT_WANT_HAVE_RATIO:

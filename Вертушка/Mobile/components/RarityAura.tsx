@@ -2,7 +2,8 @@
  * Rarity highlighting for vinyl records — card-as-signal tiers.
  *
  * Active tiers:
- *   collectible → heritage gold, rotating shimmer 8s (price>=$100 + scarce + low have)
+ *   collectible → heritage gold, rotating shimmer 8s (спрос want>=2×have при цене >=$100,
+ *                 либо цена >=$500 у релиза с устоявшимся рынком)
  *   limited     → cold platinum violet, pulse 4s
  *   hot         → hot ember, pulse 2s + heat-haze halo on cover
  *
@@ -58,7 +59,7 @@ export const RARITY_TIERS: Record<RarityTier, TierTokens> = {
   collectible: {
     id: 'collectible',
     label: 'Коллекционка',
-    longLabel: 'Дорогая (≥$100), почти не продаётся, мало у кого есть',
+    longLabel: 'Дорогая, и её ищут заметно больше людей, чем ею владеют',
     palette: ['#F4D27A', '#B8860B', '#6B4423'],
     auraOuter: 'rgba(184, 134, 11, 0.55)',
     auraInner: 'rgba(244, 210, 122, 0.80)',
