@@ -71,11 +71,27 @@ _BIDI_RE = re.compile(r"[‎‏‪-‮]")
 # (иначе порвём «Jay-Z»).
 _TITLE_SPLIT_RE = re.compile(r"\s*[–—]\s*|\s+-\s+")
 
-# Хвост «(Австралия 1981г.)» — страна и год, они же лежат в свойствах.
-_PAREN_TAIL_RE = re.compile(r"\s*\([^()]*\)\s*$")
+# Хвосты, которые надо срезать с названия, — по одному с конца, пока срезается.
+# Порядок в витрине непостоянный, встречается и «Nuotaka 2LP (СССР 1978г.)», и
+# «I'm Not A Player (США 1997г.) EP», поэтому не «скобка, потом маркер», а цикл:
+#   • «(Австралия 1981г.)» — страна и год, они же лежат отдельными свойствами;
+#   • «2LP», «3LP», «EP», «CD» — счётчик пластинок и формат, у нас поле format_raw;
+#   • одиночная буква-пометка («… Great Dance Songs T»).
+# 15% названий несут такой хвост (замер на проде 10.09), и без срезания они
+# никогда не совпадут с records.title.
+_TAIL_RE = re.compile(r"\s*(?:\([^()]*\)|\d?LP|EP|CD|MC|SACD|[A-ZА-Я])\s*$")
 
-# Одиночная буква-пометка в самом конце («… Great Dance Songs T»).
-_LETTER_TAIL_RE = re.compile(r"\s+[A-ZА-Я]\s*$")
+# Оформительский хвост ПОСЛЕ скобки: «(Европа 2026г.) Yellow», «(Япония) Promo».
+# Съедаем его по слову, но только пока в строке ещё есть закрывающая скобка —
+# как только строка заканчивается на «)», цикл сам останавливается. Это и есть
+# предохранитель: у названия без страны в скобках (гипотетическое
+# «Money (That's What I Want)») отрезать слова уже нечем, а у названия вовсе без
+# скобок цикл не запустится. Цвет при этом не теряется: он приезжает из
+# свойства «Формат носителя» («3LP Yellow»), откуда мы и берём vinyl_color_raw.
+# Токен, а не «слово»: хвосты бывают вида «LP+», «7"», «Yellow», «Promo».
+# Закрывающая скобка в токен НЕ входит — иначе цикл сгрызает саму скобку по
+# кускам («… (Австралия 1981г.)» → «… (Австралия») и ломает следующий шаг.
+_DECOR_TAIL_RE = re.compile(r"\s+[^\s)]{1,16}\s*$")
 
 # Формат носителя у CD пишется в начало названия.
 _CD_PREFIX_RE = re.compile(r"^(CD|LP|MC)\s+")
@@ -117,10 +133,18 @@ def _characteristics(product: dict) -> dict[str, str]:
 def _split_artist_album(title: str) -> tuple[str | None, str]:
     """`Artist ‎– Album (Страна Годг.) T` → ('Artist', 'Album')."""
     core = _CD_PREFIX_RE.sub("", _clean(title))
-    prev = None
-    while prev != core:
-        prev = core
-        core = _LETTER_TAIL_RE.sub("", _PAREN_TAIL_RE.sub("", core)).strip()
+    while ")" in core:
+        trimmed = _DECOR_TAIL_RE.sub("", core).strip()
+        if not trimmed or trimmed == core:
+            break
+        core = trimmed
+    while True:
+        trimmed = _TAIL_RE.sub("", core).strip()
+        # Пустая строка означает, что название целиком состояло из хвостов —
+        # тогда лучше оставить как было, чем отдать матчеру пустоту.
+        if not trimmed or trimmed == core:
+            break
+        core = trimmed
     parts = _TITLE_SPLIT_RE.split(core, maxsplit=1)
     if len(parts) == 2 and parts[0].strip() and parts[1].strip():
         return parts[0].strip(), parts[1].strip()
