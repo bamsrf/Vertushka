@@ -539,14 +539,22 @@ async def _apply_discogs_release(record: Record, data: dict, db: AsyncSession) -
     if not record.format_description and data.get("format_description"):
         record.format_description = data["format_description"]
         changed = True
-    # Rarity-флаги — снапшот на момент знакомства с полным payload'ом
-    # (живого пересчёта is_hot/is_collectible осознанно нет: want/have дрейфует,
-    # но открытые ачивки ядро всё равно не отбирает). Только False→True:
-    # True мог прийти от более свежих данных, его не затираем.
-    for _flag in ("is_limited", "is_collectible", "is_hot"):
+    # Rarity-флаги. is_limited/is_hot — снапшот на момент знакомства с полным
+    # payload'ом, только False→True (структурная лимитка не исчезает, а want/have
+    # для is_hot дрейфует, но открытые ачивки ядро всё равно не отбирает).
+    for _flag in ("is_limited", "is_hot"):
         if data.get(_flag) and not getattr(record, _flag):
             setattr(record, _flag, True)
             changed = True
+    # is_collectible — тристейт и снимается тоже. Односторонний ratchet копил
+    # мусор: в проде висели метки на релизах, которые под условие уже не
+    # подходили (FBC/VHOOR «Baile» — 4 лота при пороге 3). None означает «цены
+    # нет, вердикта нет» — на нём флаг НЕ трогаем, иначе редкая пластинка гасла
+    # бы каждый раз, когда её никто не продаёт.
+    _collectible = data.get("is_collectible")
+    if _collectible is not None and bool(_collectible) != record.is_collectible:
+        record.is_collectible = bool(_collectible)
+        changed = True
     # Обложка — ключевое поле для UI. Записи из dump-индекса создаются с NULL,
     # здесь добираем из полного Discogs payload (cover_image / thumb_image).
     if not record.cover_image_url and data.get("cover_image"):
@@ -3323,6 +3331,25 @@ COLLECTIBLE_PROBE_CAP = 25
 COLLECTIBLE_RECHECK_DAYS = 30
 
 
+def _want_have_ratio(v) -> float:
+    """want/have версии; have=0 трактуем как 1, чтобы не делить на ноль."""
+    return (v.want or 0) / max(v.have or 0, 1)
+
+
+def _passes_demand_prefilter(v) -> bool:
+    """Спросовая ветка is_collectible по бесплатным community-счётчикам.
+
+    Зеркалит первую половину DiscogsService.compute_is_collectible: цену здесь
+    не знаем, поэтому проверяем только то, что не требует сети. Кандидат,
+    провалившийся тут, ценовой веткой может пройти — см. вызывающий код.
+    """
+    want = v.want or 0
+    return (
+        want >= DiscogsService.COLLECTIBLE_MIN_WANT
+        and want >= DiscogsService.COLLECTIBLE_WANT_HAVE_RATIO * (v.have or 0)
+    )
+
+
 async def _collectible_flags_from_index(release_ids: list[str]) -> dict[str, bool]:
     """Ранее посчитанные is_collectible из discogs_releases_index.
 
@@ -3406,10 +3433,11 @@ async def _enrich_collectible_async(
     Стало — три уровня отсечения, флаг остаётся тем же и по тем же порогам:
       1) durable-кэш: is_collectible, уже посчитанный когда-либо для этого
          релиза, лежит в discogs_releases_index → 0 вызовов (переживает Redis-TTL);
-      2) пре-фильтр по have: условие требует have <= COLLECTIBLE_MAX_HAVE, а have
-         приходит бесплатно из stats.community мастер-versions (один вызов на всю
-         страницу, обычно уже в Redis после _enrich_covers_from_api). Массовые
-         прессы отсеиваются без единого запроса;
+      2) пре-фильтр по спросу: have и want приходят бесплатно из stats.community
+         мастер-versions (один вызов на всю страницу, обычно уже в Redis после
+         _enrich_covers_from_api). Релиз, который не проходит ни спросовую ветку
+         (want ≥ 2×have), ни ценовую (have ≥ 100 — там цену ещё надо спросить),
+         отсеивается без единого запроса;
       3) на выживших — только /marketplace/stats/{id} (1 вызов вместо ~2),
          cap COLLECTIBLE_PROBE_CAP от самых редких (have ASC).
 
@@ -3465,19 +3493,27 @@ async def _enrich_collectible_async(
                 logger.debug("collectible: have-prefilter unavailable for %s", master_id)
 
         # Пробуем ТОЛЬКО тех, по кому вердикт будет достоверным:
-        #   - have известен и > порога → is_collectible невозможен по определению,
-        #     сеть не трогаем вовсе (ниже запишем false);
         #   - have неизвестен → вызов бессмысленно тратить: compute_is_collectible
         #     трактует None как 0, и массовый пресс получил бы плашку по одной
-        #     цене. Старый код такого не допускал — have всегда приходил из
-        #     get_release. Оставляем непроверенным, вернёмся когда have появится.
-        # Сортировка have ASC — сначала заведомо редкие, они и упираются в cap.
-        probes = [
+        #     цене. Оставляем непроверенным, вернёмся когда have появится;
+        #   - не проходит ни спросовую ветку, ни ценовую → результат известен без
+        #     сети (ниже запишем false).
+        # Порядок: сначала спросовые кандидаты по убыванию want/have — это ветка,
+        # которая срабатывает на порядок чаще ценовой, и именно она должна съесть
+        # cap. Ценовые (have ≥ 100) добираются остатком.
+        demand_probes = [
             v for v in candidates
-            if v.have is not None and v.have <= DiscogsService.COLLECTIBLE_MAX_HAVE
+            if v.have is not None and _passes_demand_prefilter(v)
         ]
-        probes.sort(key=lambda v: v.have or 0)
-        probes = probes[:COLLECTIBLE_PROBE_CAP]
+        demand_probes.sort(key=lambda v: -_want_have_ratio(v))
+        price_probes = [
+            v for v in candidates
+            if v.have is not None
+            and not _passes_demand_prefilter(v)
+            and v.have >= DiscogsService.COLLECTIBLE_PRICE_ONLY_MIN_HAVE
+        ]
+        price_probes.sort(key=lambda v: -(v.have or 0))
+        probes = (demand_probes + price_probes)[:COLLECTIBLE_PROBE_CAP]
 
         sem = asyncio.Semaphore(5)
         checked: dict[str, bool] = {}
@@ -3499,7 +3535,12 @@ async def _enrich_collectible_async(
                     return
                 # Отрицательный результат фиксируем: иначе каждый заход
                 # перепроверял бы одни и те же «не редкие» релизы.
-                flag = DiscogsService.compute_is_collectible(stats, v.have)
+                flag = DiscogsService.compute_is_collectible(stats, v.have, v.want)
+                if flag is None:
+                    # На маркете пусто → цены нет → вердикта нет. Не персистим:
+                    # иначе редкий релиз, который сейчас никто не продаёт,
+                    # получил бы вечное false в durable-индексе.
+                    return
                 checked[v.release_id] = flag
                 if flag:
                     v.is_collectible = True
@@ -3516,13 +3557,15 @@ async def _enrich_collectible_async(
                     master_id, page,
                 )
 
-        # Пре-фильтр по have — тоже знание: релиз с have > порога не станет
-        # collectible, фиксируем false, чтобы больше его не трогать.
+        # Пре-фильтр — тоже знание: релиз, не проходящий ни одну из веток по
+        # бесплатным community-счётчикам, collectible не станет. Фиксируем false,
+        # чтобы больше его не трогать.
         for v in candidates:
             if (
                 v.release_id not in checked
                 and v.have is not None
-                and v.have > DiscogsService.COLLECTIBLE_MAX_HAVE
+                and not _passes_demand_prefilter(v)
+                and v.have < DiscogsService.COLLECTIBLE_PRICE_ONLY_MIN_HAVE
             ):
                 checked[v.release_id] = False
 
