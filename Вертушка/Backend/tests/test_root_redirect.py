@@ -10,7 +10,13 @@ vinyl-vertushka.ru/ отдавал голый JSON `{"app": ..., "status": "runn
 
 Healthcheck'и docker-compose и внешняя проверка deploy.sh стучатся в /health,
 а не в корень, — но JSON тут оставлен намеренно, как страховка.
+
+Ни один тест в этом файле не ходит в базу: /health проверяется по таблице
+роутов, потому что запрос к нему поднимает пул соединений в петле TestClient
+и ломает интеграционные тесты, которые работают в своей петле.
 """
+import inspect
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -60,16 +66,28 @@ class TestMachines:
         assert body["status"] == "running"
         assert set(body) == {"app", "version", "status", "docs"}
 
-    def test_health_endpoint_untouched(self, client):
+    def test_health_endpoint_is_a_separate_route(self):
         """На /health завязаны healthcheck контейнера и гейт деплоя.
 
-        Код не фиксируем: без живой БД /health честно отдаёт 503, и это его
-        работа. Важно ровно одно — что он не стал редиректом: healthcheck
-        docker-compose ходит без follow и посчитал бы 302 провалом.
+        Проверяем по таблице роутов, а НЕ запросом. Запрос к /health идёт в
+        базу и поднимает пул соединений в петле событий TestClient; дальше
+        интеграционные тесты работают в своей петле, натыкаются на тот же
+        глобальный engine и валятся с «attached to a different loop». Именно
+        так этот файл уронил CI в первый заход — падал чужой
+        test_conditional_upsert, к правке отношения не имевший.
+
+        Структурной проверки достаточно: /health — самостоятельный роут, а
+        редирект живёт только в обработчике корня.
         """
-        resp = client.get("/health", follow_redirects=False)
-        assert resp.status_code in (200, 503)
-        assert "location" not in resp.headers
+        from app.main import app
+
+        health = [
+            r for r in app.routes
+            if getattr(r, "path", None) == "/health"
+            and getattr(r, "methods", None) and "GET" in r.methods
+        ]
+        assert health, "/health пропал из роутов"
+        assert "RedirectResponse" not in inspect.getsource(health[0].endpoint)
 
     def test_split_is_by_accept_not_user_agent(self):
         """User-Agent тут не при чём — и не должен появиться.
