@@ -11,6 +11,7 @@
     "typecheck": "tsc --noEmit",
     "update:prod:ios": "eas update --environment production --channel production --platform ios",
     "update:prod:android": "eas update --environment production --channel production-android --platform android",
+    "update:preview:android": "eas update --environment preview --channel preview-android --platform android",
     "test": "jest",
     "lint": "expo lint"
   },
