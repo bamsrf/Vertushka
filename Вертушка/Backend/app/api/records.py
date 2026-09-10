@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.services.cache import cache, TTL_MASTER_VERSIONS
 
 from app.database import get_db
+from app.request_context import spawn_detached
 from app.models.user import User
 from app.models.record import Record
 from app.api.auth import get_current_user, get_current_user_optional
@@ -274,7 +275,7 @@ async def _ensure_record_price_data(record: Record, db: AsyncSession) -> None:
 async def _ensure_record_price_data_bg(record_id: UUID, discogs_id: str) -> None:
     """Fire-and-forget версия — открывает собственную DB-сессию.
 
-    Вызывается через asyncio.create_task() чтобы не блокировать ответ на
+    Вызывается через spawn_detached() чтобы не блокировать ответ на
     детальную карточку: цены нужны для отображения, но не критичны для
     первого рендера — юзер получает карточку быстро, цены подтягиваются
     фоном (следующее открытие карточки уже покажет их из БД).
@@ -297,8 +298,6 @@ async def _ensure_record_price_data_bg(record_id: UUID, discogs_id: str) -> None
 # token-bucket'ом — ровно тот случай, ради которого watchdog и ставится.
 RECORD_ENRICH_INLINE_SEC = 6.0
 
-_record_enrich_tasks: set[asyncio.Task] = set()
-
 
 async def _ensure_record_payload_bounded(record: Record, db: AsyncSession) -> None:
     """Обогащение записи с ограничением по времени, без потери работы.
@@ -318,9 +317,11 @@ async def _ensure_record_payload_bounded(record: Record, db: AsyncSession) -> No
     if not needs_payload and not needs_artist:
         return
 
-    task = asyncio.create_task(_enrich_record_bg(record.id, record.discogs_id))
-    _record_enrich_tasks.add(task)
-    task.add_done_callback(_record_enrich_tasks.discard)
+    task = spawn_detached(
+        _enrich_record_bg(record.id, record.discogs_id), label="record-enrich"
+    )
+    if task is None:
+        return
     try:
         await asyncio.wait_for(asyncio.shield(task), timeout=RECORD_ENRICH_INLINE_SEC)
     except asyncio.TimeoutError:
@@ -359,7 +360,7 @@ async def _enrich_stub_bg(record_id: UUID, discogs_id: str) -> None:
 
     Открывает собственную сессию чтобы не зависеть от lifetime request-сессии.
     Последовательно: payload (tracklist, master_id, cover) → artist (thumb) → price.
-    Вызывается через asyncio.create_task() — не блокирует ответ.
+    Вызывается через spawn_detached() — не блокирует ответ.
     """
     from app.database import async_session_maker
     try:
@@ -653,9 +654,6 @@ async def _free_tracklist(record: Record, db: AsyncSession) -> list[dict] | None
     return None
 
 
-_payload_enrich_tasks: set[asyncio.Task] = set()
-
-
 def _schedule_discogs_payload_enrich(discogs_id: str) -> None:
     """Фоновый добор полного Discogs payload (кредиты/цены/точный прессинг) после
     того как треклист уже отдан из бесплатного источника. Не блокирует ответ."""
@@ -676,9 +674,7 @@ def _schedule_discogs_payload_enrich(discogs_id: str) -> None:
         except Exception:
             logger.debug("bg discogs payload enrich failed: %s", discogs_id, exc_info=True)
 
-    task = asyncio.create_task(_run())
-    _payload_enrich_tasks.add(task)
-    task.add_done_callback(_payload_enrich_tasks.discard)
+    spawn_detached(_run(), label="payload-enrich")
 
 
 async def get_or_create_record_by_discogs_id(
@@ -776,8 +772,9 @@ async def get_or_create_record_by_discogs_id(
     # минуя нестабильный Discogs CDN (часть пресс-обложек 403 без referer).
     if record.cover_image_url and not record.cover_local_path:
         from app.services.cover_storage import _download_cover_background
-        asyncio.create_task(
-            _download_cover_background(str(record.discogs_id), record.cover_image_url)
+        spawn_detached(
+            _download_cover_background(str(record.discogs_id), record.cover_image_url),
+            label="cover-mirror",
         )
 
     return record
@@ -2186,13 +2183,15 @@ async def get_record(
 
     # Store-native без попытки матчинга — пускаем фоновый enrichment.
     # При удаче следующий просмотр (~секунды) уже вернёт полную Discogs-карточку.
-    # asyncio.create_task — не блокируем ответ, юзер не ждёт Discogs API.
+    # spawn_detached — не блокируем ответ, юзер не ждёт Discogs API.
     if (
         record.source == "store"
         and record.merged_into_id is None
         and record.discogs_id_candidate is None
     ):
-        asyncio.create_task(_schedule_store_native_discogs_match(record.id))
+        spawn_detached(
+            _schedule_store_native_discogs_match(record.id), label="store-match"
+        )
 
     # Обогащение под watchdog'ом — как в get_record_by_discogs_id: успели в
     # бюджет, отдаём полную карточку; не успели — отдаём что есть, а таск
@@ -2201,7 +2200,10 @@ async def get_record(
     # Следующее открытие карточки уже покажет цены из БД.
     await _ensure_record_payload_bounded(record, db)
     if not record.estimated_price_min and not record.estimated_price_median and record.discogs_id:
-        asyncio.create_task(_ensure_record_price_data_bg(record.id, record.discogs_id))
+        spawn_detached(
+            _ensure_record_price_data_bg(record.id, record.discogs_id),
+            label="price-data",
+        )
 
     response = RecordResponse.model_validate(record)
     discogs_data = record.discogs_data or {}
@@ -2248,7 +2250,10 @@ async def get_record_by_discogs_id(
         # на клиентском refetch) поля уже на месте.
         await _ensure_record_payload_bounded(record, db)
         if not record.estimated_price_min and not record.estimated_price_median and record.discogs_id:
-            asyncio.create_task(_ensure_record_price_data_bg(record.id, record.discogs_id))
+            spawn_detached(
+                _ensure_record_price_data_bg(record.id, record.discogs_id),
+                label="price-data",
+            )
 
         discogs_data = record.discogs_data or {}
         response = RecordResponse.model_validate(record)
@@ -2299,7 +2304,9 @@ async def get_record_by_discogs_id(
         if stub:
             # Обогащение payload/artist/price — fire-and-forget, собственные сессии
             if stub.discogs_id:
-                asyncio.create_task(_enrich_stub_bg(stub.id, stub.discogs_id))
+                spawn_detached(
+                    _enrich_stub_bg(stub.id, stub.discogs_id), label="stub-enrich"
+                )
             response = RecordResponse.model_validate(stub)
             discogs_data = stub.discogs_data or {}
             response.artist_id = discogs_data.get("artist_id")
@@ -2584,8 +2591,6 @@ async def get_master(
         )
 
 
-_master_cover_persist_tasks: set[asyncio.Task] = set()
-
 
 def _schedule_master_cover_persist(master_id: int, cover_url: str) -> None:
     """Fire-and-forget upsert обложки мастера. Ошибки глотаются."""
@@ -2611,9 +2616,7 @@ def _schedule_master_cover_persist(master_id: int, cover_url: str) -> None:
         except Exception:
             logger.debug("master cover persist failed: %s", master_id, exc_info=True)
 
-    task = asyncio.create_task(_persist())
-    _master_cover_persist_tasks.add(task)
-    task.add_done_callback(_master_cover_persist_tasks.discard)
+    spawn_detached(_persist(), label="master-cover")
 
 
 @router.get("/masters/{master_id}/versions", response_model=MasterVersionsResponse)

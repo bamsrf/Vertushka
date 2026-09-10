@@ -32,12 +32,20 @@ from app.services import alerts
 logger = logging.getLogger(__name__)
 
 
+# Сколько худших запросов показать в теле аларма. Три — чтобы было видно,
+# один это выброс или у эндпоинта системная беда, и при этом сообщение
+# осталось читаемым с экрана блокировки.
+SLOWEST_IN_ALERT = 3
+
+
 @dataclass(frozen=True)
 class WindowSnapshot:
     total: int
     server_errors: int
     rate_limited: int
     p99_ms: float
+    # (эндпоинт, мс) — худшие в окне, по убыванию. Пусто, если окно пустое.
+    slowest: tuple[tuple[str, float], ...] = ()
 
     @property
     def error_rate(self) -> float:
@@ -49,12 +57,14 @@ class RequestMetrics:
 
     def __init__(self, window_seconds: int):
         self.window_seconds = window_seconds
-        # (момент, код ответа, длительность мс)
-        self._events: deque[tuple[float, int, float]] = deque()
+        # (момент, код ответа, длительность мс, эндпоинт)
+        self._events: deque[tuple[float, int, float, str]] = deque()
 
-    def record(self, status_code: int, duration_ms: float) -> None:
+    def record(
+        self, status_code: int, duration_ms: float, endpoint: str = ""
+    ) -> None:
         now = time.monotonic()
-        self._events.append((now, status_code, duration_ms))
+        self._events.append((now, status_code, duration_ms, endpoint))
         self._prune(now)
 
     def _prune(self, now: float) -> None:
@@ -72,11 +82,19 @@ class RequestMetrics:
         # линейной интерполяции и не выдумывает значений между замерами.
         index = max(0, min(len(durations) - 1, int(len(durations) * 0.99) - 1))
 
+        # Сортируем по одной длительности: адреса в ключ не берём, иначе при
+        # равных миллисекундах порядок начнёт зависеть от алфавита.
+        top = sorted(self._events, key=lambda e: e[2], reverse=True)
+        slowest = tuple(
+            (e[3] or "—", e[2]) for e in top[:SLOWEST_IN_ALERT]
+        )
+
         return WindowSnapshot(
             total=len(self._events),
             server_errors=sum(1 for e in self._events if e[1] >= 500),
             rate_limited=sum(1 for e in self._events if e[1] == 429),
             p99_ms=durations[index],
+            slowest=slowest,
         )
 
 
@@ -90,11 +108,31 @@ def get_metrics() -> RequestMetrics:
     return _metrics
 
 
-def observe(status_code: int, duration_ms: float) -> None:
-    """Записать запрос и, если пороги пробиты, поднять аларм."""
+def observe(status_code: int, duration_ms: float, endpoint: str = "") -> None:
+    """Записать запрос и, если пороги пробиты, поднять аларм.
+
+    endpoint — «METHOD /шаблон/пути». Именно шаблон, а не подставленный URL:
+    иначе `/api/records/{id}` размажется по тысяче адресов и в аларме окажется
+    случайная пластинка вместо ручки, которая тормозит.
+    """
     metrics = get_metrics()
-    metrics.record(status_code, duration_ms)
+    metrics.record(status_code, duration_ms, endpoint)
     _check_thresholds(metrics.snapshot())
+
+
+def _format_slowest(snapshot: WindowSnapshot) -> str:
+    """Список худших запросов для тела аларма.
+
+    Без этого аларм сообщал цифру и молчал о том, где она получена, — каждое
+    сообщение превращалось в расследование с нуля. Длительность запроса больше
+    нигде не фиксируется: nginx пишет combined-формат без $request_time,
+    трассировка в Sentry не включена.
+    """
+    if not snapshot.slowest:
+        return "  (нет данных)"
+    return "\n".join(
+        f"  • {endpoint} — {ms / 1000:.1f}с" for endpoint, ms in snapshot.slowest
+    )
 
 
 def _check_thresholds(snapshot: WindowSnapshot) -> None:
@@ -126,7 +164,8 @@ def _check_thresholds(snapshot: WindowSnapshot) -> None:
             body=(
                 f"Порог {settings.health_p99_threshold_ms / 1000:.1f}с, выборка "
                 f"{snapshot.total} запросов за {window_min} мин.\n"
-                f"Ошибок при этом может не быть — приложение просто «думает»."
+                f"Ошибок при этом может не быть — приложение просто «думает».\n\n"
+                f"Самые медленные в окне:\n{_format_slowest(snapshot)}"
             ),
         )
 

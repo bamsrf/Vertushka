@@ -7,7 +7,6 @@ import secrets
 import sys
 import time
 import uuid
-from contextvars import ContextVar
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -30,7 +29,10 @@ from app.services.cache import cache
 from app.services.rate_limiter import discogs_limiter
 
 # --- Request ID context var ---
-_request_id_ctx: ContextVar[str] = ContextVar("request_id", default="-")
+# Живёт в app.request_context: оттуда же запускаются фоновые задачи, которым
+# наследовать request_id запроса НЕЛЬЗЯ (иначе прогрев обложек выглядит в
+# логах как минутный запрос). Алиас — чтобы не трогать использования ниже.
+from app.request_context import request_id_ctx as _request_id_ctx
 
 
 class _RequestIdFilter(logging.Filter):
@@ -399,6 +401,20 @@ async def request_id_middleware(request: Request, call_next):
 # поэтому он видит и 504, который timeout_middleware отдаёт напрямую в обход
 # обработчика исключений. Именно эта дыра оставляла волну таймаутов без единого
 # аларма. См. services/health_metrics.py
+def _metrics_endpoint(request: Request) -> str:
+    """«METHOD /шаблон/пути» для тела аларма о задержках.
+
+    Берём именно шаблон маршрута (`/api/records/{record_id}`), а не готовый
+    URL: иначе одна ручка размажется по тысяче адресов и в аларме окажется
+    случайная пластинка вместо самой ручки. Шаблона нет у 404 — там остаётся
+    сырой путь, обрезанный по длине: чужой сканер, залипший на несуществующем
+    URL, тоже стоит увидеть.
+    """
+    route = request.scope.get("route")
+    path = getattr(route, "path", None) or request.url.path
+    return f"{request.method} {path}"[:120]
+
+
 @app.middleware("http")
 async def health_metrics_middleware(request: Request, call_next):
     started = time.monotonic()
@@ -407,10 +423,16 @@ async def health_metrics_middleware(request: Request, call_next):
     except Exception:
         # Исключение долетит до обработчика ниже, который отдаст 500 и свой
         # аларм. Нам важно не потерять его из статистики.
-        health_metrics.observe(500, (time.monotonic() - started) * 1000)
+        health_metrics.observe(
+            500, (time.monotonic() - started) * 1000, _metrics_endpoint(request)
+        )
         raise
 
-    health_metrics.observe(response.status_code, (time.monotonic() - started) * 1000)
+    health_metrics.observe(
+        response.status_code,
+        (time.monotonic() - started) * 1000,
+        _metrics_endpoint(request),
+    )
     return response
 
 

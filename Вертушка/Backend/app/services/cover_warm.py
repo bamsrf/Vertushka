@@ -21,20 +21,17 @@ import logging
 from sqlalchemy import text
 
 from app.database import async_session_maker
+from app.request_context import spawn_detached
 from app.services.cache import cache
 
 logger = logging.getLogger(__name__)
 
-# Сильные ссылки на fire-and-forget warm-задачи — asyncio держит только weak
-# reference, local task-var уходит из скоупа сразу и GC может собрать warm до
-# завершения. Модульный set удерживает до done-callback.
-_warm_tasks: set[asyncio.Task] = set()
-
-
 def _retain_warm(coro) -> None:
-    task = asyncio.create_task(coro)
-    _warm_tasks.add(task)
-    task.add_done_callback(_warm_tasks.discard)
+    # spawn_detached, а не create_task: иначе прогрев наследует request_id
+    # породившего запроса и десятки секунд пишет логи под ним. Запрос при
+    # этом давно ответил, но в логах выглядит висящим. См. app/request_context.
+    spawn_detached(coro, label="cover-warm")
+
 
 _WARM_LOCK_TTL = 6 * 3600
 # Сколько Discogs-вызовов позволяем одному warm-батчу (CAA не лимитируем —
@@ -188,14 +185,15 @@ async def warm_dump_covers_inline(discogs_ids: list[str], timeout: float) -> Non
     штрихкода), где секунда ожидания дешевле заглушек в ответе.
 
     Ждём до `timeout` сек, чтобы вызывающий успел перечитать индекс и вернуть
-    обложки прямо в ответе. Не успело — НЕ отменяем: задача удержана в
-    _warm_tasks и дописывает индекс в фоне (клиентский cover-retry подхватит).
+    обложки прямо в ответе. Не успело — НЕ отменяем: задачу держит
+    spawn_detached, она дописывает индекс в фоне (клиентский cover-retry
+    подхватит) — уже под своим bg-идентификатором, не под request_id запроса.
     """
     if not discogs_ids:
         return
-    task = asyncio.create_task(warm_dump_covers(discogs_ids))
-    _warm_tasks.add(task)
-    task.add_done_callback(_warm_tasks.discard)
+    task = spawn_detached(warm_dump_covers(discogs_ids), label="cover-warm-inline")
+    if task is None:
+        return
     try:
         await asyncio.wait_for(asyncio.shield(task), timeout)
     except asyncio.TimeoutError:
