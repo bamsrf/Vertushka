@@ -953,6 +953,7 @@ export interface NotificationSettings {
   notify_gift_confirmed: boolean;
   notify_app_updates: boolean;
   notify_follow_request: boolean;
+  notify_messages: boolean;
   notify_wishlist_in_stock: boolean;
   notify_achievement: boolean;
   notify_milestone: boolean;

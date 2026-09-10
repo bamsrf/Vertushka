@@ -40,10 +40,15 @@ RECEIPTS_DRAIN_LIMIT = 1000
 # Коды ошибок Expo, по которым токен считается мёртвым и зачищается.
 DEAD_TOKEN_ERRORS = ("DeviceNotRegistered", "InvalidCredentials")
 
-# Маппинг типа Notification → имя флага User.notify_*
+# Маппинг типа Notification → имя флага User.notify_*.
+# Типа здесь нет → push уходит мимо настроек, выключить его юзеру нечем.
 PUSH_PREFERENCE_FIELD = {
     "follow_request": "notify_follow_request",
     "new_follower": "notify_new_follower",
+    # Чат: один флаг на входящие и на запросы в личку — в настройках это одна
+    # строка, разделять их значит спрашивать про механику, а не про смысл.
+    "message": "notify_messages",
+    "message_request": "notify_messages",
     "gift_booked": "notify_gift_booked",
     "gift_confirmed": "notify_gift_confirmed",
     "wishlist_in_stock": "notify_wishlist_in_stock",
