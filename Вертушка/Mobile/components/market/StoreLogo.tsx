@@ -110,6 +110,14 @@ const STORE_REGISTRY: Record<string, {
     bgColor: '#FFFFFF',
     logoSource: require('../../assets/store-logos/long_play.png'),
   },
+  mirvinila: {
+    name: 'Пластиночная №1',
+    monogram: 'П',
+    // Лого — яичница с тонармом, непрозрачный PNG 300×300; bgColor взят
+    // пипеткой с самого фона, поэтому подложка не мигает при загрузке.
+    bgColor: '#F49900',
+    logoSource: require('../../assets/store-logos/mirvinila.png'),
+  },
 };
 
 interface StoreLogoProps {
