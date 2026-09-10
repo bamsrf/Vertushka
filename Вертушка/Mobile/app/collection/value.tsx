@@ -33,6 +33,7 @@ import { CollectionItem } from '../../lib/types';
 import { cleanArtistName, formatGroupedWorklet } from '../../lib/format';
 import { Colors, Typography, Spacing, BorderRadius, Shadows } from '../../constants/theme';
 import { ms } from '../../lib/responsive';
+import { useBottomContentInset } from '../../lib/useBottomContentInset';
 
 
 function formatRub(value: number): string {
@@ -90,6 +91,9 @@ function AnimatedValue({ targetValue, prefix = '', suffix = '' }: {
 import React from 'react';
 
 export default function CollectionValueScreen() {
+  // Стековый экран без таб-бара: клиренс = системная панель + воздух
+  // (iOS: 34 + 64 ≈ прежние 100; Android с 3 кнопками: 48 + 64).
+  const listBottomPad = useBottomContentInset({ extra: Spacing.xxl + Spacing.md });
   const router = useRouter();
   const { stats, isLoadingStats, fetchStats, defaultCollection } = useCollectionStore();
 
@@ -240,7 +244,7 @@ export default function CollectionValueScreen() {
         data={sortedByPrice}
         keyExtractor={(item) => item.id}
         renderItem={renderItem}
-        contentContainerStyle={styles.listContent}
+        contentContainerStyle={[styles.listContent, { paddingBottom: listBottomPad }]}
         ListHeaderComponent={
           <View>
             {/* Основной блок стоимости */}
@@ -406,7 +410,6 @@ const styles = StyleSheet.create({
   },
   listContent: {
     padding: Spacing.md,
-    paddingBottom: 100,
   },
 
   // Value card

@@ -25,6 +25,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import type { BottomTabBarProps } from 'expo-router/js-tabs';
 import { Colors, Shadows, Gradients, androidShadow } from '../constants/theme';
+import { tabBarBottomOffset } from '../lib/useBottomContentInset';
 // Единое имя на таб; визуальная разница inactive ↔ active — через weight в <Icon>.
 const TAB_ICONS: Record<string, string> = {
   search: 'magnifying-glass',
@@ -89,12 +90,14 @@ export function GlassTabBar({ state, descriptors, navigation, insets }: BottomTa
   // Edge-to-edge на Android: бар висит над системной панелью (жесты ~24dp,
   // 3-кнопочная навигация 48dp). iOS — прежний хардкод `bottom: 28`, объект
   // стиля тот же (snapshot-гейт __tests__/GlassTabBar.ios.test.tsx).
+  // Формула отступа живёт в lib/useBottomContentInset.ts — оттуда же экраны
+  // считают клиренс контента под пилюлю, чтобы цифры не разъезжались.
   const containerStyle = Platform.select<StyleProp<ViewStyle>>({
     ios: styles.container,
     default: [
       styles.container,
       styles.containerAndroid,
-      { bottom: Math.max(insets.bottom, 16) + 12 },
+      { bottom: tabBarBottomOffset(insets.bottom) },
     ],
   });
 

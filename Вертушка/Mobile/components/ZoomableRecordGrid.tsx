@@ -48,6 +48,7 @@ import Animated, {
 import * as Haptics from 'expo-haptics';
 import { Colors, Spacing, BorderRadius, Typography } from '../constants/theme';
 import { CollectionItem, WishlistItem } from '../lib/types';
+import { useBottomContentInset } from '../lib/useBottomContentInset';
 import { getCoverUrl, getHeroCoverUrl, sizedCoverUrl } from '../lib/api';
 import { useCoverSource } from '../lib/coverRetry';
 import { RecordCard } from './RecordCard';
@@ -148,6 +149,7 @@ interface Props {
   onEndReached?: () => void;
   ListHeaderComponent?: React.ReactElement;
   isLoadingMore?: boolean;
+  /** Нижний клиренс контента. По умолчанию — под GlassTabBar (пилюля + 32 воздуха). */
   contentBottomPad?: number;
   rarityContext?: RarityContext;
   /**
@@ -288,13 +290,17 @@ export function ZoomableRecordGrid({
   onEndReached,
   ListHeaderComponent,
   isLoadingMore,
-  contentBottomPad = 120,
+  contentBottomPad,
   rarityContext = 'collection',
   hotStockMap,
   useOfferBadge = false,
   radarRecordIds,
   pinchEnabled = true,
 }: Props) {
+  // Грид живёт в табах: на iOS = прежние 120 (88 футпринт пилюли + 32), на
+  // Android — та же формула поверх системной панели.
+  const tabBarPad = useBottomContentInset({ tabBar: true, extra: 32 });
+  const bottomPad = contentBottomPad ?? tabBarPad;
   const [level, setLevel] = useState<ZoomLevel>(0);
 
   const scrollRef = useRef<ScrollView>(null);
@@ -577,7 +583,7 @@ export function ZoomableRecordGrid({
       <ScrollView
         ref={scrollRef}
         style={styles.flex}
-        contentContainerStyle={[styles.scrollContent, { paddingBottom: contentBottomPad }]}
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: bottomPad }]}
         showsVerticalScrollIndicator={false}
         scrollEventThrottle={32}
         onScroll={handleScroll}

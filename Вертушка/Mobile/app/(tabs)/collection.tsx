@@ -22,13 +22,14 @@ import { FolderPickerModal } from '../../components/FolderPickerModal';
 import { WishlistFolderPickerModal } from '../../components/WishlistFolderPickerModal';
 import { SegmentedControl } from '../../components/ui';
 import { useCollectionStore, useAuthStore } from '../../lib/store';
+import { useBottomContentInset } from '../../lib/useBottomContentInset';
 import { FirstStepsCard } from '../../components/onboarding/FirstStepsCard';
 import { CoachTip } from '../../components/onboarding/CoachTip';
 import { CoachPulse } from '../../components/onboarding/CoachPulse';
 import { setCoachSpotlight, useCoachSpotlight } from '../../lib/coachSpotlight';
 import { PinchHint } from '../../components/onboarding/PinchHint';
 import { useCoachMark } from '../../lib/useCoachMark';
-import { ms } from '../../lib/responsive';
+import { isCompact, ms } from '../../lib/responsive';
 import { api, resolveMediaUrl, recordPreviewParams } from '../../lib/api';
 import { analytics } from '../../lib/analytics';
 import { countPull } from '../../lib/eggTracker';
@@ -80,6 +81,10 @@ const FORMAT_OPTIONS: { key: FormatFilter; label: string; match: string[] }[] = 
 export default function CollectionScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  // Клиренс списка под пилюлю GlassTabBar — тот же, что у ZoomableRecordGrid
+  // по умолчанию (iOS: 120). Раньше list-режим шёл с паддингом RecordGrid
+  // (16) и последний ряд уезжал под пилюлю на обеих платформах.
+  const listBottomPad = useBottomContentInset({ tabBar: true, extra: 32 });
   const [isSelectionMode, setIsSelectionMode] = useState(false);
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -976,7 +981,7 @@ export default function CollectionScreen() {
       <View style={styles.stickyToolbar}>
         {/* Title row: Коллекция + avatar */}
         <View style={styles.avatarRow}>
-          <AnimatedGradientText style={Typography.heroTitle}>Коллекция</AnimatedGradientText>
+          <AnimatedGradientText style={Typography.heroTitle} fit>Коллекция</AnimatedGradientText>
           <ProfileAvatarButton onPress={handleProfilePress} />
         </View>
 
@@ -1092,7 +1097,7 @@ export default function CollectionScreen() {
 
           {/* Radar button — только на вишлисте, пульсирует, ведёт на экран радара */}
           {!isSelectionMode && activeTab === 'wishlist' && (
-            <View style={styles.radarBtnWrap}>
+            <View style={[styles.radarBtnWrap, styles.toolbarFixed]}>
               {[radarPulse, radarPulse2].map((v, i) => (
                 <Animated.View
                   key={i}
@@ -1204,6 +1209,7 @@ export default function CollectionScreen() {
           data={data}
           cardVariant={viewMode === 'list' ? 'list' : 'expanded'}
           numColumns={viewMode === 'list' ? 1 : 2}
+          contentBottomPad={listBottomPad}
           rarityContext={activeTab === 'wishlist' ? 'wishlist' : 'collection'}
           hotStockMap={activeTab === 'wishlist' ? hotStockMap : undefined}
           useOfferBadge={activeTab === 'wishlist'}
@@ -1425,11 +1431,14 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     marginBottom: Spacing.sm,
   },
+  // На узких экранах (≤375pt: Android 360dp, iPhone mini) ряд «Выбрать / вид /
+  // фильтр / сортировка / радар» не помещался и радар вылезал за правый край —
+  // ужимаем гэп и внутренние паддинги кнопок, а «Выбрать» разрешаем ужиматься.
   toolbarRow: {
     flexDirection: 'row',
     alignItems: 'center',
     marginBottom: Spacing.md,
-    gap: Spacing.sm,
+    gap: isCompact ? Spacing.xs + 2 : Spacing.sm,
   },
   segmentContainer: {
     paddingBottom: Spacing.sm,
@@ -1471,7 +1480,7 @@ const styles = StyleSheet.create({
   // Filter button
   filterButton: {
     height: 36,
-    paddingHorizontal: 10,
+    paddingHorizontal: isCompact ? 8 : 10,
     borderRadius: 18,
     backgroundColor: Colors.surface,
     alignItems: 'center',
@@ -1568,7 +1577,7 @@ const styles = StyleSheet.create({
   selectButtonInner: {
     backgroundColor: Colors.background,
     borderRadius: 18.5,
-    paddingHorizontal: Spacing.md,
+    paddingHorizontal: isCompact ? Spacing.sm + 4 : Spacing.md,
     paddingVertical: Spacing.xs + 2,
   },
   selectButtonText: {
@@ -1592,6 +1601,10 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     justifyContent: 'center',
     minHeight: 36,
+    flexShrink: 1,
+  },
+  toolbarFixed: {
+    flexShrink: 0,
   },
   headerButtonAbsolute: {
     position: 'absolute',
