@@ -34,6 +34,8 @@ import { ms } from '../lib/responsive';
 import { resolveMediaUrl, sizedCoverUrl } from '../lib/api';
 import { cleanArtistName } from '../lib/format';
 import { PublicProfileRecord } from '../lib/types';
+import { Icon } from './ui/Icon';
+import { Colors } from '../constants/theme';
 
 const PALETTE = {
   ink: '#1B1D26',
@@ -316,7 +318,13 @@ export function AutoRail({
             {r.format_type ? ` · ${r.format_type}` : ''}
           </Text>
           {r.discogs_want ? (
-            <Text style={styles.railWant}>♥ {r.discogs_want}</Text>
+            // Иконкой, а не глифом «♥»: Android рисовал U+2665 цветным эмодзи
+            // (красное сердце из Noto Color Emoji), iOS — текстом в цвете стиля.
+            // Бренд-акцент на обеих платформах — решение владельца.
+            <View style={styles.railWantRow}>
+              <Icon name="heart" size={ms(11)} color={Colors.royalBlue} hitSlop={0} />
+              <Text style={styles.railWant}>{r.discogs_want}</Text>
+            </View>
           ) : null}
         </>
       ) : null}
@@ -447,5 +455,6 @@ const styles = StyleSheet.create({
   },
   railTitleSmall: { fontSize: ms(12), fontWeight: '600', color: PALETTE.ink, marginTop: 2 },
   railYear: { fontSize: ms(12), color: PALETTE.periwinkle, marginTop: 2 },
-  railWant: { fontSize: ms(12), color: PALETTE.periwinkle, marginTop: 1, fontWeight: '600' },
+  railWantRow: { flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 1 },
+  railWant: { fontSize: ms(12), color: Colors.royalBlue, fontWeight: '600' },
 });
