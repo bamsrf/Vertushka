@@ -195,6 +195,23 @@ STORES: list[dict] = [
         "avg_shipping_rub": Decimal("400.00"),
         "affiliate_program": None,
     },
+    {
+        "slug": "mirvinila",
+        "name": "Пластиночная №1",
+        "domain": "mirvinila.com",
+        "base_url": "https://mirvinila.com",
+        "parser_class": "mirvinila",
+        "logo_url": None,  # Mobile рендерит локальный assets/mirvinila.png по slug
+        # InSales collection-API, ~5.7k в наличии из каталога в 20.9k (хвост —
+        # «ждём поступление»). Замер 10.09: 70% каталога новое для маркета,
+        # метаданные уровня Discogs — лейбл, катномер, год, страна и состояние
+        # отдельно для пластинки и конверта.
+        "rating": Decimal("4.5"),
+        "is_active": True,
+        "requires_browser": False,
+        "avg_shipping_rub": Decimal("400.00"),
+        "affiliate_program": None,
+    },
 ]
 
 

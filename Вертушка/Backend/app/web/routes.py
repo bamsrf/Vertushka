@@ -81,6 +81,7 @@ def _fun_stat_markup(stat: dict) -> Markup:
 _LOCAL_STORE_LOGOS = {
     "korobkavinyla", "plastinka_com", "vinyl_ru", "stoprobotvinyl", "found", "doctorhead",
     "skifmusic", "rotaryrecords", "long_play", "vinylhouse", "kultura", "vinylfamily",
+    "mirvinila",
 }
 
 _MAX_OFFERS_PER_RECORD = 4
