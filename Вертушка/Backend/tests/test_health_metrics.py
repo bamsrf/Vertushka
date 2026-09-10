@@ -11,21 +11,35 @@ from app.services import health_metrics
 from app.services.health_metrics import RequestMetrics
 
 
+class _Sent(list):
+    """Список ключей алармов, который помнит ещё и тела сообщений."""
+
+    def __init__(self):
+        super().__init__()
+        self.bodies: dict[str, str] = {}
+
+    def add(self, key: str, body: str) -> None:
+        self.append(key)
+        self.bodies[key] = body
+
+
 @pytest.fixture(autouse=True)
 def captured_alerts(monkeypatch):
-    sent: list[str] = []
+    sent = _Sent()
     monkeypatch.setattr(
         health_metrics.alerts, "fire_and_forget",
-        lambda key, title, body="": sent.append(key),
+        lambda key, title, body="": sent.add(key, body),
     )
     # Свежее окно на каждый тест.
     monkeypatch.setattr(health_metrics, "_metrics", None)
     return sent
 
 
-def feed(status_code: int, count: int, duration_ms: float = 100.0) -> None:
+def feed(
+    status_code: int, count: int, duration_ms: float = 100.0, endpoint: str = ""
+) -> None:
     for _ in range(count):
-        health_metrics.observe(status_code, duration_ms)
+        health_metrics.observe(status_code, duration_ms, endpoint)
 
 
 class TestWindow:
@@ -164,6 +178,26 @@ class TestMiddlewareWiring:
             "middleware не считает запросы — проверь регистрацию в main.py"
         )
 
+    def test_endpoint_template_reaches_metrics(self, monkeypatch):
+        """В окно должен попадать ШАБЛОН маршрута, а не подставленный URL.
+
+        Иначе `/api/records/{id}` размажется по тысяче адресов и в аларме
+        окажется случайная пластинка вместо ручки, которая тормозит.
+        """
+        from fastapi.testclient import TestClient
+
+        from app.main import app
+
+        monkeypatch.setattr(health_metrics, "_metrics", None)
+        client = TestClient(app)
+
+        client.get("/api/config/")
+
+        endpoints = [e[3] for e in health_metrics.get_metrics()._events]
+        assert "GET /api/config/" in endpoints, (
+            f"middleware не передаёт путь в метрики: {endpoints}"
+        )
+
     def test_metrics_middleware_is_outermost(self):
         """Позиция в стеке: наш middleware должен стоять последним в списке."""
         from app.main import app
@@ -176,3 +210,45 @@ class TestMiddlewareWiring:
             "health_metrics должен быть добавлен последним (= самый внешний), "
             "иначе 504 от timeout_middleware пройдут мимо метрик"
         )
+
+
+class TestSlowestEndpoints:
+    """Аларм обязан называть виновника.
+
+    Без этого сообщение содержит цифру и ничего больше, а найти по ней путь
+    неоткуда: nginx пишет combined-формат без $request_time, трассировка в
+    Sentry не включена, приложение логирует только таймауты на 90с. Каждый
+    аларм превращался в расследование с нуля — ровно это и случилось
+    10.09.2026.
+    """
+
+    def test_alert_body_names_the_slow_endpoint(self, captured_alerts):
+        feed(200, 30, duration_ms=9000.0, endpoint="GET /api/records/{record_id}")
+
+        body = captured_alerts.bodies["p99_latency"]
+        assert "GET /api/records/{record_id}" in body
+        assert "9.0с" in body
+
+    def test_slowest_is_sorted_and_capped(self):
+        window = RequestMetrics(window_seconds=300)
+        window.record(200, 100.0, "GET /fast")
+        window.record(200, 9000.0, "GET /slowest")
+        window.record(200, 5000.0, "GET /middle")
+        window.record(200, 7000.0, "GET /second")
+
+        slowest = window.snapshot().slowest
+
+        assert len(slowest) == health_metrics.SLOWEST_IN_ALERT
+        assert [ep for ep, _ in slowest] == [
+            "GET /slowest", "GET /second", "GET /middle",
+        ]
+
+    def test_missing_endpoint_does_not_break_alert(self, captured_alerts):
+        """Путь может не приехать (404 мимо роутера) — аларм всё равно уходит."""
+        feed(200, 30, duration_ms=9000.0)
+
+        assert "p99_latency" in captured_alerts
+        assert "9.0с" in captured_alerts.bodies["p99_latency"]
+
+    def test_empty_window_has_no_slowest(self):
+        assert RequestMetrics(window_seconds=300).snapshot().slowest == ()
