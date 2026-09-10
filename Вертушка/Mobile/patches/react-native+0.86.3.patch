@@ -1,0 +1,22 @@
+diff --git a/node_modules/react-native/sdks/hermes-engine/hermes-engine.podspec b/node_modules/react-native/sdks/hermes-engine/hermes-engine.podspec
+index 66c399a..c9f632d 100644
+--- a/node_modules/react-native/sdks/hermes-engine/hermes-engine.podspec
++++ b/node_modules/react-native/sdks/hermes-engine/hermes-engine.podspec
+@@ -12,7 +12,7 @@ begin
+     'require.resolve(
+     "react-native",
+     {paths: [process.argv[1]]},
+-    )', __dir__]).strip
++    )', __dir__]).force_encoding("UTF-8").strip
+   )
+ rescue => e
+   # Fallback to the parent directory if the above command fails (e.g when building locally in OOT Platform)
+@@ -90,7 +90,7 @@ Pod::Spec.new do |spec|
+     # In other cases, when using Hermes V1, the prebuilt versioned binaries can be used.
+     if source_type != HermesEngineSourceType::LOCAL_PREBUILT_TARBALL
+       hermes_compiler_path = File.dirname(Pod::Executable.execute_command('node', ['-p',
+-        "require.resolve(\"hermes-compiler\", {paths: [\"#{react_native_path}\"]})", __dir__]).strip
++        "require.resolve(\"hermes-compiler\", {paths: [\"#{react_native_path}\"]})", __dir__]).force_encoding("UTF-8").strip
+       )
+       hermesc_path = File.join(hermes_compiler_path, 'hermesc', 'osx-bin', 'hermesc')
+ 
