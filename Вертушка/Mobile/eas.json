@@ -27,7 +27,10 @@
       },
       "android": {
         "channel": "preview-android",
-        "buildType": "apk"
+        "buildType": "apk",
+        "env": {
+          "SENTRY_DISABLE_AUTO_UPLOAD": "true"
+        }
       }
     },
     "production": {
@@ -42,7 +45,10 @@
       },
       "android": {
         "channel": "production-android",
-        "buildType": "app-bundle"
+        "buildType": "app-bundle",
+        "env": {
+          "SENTRY_DISABLE_AUTO_UPLOAD": "true"
+        }
       }
     }
   },
