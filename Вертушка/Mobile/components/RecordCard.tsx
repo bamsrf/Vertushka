@@ -2,7 +2,7 @@
  * Карточка пластинки — Editorial Gradient Edition
  * Два варианта: compact (overlay) и expanded (card с инфо)
  */
-import React, { memo, useRef, useState, useEffect } from 'react';
+import React, { memo, useRef } from 'react';
 import {
   View,
   Text,
@@ -22,6 +22,7 @@ import Animated, {
 import { Colors, Typography, BorderRadius, Shadows, Spacing, Gradients } from '../constants/theme';
 import { RecordSearchResult, VinylRecord, MasterSearchResult, ReleaseSearchResult, PublicProfileRecord } from '../lib/types';
 import { getCoverUrl, sizedCoverUrl } from '../lib/api';
+import { useCoverSource } from '../lib/coverRetry';
 import { ms } from '../lib/responsive';
 import { cleanArtistName } from '../lib/format';
 import { RarityAura, TierCoverEffects, TierLabel, pickRarityTier, RarityContext, RarityFlags, RARITY_TIERS } from './RarityAura';
@@ -162,12 +163,12 @@ function RecordCardComponent({
     getCoverUrl(record),
     Math.ceil(coverSlotPt * PixelRatio.get())
   );
-  // Битый URL (протухший Deezer/store-хотлинк, мёртвое зеркало) → откат на
-  // иконку пластинки вместо пустого квадрата. Сброс при смене обложки
-  // (FlatList переиспользует инстансы карточек).
-  const [imgFailed, setImgFailed] = useState(false);
-  useEffect(() => setImgFailed(false), [imageUrl]);
-  const showImage = !!imageUrl && !imgFailed;
+  // Битый URL (протухший Deezer/store-хотлинк, мёртвое зеркало) → сначала
+  // ретрай с бэкоффом и откат на прямой внешний URL (lib/coverRetry), и только
+  // потом иконка пластинки вместо пустого квадрата. Сброс при смене обложки
+  // (FlatList переиспользует инстансы карточек) — внутри хука.
+  const cover = useCoverSource(imageUrl, record.cover_image_url || record.thumb_image_url);
+  const showImage = !!cover.source;
   const imageHeight = size === 'large' ? cardWidth * 0.8 : CARD_WIDTH;
   const rarityTier = pickRarityTier(record as RarityFlags, rarityContext);
   const auraTier = noRarityAura ? null : rarityTier;
@@ -234,7 +235,7 @@ function RecordCardComponent({
         )}
 
         {showImage ? (
-          <Image source={imageUrl} style={styles.compactImage} contentFit="cover" cachePolicy="memory-disk" recyclingKey={imageUrl} onError={() => setImgFailed(true)} />
+          <Image source={cover.source} style={styles.compactImage} contentFit="cover" cachePolicy="memory-disk" recyclingKey={imageUrl} onLoad={cover.onLoad} onError={cover.onError} />
         ) : (
           <View style={styles.compactPlaceholder}>
             <Icon name="disc-outline" size={48} color={Colors.periwinkle} />
@@ -352,7 +353,7 @@ function RecordCardComponent({
 
         <View style={styles.listImageContainer}>
           {showImage ? (
-            <Image source={imageUrl} style={styles.listImage} contentFit="cover" cachePolicy="memory-disk" recyclingKey={imageUrl} onError={() => setImgFailed(true)} />
+            <Image source={cover.source} style={styles.listImage} contentFit="cover" cachePolicy="memory-disk" recyclingKey={imageUrl} onLoad={cover.onLoad} onError={cover.onError} />
           ) : (
             <View style={styles.listPlaceholder}>
               <Icon name="disc-outline" size={28} color={Colors.periwinkle} />
@@ -485,7 +486,7 @@ function RecordCardComponent({
             ]}
           >
             {showImage ? (
-              <Image source={imageUrl} style={styles.expandedImage} contentFit="cover" cachePolicy="memory-disk" recyclingKey={imageUrl} onError={() => setImgFailed(true)} />
+              <Image source={cover.source} style={styles.expandedImage} contentFit="cover" cachePolicy="memory-disk" recyclingKey={imageUrl} onLoad={cover.onLoad} onError={cover.onError} />
             ) : (
               <View style={styles.expandedPlaceholder}>
                 <Icon name="disc-outline" size={48} color={Colors.periwinkle} />
