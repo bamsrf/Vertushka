@@ -25,6 +25,17 @@ logger = logging.getLogger("seed_stores")
 # ---- Список магазинов для посева -------------------------------------- #
 # parser_class должен совпадать со slug в @register_parser(...) внутри
 # app/services/scrapers/shops/<file>.py
+#
+# ⚠️ `rating` — это НЕ оценка магазина, а де-факто ключ сортировки витрины:
+# `/market/stores` отдаёт `ORDER BY rating DESC NULLS LAST, name ASC`, и в
+# этом же порядке приложение рисует карусели. Пользователю число нигде не
+# показывается (проверено 10.09: ни в Mobile, ни в веб-шаблонах). Поэтому
+# менять его ради порядка допустимо — но если рейтинг когда-нибудь начнут
+# рисовать, порядок и оценку придётся развести на два поля.
+#
+# Значения выше 4.7 расставлены осознанно, чтобы закрепить нужный порядок и
+# не зависеть от алфавитного тайбрейка внутри пачки 4.60 — иначе следующий
+# магазин с 4.60 и удачным именем вытеснит нужный из топ-5.
 
 STORES: list[dict] = [
     {
@@ -34,7 +45,7 @@ STORES: list[dict] = [
         "base_url": "https://korobkavinyla.ru",
         "parser_class": "korobkavinyla",
         "logo_url": None,
-        "rating": Decimal("4.5"),
+        "rating": Decimal("4.9"),  # первое место в витрине — решение 10.09
         "is_active": True,
         "requires_browser": False,
         "avg_shipping_rub": Decimal("400.00"),
@@ -77,7 +88,8 @@ STORES: list[dict] = [
         "base_url": "https://stoprobotvinyl.ru",
         "parser_class": "stoprobotvinyl",
         "logo_url": None,
-        "rating": Decimal("4.6"),  # ~8.9k товаров, только винил, нишевые лейблы/raras
+        # 4.65, а не 4.6 — закрепляет место в топ-5 витрины (решение 10.09).
+        "rating": Decimal("4.65"),  # ~8.9k товаров, только винил, нишевые лейблы/raras
         "is_active": True,
         "requires_browser": False,
         "avg_shipping_rub": Decimal("400.00"),
@@ -176,7 +188,8 @@ STORES: list[dict] = [
         "base_url": "https://kulturarecordstore.ru",
         "parser_class": "kultura",
         "logo_url": None,  # Mobile рендерит локальный assets/kultura.png по slug
-        "rating": Decimal("4.6"),  # Tilda store-API, ~4.3k, электроника/эксперимент/хип-хоп/джаз, есть катномера
+        # 4.65, а не 4.6 — закрепляет место в топ-5 витрины (решение 10.09).
+        "rating": Decimal("4.65"),  # Tilda store-API, ~4.3k, электроника/эксперимент/хип-хоп/джаз, есть катномера
         "is_active": True,
         "requires_browser": False,
         "avg_shipping_rub": Decimal("400.00"),
