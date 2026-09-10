@@ -8,6 +8,8 @@ import {
   Text,
   StyleSheet,
   FlatList,
+  TextInput,
+  TextInputProps,
   TouchableOpacity,
   ActivityIndicator,
 } from 'react-native';
@@ -21,15 +23,14 @@ import Animated, {
   withTiming,
   withDelay,
   withRepeat,
-  useDerivedValue,
+  useAnimatedProps,
   Easing,
-  runOnJS,
 } from 'react-native-reanimated';
 import { Header } from '../../components/Header';
 import { useCollectionStore } from '../../lib/store';
 import { api } from '../../lib/api';
 import { CollectionItem } from '../../lib/types';
-import { cleanArtistName } from '../../lib/format';
+import { cleanArtistName, formatGroupedWorklet } from '../../lib/format';
 import { Colors, Typography, Spacing, BorderRadius, Shadows } from '../../constants/theme';
 import { ms } from '../../lib/responsive';
 import { useBottomContentInset } from '../../lib/useBottomContentInset';
@@ -43,15 +44,24 @@ function formatUsd(value: number): string {
   return `$${value.toFixed(0)}`;
 }
 
+const AnimatedTextInput = Animated.createAnimatedComponent(TextInput);
+
+/**
+ * Бегущие цифры итоговой суммы.
+ *
+ * Раньше: useDerivedValue → runOnJS(setState) на КАЖДЫЙ кадр анимации плюс
+ * `toLocaleString('ru-RU')` внутри worklet'а. На Android это 60–120 прыжков
+ * через мост в секунду с React-рендером на каждом; кадры терялись, сумма
+ * «скакала». Теперь текст пишется в TextInput через useAnimatedProps прямо на
+ * UI-потоке — стандартный приём reanimated, JS-поток не участвует. TextInput
+ * нередактируемый и стилизован под прежний Text: на iOS вид прежний.
+ */
 function AnimatedValue({ targetValue, prefix = '', suffix = '' }: {
   targetValue: number;
   prefix?: string;
   suffix?: string;
 }) {
   const progress = useSharedValue(0);
-  const displayValue = useDerivedValue(() => {
-    return Math.round(progress.value * targetValue);
-  });
 
   useEffect(() => {
     progress.value = 0;
@@ -59,20 +69,22 @@ function AnimatedValue({ targetValue, prefix = '', suffix = '' }: {
       300,
       withTiming(1, { duration: 2000, easing: Easing.out(Easing.cubic) })
     );
-  }, [targetValue]);
+  }, [targetValue, progress]);
 
-  // We need to use a state-based approach since AnimatedText isn't available
-  const [display, setDisplay] = React.useState('0');
-
-  useDerivedValue(() => {
-    const val = Math.round(progress.value * targetValue);
-    runOnJS(setDisplay)(val.toLocaleString('ru-RU'));
+  const animatedProps = useAnimatedProps<TextInputProps & { text: string }>(() => {
+    const text = `${prefix}${formatGroupedWorklet(progress.value * targetValue)}${suffix}`;
+    return { text };
   });
 
   return (
-    <Text style={styles.animatedValueText}>
-      {prefix}{display}{suffix}
-    </Text>
+    <AnimatedTextInput
+      style={styles.animatedValueText}
+      editable={false}
+      pointerEvents="none"
+      underlineColorAndroid="transparent"
+      animatedProps={animatedProps}
+      defaultValue={`${prefix}0${suffix}`}
+    />
   );
 }
 
@@ -490,6 +502,11 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     letterSpacing: -1,
     lineHeight: 48,
+    // TextInput вместо Text: убираем его собственные отступы и подложку,
+    // чтобы строка стояла там же, где стоял Text.
+    padding: 0,
+    margin: 0,
+    backgroundColor: 'transparent',
   },
   usdValue: {
     ...Typography.bodySmall,

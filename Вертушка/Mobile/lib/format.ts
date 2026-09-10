@@ -17,3 +17,20 @@ export function plural(count: number, one: string, few: string, many: string): s
   if (mod10 >= 2 && mod10 <= 4) return `${count} ${few}`;
   return `${count} ${many}`;
 }
+
+/**
+ * Группировка тысяч как у `toLocaleString('ru-RU')` (разделитель U+00A0),
+ * но без Intl и без аллокаций локали — пригодна для worklet'а на UI-потоке.
+ * Hermes на Android не гарантирует полный Intl, а `toLocaleString` внутри
+ * worklet'а — это захват JS-объекта локали на каждом кадре.
+ */
+export function formatGroupedWorklet(value: number): string {
+  'worklet';
+  const digits = String(Math.abs(Math.round(value)));
+  let out = '';
+  for (let i = 0; i < digits.length; i++) {
+    if (i > 0 && (digits.length - i) % 3 === 0) out += ' ';
+    out += digits[i];
+  }
+  return (value < 0 ? '-' : '') + out;
+}
