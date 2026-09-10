@@ -28,6 +28,7 @@ from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import async_session_maker, get_db
+from app.request_context import spawn_detached
 from app.models.record import Record
 from app.schemas.offer import (
     MarketSearchItem,
@@ -305,7 +306,7 @@ def schedule_market_cover_preload(record_ids: Iterable[uuid.UUID]) -> None:
     ids = [r for r in record_ids if r is not None]
     if not ids:
         return
-    asyncio.create_task(_preload_covers_background(ids))
+    spawn_detached(_preload_covers_background(ids), label="market-cover-preload")
 
 
 async def _preload_covers_background(record_ids: list[uuid.UUID]) -> None:
@@ -326,8 +327,9 @@ async def _preload_covers_background(record_ids: list[uuid.UUID]) -> None:
             if row.source == "store":
                 schedule_store_native_cover_cache(row.id, row.cover_image_url)
             elif row.discogs_id:
-                asyncio.create_task(
-                    _download_cover_background(row.discogs_id, row.cover_image_url)
+                spawn_detached(
+                    _download_cover_background(row.discogs_id, row.cover_image_url),
+                    label="cover-mirror",
                 )
         except Exception:
             logger.exception("market preload cover failed for record %s", row.id)
