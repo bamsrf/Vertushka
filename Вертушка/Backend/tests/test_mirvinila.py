@@ -84,6 +84,79 @@ def test_hyphenated_artist_survives():
     assert album == "The Blueprint"
 
 
+def test_disc_count_marker_stripped_before_parenthesis():
+    """«… Nuotaka 2LP (СССР 1978г.)» — счётчик пластинок стоит ПЕРЕД скобкой.
+    На проде такой хвост был у 15% названий."""
+    artist, album = _split_artist_album("V. Ganelinas – Velnio Nuotaka 2LP (СССР 1978г.)")
+    assert artist == "V. Ganelinas"
+    assert album == "Velnio Nuotaka"
+
+
+def test_format_marker_after_parenthesis_stripped():
+    """«… (США 1997г.) EP» — а тут маркер ПОСЛЕ скобки, и скобка уже не в конце
+    строки. Срезать надо оба, в любом порядке."""
+    artist, album = _split_artist_album("Big Punisher – I'm Not A Player (США 1997г.) EP")
+    assert artist == "Big Punisher"
+    assert album == "I'm Not A Player"
+
+
+def test_multi_disc_counts_stripped():
+    _, album = _split_artist_album("Бетховен – 9 симфоний 9LP (СССР 1980г.)")
+    assert album == "9 симфоний"
+
+
+def test_year_range_album_survives_tail_strip():
+    """«1962 - 1966 2LP»: срезаем только формат, диапазон лет остаётся."""
+    artist, album = _split_artist_album("The Beatles ‎– 1962 - 1966 2LP (Япония 1973г.)")
+    assert artist == "The Beatles"
+    assert album == "1962 - 1966"
+
+
+def test_colour_marker_after_parenthesis_stripped():
+    """«(Европа 2026г.) Yellow» — цвет приезжает из свойства «Формат носителя»,
+    в названии он лишний."""
+    artist, album = _split_artist_album(
+        "Various – The Platinum Connection 3LP (Европа 2026г.) Yellow"
+    )
+    assert artist == "Various"
+    assert album == "The Platinum Connection"
+
+
+def test_promo_marker_after_parenthesis_stripped():
+    _, album = _split_artist_album("Сборник - The best of screen music (Япония) Promo")
+    assert album == "The best of screen music"
+
+
+def test_non_word_tails_after_parenthesis_stripped():
+    """Хвост не всегда слово: встречаются «LP+» и «7"»."""
+    _, a1 = _split_artist_album("Steel Pulse – Baggariddim (Европа 1985г.) LP+")
+    assert a1 == "Baggariddim"
+    _, a2 = _split_artist_album(
+        'Duran Duran – Is There Something I Should Know? (Япония 1983г.) 7"'
+    )
+    assert a2 == "Is There Something I Should Know?"
+
+
+def test_parenthesis_that_is_part_of_the_name_survives():
+    """Предохранитель: у названия со скобкой, но без страны/года, слова после
+    скобки отрезать нечем — цикл не должен съесть само название."""
+    artist, album = _split_artist_album("Barrett Strong – Money (That's What I Want)")
+    assert artist == "Barrett Strong"
+    assert album == "Money"  # скобка-хвост срезана, но само название цело
+
+
+def test_numeric_opus_survives():
+    """«ор. 14» — часть названия, а не хвост."""
+    _, album = _split_artist_album("Берлиоз - Фантастическая симфония ор. 14 (Япония)")
+    assert album == "Фантастическая симфония ор. 14"
+
+
+def test_title_made_entirely_of_tails_is_not_emptied():
+    """Если срезать всё, матчеру уедет пустота — лучше оставить как есть."""
+    _, album = _split_artist_album("Various – LP")
+    assert album
+
+
 def test_title_without_separator_keeps_whole_as_album():
     artist, album = _split_artist_album("Сборник Лучшее")
     assert artist is None
