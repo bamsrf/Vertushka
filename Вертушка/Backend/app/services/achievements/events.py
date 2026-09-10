@@ -26,6 +26,10 @@ MESSAGE_SENT = "message_sent"          # юзер отправил сообще�
 
 # Вклад / спрос / первопроходец (K-серия, треки 2/4/5)
 USER_RECORD_CREATED = "user_record_created"  # юзер добавил ручной релиз (source='user')
+# Ручной релиз перестал быть живым вкладом: автор удалил его сам
+# (moderation_status='deleted') или модерация сняла ('rejected'). Пересчитывает
+# K8–K10 и снимает анлок, если вклада больше нет (см. revocable в registry).
+USER_RECORD_DELETED = "user_record_deleted"
 RECORD_WANTED = "record_wanted"              # пластинку из коллекции юзера кто-то добавил в вишлист
 
 # Рефералы (Phase 2 / INV-серия)

@@ -40,7 +40,8 @@ class UserAchievement(Base):
     # Опыт, начисленный В МОМЕНТ анлока. Заморожен намеренно: вес тира со
     # временем меняется, но прошлое начисление переписывать нельзя — иначе
     # суммарный XP юзера может уменьшиться и уровень «отберётся».
-    # NULL = ачивка ещё не открыта.
+    # NULL = ачивка ещё не открыта ИЛИ была отозвана (revocable, K8–K10:
+    # юзер удалил ручной релиз — вклад больше не держит уровень).
     xp_awarded: Mapped[int | None] = mapped_column(Integer, nullable=True)
     ach_metadata: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     created_at: Mapped[datetime] = mapped_column(

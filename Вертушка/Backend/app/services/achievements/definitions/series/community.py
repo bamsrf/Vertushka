@@ -34,6 +34,7 @@ from app.services.achievements.events import (
     PROFILE_VIEW,
     RECORD_WANTED,
     USER_RECORD_CREATED,
+    USER_RECORD_DELETED,
 )
 from app.services.achievements.registry import (
     AchievementDefinition,
@@ -221,10 +222,26 @@ def _owned_records_subquery(user_id: UUID):
     )
 
 
+# Статусы ручного релиза, которые считаются живым вкладом.
+#   approved — запись на месте и работает на каталог;
+#   merged   — позже нашлась на Discogs и слилась с каноничной карточкой
+#              (listing_matcher). Вклад состоялся: юзер довёз релиз раньше
+#              зеркала, отбирать за это ачивку неправильно.
+# Не в счёт: 'deleted' (автор удалил сам) и 'rejected' (сняли по жалобе или
+# модерацией) — вклада в каталоге не осталось. 'pending' тоже не в счёт:
+# премодерации давно нет, но старые записи с этим статусом висят.
+CONTRIB_ALIVE_STATUSES = ("approved", "merged")
+
+
 def _make_contrib_evaluator(threshold: int):
-    """Трек 2 — одобренные ручные релизы (source='user'). Без анти-фарма:
+    """Трек 2 — живые ручные релизы (source='user'). Без анти-фарма:
     каждая запись проходит создание вручную, дубли по мастеру отсекаются на
-    уровне UI/preflight."""
+    уровне UI/preflight.
+
+    Считает только то, что доехало и осталось: добавить релиз, забрать ачивку
+    и тут же удалить его — не вклад. Ачивка revocable, поэтому при удалении
+    (USER_RECORD_DELETED) счёт пересчитывается и анлок снимается.
+    """
     async def evaluator(
         db: AsyncSession,
         user_id: UUID,
@@ -235,7 +252,7 @@ def _make_contrib_evaluator(threshold: int):
             select(func.count(func.distinct(Record.id))).where(
                 Record.source == "user",
                 Record.created_by_user_id == user_id,
-                Record.moderation_status == "approved",
+                Record.moderation_status.in_(CONTRIB_ALIVE_STATUSES),
             )
         )
         count = int(count or 0)
@@ -507,7 +524,8 @@ DEFINITIONS: list[AchievementDefinition] = [
         series="contribution",
         tier=AchievementTier.SIMPLE,
         is_hidden=False,
-        triggers=(USER_RECORD_CREATED, DAILY_TICK),
+        triggers=(USER_RECORD_CREATED, USER_RECORD_DELETED, DAILY_TICK),
+        revocable=True,
         evaluator=_make_contrib_evaluator(1),
         icon_slug="k8_contrib_x1",
     ),
@@ -519,7 +537,8 @@ DEFINITIONS: list[AchievementDefinition] = [
         series="contribution",
         tier=AchievementTier.NOTABLE,
         is_hidden=False,
-        triggers=(USER_RECORD_CREATED, DAILY_TICK),
+        triggers=(USER_RECORD_CREATED, USER_RECORD_DELETED, DAILY_TICK),
+        revocable=True,
         evaluator=_make_contrib_evaluator(5),
         icon_slug="k9_contrib_x5",
     ),
@@ -531,7 +550,8 @@ DEFINITIONS: list[AchievementDefinition] = [
         series="contribution",
         tier=AchievementTier.RARE,
         is_hidden=False,
-        triggers=(USER_RECORD_CREATED, DAILY_TICK),
+        triggers=(USER_RECORD_CREATED, USER_RECORD_DELETED, DAILY_TICK),
+        revocable=True,
         evaluator=_make_contrib_evaluator(20),
         icon_slug="k10_contrib_x20",
     ),
