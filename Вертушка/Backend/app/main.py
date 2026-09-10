@@ -14,7 +14,7 @@ from pathlib import Path
 import sentry_sdk
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pythonjsonlogger import jsonlogger
@@ -503,8 +503,25 @@ app.include_router(web_routes.router, tags=["Web"])
 
 
 @app.get("/", tags=["Health"])
-async def root():
-    """Главная страница API"""
+async def root(request: Request):
+    """Корень домена: человеку — страница-хаб, машине — статус API.
+
+    Человек, набравший vinyl-vertushka.ru руками или перешедший по ссылке из
+    футера, до этой правки видел голый JSON `{"app": ..., "status": ...}` —
+    выглядит как сломанный сайт. Теперь он уезжает на /links.
+
+    Развилка по Accept, а не по User-Agent: браузер всегда просит text/html,
+    а curl, healthcheck'и и мониторинг шлют `*/*` и получают прежний JSON —
+    ответ для них не меняется вообще. Ломать их было бы легко и незаметно.
+
+    Сам JSON оставлен как есть: контракт публичный, кто-то мог на него
+    завязаться. Healthcheck'и живут на /health и сюда не ходят, но это
+    страховка на случай, если появится что-то ещё.
+    """
+    accept = request.headers.get("accept", "")
+    if "text/html" in accept:
+        return RedirectResponse("/links", status_code=302)
+
     return {
         "app": settings.app_name,
         "version": settings.app_version,
