@@ -33,6 +33,7 @@ import { GradientText } from '../../components/GradientText';
 import { FolderPickerModal } from '../../components/FolderPickerModal';
 import { Button, Card, ActionSheet, ActionSheetAction } from '../../components/ui';
 import { api, apiErrorText, getMasterCoverUrl, getPlaceholderCoverUrl } from '../../lib/api';
+import { useCoverSource } from '../../lib/coverRetry';
 import { analytics } from '../../lib/analytics';
 import { getForcedCoachMark } from '../../lib/coachMarks';
 import { countSpin } from '../../lib/eggTracker';
@@ -157,6 +158,13 @@ export default function RecordDetailScreen() {
     transform: [{ scale: 1 + radarPulse.value * 1.2 }],
   }));
   const hasPreview = Boolean(previewTitle || previewCover || previewThumb || previewArtist);
+  // Герой с ретраем/сторожем (lib/coverRetry) — хук до ранних return'ов.
+  // Пока record грузится, source = превью из параметров; дальше — то же, что
+  // imageUrl в основной ветке (мастер, иначе лучшее мелкое).
+  const heroSourceUrl = record
+    ? getMasterCoverUrl(record) || previewThumb || getPlaceholderCoverUrl(record)
+    : previewCover || undefined;
+  const heroCover = useCoverSource(heroSourceUrl, record?.cover_image_url || undefined);
 
   // Какие блоки реально отрисуются для этого релиза — по ним и собирается тур.
   // Порядок обязан совпадать с порядком блоков на экране: тур ведёт человека
@@ -754,10 +762,12 @@ export default function RecordDetailScreen() {
                   // ещё нет, показываем один thumb: он мгновенный, но уступит
                   // место мастеру, как только тот приедет. Раньше thumb стоял в
                   // source и залипал растянутым на всю ширину (пикселизация ×8).
-                  source={previewCover || undefined}
+                  source={heroCover.source}
                   style={styles.cover}
                   contentFit="cover"
                   cachePolicy="memory-disk"
+                  onLoad={heroCover.onLoad}
+                  onError={heroCover.onError}
                   placeholder={
                     previewThumb
                       ? previewThumb
@@ -889,10 +899,12 @@ export default function RecordDetailScreen() {
         <View style={styles.coverContainer}>
           {imageUrl || thumbUrl ? (
             <Image
-              source={imageUrl || undefined}
+              source={heroCover.source}
               style={styles.cover}
               contentFit="cover"
               cachePolicy="memory-disk"
+              onLoad={heroCover.onLoad}
+              onError={heroCover.onError}
               // Приоритет плейсхолдера: уже показанный thumb (пиксели, но
               // мгновенно и без мигания на blur) → blurhash записи → blurhash
               // из preview-параметров. Когда мастера нет, thumb уже стоит в

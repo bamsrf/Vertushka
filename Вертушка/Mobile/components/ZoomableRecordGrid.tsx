@@ -49,6 +49,7 @@ import * as Haptics from 'expo-haptics';
 import { Colors, Spacing, BorderRadius, Typography } from '../constants/theme';
 import { CollectionItem, WishlistItem } from '../lib/types';
 import { getCoverUrl, getHeroCoverUrl, sizedCoverUrl } from '../lib/api';
+import { useCoverSource } from '../lib/coverRetry';
 import { RecordCard } from './RecordCard';
 import {
   RarityContext,
@@ -192,6 +193,10 @@ const BareCell = memo(function BareCell({
   // expo-image видит смену source и кратко перерисовывает картинку, что выглядит
   // как «вставка кадра» между уровнями. С disk-кэшем bandwidth не страдает.
   const coverUrl = useMemo(() => sizedCoverUrl(getCoverUrl(record), GRID_COVER_PX), [record]);
+  // Ретрай + сторож (см. lib/coverRetry): мост /covers/{id}.jpg на первом
+  // заходе отдаёт 302 на внешний оригинал, второй заход — уже зеркало.
+  // Фолбэк — прямой внешний URL, если мост ответил 404 (бюджет/заглушка).
+  const cover = useCoverSource(coverUrl, record.cover_image_url || record.thumb_image_url);
 
   // Только collectible получает визуальный сигнал на голых обложках —
   // блестит и переливается на всех уровнях.
@@ -227,11 +232,13 @@ const BareCell = memo(function BareCell({
           overflow: 'hidden',
         }}
       >
-        {coverUrl ? (
+        {cover.source ? (
           <Image
-            source={coverUrl}
+            source={cover.source}
             style={{ width: '100%', height: '100%' }}
             contentFit="cover"
+            onLoad={cover.onLoad}
+            onError={cover.onError}
             // memory-disk, не disk: дефолт expo-image держит только диск, из-за
             // чего каждый ремаунт ячейки (смена уровня зума, возврат с карточки)
             // заново декодировал JPEG. Память здесь дешёвая — ячейки грузят

@@ -65,6 +65,38 @@ def build_cover_url(
     return base
 
 
+def bridge_cover_url(
+    discogs_id: str | None, cover_image_url: str | None
+) -> str | None:
+    """Self-healing путь `/covers/{discogs_id}.jpg` для НЕзазеркаленной обложки.
+
+    Зачем. Пока зеркала нет, схема отдавала `cover_url=None`, и клиент падал
+    на `cover_image_url` — прямую ссылку на i.discogs.com. Из РФ этот CDN
+    недоступен/медленный: на реальном Android (10.09.2026) коллекция из 71
+    записи, где зеркало было только у 5, минутами висела серыми blurhash'ами —
+    в nginx за всю сессию не пришло ни одного запроса за этими 66 обложками,
+    они и не должны были прийти. Поиск, скан и маркет давно ходят через мост
+    (`_mirror_url` в api/records.py, `_COVER_BRIDGE` в api/market.py) — сюда
+    тот же путь: nginx-статика при попадании, иначе @covers_fallback →
+    get_cover → 302 на оригинал + фоновое зеркалирование, и второй заход уже
+    отдаёт файл с нашего диска.
+
+    Мостим только то, что зеркало примет: числовой discogs_id и
+    мастер-грейд URL. Мелкое (< MASTER_MIN_SIDE) tier-гейт зеркала не пустит,
+    и `/covers/{id}.jpg` вечно был бы холодным 302 — клиент для такого
+    оставляет прежний прямой URL.
+    """
+    if not discogs_id or not str(discogs_id).isdigit():
+        return None
+    if not cover_image_url or not cover_image_url.startswith("http"):
+        return None
+    from app.services.cover_quality import is_thumb_grade
+
+    if is_thumb_grade(cover_image_url):
+        return None
+    return f"/covers/{discogs_id}.jpg"
+
+
 class RecordResponse(BaseModel):
     """Полная схема пластинки"""
     model_config = ConfigDict(from_attributes=True)
@@ -128,7 +160,7 @@ class RecordResponse(BaseModel):
         if not self.cover_url:
             self.cover_url = build_cover_url(
                 self.cover_local_path, self.cover_cached_at
-            )
+            ) or bridge_cover_url(self.discogs_id, self.cover_image_url)
         return self
 
 
@@ -165,7 +197,7 @@ class RecordBrief(BaseModel):
         if not self.cover_url:
             self.cover_url = build_cover_url(
                 self.cover_local_path, self.cover_cached_at
-            )
+            ) or bridge_cover_url(self.discogs_id, self.cover_image_url)
         return self
 
 
