@@ -205,10 +205,29 @@ class TestPage:
         assert PAY_HOST not in html
         assert "cloudtips" not in html.lower()
 
-    def test_install_block_comes_before_donation(self, jinja_env, ctx):
-        """Порядок блоков — часть митигации 3.1.1, а не вкус."""
+    def test_block_order(self, jinja_env, ctx):
+        """Порядок задан явно: установка, поддержка, канал, планы.
+
+        Поддержка стоит второй сознательно. Прежняя редакция уводила её под
+        сгиб ради оговорки 3.1.1 (платёжный CTA на первом экране страницы,
+        открытой из приложения). Компенсация теперь другая и живёт вне этого
+        файла: ссылку на /links НЕ дают из iOS-приложения — только канал, QR
+        и визитка, а туда правило Apple не дотягивается. Появится ссылка из
+        приложения — карточку поддержки надо вернуть вниз.
+        """
+        import re
+
+        html = jinja_env.get_template("links.html").render(**ctx)
+        assert re.findall(r'data-goal="(links_\w+)"', html) == [
+            "links_appstore", "links_support", "links_telegram", "links_plans",
+        ]
+
+    def test_download_stays_the_primary_action(self, jinja_env, ctx):
+        """Что бы ни стояло вторым, установка остаётся первой и единственной
+        кнопкой: поддержка — карточка в общем списке, не второй CTA."""
         html = jinja_env.get_template("links.html").render(**ctx)
         assert html.index(ctx["app_store_url"]) < html.index('href="/support"')
+        assert html.count("store-btn") > html.count('class="link-card warm"')
 
     def test_hub_survives_disabled_donations(self, jinja_env, ctx):
         html = jinja_env.get_template("links.html").render(**{**ctx, "support_url": ""})
@@ -243,3 +262,38 @@ class TestMetrikaGoals:
             "links_appstore", "links_googleplay", "links_rustore",
             "links_telegram", "links_plans", "links_support",
         }
+
+
+class TestMotion:
+    """Анимации крутятся сами — значит, отключение по запросу обязательно."""
+
+    @pytest.fixture(scope="class")
+    def css(self):
+        return Path("app/web/templates/links.html").read_text(encoding="utf-8")
+
+    def test_glint_runs_on_its_own_not_on_hover(self, css):
+        """Блик по :hover на телефоне не показался бы никому.
+
+        Ховера на тач-экране нет, а /links открывают в основном с телефона —
+        главная кнопка страницы так и осталась бы статичной.
+        """
+        assert "links-glint" in css
+        assert "infinite" in css.split("links-glint")[1][:200]
+        assert ":hover::after { animation: links-glint" not in css
+
+    def test_heart_pulses_on_the_icon_not_the_plate(self, css):
+        """Масштабируй мы плашку — дёргалась бы подложка и строка заголовка."""
+        assert ".link-card.warm .link-icon svg { animation: links-heartbeat" in css
+
+    @pytest.mark.parametrize("selector", [
+        ".store-btn:not(.secondary)::after { animation: none; }",
+        ".link-card.warm .link-icon svg { animation: none; }",
+    ])
+    def test_reduced_motion_stops_both(self, css, selector):
+        block = css.split("@media (prefers-reduced-motion: reduce)")[1]
+        assert selector in block.split("}\n        }")[0] + "}\n        }"
+
+    def test_no_leftover_divider(self, css):
+        """Заголовок секции убран — поддержка живёт в общем списке карточек."""
+        assert "Проекту можно помочь" not in css
+        assert 'class="divider"' not in css
