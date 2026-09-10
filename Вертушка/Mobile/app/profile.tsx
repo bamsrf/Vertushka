@@ -383,7 +383,7 @@ export default function ProfileScreen() {
     <View style={[styles.container, { paddingTop: insets.top }]}>
       {/* Editorial header */}
       <View style={styles.header}>
-        <AnimatedGradientText style={Typography.heroTitle}>Профиль</AnimatedGradientText>
+        <AnimatedGradientText style={Typography.heroTitle} fit>Профиль</AnimatedGradientText>
         <TouchableOpacity onPress={handleClose} style={styles.closeButton}>
           <Ionicons name="close" size={28} color={Colors.royalBlue} />
         </TouchableOpacity>

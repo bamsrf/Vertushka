@@ -10,6 +10,7 @@ import {
   ActivityIndicator,
   Alert,
   TouchableOpacity,
+  useWindowDimensions,
 } from 'react-native';
 import { toast } from '../../lib/toast';
 import * as Haptics from 'expo-haptics';
@@ -144,6 +145,14 @@ export default function RecordDetailScreen() {
   // его внутри рендера значило бы гонять валидацию на каждый кадр анимации.
   const entrySource = useMemo(() => parseEntrySource(from), [from]);
   const insets = useSafeAreaInsets();
+  // Обложка — квадрат по ширине контента, но не выше половины экрана: на
+  // низких/широких экранах (display zoom на Android) квадрат во всю ширину
+  // съедал экран, а пока картинка не приехала — читался как пустой блок над
+  // названием. На телефонах ширина < высоты/2, т.е. итог = прежний квадрат.
+  const { width: windowWidth, height: windowHeight } = useWindowDimensions();
+  const coverSize = Math.min(windowWidth - 2 * Spacing.md, Math.round(windowHeight * 0.5));
+  const coverSizeStyle = useMemo(() => ({ width: coverSize, height: coverSize }), [coverSize]);
+  const [coverFailed, setCoverFailed] = useState(false);
 
   const [record, setRecord] = useState<VinylRecord | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -755,7 +764,7 @@ export default function RecordDetailScreen() {
                   // место мастеру, как только тот приедет. Раньше thumb стоял в
                   // source и залипал растянутым на всю ширину (пикселизация ×8).
                   source={previewCover || undefined}
-                  style={styles.cover}
+                  style={[styles.cover, coverSizeStyle]}
                   contentFit="cover"
                   cachePolicy="memory-disk"
                   placeholder={
@@ -768,7 +777,7 @@ export default function RecordDetailScreen() {
                   placeholderContentFit="cover"
                 />
               ) : (
-                <View style={[styles.cover, styles.coverPlaceholder]}>
+                <View style={[styles.cover, coverSizeStyle, styles.coverPlaceholder]}>
                   <Icon name="disc-outline" size={80} color={Colors.textMuted} />
                 </View>
               )}
@@ -887,12 +896,15 @@ export default function RecordDetailScreen() {
       >
         {/* Обложка */}
         <View style={styles.coverContainer}>
-          {imageUrl || thumbUrl ? (
+          {(imageUrl || thumbUrl) && !coverFailed ? (
             <Image
               source={imageUrl || undefined}
-              style={styles.cover}
+              style={[styles.cover, coverSizeStyle]}
               contentFit="cover"
               cachePolicy="memory-disk"
+              // Обложка не приехала (нет сети, битая ссылка) — вместо пустого
+              // квадрата показываем ту же заглушку, что и у релизов без обложки.
+              onError={() => setCoverFailed(true)}
               // Приоритет плейсхолдера: уже показанный thumb (пиксели, но
               // мгновенно и без мигания на blur) → blurhash записи → blurhash
               // из preview-параметров. Когда мастера нет, thumb уже стоит в
@@ -910,7 +922,7 @@ export default function RecordDetailScreen() {
               placeholderContentFit="cover"
             />
           ) : (
-            <View style={[styles.cover, styles.coverPlaceholder]}>
+            <View style={[styles.cover, coverSizeStyle, styles.coverPlaceholder]}>
               <Icon name="disc-outline" size={80} color={Colors.textMuted} />
             </View>
           )}
@@ -1438,10 +1450,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: Spacing.lg,
   },
+  // Размер задаётся в рендере (coverSizeStyle): квадрат по ширине контента,
+  // не выше половины экрана. Фон — чтобы до загрузки картинки (и без blurhash)
+  // место обложки читалось как плашка, а не как дыра над названием.
   cover: {
-    width: '100%',
-    aspectRatio: 1,
     borderRadius: 24,
+    backgroundColor: Colors.surface,
   },
   coverPlaceholder: {
     backgroundColor: Colors.surface,

@@ -43,6 +43,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Icon, SegmentedControl } from '@/components/ui';
 import { Colors, Spacing, BorderRadius } from '../../constants/theme';
 import { ms } from '../../lib/responsive';
+import { useBottomContentInset } from '../../lib/useBottomContentInset';
 import { useAuthStore } from '../../lib/store';
 import { useMessagesStore } from '../../lib/messagesStore';
 import { resolveMediaUrl } from '../../lib/api';
@@ -526,6 +527,9 @@ function RequestsHint({ requests }: { requests: Conversation[] }) {
 export default function MessagesInboxScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  // Последний диалог должен доскролливаться над FAB (bottom: insets.bottom +
+  // 100) — панель + 126 (iOS: 34 + 126 = прежние 160).
+  const listBottomPad = useBottomContentInset({ extra: 126 });
   const me = useAuthStore((s) => s.user);
   const primary = useMessagesStore((s) => s.conversationsPrimary);
   const requests = useMessagesStore((s) => s.conversationsRequests);
@@ -671,7 +675,7 @@ export default function MessagesInboxScreen() {
         keyExtractor={(item) => item.id}
         renderItem={renderItem}
         ListEmptyComponent={renderEmpty}
-        contentContainerStyle={styles.listContent}
+        contentContainerStyle={{ paddingBottom: listBottomPad }}
         showsVerticalScrollIndicator={false}
         // Пересортировка (новое сообщение поднимает диалог наверх) едет
         // плавно вместо телепорта.
@@ -732,7 +736,6 @@ const styles = StyleSheet.create({
   requestsHintTitle: { fontSize: ms(13), fontWeight: '600', color: Colors.text },
   requestsHintSub: { fontSize: ms(12), color: Colors.textMuted, marginTop: 1 },
 
-  listContent: { paddingBottom: 160 },
 
   row: {
     flexDirection: 'row',

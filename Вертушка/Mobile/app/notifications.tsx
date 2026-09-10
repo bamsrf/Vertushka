@@ -18,6 +18,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { Colors, Spacing, Typography } from '@/constants/theme';
+import { useBottomContentInset } from '@/lib/useBottomContentInset';
 import { AnimatedGradientText } from '@/components/AnimatedGradientText';
 import { SegmentedControl } from '@/components/ui';
 import { XV2 } from '@/components/icons/v2';
@@ -51,6 +52,9 @@ const MUTE_KEY_BY_TYPE: Record<string, string> = {
 export default function NotificationsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  // Стековый экран без таб-бара: последняя запись ленты доскролливается над
+  // системной панелью (Android с 3 кнопками — 48dp; iOS — home indicator).
+  const listBottomPad = useBottomContentInset({ extra: Spacing.xxl });
   const [tab, setTab] = useState<Tab>('personal');
 
   const {
@@ -437,9 +441,10 @@ export default function NotificationsScreen() {
           stickySectionHeadersEnabled={false}
           viewabilityConfig={viewabilityConfig}
           onViewableItemsChanged={onViewableItemsChanged}
-          contentContainerStyle={
-            personalSections.length === 0 ? styles.emptyContainer : styles.listContainer
-          }
+          contentContainerStyle={[
+            personalSections.length === 0 ? styles.emptyContainer : styles.listContainer,
+            { paddingBottom: listBottomPad },
+          ]}
           refreshControl={
             <RefreshControl
               refreshing={personalRefreshing}
@@ -473,9 +478,10 @@ export default function NotificationsScreen() {
           renderItem={renderSocial}
           renderSectionHeader={renderSectionHeader}
           stickySectionHeadersEnabled={false}
-          contentContainerStyle={
-            socialSections.length === 0 ? styles.emptyContainer : styles.listContainer
-          }
+          contentContainerStyle={[
+            socialSections.length === 0 ? styles.emptyContainer : styles.listContainer,
+            { paddingBottom: listBottomPad },
+          ]}
           refreshControl={
             <RefreshControl
               refreshing={socialRefreshing}
@@ -792,13 +798,11 @@ const styles = StyleSheet.create({
     ...Typography.overline,
     color: Colors.textMuted,
   },
-  listContainer: {
-    paddingBottom: Spacing.xxl,
-  },
+  // paddingBottom задаётся в рендере (listBottomPad).
+  listContainer: {},
   emptyContainer: {
     flexGrow: 1,
     justifyContent: 'flex-start',
-    paddingBottom: Spacing.xxl,
   },
   spinner: {
     paddingVertical: Spacing.lg,

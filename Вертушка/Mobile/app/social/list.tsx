@@ -23,6 +23,7 @@ import { UserListItem } from '../../components/UserListItem';
 import { SegmentedControl } from '../../components/ui';
 import { Header } from '../../components/Header';
 import { Colors, Spacing } from '../../constants/theme';
+import { useBottomContentInset } from '../../lib/useBottomContentInset';
 import { ms } from '../../lib/responsive';
 
 type Tab = 'followers' | 'following';
@@ -37,6 +38,9 @@ const PER_PAGE = 30;
 export default function SocialListScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  // Стековый экран без таб-бара: последняя строка доскролливается над
+  // системной панелью (Android с 3 кнопками — 48dp; iOS — home indicator).
+  const listBottomPad = useBottomContentInset({ extra: Spacing.xxl });
   const params = useLocalSearchParams<{ tab?: string; username?: string }>();
   const username = params.username || null;
   const [activeTab, setActiveTab] = useState<Tab>(
@@ -199,7 +203,7 @@ export default function SocialListScreen() {
           }
           onEndReached={onEndReached}
           onEndReachedThreshold={0.5}
-          contentContainerStyle={styles.listContent}
+          contentContainerStyle={[styles.listContent, { paddingBottom: listBottomPad }]}
           showsVerticalScrollIndicator={false}
         />
       )}
@@ -222,10 +226,10 @@ const styles = StyleSheet.create({
   footerLoader: {
     marginVertical: Spacing.lg,
   },
+  // paddingBottom задаётся в рендере (listBottomPad).
   listContent: {
     paddingHorizontal: Spacing.lg,
     gap: Spacing.sm,
-    paddingBottom: Spacing.xxl,
   },
   emptyContainer: {
     alignItems: 'center',

@@ -32,6 +32,7 @@ import type { MarketSearchItem, MarketFilters, MarketFacetsResponse } from '../.
 import { EMPTY_MARKET_FILTERS, hasActiveFilters } from '../../lib/types';
 
 import { useMarketPagination } from '../../lib/useMarketPagination';
+import { useBottomContentInset } from '../../lib/useBottomContentInset';
 import MarketSection, { type MarketStoreData } from './MarketSection';
 import MarketResultCard, { marketGridStyles } from './MarketResultCard';
 
@@ -158,6 +159,9 @@ const hintStyles = StyleSheet.create({
 });
 
 export function MarketMain({ onScroll, scrollEnabled = true, paddingTop, pullFraction }: MarketMainProps) {
+  // Маркет-слой живёт и в табе Поиска (под пилюлей GlassTabBar), и стековым
+  // экраном /market — клиренс считаем под пилюлю в обоих случаях (iOS: 120).
+  const listBottomPad = useBottomContentInset({ tabBar: true, extra: 32 });
   const router = useRouter();
 
   // Карусели магазинов — в marketStore (in-memory кэш переживает remount
@@ -350,7 +354,7 @@ export function MarketMain({ onScroll, scrollEnabled = true, paddingTop, pullFra
       renderItem={renderSearchItem as any}
       numColumns={2}
       columnWrapperStyle={marketGridStyles.row}
-      contentContainerStyle={{ paddingBottom: 120 }}
+      contentContainerStyle={{ paddingBottom: listBottomPad }}
       showsVerticalScrollIndicator={false}
       keyboardShouldPersistTaps="handled"
       keyboardDismissMode="on-drag"

@@ -44,6 +44,7 @@ import { AutoRail } from '../../components/AutoRail';
 import { Section } from '../../components/Section';
 import { useSearchStore, useCollectionStore, useUserSearchStore, useAuthStore, useSuggestStore } from '../../lib/store';
 import { ms } from '../../lib/responsive';
+import { useBottomContentInset } from '../../lib/useBottomContentInset';
 import { analytics } from '../../lib/analytics';
 import { api, resolveMediaUrl, recordPreviewParams } from '../../lib/api';
 import { MasterSearchResult, ReleaseSearchResult, ArtistSearchResult, UserWithStats, PublicProfileRecord, MarketCarouselItem } from '../../lib/types';
@@ -122,13 +123,18 @@ const YEAR_OPTIONS = [
   { value: '1950s', label: '1950-е и ранее', min: 0, max: 1959 },
 ];
 
-// Футпринт плавающей GlassTabBar: bottom(28) + height(60) = 88px + воздух(24).
-// Нижний клиренс списка home-view, чтобы плашка не перекрывала контент.
-const TAB_BAR_CLEARANCE = 112;
+// Нижний клиренс списка home-view, чтобы плашка GlassTabBar не перекрывала
+// контент: футпринт пилюли + 24 воздуха (iOS: 88 + 24 = прежние 112; Android:
+// пилюля висит над системной панелью, см. lib/useBottomContentInset.ts).
+const TAB_BAR_AIR = 24;
+// Fade-маска у нижней кромки выше клиренса на этот участок дисольва
+// (iOS: 112 + 28 = прежние 140).
+const BOTTOM_FADE_EXTRA = 28;
 
 export default function SearchScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const tabBarClearance = useBottomContentInset({ tabBar: true, extra: TAB_BAR_AIR });
   // Query-param focus=market: после navigation из OffersBlock CTA нужно
   // сразу проскроллить к Маркет-секции, а не показать пустой Поиск.
   const { focus } = useLocalSearchParams<{ focus?: string }>();
@@ -1158,7 +1164,7 @@ export default function SearchScreen() {
     <View style={styles.searchContainer}>
       {/* Title row + avatar */}
       <View style={styles.topRow}>
-        <AnimatedGradientText style={Typography.heroTitle}>Поиск</AnimatedGradientText>
+        <AnimatedGradientText style={Typography.heroTitle} fit>Поиск</AnimatedGradientText>
         <ProfileAvatarButton onPress={handleProfilePress} />
       </View>
 
@@ -1492,7 +1498,7 @@ export default function SearchScreen() {
             // Плавающая GlassTabBar (bottom:28 + height:60 = ~88px) перекрывала
             // низ home-view (market-рейл + curtain-CTA) при раскрытой истории.
             // Даём контенту клиренс под плашку + воздух, чтобы ничего не заезжало.
-            contentBottomPad={TAB_BAR_CLEARANCE}
+            contentBottomPad={tabBarClearance}
             cardVariant="compact"
             onScroll={onScrollSearch}
             scrollToTopRef={scrollToTopRef}
@@ -1510,7 +1516,7 @@ export default function SearchScreen() {
           <LinearGradient
             pointerEvents="none"
             colors={['rgba(250,251,255,0)', 'rgba(250,251,255,0.95)']}
-            style={styles.bottomFade}
+            style={[styles.bottomFade, { height: tabBarClearance + BOTTOM_FADE_EXTRA }]}
           />
         )}
       </View>
@@ -1545,14 +1551,13 @@ const styles = StyleSheet.create({
   flex: {
     flex: 1,
   },
-  // Fade-маска у нижней кромки home-view (см. рендер). Высота 140 перекрывает
-  // футпринт плашки (88) + участок дисольва над ней.
+  // Fade-маска у нижней кромки home-view (см. рендер). Высота задаётся в
+  // рендере: клиренс под плашку + участок дисольва над ней (iOS — 140).
   bottomFade: {
     position: 'absolute',
     left: 0,
     right: 0,
     bottom: 0,
-    height: 140,
   },
   // Curtain CTA — юзер скроллит сюда, продолжает тянуть → progress внизу
   // блока наполняется до 100% → commit запускает in-place slide-up Маркет-

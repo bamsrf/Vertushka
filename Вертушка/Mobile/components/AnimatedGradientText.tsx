@@ -4,7 +4,7 @@
  * Один shared value управляет всей анимацией — без рассинхрона.
  */
 import React, { useEffect } from 'react';
-import { TextStyle, Text } from 'react-native';
+import { TextStyle, Text, StyleSheet } from 'react-native';
 import MaskedView from '@react-native-masked-view/masked-view';
 import { LinearGradient } from 'expo-linear-gradient';
 import Animated, {
@@ -29,12 +29,24 @@ interface AnimatedGradientTextProps {
   children: React.ReactNode;
   style?: TextStyle | TextStyle[];
   duration?: number;
+  /**
+   * Ужимать в одну строку: `numberOfLines={1}` + `adjustsFontSizeToFit`.
+   * Для hero-заголовков рядом с аватаром/кнопкой — на узких экранах
+   * (Android 360dp, iPhone mini) «Коллекция» в RubikMonoOne 40pt иначе
+   * переносится на две строки и выталкивает аватар. Там, где текст влезает,
+   * ничего не меняет.
+   */
+  fit?: boolean;
 }
+
+/** Ниже 60% кегль уже читается как другой шрифт — лучше пусть обрежется. */
+const FIT_MIN_FONT_SCALE = 0.6;
 
 export const AnimatedGradientText = React.memo(function AnimatedGradientText({
   children,
   style,
   duration = 3500,
+  fit = false,
 }: AnimatedGradientTextProps) {
   const progress = useSharedValue(0);
 
@@ -77,9 +89,17 @@ export const AnimatedGradientText = React.memo(function AnimatedGradientText({
     };
   });
 
+  // Маска и невидимый текст-распорка обязаны ужиматься одинаково — пропсы
+  // одни на оба. flexShrink нужен самому MaskedView: в row-контейнере без
+  // него текст не получает границ и ужиматься ему не во что.
+  const fitProps = fit
+    ? { numberOfLines: 1, adjustsFontSizeToFit: true, minimumFontScale: FIT_MIN_FONT_SCALE }
+    : undefined;
+
   return (
     <MaskedView
-      maskElement={<Text style={style}>{children}</Text>}
+      style={fit ? styles.fitContainer : undefined}
+      maskElement={<Text style={style} {...fitProps}>{children}</Text>}
     >
       <AnimatedLinearGradient
         animatedProps={animatedProps}
@@ -87,10 +107,16 @@ export const AnimatedGradientText = React.memo(function AnimatedGradientText({
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 0 }}
       >
-        <Text style={[style, { opacity: 0 }]}>{children}</Text>
+        <Text style={[style, { opacity: 0 }]} {...fitProps}>{children}</Text>
       </AnimatedLinearGradient>
     </MaskedView>
   );
+});
+
+const styles = StyleSheet.create({
+  fitContainer: {
+    flexShrink: 1,
+  },
 });
 
 export default AnimatedGradientText;

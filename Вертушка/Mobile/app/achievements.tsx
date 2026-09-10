@@ -18,6 +18,7 @@ import {
   Share,
   Platform,
   Dimensions,
+  type LayoutChangeEvent,
 } from 'react-native';
 import { Stack, useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -27,7 +28,7 @@ import * as Sharing from 'expo-sharing';
 import { LinearGradient } from 'expo-linear-gradient';
 import { api } from '../lib/api';
 import { Colors, Spacing, BorderRadius, androidShadow } from '../constants/theme';
-import { ms } from '../lib/responsive';
+import { isCompact, ms } from '../lib/responsive';
 import { shareWithForegroundFallback } from '../lib/shareCompat';
 import { useAndroidBackClose } from '../lib/useAndroidBackClose';
 import { AchievementPin } from '../components/AchievementPin';
@@ -62,15 +63,50 @@ import type {
 // (iPhone mini/SE, 375pt) при фиксе три колонки не влезали в карточку на 1pt
 // и грид схлопывался в две. Ширина карточки = экран − 2×marginHorizontal(md)
 // − 2×paddingHorizontal(lg).
+// На узких экранах (Android 360dp, iPhone mini) карточка серии ужимает
+// горизонтальный паддинг до md: иначе ячейка выходила 82pt, пины 72pt почти
+// касались друг друга, а мета-пин 96pt вылезал из ячейки. С паддингом md
+// ширина ячейки на 360dp = 87 — та же раскладка, что на 390+.
+//
+// Оценка от Dimensions — только для первого кадра: на Android 360dp
+// 3×87 + 2×16 = 293 упиралось во внутренние ~294 и из-за рамки карточки
+// (1pt, у surprise-серии 1.5pt) и субпиксельного округления грид всё равно
+// схлопывался в две колонки. Итоговая ширина ячейки берётся из реальной
+// ширины контейнера (`useGridCell` → onLayout) — без ручной арифметики
+// «экран − поля − паддинг − рамка».
 const GRID_COLS = 3;
 const GRID_GAP = 16;
 const GRID_MAX_CELL = 88;
+const SERIES_CARD_PADDING_H = isCompact ? Spacing.md : Spacing.lg;
+const SERIES_CARD_BORDER_MAX = 1.5;
 const GRID_INNER_WIDTH =
-  Dimensions.get('window').width - 2 * Spacing.md - 2 * Spacing.lg;
-const GRID_CELL = Math.min(
-  GRID_MAX_CELL,
-  Math.floor((GRID_INNER_WIDTH - GRID_GAP * (GRID_COLS - 1)) / GRID_COLS),
-);
+  Dimensions.get('window').width -
+  2 * Spacing.md -
+  2 * SERIES_CARD_PADDING_H -
+  2 * SERIES_CARD_BORDER_MAX;
+
+function cellForWidth(innerWidth: number): number {
+  return Math.min(
+    GRID_MAX_CELL,
+    Math.floor((innerWidth - GRID_GAP * (GRID_COLS - 1)) / GRID_COLS),
+  );
+}
+
+const GRID_CELL = cellForWidth(GRID_INNER_WIDTH);
+
+/**
+ * Ширина ячейки грида по фактической ширине `gridWrap`. До первого onLayout —
+ * оценка GRID_CELL, чтобы первый кадр не прыгал. На iPhone 390+ измеренная
+ * ширина даёт те же 88, что и раньше.
+ */
+function useGridCell(): { cell: number; onGridLayout: (e: LayoutChangeEvent) => void } {
+  const [innerWidth, setInnerWidth] = useState(0);
+  const onGridLayout = useCallback((e: LayoutChangeEvent) => {
+    setInnerWidth(e.nativeEvent.layout.width);
+  }, []);
+  const cell = innerWidth > 0 ? cellForWidth(innerWidth) : GRID_CELL;
+  return { cell, onGridLayout };
+}
 
 export default function AchievementsScreen() {
   const router = useRouter();
@@ -257,6 +293,8 @@ function SeriesGroup({
   const regulars = series.items.filter((i) => !i.is_meta);
   const meta = series.items.find((i) => i.is_meta) || null;
   const progress = series.total > 0 ? series.unlocked / series.total : 0;
+  const { cell, onGridLayout } = useGridCell();
+  const cellStyle = { width: cell };
 
   return (
     <View style={styles.seriesCard}>
@@ -294,11 +332,11 @@ function SeriesGroup({
         )}
       </View>
 
-      <View style={styles.gridWrap}>
+      <View style={styles.gridWrap} onLayout={onGridLayout}>
         {regulars.map((it) => (
           <TouchableOpacity
             key={it.code}
-            style={styles.gridCell}
+            style={[styles.gridCell, cellStyle]}
             onPress={() => onPin(it)}
             activeOpacity={0.7}
           >
@@ -322,7 +360,7 @@ function SeriesGroup({
 
         {meta && (
           <TouchableOpacity
-            style={[styles.gridCell, styles.gridCellMeta]}
+            style={[styles.gridCell, cellStyle]}
             onPress={() => onPin(meta)}
             activeOpacity={0.7}
           >
@@ -368,6 +406,7 @@ function SurpriseBlock({
   onPin: (item: AchievementItem) => void;
 }) {
   const isPeer = !!peerUsername;
+  const { cell, onGridLayout } = useGridCell();
   return (
     <View style={[styles.seriesCard, styles.surpriseCard]}>
       <GroovesBg opacity={0.05} originX={350} originY={400} />
@@ -398,11 +437,11 @@ function SurpriseBlock({
           </Text>
         </View>
       ) : (
-        <View style={styles.gridWrap}>
+        <View style={styles.gridWrap} onLayout={onGridLayout}>
           {randomItems.map((it) => (
             <TouchableOpacity
               key={it.code}
-              style={styles.gridCell}
+              style={[styles.gridCell, { width: cell }]}
               onPress={() => onPin(it)}
               activeOpacity={0.7}
             >
@@ -787,7 +826,7 @@ const styles = StyleSheet.create({
   seriesCard: {
     backgroundColor: M_NAVY,
     borderRadius: BorderRadius.xl,
-    paddingHorizontal: Spacing.lg,
+    paddingHorizontal: SERIES_CARD_PADDING_H,
     paddingVertical: Spacing.md,
     marginHorizontal: Spacing.md,
     marginBottom: Spacing.md,
@@ -881,12 +920,9 @@ const styles = StyleSheet.create({
     gap: GRID_GAP,
     rowGap: 18,
   },
+  // width задаётся в рендере (useGridCell).
   gridCell: {
-    width: GRID_CELL,
     alignItems: 'center',
-  },
-  gridCellMeta: {
-    width: GRID_CELL,
   },
   gridLabel: {
     marginTop: 8,
