@@ -23,7 +23,7 @@
       "channel": "preview",
       "ios": {
         "simulator": false,
-        "image": "macos-sequoia-15.6-xcode-26.0"
+        "image": "macos-tahoe-26.5-xcode-26.6"
       },
       "android": {
         "channel": "preview-android",
@@ -41,7 +41,7 @@
         "SENTRY_ALLOW_FAILURE": "true"
       },
       "ios": {
-        "image": "macos-sequoia-15.6-xcode-26.0"
+        "image": "macos-tahoe-26.5-xcode-26.6"
       },
       "android": {
         "channel": "production-android",
