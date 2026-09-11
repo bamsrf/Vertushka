@@ -43,7 +43,7 @@ from sqlalchemy import text
 from app.database import async_session_maker, init_db, close_db
 from app.services.cache import cache
 from app.services.discogs import DiscogsService
-from app.services.rate_limiter import discogs_limiter
+from app.services.rate_limiter import Priority, discogs_limiter
 
 logging.basicConfig(
     level=logging.INFO,
@@ -79,14 +79,34 @@ async def _load_candidates() -> list[dict]:
 
 
 async def _recompute(discogs: DiscogsService, discogs_id: str) -> bool | None:
-    """Свежий вердикт по релизу. None — «цены нет, вердикта нет»."""
+    """Свежий вердикт по релизу. None — «цены нет, вердикта нет».
+
+    Дёргаем ровно два эндпоинта, а не get_release. Формуле нужны только цены и
+    community-счётчики; get_release тянет сверх этого мастера и миниатюру
+    артиста — вчетверо больше запросов на релиз. На 253 кандидатах это ~2500
+    вызовов, то есть 65 req/min против лимита Discogs 60: прогон сам себя
+    заваливал 429 и терял вердикт по половине релизов. Два вызова при --delay 6
+    дают 20 req/min и оставляют запас живым юзерам.
+
+    Priority.BATCH — скрипт не должен выгребать токены у запросов, которых
+    кто-то ждёт в UI.
+    """
     try:
         await cache.delete("release", discogs_id)
         await cache.delete("price_stats", discogs_id)
     except Exception:
         logger.debug("cache drop failed for %s", discogs_id, exc_info=True)
-    data = await discogs.get_release(discogs_id)
-    return data.get("is_collectible")
+
+    stats = await discogs._get_price_stats(discogs_id)
+    release = await discogs._get(
+        f"{discogs.BASE_URL}/releases/{discogs_id}",
+        headers=discogs._get_token_headers(),
+        priority=Priority.BATCH,
+    )
+    community = release.get("community") or {}
+    return DiscogsService.compute_is_collectible(
+        stats, community.get("have"), community.get("want")
+    )
 
 
 async def _apply(discogs_id: str, value: bool) -> None:
@@ -123,6 +143,8 @@ async def _invalidate_negative_index() -> int:
 
 
 async def run(apply: bool, delay: float, limit: int | None) -> None:
+    """Прогон по кандидатам. Ошибки не персистятся — релиз, по которому Discogs
+    не ответил, останется с прежним флагом и попадёт в следующий прогон."""
     await init_db()
     candidates = await _load_candidates()
     if limit:
@@ -194,7 +216,8 @@ async def run(apply: bool, delay: float, limit: int | None) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Пересчёт is_collectible по новой формуле")
     parser.add_argument("--apply", action="store_true", help="Записать изменения")
-    parser.add_argument("--delay", type=float, default=1.6)
+    parser.add_argument("--delay", type=float, default=6.0,
+                        help="Секунд между релизами (2 вызова каждый: 6с ≈ 20 req/min)")
     parser.add_argument("--limit", type=int, default=None)
     args = parser.parse_args()
     asyncio.run(run(apply=args.apply, delay=args.delay, limit=args.limit))
