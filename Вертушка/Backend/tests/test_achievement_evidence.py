@@ -72,9 +72,25 @@ def test_all_builder_codes_are_registered_achievements():
 
 
 def test_key_series_are_covered():
-    for code in ("C3_collectible_x1", "MV_crown_jewel", "J2_gift_done",
+    for code in ("C3_collectible_x1", "MV_crown_jewel", "J5_first_received",
                  "R_palindrome", "D5_melodiya_x10", "BX1_first_box"):
         assert EV.get_evidence_builder(code) is not None, code
+
+
+def test_gift_series_has_no_evidence_except_first_received():
+    """Серия подарков про отношения: пластинку называет только «С теплом»."""
+    for code in ("J1_first_gift", "J2_gift_done", "J3_three_recipients",
+                 "J4_ten_recipients", "J7_boomerang", "J8_loved", "J9_santa",
+                 "META_gifts"):
+        assert EV.get_evidence_builder(code) is None, code
+
+
+def test_old_gift_evidence_is_muted_on_read():
+    """Улики ранних анлоков остались в metadata — на чтении их глушим."""
+    meta = {"evidence": {"records": [{"artist": "Björk", "title": "Homogenic"}]}}
+    assert EV.evidence_text(meta, code="J3_three_recipients") is None
+    assert EV.evidence_text(meta, code="J5_first_received") == "Björk — Homogenic"
+    assert EV.evidence_text(meta) == "Björk — Homogenic"
 
 
 # --- Merge в ядре ---------------------------------------------------------------

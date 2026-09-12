@@ -61,7 +61,7 @@ async def backfill(dry_run: bool) -> None:
                 if dry_run:
                     logger.info(
                         "[dry-run] %s / user %s → %s",
-                        ua.code, ua.user_id, evidence_text(merged),
+                        ua.code, ua.user_id, evidence_text(merged, code=ua.code),
                     )
                 else:
                     fresh.ach_metadata = merged
