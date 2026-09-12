@@ -680,6 +680,45 @@ async def add_record_to_collection(
     )
 
 
+async def _cascade_delete_orphaned_user_record(
+    *, db: AsyncSession, record_id: UUID, current_user: User
+) -> None:
+    """Если убранный из коллекции элемент был последней привязкой к своей же
+    ручной записи, сносим и саму запись — иначе она зависает 'approved' и
+    продолжает висеть в «Моих релизах» и в счётчике вклада, хотя из коллекции
+    уже пропала. Удаление через отдельный экран деталей и так каскадит это
+    (`DELETE /records/user/{record_id}`); здесь тот же путь для свайпа из
+    коллекции, где раньше удалялась только связь CollectionItem.
+    """
+    from app.services.user_record import (
+        DELETED_STATUS,
+        count_foreign_holders,
+        soft_delete_user_record,
+    )
+
+    res = await db.execute(select(Record).where(Record.id == record_id))
+    record = res.scalar_one_or_none()
+    if (
+        record is None
+        or record.source != "user"
+        or record.created_by_user_id != current_user.id
+        or record.moderation_status == DELETED_STATUS
+    ):
+        return
+
+    holders = await count_foreign_holders(db=db, record=record, owner_id=current_user.id)
+    if holders:
+        return
+
+    await soft_delete_user_record(db=db, record=record, owner_id=current_user.id)
+    await db.commit()
+
+    from app.services.achievements import emit_event
+    from app.services.achievements.events import USER_RECORD_DELETED
+
+    await emit_event(db, current_user.id, USER_RECORD_DELETED, {"record_id": record_id})
+
+
 @router.delete("/{collection_id}/records/{record_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def remove_record_from_collection(
     collection_id: UUID,
@@ -721,6 +760,10 @@ async def remove_record_from_collection(
     removed_record_id = item.record_id
     await db.delete(item)
     await db.commit()
+
+    await _cascade_delete_orphaned_user_record(
+        db=db, record_id=removed_record_id, current_user=current_user
+    )
 
     # Пасхалка «Сомнения» считает циклы добавил-удалил по релизу. Строки уже
     # не будет, поэтому record_id передаём явно. Ошибки эмита глушатся внутри —
@@ -774,6 +817,10 @@ async def remove_item_from_collection(
     removed_record_id = item.record_id
     await db.delete(item)
     await db.commit()
+
+    await _cascade_delete_orphaned_user_record(
+        db=db, record_id=removed_record_id, current_user=current_user
+    )
 
     # Пасхалка «Сомнения» считает циклы добавил-удалил по релизу. Строки уже
     # не будет, поэтому record_id передаём явно. Ошибки эмита глушатся внутри —
