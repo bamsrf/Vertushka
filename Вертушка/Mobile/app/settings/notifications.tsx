@@ -12,6 +12,7 @@ import {
   Animated,
   Pressable,
   Linking,
+  Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Icon, Toggle } from '@/components/ui';
@@ -23,7 +24,14 @@ import { toast } from '../../lib/toast';
 import { showActionSheet } from '../../lib/actionSheetCompat';
 import { NotificationSettings } from '../../lib/types';
 import { Colors, Typography, Spacing, BorderRadius } from '../../constants/theme';
-import { ms } from '../../lib/responsive';
+import { isCompact, ms } from '../../lib/responsive';
+
+/**
+ * Android 360dp: иконка + кнопка «Разрешить» съедали ширину, и заголовок
+ * ломался по слогам («Разреши те уведо мления»). На узком Android кнопка
+ * уезжает под текст на всю ширину карточки; раскладка iOS не меняется.
+ */
+const STACK_PERMISSION_BUTTON = Platform.OS === 'android' && isCompact;
 
 function SettingRow({ label, description, value, onToggle, disabled }: {
   label: string;
@@ -203,7 +211,7 @@ export default function NotificationsScreen() {
 
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         {osPermission === 'blocked' ? (
-          <View style={styles.permissionBanner}>
+          <View style={[styles.permissionBanner, STACK_PERMISSION_BUTTON && styles.permissionBannerStacked]}>
             <View style={styles.permissionIconContainer}>
               <Icon name="notifications-off-outline" size={24} color={Colors.warning} />
             </View>
@@ -211,14 +219,17 @@ export default function NotificationsScreen() {
               <Text style={styles.permissionTitle}>Уведомления отключены</Text>
               <Text style={styles.permissionSubtitle}>Разрешите в настройках устройства</Text>
             </View>
-            <TouchableOpacity style={styles.permissionButton} onPress={() => Linking.openSettings()}>
+            <TouchableOpacity
+              style={[styles.permissionButton, STACK_PERMISSION_BUTTON && styles.permissionButtonStacked]}
+              onPress={() => Linking.openSettings()}
+            >
               <Text style={styles.permissionButtonText}>Открыть</Text>
             </TouchableOpacity>
           </View>
         ) : null}
 
         {osPermission === 'ask' ? (
-          <View style={styles.permissionBanner}>
+          <View style={[styles.permissionBanner, STACK_PERMISSION_BUTTON && styles.permissionBannerStacked]}>
             <View style={styles.permissionIconContainer}>
               <Icon name="notifications-outline" size={24} color={Colors.royalBlue} />
             </View>
@@ -227,7 +238,11 @@ export default function NotificationsScreen() {
               <Text style={styles.permissionSubtitle}>Будете в курсе новых подписчиков и подарков</Text>
             </View>
             <TouchableOpacity
-              style={[styles.permissionButton, { backgroundColor: Colors.royalBlue }]}
+              style={[
+                styles.permissionButton,
+                { backgroundColor: Colors.royalBlue },
+                STACK_PERMISSION_BUTTON && styles.permissionButtonStacked,
+              ]}
               onPress={handleRequestPermission}
             >
               <Text style={[styles.permissionButtonText, { color: Colors.background }]}>Разрешить</Text>
@@ -415,7 +430,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  permissionTextContainer: { flex: 1 },
+  // Android: minWidth: 0 — колонка текста обязана ужиматься, а не выталкивать
+  // кнопку; кнопка (flexShrink: 0) не сжимается до переноса своего лейбла.
+  permissionTextContainer: { flex: 1, ...Platform.select({ android: { minWidth: 0 }, default: {} }) },
   permissionTitle: { ...Typography.bodyBold, color: Colors.text, fontSize: ms(14) },
   permissionSubtitle: { ...Typography.caption, color: Colors.textSecondary, marginTop: 1 },
   permissionButton: {
@@ -423,6 +440,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.md,
     borderRadius: BorderRadius.md,
     backgroundColor: Colors.warning,
+    ...Platform.select({ android: { flexShrink: 0 }, default: {} }),
   },
   permissionButtonText: { ...Typography.buttonSmall, color: Colors.background },
+  // Узкий Android: карточка переносит кнопку на вторую строку под текст.
+  permissionBannerStacked: { flexWrap: 'wrap' },
+  permissionButtonStacked: { flexBasis: '100%', alignItems: 'center', marginTop: Spacing.xs },
 });

@@ -44,6 +44,7 @@ import { analytics } from '../../../lib/analytics';
 import { useAuthStore, useFollowStore } from '../../../lib/store';
 import { useMessagesStore } from '../../../lib/messagesStore';
 import { ms } from '../../../lib/responsive';
+import { androidShadow } from '../../../constants/theme';
 import {
   PublicProfile,
   PublicProfileRecord,
@@ -77,6 +78,18 @@ const SORT_OPTIONS: { id: SortMode; label: string }[] = [
   { id: 'added_asc', label: 'Старые → новые' },
   { id: 'title', label: 'По названию' },
 ];
+
+/**
+ * Android 360dp: три столбца статов по ~65dp и кнопка «Вы подписаны» между
+ * двумя иконками — подписи и лейбл обрезались многоточием. Ужимаем шрифт под
+ * ширину (numberOfLines уже стоит); на iOS пропсы не добавляются.
+ */
+const NARROW_LABEL_FIT =
+  Platform.OS === 'android' ? ({ adjustsFontSizeToFit: true, minimumFontScale: 0.7 } as const) : {};
+const FOLLOW_TXT_FIT =
+  Platform.OS === 'android'
+    ? ({ numberOfLines: 1, adjustsFontSizeToFit: true, minimumFontScale: 0.8 } as const)
+    : {};
 
 const PP = {
   ivory: '#F4EEE6',
@@ -865,13 +878,13 @@ export default function UserProfileScreen() {
             <View style={styles.heroStatsRow}>
               <View style={styles.heroStatItem}>
                 <Text style={styles.heroStatNum}>{pubProfile.collection_count}</Text>
-                <Text style={styles.heroStatLbl} numberOfLines={1}>
+                <Text style={styles.heroStatLbl} numberOfLines={1} {...NARROW_LABEL_FIT}>
                   в наличии
                 </Text>
               </View>
               <View style={styles.heroStatItem}>
                 <Text style={styles.heroStatNum}>{pubProfile.wishlist_count}</Text>
-                <Text style={styles.heroStatLbl} numberOfLines={1}>
+                <Text style={styles.heroStatLbl} numberOfLines={1} {...NARROW_LABEL_FIT}>
                   в вишлисте
                 </Text>
               </View>
@@ -886,7 +899,7 @@ export default function UserProfileScreen() {
                 activeOpacity={0.7}
               >
                 <Text style={styles.heroStatNum}>{pubProfile.followers_count}</Text>
-                <Text style={[styles.heroStatLbl, styles.heroStatLblLink]} numberOfLines={1}>
+                <Text style={[styles.heroStatLbl, styles.heroStatLblLink]} numberOfLines={1} {...NARROW_LABEL_FIT}>
                   подписчики
                 </Text>
               </TouchableOpacity>
@@ -925,7 +938,9 @@ export default function UserProfileScreen() {
                   ) : (
                     <>
                       <Icon name="checkmark" size={16} color={PP.cobalt} />
-                      <Text style={[styles.followTxt, styles.followTxtActive]}>Вы подписаны</Text>
+                      <Text style={[styles.followTxt, styles.followTxtActive, styles.followTxtFit]} {...FOLLOW_TXT_FIT}>
+                        Вы подписаны
+                      </Text>
                       <Icon name="ellipsis-horizontal" size={16} color={PP.cobalt} />
                     </>
                   )}
@@ -1381,6 +1396,8 @@ const styles = StyleSheet.create({
   },
   followTxt: { color: '#fff', fontWeight: '600', fontSize: ms(14) },
   followTxtActive: { color: PP.cobalt },
+  // Android: лейбл между двумя иконками обязан ужиматься, а не резаться «…».
+  followTxtFit: Platform.select({ android: { flexShrink: 1 }, default: {} }),
 
   /* Карточка стоимости коллекции */
   valueCard: {
@@ -1394,6 +1411,13 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.08,
     shadowRadius: 12,
     elevation: 2,
+    // Android: фон карточки полупрозрачный, и elevation-тень просвечивала
+    // сквозь него серой «рамкой» по всей карточке. Тень через boxShadow —
+    // рисуется только снаружи (тот же паттерн, что у GlassTabBar / #196).
+    ...Platform.select({
+      android: { elevation: 0, ...androidShadow({ color: PP.ink, opacity: 0.08, radius: 12, offsetY: 6 }) },
+      default: {},
+    }),
   },
   valueLabel: {
     fontSize: 10, color: PP.slate, textTransform: 'uppercase', letterSpacing: 0.8,

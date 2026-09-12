@@ -131,6 +131,13 @@ const TAB_BAR_AIR = 24;
 // (iOS: 112 + 28 = прежние 140).
 const BOTTOM_FADE_EXTRA = 28;
 
+/**
+ * Android 360dp: «Артист, альбом или @username» не влезал в пилюлю поиска и
+ * обрезался. Короче на Android; строка iOS прежняя.
+ */
+const SEARCH_PLACEHOLDER =
+  Platform.OS === 'android' ? 'Артист, альбом, @username' : 'Артист, альбом или @username';
+
 export default function SearchScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -1176,7 +1183,7 @@ export default function SearchScreen() {
             style={styles.searchInput}
             value={searchInput}
             onChangeText={handleSearchInputChange}
-            placeholder={isUserSearch ? "Имя пользователя..." : "Артист, альбом или @username"}
+            placeholder={isUserSearch ? "Имя пользователя..." : SEARCH_PLACEHOLDER}
             placeholderTextColor={Colors.textMuted}
             returnKeyType="search"
             onSubmitEditing={handleSearch}
