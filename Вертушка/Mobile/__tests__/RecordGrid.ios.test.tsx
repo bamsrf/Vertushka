@@ -14,7 +14,7 @@ import React from 'react';
 import { Platform, Text, View } from 'react-native';
 import renderer, { act } from 'react-test-renderer';
 import { RecordGrid } from '@/components/RecordGrid';
-import { reactElementSerializer } from './helpers/reactElementSerializer';
+import { reactElementSerializer, serializeTree } from './helpers/reactElementSerializer';
 
 expect.addSnapshotSerializer(reactElementSerializer);
 
@@ -52,5 +52,17 @@ describe('RecordGrid (iOS)', () => {
 
   it('дерево совпадает со снимком', () => {
     expect(renderGrid().toJSON()).toMatchSnapshot();
+  });
+
+  it('с переданными listGesture/contentShift дерево идентично', () => {
+    // На iOS хук useAndroidOverdrag их не отдаёт, но и переданные вручную
+    // они не должны ничего менять: ни GestureDetector, ни обёртки шапки.
+    const withProps = renderGrid({
+      listGesture: {},
+      contentShift: { value: 0 },
+      onListLayout: () => undefined,
+      onContentSizeChange: () => undefined,
+    }).toJSON();
+    expect(serializeTree(withProps)).toBe(serializeTree(renderGrid().toJSON()));
   });
 });

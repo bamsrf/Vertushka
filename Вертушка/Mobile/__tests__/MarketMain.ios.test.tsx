@@ -15,7 +15,7 @@ import React from 'react';
 import { Platform } from 'react-native';
 import renderer, { act } from 'react-test-renderer';
 import MarketMain from '@/components/market/MarketMain';
-import { reactElementSerializer } from './helpers/reactElementSerializer';
+import { reactElementSerializer, serializeTree } from './helpers/reactElementSerializer';
 
 expect.addSnapshotSerializer(reactElementSerializer);
 
@@ -71,5 +71,17 @@ describe('MarketMain (iOS)', () => {
 
   it('дерево совпадает со снимком', () => {
     expect(renderMarket().toJSON()).toMatchSnapshot();
+  });
+
+  it('с переданными listGesture/headerShift дерево идентично', () => {
+    // На iOS хук useAndroidOverdrag их не отдаёт, но и переданные вручную
+    // они не должны ничего менять: ни GestureDetector, ни обёртки шапки.
+    const withProps = renderMarket({
+      listGesture: {},
+      headerShift: { value: 0 },
+      onListLayout: () => undefined,
+      onContentSizeChange: () => undefined,
+    }).toJSON();
+    expect(serializeTree(withProps)).toBe(serializeTree(renderMarket().toJSON()));
   });
 });
