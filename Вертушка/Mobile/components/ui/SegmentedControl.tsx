@@ -98,12 +98,16 @@ export function SegmentedControl<T extends string>({
 }
 
 const styles = StyleSheet.create({
+  // Высота — минимум, не фикс. С жёсткими 48pt при крупном системном шрифте
+  // `adjustsFontSizeToFit` упирался в высоту бокса и ужимал «Вход» /
+  // «Регистрация» до нечитаемых ~5pt (minimumFontScale iOS в этом случае не
+  // соблюдает). Индикатор растягивается сам: он абсолютный, с top/bottom.
   container: {
     flexDirection: 'row',
     backgroundColor: Colors.surface,
     borderRadius: BorderRadius.md,
     padding: PADDING,
-    height: 48,
+    minHeight: 48,
     position: 'relative',
   },
   indicator: {

@@ -92,8 +92,18 @@ export const AnimatedGradientText = React.memo(function AnimatedGradientText({
   // Маска и невидимый текст-распорка обязаны ужиматься одинаково — пропсы
   // одни на оба. flexShrink нужен самому MaskedView: в row-контейнере без
   // него текст не получает границ и ужиматься ему не во что.
+  // `maxFontSizeMultiplier: 1` — только для `fit`-режима, где это название
+  // экрана («ПОИСК», «КОЛЛЕКЦИЯ»): оно и так ужимается под ширину, поэтому от
+  // системного увеличения не становится крупнее — зато его строчный бокс
+  // вырастал, и аватар в том же ряду переставал стоять на одной линии с
+  // буквами. Обычный текст (fit не задан) масштабируется как раньше.
   const fitProps = fit
-    ? { numberOfLines: 1, adjustsFontSizeToFit: true, minimumFontScale: FIT_MIN_FONT_SCALE }
+    ? {
+        numberOfLines: 1 as const,
+        adjustsFontSizeToFit: true,
+        minimumFontScale: FIT_MIN_FONT_SCALE,
+        maxFontSizeMultiplier: 1,
+      }
     : undefined;
 
   return (
