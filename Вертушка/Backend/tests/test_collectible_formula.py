@@ -131,3 +131,27 @@ async def test_limited_still_only_ratchets_up():
     rec = _record(is_limited=True)
     await _apply_discogs_release(rec, {"is_limited": False}, FakeDB())
     assert rec.is_limited is True
+
+
+# --- SQL скрипта пересчёта ---------------------------------------------------
+
+def test_recalc_sql_binds_every_parameter():
+    """Плейсхолдеры в UPDATE'ах пересчёта действительно распознаются.
+
+    Первый прогон с --apply записал ноль изменений: в условии стоял
+    постфиксный каст `:id::bigint`, и SQLAlchemy не считал `:id` параметром
+    вовсе — запрос уезжал в Postgres с двоеточиями и падал синтаксисом. Ошибка
+    проявлялась только на живой базе, поэтому проверяем компиляцию здесь.
+    """
+    import sys
+    from pathlib import Path
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    from sqlalchemy import text
+    from sqlalchemy.dialects import postgresql
+    from scripts.recalc_collectible import SQL_SET_INDEX, SQL_SET_RECORD
+
+    for sql, expected in ((SQL_SET_RECORD, {"v", "id"}), (SQL_SET_INDEX, {"v", "did"})):
+        compiled = text(sql).compile(dialect=postgresql.dialect())
+        assert set(compiled.params) == expected, sql
+        assert ":" not in compiled.string, f"нераспознанный плейсхолдер: {compiled.string}"
