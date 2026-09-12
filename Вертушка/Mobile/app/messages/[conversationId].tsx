@@ -379,7 +379,11 @@ function HeartBurst({ onDone }: { onDone: () => void }) {
 
   return (
     <View pointerEvents="none" style={styles.heartBurstWrap}>
-      <Animated.Text style={[styles.heartBurstEmoji, style]}>❤️</Animated.Text>
+      {/* Декоративная анимация, а не текст: системный «Размер текста» не должен
+          менять её геометрию. Animated.Text идёт мимо metro-шима. */}
+      <Animated.Text style={[styles.heartBurstEmoji, style]} allowFontScaling={false}>
+        ❤️
+      </Animated.Text>
     </View>
   );
 }

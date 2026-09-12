@@ -32,6 +32,7 @@ import { CoachPulse } from './onboarding/CoachPulse';
 import { SwipeLeftHint, SWIPE_HINT_WIDTH } from './ui/SwipeLeftHint';
 import type { VinylColorConfig } from '../lib/vinylColor';
 
+import { MAX_FONT_SCALE } from '../lib/fontScale/maxFontScale';
 const KNOB = 56;
 const PILL_H = 64;
 const FAB_W = PILL_H; // collapsed = круг
@@ -243,6 +244,9 @@ export function ManualAddVinylToggle({ onOpen, bottom = '14%', highlighted = fal
             // от многоточия в «Добавить», без неё подсказка ломает надпись.
             adjustsFontSizeToFit
             minimumFontScale={0.85}
+            // Animated.Text идёт мимо metro-шима (тот подменяет только Text
+            // из react-native), поэтому потолок системного шрифта ставим руками.
+            maxFontSizeMultiplier={MAX_FONT_SCALE}
           >
             Добавить{'\n'}вручную
           </Animated.Text>
