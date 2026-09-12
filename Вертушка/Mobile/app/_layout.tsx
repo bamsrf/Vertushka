@@ -57,6 +57,7 @@ import {
 } from '../components/AchievementUnlockOverlay';
 import { GiftMatchModal } from '../components/GiftMatchModal';
 import { MascotIntro } from '../components/MascotIntro';
+import { useIntroStore } from '../lib/introStore';
 import { initFirstStepsWatcher } from '../lib/onboardingProgress';
 import { InAppNotificationToastHost, inAppToast } from '../components/notifications/InAppNotificationToast';
 import { ToastHost } from '../components/ToastHost';
@@ -585,7 +586,16 @@ function RootLayout() {
             с забронированным пунктом вишлиста. Живёт здесь, а не на экранах:
             добавить в коллекцию можно из скана, поиска и карточки релиза. */}
         <GiftMatchModal />
-        {!introDone && <MascotIntro onFinish={() => setIntroDone(true)} />}
+        {!introDone && (
+          <MascotIntro
+            onFinish={() => {
+              setIntroDone(true);
+              // Глобальный флаг для экранов под интро (сканер на Android не
+              // поднимает камеру, пока заставка на экране) — см. lib/introStore.
+              useIntroStore.getState().markDone();
+            }}
+          />
+        )}
         <InAppNotificationToastHost />
         {/* Порядок = z-order оверлеев: каждый следующий RootOverlay создаёт
             своё UIWindow выше предыдущего. Тост последний — он самый срочный

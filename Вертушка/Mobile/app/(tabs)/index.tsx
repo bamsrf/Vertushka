@@ -11,6 +11,9 @@ import {
   Modal,
   FlatList,
   ActivityIndicator,
+  Platform,
+  useWindowDimensions,
+  type DimensionValue,
 } from 'react-native';
 import { toast } from '../../lib/toast';
 import { cleanArtistName } from '../../lib/format';
@@ -19,6 +22,8 @@ import { useRouter, useFocusEffect } from 'expo-router';
 import { useIsFocused } from 'expo-router';
 import { Icon } from '@/components/ui';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { tabBarFootprint } from '../../lib/useBottomContentInset';
+import { useIntroStore } from '../../lib/introStore';
 import * as ImageManipulator from 'expo-image-manipulator';
 import { Button, SegmentedControl } from '../../components/ui';
 import { RecordCard } from '../../components/RecordCard';
@@ -41,6 +46,10 @@ function getFormatDisplayInfo(format?: string): { label: string; verb: string } 
   return { label: 'Винил', verb: 'добавлен' };
 }
 
+/** Низ-якорь ряда действий на iOS — как было: 14% высоты экрана. */
+const ACTION_ROW_BOTTOM_IOS: DimensionValue = '14%';
+const ACTION_ROW_BOTTOM_RATIO = 0.14;
+
 export default function ScannerScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -53,6 +62,25 @@ export default function ScannerScreen() {
   // Гасим ТОЛЬКО по фокусу таба, не по showResults: модалка результатов —
   // pageSheet, она не закрывает экран целиком, и превью видно за её краями.
   const isFocused = useIsFocused();
+  // Android: камеру не поднимаем, пока играет интро маскота. Сканер — стартовая
+  // вкладка, он монтируется под заставкой на холодном старте, и открытие камеры
+  // (плюс индикатор камеры в статус-баре) конкурировало с декодером ролика на
+  // бюджетных телефонах. iOS не гейтим — там интро и камера уживались.
+  const introDone = useIntroStore((s) => s.done);
+  const cameraActive = isFocused && (Platform.OS !== 'android' || introDone);
+  // Якорь нижнего ряда действий (затвор + кружок «Добавить вручную»). iOS —
+  // прежние 14% высоты. Android: пилюля таб-бара висит над системной панелью
+  // (3-кнопочная навигация 48dp → футпринт 120dp), и 14% от 800dp = 112dp
+  // сажали кнопки прямо на неё. Берём максимум из процентов и футпринта
+  // пилюли + воздух, чтобы на жестовой панели раскладка не менялась.
+  const { height: windowHeight } = useWindowDimensions();
+  const actionRowBottom: DimensionValue =
+    Platform.OS === 'android'
+      ? Math.max(
+          Math.round(windowHeight * ACTION_ROW_BOTTOM_RATIO),
+          tabBarFootprint(insets.bottom) + Spacing.md,
+        )
+      : ACTION_ROW_BOTTOM_IOS;
   // Подсказка про способы добавления. Условие — только фокус экрана: объяснять
   // тут нечего разблокировать, это первое, что человек видит после регистрации.
   const scanWaysTip = useCoachMark('scan-ways', true, isFocused);
@@ -279,7 +307,7 @@ export default function ScannerScreen() {
       {/* Камера */}
       <CameraView
         ref={cameraRef}
-        active={isFocused}
+        active={cameraActive}
         style={StyleSheet.absoluteFill}
         facing="back"
         barcodeScannerSettings={
@@ -352,7 +380,7 @@ export default function ScannerScreen() {
 
         {/* Кнопка затвора (режим обложки) */}
         {scanMode === 'cover' && !isLoading && (
-          <View style={styles.shutterContainer}>
+          <View style={[styles.shutterContainer, { bottom: actionRowBottom }]}>
             <TouchableOpacity
               style={styles.shutterButton}
               onPress={handleTakePhoto}
@@ -380,7 +408,7 @@ export default function ScannerScreen() {
         {!showResults && (
           <ManualAddVinylToggle
             onOpen={() => router.push('/record/manual')}
-            bottom="14%"
+            bottom={actionRowBottom}
             highlighted={scanWaysTip.visible}
           />
         )}
