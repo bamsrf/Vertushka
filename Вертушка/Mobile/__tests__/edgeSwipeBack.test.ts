@@ -1,16 +1,38 @@
 /// <reference types="jest" />
 /**
- * Пороги Android-свайпа «назад» от левого края (lib/edgeSwipeBack.ts).
- * Сам жест — RNGH, в jest не гоняется; здесь только решающая логика.
+ * Пороги Android-свайпа «назад» с любого места экрана (lib/edgeSwipeBack.ts).
+ * Сам жест — RNGH, в jest не гоняется; здесь только решающая логика и
+ * инварианты порогов, от которых зависит приоритет соседних жестов.
  */
 import {
+  ACTIVE_OFFSET_X,
   COMMIT_DISTANCE,
   COMMIT_VELOCITY,
+  FAIL_OFFSET_X,
+  FAIL_OFFSET_Y,
   FOLLOW_FACTOR,
   followShift,
   isEdgeSwipeEnabledForSegment,
   shouldCommitSwipeBack,
 } from '@/lib/edgeSwipeBack';
+
+describe('пороги активации', () => {
+  it('активация позже любого своего Gesture.Pan (≤12dp) и touch-slop скролла (~8dp)', () => {
+    // Иначе полноэкранный свайп начнёт перебивать карусели и свайп-строки:
+    // в RNGH побеждает первый активировавшийся жест.
+    expect(ACTIVE_OFFSET_X).toBeGreaterThan(12);
+  });
+
+  it('движение влево и вертикаль сдают жест раньше, чем он активируется', () => {
+    expect(FAIL_OFFSET_X).toBeGreaterThan(0);
+    expect(FAIL_OFFSET_X).toBeLessThan(ACTIVE_OFFSET_X);
+    expect(FAIL_OFFSET_Y).toBeLessThan(ACTIVE_OFFSET_X);
+  });
+
+  it('commit по дистанции дальше активации — случайное касание не уводит назад', () => {
+    expect(COMMIT_DISTANCE).toBeGreaterThan(ACTIVE_OFFSET_X);
+  });
+});
 
 describe('shouldCommitSwipeBack', () => {
   it('дотянул дальше порога — уходим назад', () => {

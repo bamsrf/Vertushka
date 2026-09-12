@@ -502,7 +502,7 @@ function RootLayout() {
       <BottomSheetModalProvider>
         <SafeAreaProvider>
           <StatusBar style="dark" />
-        {/* Android: свайп «назад» от левого края на stack-экранах. iOS —
+        {/* Android: свайп «назад» с любого места stack-экрана. iOS —
             passthrough, дерево не меняется. */}
         <AndroidEdgeSwipeBack>
         <Stack
@@ -514,8 +514,8 @@ function RootLayout() {
             // Свайп «назад» ловится из любой точки экрана, а не только от
             // левого края — жест ощущается нативнее. iOS-only: в
             // react-native-screens оба gesture-пропса `@platform ios`, на
-            // Android свайп от левого края даёт AndroidEdgeSwipeBack (обёртка
-            // Stack ниже). Каверза: на экранах с
+            // Android такой же свайп даёт AndroidEdgeSwipeBack (обёртка
+            // Stack выше). Каверза: на экранах с
             // горизонтальным скроллом (авто-рейлы Поиска, карусели релизов/
             // сторов) полноэкранный жест может перехватывать прокрутку ленты —
             // если всплывёт, точечно гасим fullScreenGestureEnabled: false в

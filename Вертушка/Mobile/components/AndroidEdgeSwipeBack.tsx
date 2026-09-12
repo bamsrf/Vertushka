@@ -1,5 +1,6 @@
 /**
- * AndroidEdgeSwipeBack — Android-only свайп «назад» от левого края.
+ * AndroidEdgeSwipeBack — Android-only свайп «назад» с любого места экрана
+ * (аналог iOS full-screen swipe).
  *
  * Зачем: в react-native-screens 4.26 `gestureEnabled` / `fullScreenGestureEnabled`
  * помечены `@platform ios`. На Android native-stack умеет только predictive
@@ -7,13 +8,25 @@
  * 3-кнопочной панелью — системного жеста нет вовсе, со stack-экрана можно
  * уйти только кнопкой в шапке или системной «Назад».
  *
- * Как устроено: не невидимая полоса поверх контента (она перекрыла бы левую
- * половину кнопки «назад» в шапке и таргеты в карточках), а Pan-жест на
- * обёртке всего Stack с `hitSlop({ left: 0, width: EDGE_WIDTH })` — RNGH сам
- * ограничивает распознавание полосой у края, а тапы и скроллы под ней идут
- * как обычно, пока жест не активировался. `failOffsetY` отдаёт вертикальные
- * скроллы; горизонтальные карусели живут своей жизнью везде, кроме самой
- * полосы (там жест приоритетнее — так же, как iOS-овский edge-swipe).
+ * Как устроено: Pan-жест RNGH на обёртке всего Stack, без hitSlop. Тапы и
+ * скроллы под ним идут как обычно, пока жест не активировался
+ * (`activeOffsetX(25)` вправо). `failOffsetX(-10)` отдаёт движение влево,
+ * `failOffsetY(±15)` — вертикальные скроллы.
+ *
+ * Почему не ломает горизонтальные карусели и свайп-строки (проверено по
+ * android/ RNGH 2.32):
+ *  - Нативный RN ScrollView/FlatList (horizontal) при драге на системном
+ *    touch-slop (~8dp) зовёт `requestDisallowInterceptTouchEvent(true)`;
+ *    RNGestureHandlerRootView перехватывает это и через
+ *    `tryCancelAllHandlers` отменяет все ещё не активные жесты — наш в
+ *    том числе. Карусель всегда успевает первой (8 < 25).
+ *  - Свои Gesture.Pan (строки сообщений/вишлиста/уведомлений, AutoRail,
+ *    ThresholdSheet, ReanimatedSwipeable) активируются на 6–12dp; в
+ *    оркестраторе первый активировавшийся отменяет остальных, независимо
+ *    от вложенности (`makeActive` → `shouldHandlerBeCancelledBy`).
+ *  Итог: там, где под пальцем есть горизонтальный скролл/свайп, он и
+ *  выигрывает; свайп «назад» ловится с остального экрана. Никаких реестров
+ *  и `manualActivation` не нужно — приоритет задаётся порогами.
  *
  * Куда уходим: не `router.back()` напрямую, а эмуляция системной «Назад»
  * через тот же `hardwareBackPress`, на который подписаны `useAndroidBackClose`
@@ -40,7 +53,7 @@ import Animated, {
 import { useRouter, useSegments } from 'expo-router';
 import {
   ACTIVE_OFFSET_X,
-  EDGE_WIDTH,
+  FAIL_OFFSET_X,
   FAIL_OFFSET_Y,
   followShift,
   isEdgeSwipeEnabledForSegment,
@@ -76,8 +89,8 @@ function EdgeSwipeHost({ children }: AndroidEdgeSwipeBackProps) {
       Gesture.Pan()
         .enabled(enabled)
         .maxPointers(1)
-        .hitSlop({ left: 0, width: EDGE_WIDTH })
         .activeOffsetX(ACTIVE_OFFSET_X)
+        .failOffsetX(-FAIL_OFFSET_X)
         .failOffsetY([-FAIL_OFFSET_Y, FAIL_OFFSET_Y])
         .onUpdate((e) => {
           shift.value = followShift(e.translationX);
