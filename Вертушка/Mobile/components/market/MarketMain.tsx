@@ -28,13 +28,22 @@ import { Icon } from '../ui/Icon';
 import { analytics } from '../../lib/analytics';
 import { api, resolveMediaUrl } from '../../lib/api';
 import { STORES_TTL_MS, useMarketStore } from '../../lib/marketStore';
-import type { MarketSearchItem, MarketFilters, MarketFacetsResponse } from '../../lib/types';
+import type {
+  MarketSearchItem,
+  MarketFilters,
+  MarketFacetsResponse,
+  MarketReleaseScope,
+} from '../../lib/types';
 import { EMPTY_MARKET_FILTERS, hasActiveFilters } from '../../lib/types';
 
 import { useMarketPagination } from '../../lib/useMarketPagination';
 import { useBottomContentInset } from '../../lib/useBottomContentInset';
 import MarketSection, { type MarketStoreData } from './MarketSection';
 import MarketResultCard, { marketGridStyles } from './MarketResultCard';
+import {
+  MarketReleaseMissModal,
+  MarketReleaseScopeBar,
+} from './MarketReleaseScope';
 
 const AnimatedFlatList = Animated.createAnimatedComponent(FlatList);
 
@@ -56,6 +65,14 @@ interface MarketMainProps {
    * Hint видим только во время pull'а.
    */
   pullFraction?: SharedValue<number>;
+  /**
+   * Пришли с карточки релиза по кнопке «В Маркет» — витрина сужена до этой
+   * пластинки. Читается на каждом рендере, а не запоминается на монтировании:
+   * экран /market единственный на весь стек и переиспользуется (router.navigate
+   * из OffersBlock поднимает живой инстанс), так что запомненный проп навсегда
+   * закрепил бы пластинку первого захода за всеми следующими.
+   */
+  releaseScope?: MarketReleaseScope | null;
 }
 
 // ─── Exit hint ─────────────────────────────────────────────────────────
@@ -158,7 +175,13 @@ const hintStyles = StyleSheet.create({
   },
 });
 
-export function MarketMain({ onScroll, scrollEnabled = true, paddingTop, pullFraction }: MarketMainProps) {
+export function MarketMain({
+  onScroll,
+  scrollEnabled = true,
+  paddingTop,
+  pullFraction,
+  releaseScope: incomingScope = null,
+}: MarketMainProps) {
   // Маркет-слой живёт и в табе Поиска (под пилюлей GlassTabBar), и стековым
   // экраном /market — клиренс считаем под пилюлю в обоих случаях (iOS: 120).
   const listBottomPad = useBottomContentInset({ tabBar: true, extra: 32 });
@@ -174,12 +197,41 @@ export function MarketMain({ onScroll, scrollEnabled = true, paddingTop, pullFra
   const [facets, setFacets] = useState<MarketFacetsResponse | null>(null);
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Сужение живёт в пропе, а в состоянии — только отказ от него: ключ захода,
+  // который человек уже закрыл. Держать здесь копию самого сужения нельзя —
+  // экран переиспользуется, и копия пережила бы переход с другой карточки.
+  const [clearedVisitKey, setClearedVisitKey] = useState<string | null>(null);
+  const [missVisible, setMissVisible] = useState(false);
+
+  const releaseScope =
+    incomingScope && incomingScope.visitKey !== clearedVisitKey ? incomingScope : null;
+
+  // Событие шлём здесь, а не внутри апдейтера setState: React волен вызвать
+  // апдейтер дважды (StrictMode, конкурентный рендер), и каждый сброс
+  // считался бы за два.
+  const clearReleaseScope = useCallback((reason: 'chip' | 'search' | null) => {
+    if (!releaseScope) return;
+    if (reason) analytics.marketReleaseReset({ reason });
+    setClearedVisitKey(releaseScope.visitKey);
+    setMissVisible(false);
+  }, [releaseScope]);
+
   // view_market отсюда НЕ шлётся, хотя место напрашивается. Слой Маркета в
   // (tabs)/search смонтирован всегда — он просто уведён за нижний край экрана
   // и ждёт занавеса. Событие на mount'е считало бы каждое открытие таба
   // Поиска заходом в Маркет, а знаменатель воронки был бы завышен настолько,
   // что market_record_open к нему не с чем сравнивать. Шлют точки входа —
   // см. MarketEntry в lib/analytics.ts.
+
+  // Свой запрос вытесняет сужение по релизу. Оставить их вместе нельзя:
+  // плашка обещает «показываем только эту пластинку», строка поиска — «ищем
+  // то, что набрали», и вместе они дают пустую выдачу без внятной причины.
+  // Гонимся не за debounce, а за первым же символом: плашка обязана исчезнуть
+  // одновременно с началом набора, иначе полсекунды врёт.
+  const handleSearchChange = useCallback((value: string) => {
+    setMarketSearch(value);
+    if (value.trim().length > 0) clearReleaseScope('search');
+  }, [clearReleaseScope]);
 
   useEffect(() => {
     if (searchTimer.current) clearTimeout(searchTimer.current);
@@ -234,8 +286,8 @@ export function MarketMain({ onScroll, scrollEnabled = true, paddingTop, pullFra
   }, []);
 
   const isSearchActive = useMemo(() => {
-    return debouncedQuery.length >= 2 || hasActiveFilters(filters);
-  }, [debouncedQuery, filters]);
+    return debouncedQuery.length >= 2 || hasActiveFilters(filters) || releaseScope !== null;
+  }, [debouncedQuery, filters, releaseScope]);
 
   // Сериализуем фильтры в стабильный ключ — иначе новый объект filters на
   // каждый рендер сбрасывал бы пагинацию.
@@ -278,8 +330,9 @@ export function MarketMain({ onScroll, scrollEnabled = true, paddingTop, pullFra
         sort: 'price_asc',
         limit,
         offset,
+        releaseRecord: releaseScope?.recordId ?? null,
       }),
-    [effectiveQuery, filters],
+    [effectiveQuery, filters, releaseScope],
   );
 
   const {
@@ -287,10 +340,11 @@ export function MarketMain({ onScroll, scrollEnabled = true, paddingTop, pullFra
     loading: searchLoading,
     loadingMore,
     reachedEnd,
+    failed: searchFailed,
     loadMore,
   } = useMarketPagination({
     enabled: isSearchActive,
-    resetKey: `${effectiveQuery}|${filtersKey}`,
+    resetKey: `${effectiveQuery}|${filtersKey}|${releaseScope?.visitKey ?? ''}`,
     fetchPage: fetchSearchPage,
   });
 
@@ -310,6 +364,24 @@ export function MarketMain({ onScroll, scrollEnabled = true, paddingTop, pullFra
     const wasLoading = prevSearchLoading.current;
     prevSearchLoading.current = searchLoading;
     if (!isSearchActive || searchLoading || !wasLoading) return;
+    // Сужение по релизу — не поиск: запрос пустой, фильтров нет, и в воронке
+    // market_search эти заходы выглядели бы как «искал и ничего не нашёл»,
+    // завышая долю неудачных поисков нулями, которых человек не набирал.
+    if (releaseScope) {
+      // Упавший запрос молчит: сказать «этой пластинки нет» из-за моргнувшей
+      // сети значит соврать ровно тем способом, который фича и убирает. И в
+      // аналитику такой заход не идёт — он ничей исход.
+      if (searchFailed) return;
+      const empty = searchItems.length === 0;
+      analytics.marketReleaseScope({
+        outcome: empty ? 'empty' : 'in_stock',
+        results_count: searchItems.length,
+      });
+      // Объяснение показываем ровно один раз на сужение: повторный показ
+      // ловил бы человека при каждом возврате на экран.
+      if (empty) setMissVisible(true);
+      return;
+    }
     analytics.marketSearch({
       query_length: effectiveQuery.length,
       has_filters: hasActiveFilters(filters),
@@ -318,7 +390,23 @@ export function MarketMain({ onScroll, scrollEnabled = true, paddingTop, pullFra
     // filters читаем через замыкание ради hasActiveFilters — в deps лежит его
     // сериализованный filtersKey, объект filters новый на каждый рендер.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isSearchActive, searchLoading, effectiveQuery, filtersKey, searchItems.length]);
+  }, [
+    isSearchActive, searchLoading, effectiveQuery, filtersKey,
+    searchItems.length, releaseScope, searchFailed,
+  ]);
+
+  // Нашёлся ли сам прессинг, с карточки которого пришли, — или в выдаче стоят
+  // только другие издания альбома. Молча показать не ту версию значит
+  // подменить ответ на вопрос «где ВОТ ЭТА»: плашка обязана это назвать.
+  const exactInStock = useMemo(
+    () => !!releaseScope && searchItems.some((it) => it.record_id === releaseScope.recordId),
+    [releaseScope, searchItems],
+  );
+
+  // Снимаем сужение без события: исход этого захода уже уехал в
+  // market_release_scope, и второе событие на то же действие только раздувало
+  // бы долю «сбросов».
+  const dismissMiss = useCallback(() => clearReleaseScope(null), [clearReleaseScope]);
 
   const handleStorePress = useCallback((slug: string) => {
     analytics.viewMarketStore(slug);
@@ -345,6 +433,7 @@ export function MarketMain({ onScroll, scrollEnabled = true, paddingTop, pullFra
   );
 
   return (
+    <>
     <AnimatedFlatList
       // Результаты живут в data (а не в шапке) — только так FlatList знает
       // длину списка и дёргает onEndReached для подгрузки следующей страницы.
@@ -373,9 +462,13 @@ export function MarketMain({ onScroll, scrollEnabled = true, paddingTop, pullFra
               <ActivityIndicator size="small" color="rgba(255,255,255,0.65)" />
             ) : (
               <Text style={styles.searchStateText}>
-                {effectiveQuery
-                  ? `Ничего не найдено по «${effectiveQuery}»`
-                  : 'Под выбранными фильтрами ничего нет в наличии'}
+                {searchFailed
+                  ? 'Не удалось загрузить. Проверьте связь и попробуйте ещё раз'
+                  : releaseScope
+                    ? `${releaseScope.artist} — ${releaseScope.title}: сейчас нет ни в одном магазине`
+                    : effectiveQuery
+                      ? `Ничего не найдено по «${effectiveQuery}»`
+                      : 'Под выбранными фильтрами ничего нет в наличии'}
               </Text>
             )}
           </View>
@@ -400,7 +493,7 @@ export function MarketMain({ onScroll, scrollEnabled = true, paddingTop, pullFra
             <MarketSection
               stores={isSearchActive ? [] : marketStores}
               searchValue={marketSearch}
-              onSearchChange={setMarketSearch}
+              onSearchChange={handleSearchChange}
               onSearchSubmit={Keyboard.dismiss}
               filters={filters}
               onFiltersChange={setFilters}
@@ -419,9 +512,25 @@ export function MarketMain({ onScroll, scrollEnabled = true, paddingTop, pullFra
               </Text>
             </View>
           )}
+          {/* Плашка сужения — последней в шапке, вплотную к сетке: она
+              объясняет именно её состав. Пока идёт первая загрузка, не
+              рисуем: «именно этой версии нет» до ответа сервера — догадка. */}
+          {releaseScope && !searchLoading && searchItems.length > 0 && (
+            <MarketReleaseScopeBar
+              scope={releaseScope}
+              exactInStock={exactInStock}
+              onReset={() => clearReleaseScope('chip')}
+            />
+          )}
         </View>
       }
     />
+      <MarketReleaseMissModal
+        visible={missVisible}
+        scope={releaseScope}
+        onDismiss={dismissMiss}
+      />
+    </>
   );
 }
 

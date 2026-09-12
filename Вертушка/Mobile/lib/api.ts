@@ -976,12 +976,22 @@ class ApiClient {
       sort?: MarketSortMode;
       limit?: number;
       offset?: number;
+      /**
+       * UUID записи — сузить выдачу до этого прессинга и других версий того
+       * же мастера (вход «В Маркет» с карточки релиза). Мастер и носитель
+       * бэкенд берёт с самой записи, отсюда их слать не надо.
+       */
+      releaseRecord?: string | null;
     } = {},
   ): Promise<MarketSearchItem[]> {
-    const { q, format, genres, features, sort = 'price_asc', limit = 50, offset = 0 } = opts;
+    const {
+      q, format, genres, features, sort = 'price_asc', limit = 50, offset = 0,
+      releaseRecord,
+    } = opts;
     const params: Record<string, string | number> = { sort, limit, offset };
     if (q && q.trim().length >= 2) params.q = q.trim();
     if (format) params.format = format;
+    if (releaseRecord) params.release_record = releaseRecord;
     applyMarketFilterParams(params, genres, features);
     return this.deduplicatedGet<MarketSearchItem[]>('/market/search', { params });
   }

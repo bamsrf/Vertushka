@@ -41,6 +41,13 @@ interface UseMarketPaginationResult {
   loadingMore: boolean;
   /** Список дочитан до конца — можно показать «это все». */
   reachedEnd: boolean;
+  /**
+   * Первая страница не приехала (сеть, 5xx). Пустой список и упавший запрос
+   * выглядят одинаково — `items.length === 0`, — а сказать по ним надо разное:
+   * «в наличии ничего нет» это ответ, «не дозвонились» — нет. Без флага
+   * Маркет объявлял бы отсутствующей пластинку, которая просто не доехала.
+   */
+  failed: boolean;
   loadMore: () => void;
 }
 
@@ -54,6 +61,7 @@ export function useMarketPagination({
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
+  const [failed, setFailed] = useState(false);
 
   const fetchRef = useRef(fetchPage);
   fetchRef.current = fetchPage;
@@ -78,6 +86,7 @@ export function useMarketPagination({
       setLoading(false);
       setLoadingMore(false);
       setHasMore(true);
+      setFailed(false);
       hasMoreRef.current = true;
       return;
     }
@@ -85,6 +94,7 @@ export function useMarketPagination({
     busyRef.current = true;
     setLoading(true);
     setHasMore(true);
+    setFailed(false);
     hasMoreRef.current = true;
 
     fetchRef.current(0, pageSize)
@@ -98,6 +108,7 @@ export function useMarketPagination({
       .catch(() => {
         if (gen !== genRef.current) return;
         setItems([]);
+        setFailed(true);
         hasMoreRef.current = false;
         setHasMore(false);
       })
@@ -146,6 +157,7 @@ export function useMarketPagination({
     loading,
     loadingMore,
     reachedEnd: !hasMore && items.length > 0,
+    failed,
     loadMore,
   };
 }

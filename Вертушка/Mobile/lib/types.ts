@@ -259,6 +259,28 @@ export interface MarketSearchItem {
   first_seen_at: string;
 }
 
+/**
+ * Контекст «пришли с карточки релиза» — Маркет открывается суженным до этой
+ * пластинки и её прессингов.
+ *
+ * artist/title носим с собой, а не дозапрашиваем: плашка с названием обязана
+ * стоять на экране в первом же кадре, иначе человек секунду смотрит на пустую
+ * сетку и не понимает, почему она пустая.
+ */
+export interface MarketReleaseScope {
+  /** UUID записи. Мастер и носитель бэкенд выводит сам — см. /market/search. */
+  recordId: string;
+  artist: string;
+  title: string;
+  /**
+   * Ключ конкретного захода: `recordId` + отметка времени нажатия. Отличает
+   * «пришёл за этой же пластинкой ещё раз» от «уже сбросил сужение и просто
+   * смотрит витрину» — по одному `recordId` эти два состояния неразличимы, и
+   * повторный заход не показал бы ничего.
+   */
+  visitKey: string;
+}
+
 export type MarketFormatFilter = 'vinyl' | 'cd' | 'cassette';
 export type MarketSortMode = 'price_asc' | 'newest';
 

@@ -37,6 +37,7 @@ from app.schemas.offer import (
     MarketFacetItem,
     MarketFacetsResponse,
 )
+from app.services.alt_media_match import PHYSICAL, media_families
 from app.services.cache import cache
 from app.services.cover_storage import (
     _download_cover_background,
@@ -364,6 +365,105 @@ def _format_clause(fmt: Optional[str]) -> tuple[str, dict]:
 
 
 # ────────────────────────────────────────────────────────────────────────
+# Режим «в рамках релиза» (release_record) — /market/search, открытый с
+# карточки пластинки по кнопке «В Маркет».
+#
+# Смысл: человек пришёл не «посмотреть, что вообще есть», а «где купить ВОТ
+# ЭТУ». Обычная выдача Маркета отвечает не на его вопрос, и без ответа он
+# решает, что кнопка соврала. Поэтому здесь витрина сужается до самой записи и
+# других прессингов того же мастера.
+#
+# Три отличия от обычного поиска, каждое обязательное:
+#   • группировка по r.id, а не по мастеру. Обычный дедуп схлопывает все
+#     прессинги альбома в одну карточку — ровно то, что здесь нужно показать
+#     по отдельности.
+#   • носитель у «других версий» сверяется с носителем якоря. Мастер на
+#     Discogs объединяет винил, CD и цифру (см. services/alt_media_match), и
+#     без гейта под винилом висел бы mp3-файл.
+#   • сама запись-якорь от гейта носителя освобождена: предикат смотрит в
+#     listing.format_raw, а криво распарсенный магазином формат вычеркнул бы
+#     именно тот оффер, ради которого человек сюда шёл.
+# ────────────────────────────────────────────────────────────────────────
+
+
+def _release_media_key(
+    format_type: Optional[str],
+    format_description: Optional[str],
+) -> Optional[str]:
+    """Носитель записи → ключ для `_format_clause`, либо None.
+
+    None означает «не гейтить»: носитель либо неизвестен, либо гибридный
+    («Vinyl, LP + File» — таких меньше процента). Гейтить по неуверенно
+    определённому носителю опаснее, чем не гейтить: молча пропадут живые
+    офферы, и выдача разойдётся со счётчиком на карточке релиза.
+    """
+    families = media_families(format_type, format_description) & PHYSICAL
+    if len(families) != 1:
+        return None
+    (family,) = families
+    return family if family in ("vinyl", "cd", "cassette") else None
+
+
+def _release_scope_clause(
+    master_id: Optional[str],
+    media_key: Optional[str],
+) -> tuple[str, dict]:
+    """(SQL fragment, bind params) для сужения выдачи до одного релиза.
+
+    Бинд `:rel_rec` подставляет вызывающий — он же решает, какая запись якорь.
+    """
+    if not master_id:
+        # Store-native и записи без мастера: аналогов не существует в принципе.
+        return (" AND r.id = :rel_rec", {})
+
+    sibling = "r.discogs_master_id = :rel_master AND r.id <> :rel_rec"
+    params: dict = {"rel_master": master_id}
+    if media_key:
+        fmt_sql, fmt_params = _format_clause(media_key)
+        sibling += fmt_sql
+        params.update(fmt_params)
+    return (f" AND (r.id = :rel_rec OR ({sibling}))", params)
+
+
+async def _resolve_release_anchor(
+    db: AsyncSession,
+    record_id: uuid.UUID,
+) -> Optional[tuple[uuid.UUID, Optional[str], Optional[str]]]:
+    """Якорь режима релиза: (record_id, master_id, media_key) либо None.
+
+    Слитые записи (`merged_into_id`) ведут на победителя — иначе переход с
+    карточки, которую rematch увёл в дубль, отдавал бы пустую выдачу при живых
+    офферах у мастер-записи. Прыжок ровно один: цепочки слияний схлопывает сам
+    rematch, а цикл здесь висел бы на каждом запросе.
+    """
+    columns = (
+        Record.id,
+        Record.merged_into_id,
+        Record.discogs_master_id,
+        Record.format_type,
+        Record.format_description,
+    )
+    row = (await db.execute(select(*columns).where(Record.id == record_id))).first()
+    if row is None:
+        return None
+    if row.merged_into_id is not None:
+        row = (
+            await db.execute(select(*columns).where(Record.id == row.merged_into_id))
+        ).first()
+        if row is None or row.merged_into_id is not None:
+            return None
+
+    master_id = row.discogs_master_id
+    if master_id in (None, "", "0"):
+        master_id = None
+    return (
+        row.id,
+        master_id,
+        _release_media_key(row.format_type, row.format_description),
+    )
+
+
+# ────────────────────────────────────────────────────────────────────────
 # GET /api/market/stores — витрина магазинов
 # ────────────────────────────────────────────────────────────────────────
 
@@ -646,6 +746,14 @@ async def search_market(
     colored: bool = Query(False, description="Только цветной винил"),
     limited: bool = Query(False, description="Только лимитки (r.is_limited)"),
     new: bool = Query(False, description="Только новинки (first_seen ≤ 30 дней)"),
+    release_record: uuid.UUID | None = Query(
+        None,
+        description=(
+            "UUID записи — сузить выдачу до этого прессинга и других версий "
+            "того же мастера (режим «В Маркет» с карточки релиза). Мастер и "
+            "носитель берутся с самой записи, клиент их не передаёт."
+        ),
+    ),
     sort: Literal["price_asc", "newest"] = Query("price_asc"),
     limit: int = Query(50, ge=1, le=100),
     offset: int = Query(0, ge=0, description="Сдвиг страницы (infinite scroll)"),
@@ -659,6 +767,23 @@ async def search_market(
     Пагинация — limit/offset. Клиент листает до пустой страницы; счётчики по
     каждой опции фильтра отдаёт `/market/facets`.
     """
+    # Режим релиза резолвим ДО кэша: ключ кэша обязан включать и якорь, и
+    # производные от него (мастер, носитель) — иначе выдача одного прессинга
+    # прилетит на запрос другого.
+    rel_sql = ""
+    rel_params: dict = {}
+    rel_cache_key = ""
+    if release_record is not None:
+        anchor = await _resolve_release_anchor(db, release_record)
+        if anchor is None:
+            # Записи нет или она увела в тупик слияния. Пустой список — это
+            # ответ «нет в наличии», его Mobile и показывает попапом.
+            return []
+        rel_rec_id, rel_master, rel_media = anchor
+        rel_sql, rel_params = _release_scope_clause(rel_master, rel_media)
+        rel_params["rel_rec"] = rel_rec_id
+        rel_cache_key = f"{rel_rec_id}|{rel_master or ''}|{rel_media or ''}"
+
     # genre приходит строкой «rock,jazz» — надёжнее array-сериализации на клиенте.
     genre_list = [g for g in (genre.split(",") if genre else []) if g]
     fmt_sql, fmt_params = _format_clause(format)
@@ -673,6 +798,12 @@ async def search_market(
         "min_price ASC NULLS LAST, agg.dedup_key" if sort == "price_asc"
         else "first_seen_at DESC, agg.dedup_key"
     )
+    if release_record is not None:
+        # Прессинг, с карточки которого пришли, — всегда первой плиткой, даже
+        # если у переиздания цена ниже. Человек искал глазами свою пластинку;
+        # найти её третьей в ряду значит не найти.
+        order_clause = f"(agg.dedup_key = :rel_rec_key) DESC, {order_clause}"
+        rel_params["rel_rec_key"] = str(rel_params["rel_rec"])
 
     q_clause = ""
     q_params: dict = {}
@@ -685,10 +816,11 @@ async def search_market(
     # для стабильности ключа независимо от порядка чипов.
     genre_key = ",".join(sorted(genre_list)) if genre_list else ""
     cache_key = (
-        # v2 в префиксе — версия жанровых паттернов: правишь GENRES/GENRE_STRICT,
+        # v3 в префиксе — версия жанровых паттернов: правишь GENRES/GENRE_STRICT,
         # бампаешь версию, иначе старые (неверные) выдачи доживут в кэше до TTL.
-        f"search:v2:{q or ''}:{format or 'all'}:{sort}:{limit}:{offset}"
+        f"search:v3:{q or ''}:{format or 'all'}:{sort}:{limit}:{offset}"
         f":g={genre_key}:c={int(colored)}:l={int(limited)}:n={int(new)}"
+        f":rel={rel_cache_key}"
     )
     cached = await cache.get(CACHE_NS_SEARCH, cache_key)
     if cached is not None:
@@ -697,11 +829,30 @@ async def search_market(
     # Дедуп: группируем по master_id (с fallback на r.id), чтобы разные
     # пресс-версии одного альбома не выдавались как идентичные карточки.
     # Внутри группы выбираем самый дешёвый record через ARRAY_AGG ORDER BY price → [1].
+    #
+    # В режиме релиза — ровно наоборот: группируем по r.id, потому что разные
+    # прессинги здесь и есть содержание выдачи. Схлопни их по мастеру — и на
+    # экране «эта пластинка и её аналоги» останется одна плитка.
+    dedup_expr = (
+        "r.id::text" if release_record is not None
+        else "COALESCE(r.discogs_master_id, r.id::text)"
+    )
+    # Требование обложки в режиме релиза снято. На общей витрине карточка без
+    # картинки — серая дыра среди сотен нормальных, и отбросить её дешевле, чем
+    # показать. Здесь набор конечен и уже пересчитан на карточке релиза: убрать
+    # из него живой оффер значит сказать «нет в наличии» там, где есть.
+    cover_sql = (
+        "" if release_record is not None
+        else (
+            "AND COALESCE(r.cover_local_path, r.cover_image_url,"
+            " sl.raw_payload->>'image_url') IS NOT NULL"
+        )
+    )
     sql = text(
         f"""
         WITH agg AS (
             SELECT
-                COALESCE(r.discogs_master_id, r.id::text) AS dedup_key,
+                {dedup_expr} AS dedup_key,
                 MIN(sl.price_rub) AS min_price,
                 COUNT(DISTINCT sl.store_id) AS stores_with_stock,
                 MAX(sl.first_seen_at) AS first_seen_at,
@@ -717,11 +868,12 @@ async def search_market(
               AND sl.price_rub IS NOT NULL
               AND sl.last_seen_at >= :cutoff
               AND r.merged_into_id IS NULL
-              AND COALESCE(r.cover_local_path, r.cover_image_url, sl.raw_payload->>'image_url') IS NOT NULL
+              {cover_sql}
               {fmt_sql}
               {filt_sql}
               {q_clause}
-            GROUP BY COALESCE(r.discogs_master_id, r.id::text)
+              {rel_sql}
+            GROUP BY {dedup_expr}
         )
         SELECT
             agg.chosen_record_id AS record_id, agg.min_price, agg.stores_with_stock,
@@ -737,7 +889,7 @@ async def search_market(
 
     params = {
         "cutoff": cutoff, "limit": limit, "offset": offset,
-        **fmt_params, **filt_params, **q_params,
+        **fmt_params, **filt_params, **q_params, **rel_params,
     }
     rows = (await db.execute(sql, params)).mappings().all()
 
