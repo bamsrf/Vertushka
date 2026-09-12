@@ -134,6 +134,36 @@ async def test_rainbow_ignores_black_and_non_colour_noise():
 
 
 @pytest.mark.asyncio
+async def test_rainbow_counts_two_tone_pressings_by_their_colour():
+    """«Orange With Black Splatter» — оранжевая, а не чёрная.
+
+    Регрессия: раньше семью брали через color_family(), где black первый по
+    приоритету, и любой двухцветный пресс выбывал из радуги. Полка из шести
+    заведомо цветных винилов давала прогресс 3/6 и не открывалась никогда.
+    """
+    shelf = [
+        "Red Translucent",
+        "Orange With Black Splatter",
+        "Yellow",
+        "Blue & Black Marbled",
+        "Green",
+        "Purple/Black Swirl",
+    ]
+    res = await E._evaluate_rainbow(FakeSession(rows=shelf), USER, None, set())
+    assert res.unlocked is True
+    assert res.progress == 6
+
+
+@pytest.mark.asyncio
+async def test_rainbow_still_rejects_pure_black_however_written():
+    """«Cosmic Black», «Black Ice» — чёрные. Обычная полка радугу не открывает."""
+    db = FakeSession(rows=["Black", "Cosmic Black", "Black Ice", "чёрный винил"])
+    res = await E._evaluate_rainbow(db, USER, None, set())
+    assert res.unlocked is False
+    assert res.progress == 0
+
+
+@pytest.mark.asyncio
 async def test_rainbow_counts_family_not_raw_string():
     """«Red», «Red Translucent», «Dark Red» — один цвет, а не три."""
     db = FakeSession(rows=["Red", "Red Translucent", "Dark Red"])

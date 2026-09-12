@@ -32,20 +32,44 @@ import re
 # давал family=None → конфликт с цветом оффера не доказывался.
 # sql_color_family() транслирует \b → \y (граница слова в Postgres) — держать в
 # синхроне.
+#
+# Синонимы и приглушённые семьи добавлены по замеру прода (3 167 различных
+# значений цвета, 28 339 записей: `records.discogs_data` + `store_listings`).
+# Семьи не было у 5 396 значений — из них вернули в оборот:
+#   grey 189, cream 97, amber 20, violet 6, brown 3, magenta 2, maroon 1.
+# Остальной хвост None трогать НЕ надо, он такой по замыслу: coloured 2 377 и
+# clear 1 522 — неспецифичные маркеры (см. `is_colored_vinyl`), а splatter 312
+# и marble 309 — выделка, не цвет. Прочее — названия заводов (Pitman, Terre
+# Haute, Monarch) и битрейты, им семья и не положена.
+#
+# Приглушённые (grey/cream/brown) стоят В КОНЦЕ: порядок = приоритет, и на
+# «Red / Dark Grey» выиграть должен красный.
 _FAMILY_PATTERNS: list[tuple[str, str]] = [
     ("black", r"\bblack\b|чёрн|чорн"),
     ("white", r"\bwhite\b|бел"),
     ("teal", r"\bteal\b|бирюз"),
     ("turquoise", r"\bturquoise\b|тиркойз"),
-    ("red", r"\bred\b|красн"),
+    ("red", r"\bred\b|\bmaroon\b|\bcrimson\b|\bburgundy\b|красн|борд"),
     ("blue", r"\bblue\b|син|голуб"),
     ("green", r"\bgreen\b|зелён|зелен"),
     ("yellow", r"\byellow\b|жёлт|желт"),
-    ("orange", r"\borange\b|оранж"),
-    ("purple", r"\bpurple\b|фиолет"),
-    ("pink", r"\bpink\b|розов"),
+    ("orange", r"\borange\b|\bamber\b|\btangerine\b|оранж|янтар"),
+    ("purple", r"\bpurple\b|\bviolet\b|\blilac\b|\blavender\b|фиолет|сирен|лилов"),
+    ("pink", r"\bpink\b|\bmagenta\b|\bfuchsia\b|розов"),
     ("gold", r"\bgold\b|золот"),
     ("silver", r"\bsilver\b|серебр"),
+    # RU-стем у grey намеренно НЕ префиксный: «сер» ловит «серия»,
+    # «серебр» и «сертификат». Единственная семья, где префикс опасен.
+    #
+    # Окончания перечислены целиком, БЕЗ группировки `(?:…)`: эти паттерны
+    # подставляются в сырой SQL, который идёт через `text()`, а там `:ый` из
+    # `(?:ый|…)` разбирается как ИМЕНОВАННЫЙ BIND-ПАРАМЕТР и роняет весь
+    # запрос — «A value is required for bind parameter 'ый'». Двоеточию в
+    # этих регулярках места нет; см. тест ниже по файлу в
+    # tests/test_vinyl_color_family_dict.py.
+    ("grey", r"\bgrey\b|\bgray\b|серый|серая|серое|серые|серого|серым|серых"),
+    ("cream", r"\bcream\b|\bivory\b|\bbeige\b|крем|беж"),
+    ("brown", r"\bbrown\b|\bbronze\b|коричн|бронз"),
 ]
 
 _COMPILED: list[tuple[str, re.Pattern[str]]] = [
@@ -62,6 +86,25 @@ def color_family(raw: str | None) -> str | None:
         return None
     for fam, rx in _COMPILED:
         if rx.search(raw):
+            return fam
+    return None
+
+
+def non_black_color_family(raw: str | None) -> str | None:
+    """Первая НЕ-чёрная семья цвета, или None, если её нет.
+
+    `color_family()` держит black первым по приоритету — это верно там, где
+    доказывается КОНФЛИКТ цвета листинга и записи, но ломает вопрос «какого
+    цвета эта цветная пластинка»: «Orange With Black Splatter» и «Blue & Black
+    Marbled» — оранжевая и синяя, а семья у обеих выходит чёрной. Двухцветных
+    в дампе 570 из 5 493 значений, 12% (см. `is_colored_vinyl`).
+
+    Чисто чёрное («Cosmic Black») даёт None: это не цветной винил.
+    """
+    if not raw:
+        return None
+    for fam, rx in _COMPILED:
+        if fam != "black" and rx.search(raw):
             return fam
     return None
 
@@ -144,10 +187,22 @@ def is_colored_vinyl(raw: str | None) -> bool:
     """
     if not raw:
         return False
-    for fam, rx in _COMPILED:
-        if fam != "black" and rx.search(raw):
-            return True
-    return bool(_COLORED_MARKER_RE.search(raw))
+    return bool(non_black_color_family(raw)) or bool(_COLORED_MARKER_RE.search(raw))
+
+
+def sql_nonblack_family_regex() -> str:
+    """Альтернатива из паттернов всех НЕ-чёрных семей, в диалекте Postgres.
+
+    Вынесено отдельно, потому что потребителей два и они разъезжались: тот же
+    список слов до этого был захардкожен ещё и в `profile_stats` (счётчик
+    цветных в профиле). Любая новая семья обязана доезжать в оба места — так
+    что место остаётся ровно одно, это.
+    """
+    return "|".join(
+        pat.replace(chr(92) + "b", chr(92) + "y")
+        for fam, pat in _FAMILY_PATTERNS
+        if fam != "black"
+    )
 
 
 def sql_is_colored_vinyl(col_expr: str) -> str:
@@ -157,11 +212,7 @@ def sql_is_colored_vinyl(col_expr: str) -> str:
     sql_color_family: у той black первый по приоритету и «Red/Black Splatter»
     вернулся бы чёрным.
     """
-    nonblack = "|".join(
-        pat.replace(chr(92) + "b", chr(92) + "y")
-        for fam, pat in _FAMILY_PATTERNS
-        if fam != "black"
-    )
+    nonblack = sql_nonblack_family_regex()
     marker = _COLORED_MARKER.replace(chr(92) + "b", chr(92) + "y")
     return (
         f"(lower({col_expr}) ~ '({nonblack})'"

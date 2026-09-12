@@ -42,7 +42,7 @@ from app.services.achievements.registry import (
     AchievementTier,
     EvalResult,
 )
-from app.services.vinyl_color import color_family
+from app.services.vinyl_color import non_black_color_family
 
 E_GLASS_EYE = "E_glass_eye"
 E_DIGITIZER = "E_digitizer"
@@ -64,10 +64,6 @@ SECOND_THOUGHTS_CYCLES = 3
 PHOTO_SHY_CHANGES = 5
 #: Окно годовщины регистрации, ±дней.
 ANNIVERSARY_WINDOW_DAYS = 1
-
-#: Чёрный — это не «цветной винил», иначе «Радуга» открывалась бы обычной полкой.
-_RAINBOW_EXCLUDED_FAMILIES = {"black"}
-
 
 # --- Общие помощники ---------------------------------------------------------
 
@@ -182,8 +178,15 @@ async def _evaluate_rainbow(
     """6+ цветных винилов разных цветов.
 
     Сырой цвет с Discogs грязный («Red Translucent», «180 Gram», «Gatefold»),
-    поэтому считаем не строки, а семьи из `color_family()`: она отбрасывает вес
-    и упаковку. Чёрный не в счёт — иначе «Радуга» открывалась бы обычной полкой.
+    поэтому считаем не строки, а семьи: они отбрасывают вес и упаковку. Чёрный
+    не в счёт — иначе «Радуга» открывалась бы обычной полкой.
+
+    Семью берём через `non_black_color_family`, а НЕ через `color_family`: у
+    той black первый по приоритету, и «Orange With Black Splatter» приезжала
+    чёрной — то есть выбывала из радуги. Двухцветных прессов 12% дампа, на
+    реальной полке из шести цветных винилов половина считалась чёрной и
+    ачивка не открывалась никогда. То же решение, что у счётчика цветных в
+    профиле (`services/profile_stats`) — держать заодно.
     """
     rows = await db.execute(
         select(Record.discogs_data["vinyl_color_raw"].astext)
@@ -198,7 +201,7 @@ async def _evaluate_rainbow(
     families = {
         family
         for raw in rows.scalars().all()
-        if (family := color_family(raw)) and family not in _RAINBOW_EXCLUDED_FAMILIES
+        if (family := non_black_color_family(raw))
     }
     return EvalResult(
         unlocked=len(families) >= RAINBOW_COLORS,
