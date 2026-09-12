@@ -174,8 +174,8 @@ DEFINITIONS: list[AchievementDefinition] = [
     AchievementDefinition(
         code=C3_CODE,
         title_ru="Сокровище",
-        description_ru="Найди первую коллекционку: дороже $100, не больше 3 копий в продаже и до 200 владельцев на Discogs.",
-        description_done_ru="Первая коллекционка найдена — дороже $100 и почти без предложений на рынке.",
+        description_ru="Найди первую коллекционку: дороже $100, и желающих на Discogs вдвое больше, чем владельцев.",
+        description_done_ru="Первая коллекционка найдена — дорогая пластинка, за которой охотятся.",
         series="rarity",
         tier=AchievementTier.NOTABLE,
         is_hidden=False,
@@ -186,8 +186,8 @@ DEFINITIONS: list[AchievementDefinition] = [
     AchievementDefinition(
         code=C4_CODE,
         title_ru="Энтомолог",
-        description_ru="5 коллекционок: каждая дороже $100, до 3 копий в продаже и до 200 владельцев.",
-        description_done_ru="5 коллекционок собрано: каждая дороже $100 и почти без предложений на рынке.",
+        description_ru="5 коллекционок: каждая дороже $100, и желающих вдвое больше, чем владельцев.",
+        description_done_ru="5 коллекционок собрано — за каждой охотятся на Discogs.",
         series="rarity",
         tier=AchievementTier.RARE,
         is_hidden=False,
@@ -198,7 +198,7 @@ DEFINITIONS: list[AchievementDefinition] = [
     AchievementDefinition(
         code=C5_CODE,
         title_ru="Кладовая",
-        description_ru="15 коллекционок — дороже $100, до 3 копий в продаже и до 200 владельцев каждая.",
+        description_ru="15 коллекционок — каждая дороже $100, и желающих вдвое больше, чем владельцев.",
         description_done_ru="15 коллекционок собрано.",
         series="rarity",
         tier=AchievementTier.EPIC,
