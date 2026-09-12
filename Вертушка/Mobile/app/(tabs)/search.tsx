@@ -21,7 +21,7 @@ import {
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
+import { useRouter, useLocalSearchParams, useFocusEffect, useIsFocused } from 'expo-router';
 import Reanimated, {
   Easing,
   Extrapolation,
@@ -56,6 +56,9 @@ import { Colors, Typography, Spacing, BorderRadius, Gradients } from '../../cons
 import { toast } from '../../lib/toast';
 import { cleanArtistName } from '../../lib/format';
 import { reportManualAdd } from '../../lib/eggTracker';
+import { useAndroidOverdrag } from '../../lib/useAndroidOverdrag';
+import { useAndroidBackClose } from '../../lib/useAndroidBackClose';
+import { ANDROID_BACK_EXITS_MARKET } from '../../lib/androidOverdrag';
 
 function getFormatDisplayInfo(format?: string): { label: string; verb: string } {
   if (!format) return { label: 'Винил', verb: 'добавлен' };
@@ -137,6 +140,13 @@ const BOTTOM_FADE_EXTRA = 28;
  */
 const SEARCH_PLACEHOLDER =
   Platform.OS === 'android' ? 'Артист, альбом, @username' : 'Артист, альбом или @username';
+
+// Пороги overdrag'а и spring занавеса — на уровне модуля, чтобы Android-жест
+// (useAndroidOverdrag, useMemo по колбэкам) не пересобирался каждый рендер
+// из-за нового объекта SPRING_CONFIG. iOS-хендлеры ниже читают те же имена.
+const COMMIT_DISTANCE = 110;
+const EXIT_COMMIT_DISTANCE = 110;
+const SPRING_CONFIG = { damping: 22, stiffness: 200, mass: 0.7, overshootClamping: true };
 
 export default function SearchScreen() {
   const router = useRouter();
@@ -356,9 +366,12 @@ export default function SearchScreen() {
       // после reopen'а приложения. Выход из Маркета — только через явный
       // exit-жест (pull-down).
       pullFraction.value = 0;
+      // Android-Pan мог остаться «в тяге» при уходе с таба посреди жеста —
+      // без сброса onEnd после возврата прочитал бы устаревшее dragging.
+      dragging.value = 0;
       lastHapticStep.value = -1;
       committingRef.current = false;
-    }, [pullFraction, lastHapticStep]),
+    }, [pullFraction, dragging, lastHapticStep]),
   );
 
   // ?focus=market — auto-commit (slide-up без жеста).
@@ -461,9 +474,6 @@ export default function SearchScreen() {
   const SCREEN_W = Dimensions.get('window').width;
   const CTA_SHIMMER_W = 110;
 
-  const COMMIT_DISTANCE = 110;
-  const EXIT_COMMIT_DISTANCE = 110;
-  const SPRING_CONFIG = { damping: 22, stiffness: 200, mass: 0.7, overshootClamping: true };
   const homeGate = useSharedValue(0);
 
   // Search-side: overdrag в самом низу → pullFraction. На release при ≥1
@@ -526,6 +536,60 @@ export default function SearchScreen() {
       }
     },
   });
+
+  // ─── Android: overdrag через RNGH (lib/useAndroidOverdrag.ts) ──────
+  // На Android ReactScrollView клампит offset, и хендлеры выше overdrag не
+  // видят. Оба хука вызываются безусловно (rules-of-hooks); на iOS они
+  // возвращают {} — в список уходят прежние onScrollSearch/onScrollMarket.
+  // Гейты — стабильные worklet'ы без deps: читают только shared values.
+  const canPullHome = useCallback(() => {
+    'worklet';
+    return homeGate.value === 1 && committedSv.value === 0;
+  }, [homeGate, committedSv]);
+  const canPullMarket = useCallback(() => {
+    'worklet';
+    return committedSv.value === 1;
+  }, [committedSv]);
+  const homeOverdrag = useAndroidOverdrag({
+    edge: 'bottom',
+    canPull: canPullHome,
+    pullFraction,
+    dragging,
+    lastHapticStep,
+    committedAnim,
+    committedSv,
+    commitTarget: 1,
+    distance: COMMIT_DISTANCE,
+    spring: SPRING_CONFIG,
+    onCommit: triggerCommit,
+    onMiss: fireMiss,
+  });
+  const marketOverdrag = useAndroidOverdrag({
+    edge: 'top',
+    canPull: canPullMarket,
+    pullFraction,
+    dragging,
+    lastHapticStep,
+    committedAnim,
+    committedSv,
+    commitTarget: 0,
+    distance: EXIT_COMMIT_DISTANCE,
+    spring: SPRING_CONFIG,
+    onCommit: triggerExit,
+    onMiss: fireMiss,
+  });
+
+  // Системная «Назад» при поднятом Маркете — выход из него, а не с таба.
+  // Гейт по фокусу обязателен: committed персистится, и без него подписка
+  // (BackHandler — LIFO) перехватывала бы «Назад» и edge-swipe на
+  // /record/[id], открытом из Маркета, и на соседних табах.
+  const isFocused = useIsFocused();
+  const exitViaBack = useCallback(() => {
+    if (committingRef.current) return;
+    triggerExit();
+    committedAnim.value = withSpring(0, SPRING_CONFIG);
+  }, [triggerExit, committedAnim]);
+  useAndroidBackClose(ANDROID_BACK_EXITS_MARKET && committed && isFocused, exitViaBack);
 
   // ─── Layer animated style: только Market layer движется ────────────
   const SCREEN_H = Dimensions.get('window').height;
@@ -600,6 +664,9 @@ export default function SearchScreen() {
   }, [router]);
 
   const handleMarketShowAll = useCallback(() => {
+    // Занавес уже едет или слой уже поднят (тап по CTA сразу после commit'а
+    // жестом) — второй view_market на тот же показ раздул бы воронку.
+    if (committingRef.current || committed) return;
     // «Смотреть все →» — тот же auto-slide что и при overdrag-commit'е.
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
     analytics.viewMarket('search_show_all');
@@ -607,7 +674,7 @@ export default function SearchScreen() {
     committedAnim.value = withSpring(1, {
       damping: 22, stiffness: 200, mass: 0.7, overshootClamping: true,
     });
-  }, [committedAnim]);
+  }, [committedAnim, committed]);
 
   const handleSearch = useCallback(async () => {
     const trimmed = searchInput.trim();
@@ -666,6 +733,13 @@ export default function SearchScreen() {
       toast.error('Ошибка', message);
     }
   }, [searchInput, search, searchUsers, clearResults, clearSuggestions]);
+
+  // Стабильная ссылка: RecordGrid — memo, а инлайн-колбэк ронял бы memo
+  // на каждый рендер.
+  const handleEndReached = useCallback(() => {
+    if (loadMoreTimer.current) clearTimeout(loadMoreTimer.current);
+    loadMoreTimer.current = setTimeout(loadMore, 300);
+  }, [loadMore]);
 
   const handleClear = useCallback(() => {
     setSearchInput('');
@@ -885,8 +959,11 @@ export default function SearchScreen() {
   // только в home-view (не в результатах поиска).
   useEffect(() => {
     homeGate.value = isHomeView ? 1 : 0;
-    if (!isHomeView) pullFraction.value = 0;
-  }, [isHomeView, homeGate, pullFraction]);
+    if (!isHomeView) {
+      pullFraction.value = 0;
+      dragging.value = 0;
+    }
+  }, [isHomeView, homeGate, pullFraction, dragging]);
   // История появляется только после взаимодействия с полем (showHistory выставляется в onFocus)
   const shouldShowHistory = isHomeView && showHistory && searchHistory.length > 0;
 
@@ -1496,10 +1573,7 @@ export default function SearchScreen() {
             onAddToWishlist={handleAddToWishlist}
             showActions
             isLoading={isUserSearch ? false : isLoading}
-            onEndReached={!isUserSearch && hasMore ? () => {
-              if (loadMoreTimer.current) clearTimeout(loadMoreTimer.current);
-              loadMoreTimer.current = setTimeout(loadMore, 300);
-            } : undefined}
+            onEndReached={!isUserSearch && hasMore ? handleEndReached : undefined}
             emptyMessage=""
             ListHeaderComponent={HeaderContent}
             // Плавающая GlassTabBar (bottom:28 + height:60 = ~88px) перекрывала
@@ -1507,9 +1581,13 @@ export default function SearchScreen() {
             // Даём контенту клиренс под плашку + воздух, чтобы ничего не заезжало.
             contentBottomPad={tabBarClearance}
             cardVariant="compact"
-            onScroll={onScrollSearch}
+            onScroll={homeOverdrag.onScroll ?? onScrollSearch}
             scrollToTopRef={scrollToTopRef}
             scrollToOffsetRef={scrollToOffsetRef}
+            listGesture={homeOverdrag.listGesture}
+            contentShift={homeOverdrag.shift}
+            onListLayout={homeOverdrag.onLayout}
+            onContentSizeChange={homeOverdrag.onContentSizeChange}
           />
 
           {FilterModal}
@@ -1538,10 +1616,14 @@ export default function SearchScreen() {
       >
         <MarketBackground forcedMode="market" />
         <MarketMain
-          onScroll={onScrollMarket}
+          onScroll={marketOverdrag.onScroll ?? onScrollMarket}
           scrollEnabled={committed}
           paddingTop={insets.top + 8}
           pullFraction={pullFraction}
+          listGesture={marketOverdrag.listGesture}
+          headerShift={marketOverdrag.shift}
+          onListLayout={marketOverdrag.onLayout}
+          onContentSizeChange={marketOverdrag.onContentSizeChange}
         />
       </Reanimated.View>
     </View>

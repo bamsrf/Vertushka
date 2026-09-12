@@ -1,0 +1,67 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`RecordGrid (iOS) дерево совпадает со снимком 1`] = `
+<RCTScrollView
+  ListEmptyComponent={[Function]}
+  ListFooterComponent={[Function]}
+  ListHeaderComponent={
+    <View {
+      "children": <Text {
+        "children": "Шапка",
+      }>,
+    }>
+  }
+  contentContainerStyle={
+    [
+      {
+        "padding": 16,
+        "paddingTop": 8,
+      },
+      {
+        "paddingBottom": 112,
+      },
+    ]
+  }
+  data={[]}
+  getItem={[Function]}
+  getItemCount={[Function]}
+  keyExtractor={[Function]}
+  keyboardDismissMode="on-drag"
+  keyboardShouldPersistTaps="handled"
+  onContentSizeChange={[Function]}
+  onEndReachedThreshold={0.5}
+  onLayout={[Function]}
+  onMomentumScrollBegin={[Function]}
+  onMomentumScrollEnd={[Function]}
+  onScroll={[Function]}
+  onScrollBeginDrag={[Function]}
+  onScrollEndDrag={[Function]}
+  removeClippedSubviews={false}
+  renderItem={[Function]}
+  scrollEventThrottle={16}
+  showsVerticalScrollIndicator={false}
+  stickyHeaderIndices={[]}
+  style={
+    {
+      "backgroundColor": "transparent",
+    }
+  }
+  viewabilityConfigCallbackPairs={[]}
+>
+  <View>
+    <View
+      collapsable={false}
+      onLayout={[Function]}
+    >
+      <View>
+        <Text>
+          Шапка
+        </Text>
+      </View>
+    </View>
+    <View
+      onLayout={[Function]}
+    />
+  </View>
+</RCTScrollView>
+`;
