@@ -12,6 +12,7 @@ import {
   TextInputProps,
   TouchableOpacity,
   ActivityIndicator,
+  PixelRatio,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
@@ -32,8 +33,19 @@ import { api } from '../../lib/api';
 import { CollectionItem } from '../../lib/types';
 import { cleanArtistName, formatGroupedWorklet } from '../../lib/format';
 import { Colors, Typography, Spacing, BorderRadius, Shadows } from '../../constants/theme';
+import { MAX_FONT_SCALE } from '../../lib/fontScale/maxFontScale';
 import { ms } from '../../lib/responsive';
 import { useBottomContentInset } from '../../lib/useBottomContentInset';
+
+/**
+ * Минимальная ширина плитки в ряду «Курс ЦБ / Наценка РФ / Оценено».
+ * 110pt хватает под «97.50 ₽/$» в одну строку на дефолтном шрифте; при
+ * крупном системном шрифте растёт вместе с ним, и ряд переносит плитку
+ * целиком вместо того, чтобы ломать значение пополам.
+ */
+const DETAIL_TILE_MIN_W = Math.round(
+  110 * Math.min(PixelRatio.getFontScale(), MAX_FONT_SCALE),
+);
 
 
 function formatRub(value: number): string {
@@ -515,13 +527,19 @@ const styles = StyleSheet.create({
   },
 
   // Details row
+  // Три плитки в ряд. При крупном шрифте «97.50 ₽/$» переставало влезать в
+  // треть ширины и ломалось на две строки. Теперь ряд переносится ЦЕЛЫМИ
+  // плитками: flexBasis — минимальная ширина, при которой значение помещается
+  // в строку, и она растёт вместе со шрифтом. На дефолте три плитки как были.
   detailsRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: Spacing.sm,
     marginBottom: Spacing.lg,
   },
   detailItem: {
-    flex: 1,
+    flexGrow: 1,
+    flexBasis: DETAIL_TILE_MIN_W,
     backgroundColor: Colors.surface,
     borderRadius: BorderRadius.sm,
     padding: Spacing.md,
