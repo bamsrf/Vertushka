@@ -594,9 +594,20 @@ async def get_records_offers_summary(
         record_color_expr="tr.rcolor",
     )
 
-    # Один SQL — JOIN records → store_listings, agg по discogs_id, GROUP BY.
-    # in_stock_count = ТОЛЬКО exact-pressing; album-level (fuzzy/конфликт цвета)
-    # на этой записи + alt-version'ы другого мастера → alt_version_count.
+    # Два запроса вместо одного, и это осознанный размен.
+    #
+    # Счётчики на этой же записи (exact/album/preorder) считает SQL — носитель
+    # там сверять не с чем, запись одна. А «другая версия мастера» требует того
+    # же гейта носителя, что и карточка релиза: мастер на Discogs объединяет
+    # винил, CD и цифру, и без гейта под винилом в вишлисте горело «ЕСТЬ
+    # АНАЛОГ» от mp3-файла. Правило носителя живёт в services/alt_media_match и
+    # написано на Python; дублировать его в SQL — заводить второе определение,
+    # которое разойдётся с первым молча. Поэтому alt-кандидаты приезжают
+    # строками и фильтруются тем же alt_media_ok, что и /offers/full.
+    #
+    # Магазин обязан быть активным в обоих запросах: выдача Маркета и офферы
+    # карточки фильтруют по stores.is_active, и счётчик, который этого не
+    # делает, обещает офферы отключённого магазина.
     sql = text(
         f"""
         WITH target_records AS (
@@ -632,53 +643,93 @@ async def get_records_offers_summary(
                       AND ({tier}) = 'exact'
                 ) AS stores_with_stock
             FROM target_records tr
-            LEFT JOIN store_listings sl ON sl.matched_record_id = tr.id
-            GROUP BY tr.discogs_id
-        ),
-        alt_stats AS (
-            -- Другой pressing того же master_id: r2.discogs_id != tr.discogs_id
-            -- но r2.discogs_master_id = tr.discogs_master_id (если есть master_id)
-            SELECT
-                tr.discogs_id,
-                COUNT(*) FILTER (
-                    WHERE sl.status = 'in_stock' AND sl.last_seen_at >= :cutoff
-                ) AS alt_version_count,
-                MIN(sl.price_rub) FILTER (
-                    WHERE sl.status = 'in_stock' AND sl.last_seen_at >= :cutoff
-                      AND sl.price_rub IS NOT NULL
-                ) AS min_price_alt_rub
-            FROM target_records tr
-            LEFT JOIN records r2
-                ON r2.discogs_master_id = tr.discogs_master_id
-               AND r2.discogs_master_id IS NOT NULL
-               AND r2.discogs_id != tr.discogs_id
-            LEFT JOIN store_listings sl ON sl.matched_record_id = r2.id
+            LEFT JOIN store_listings sl
+                   ON sl.matched_record_id = tr.id
+                  AND EXISTS (
+                      SELECT 1 FROM stores s
+                       WHERE s.id = sl.store_id AND s.is_active
+                  )
             GROUP BY tr.discogs_id
         )
         SELECT
             es.discogs_id,
             COALESCE(es.in_stock_count, 0)      AS in_stock_count,
             COALESCE(es.preorder_count, 0)      AS preorder_count,
-            -- alt = другой пресс мастера + album-level на этой записи
-            COALESCE(als.alt_version_count, 0)
-              + COALESCE(es.album_in_stock_count, 0)  AS alt_version_count,
+            COALESCE(es.album_in_stock_count, 0) AS album_in_stock_count,
             es.min_price_rub,
-            LEAST(als.min_price_alt_rub, es.min_price_album_rub) AS min_price_alt_rub,
+            es.min_price_album_rub,
             FALSE AS has_last_one,
             COALESCE(es.stores_with_stock, 0)   AS stores_with_stock
         FROM exact_stats es
-        LEFT JOIN alt_stats als ON als.discogs_id = es.discogs_id
         """
     )
     rows = (await db.execute(sql, {"discogs_ids": body.discogs_ids, "cutoff": cutoff})).mappings().all()
+    if not rows:
+        return {}
+
+    alt_rows = (
+        await db.execute(
+            text(
+                """
+                SELECT
+                    tr.discogs_id,
+                    tr.format_type          AS want_type,
+                    tr.format_description   AS want_desc,
+                    r2.format_type          AS alt_type,
+                    r2.format_description   AS alt_desc,
+                    sl.format_raw           AS alt_raw,
+                    sl.price_rub
+                FROM records tr
+                JOIN records r2
+                    ON r2.discogs_master_id = tr.discogs_master_id
+                   AND tr.discogs_master_id IS NOT NULL
+                   AND tr.discogs_master_id NOT IN ('', '0')
+                   AND r2.discogs_id != tr.discogs_id
+                JOIN store_listings sl ON sl.matched_record_id = r2.id
+                JOIN stores s ON s.id = sl.store_id AND s.is_active
+                WHERE tr.discogs_id = ANY(:discogs_ids)
+                  AND sl.status = 'in_stock'
+                  AND sl.last_seen_at >= :cutoff
+                """
+            ),
+            {"discogs_ids": body.discogs_ids, "cutoff": cutoff},
+        )
+    ).mappings().all()
+
+    # Гейт носителя — тот же, что у /offers/full: винил ищем винилом, цифра и
+    # неопознанный носитель мимо.
+    alt_count: dict[str, int] = {}
+    alt_min: dict[str, object] = {}
+    for row in alt_rows:
+        if not alt_media_ok(
+            row["want_type"],
+            row["want_desc"],
+            row["alt_type"],
+            row["alt_desc"],
+            row["alt_raw"],
+        ):
+            continue
+        did = row["discogs_id"]
+        alt_count[did] = alt_count.get(did, 0) + 1
+        price = row["price_rub"]
+        if price is not None and (alt_min.get(did) is None or price < alt_min[did]):
+            alt_min[did] = price
+
+    def _min_alt(did: str, album_price):
+        prices = [p for p in (alt_min.get(did), album_price) if p is not None]
+        return min(prices) if prices else None
 
     return {
         row["discogs_id"]: RecordOffersSummary(
             in_stock_count=row["in_stock_count"],
             preorder_count=row["preorder_count"],
-            alt_version_count=row["alt_version_count"],
+            # alt = другой пресс мастера (с гейтом носителя) + album-level на
+            # этой записи (fuzzy-матч/конфликт цвета — «тот же альбом»).
+            alt_version_count=(
+                alt_count.get(row["discogs_id"], 0) + row["album_in_stock_count"]
+            ),
             min_price_rub=row["min_price_rub"],
-            min_price_alt_rub=row["min_price_alt_rub"],
+            min_price_alt_rub=_min_alt(row["discogs_id"], row["min_price_album_rub"]),
             has_last_one=row["has_last_one"],
             stores_with_stock=row["stores_with_stock"],
         )
