@@ -45,6 +45,7 @@ import { showActionSheet } from '../lib/actionSheetCompat';
 import { analytics } from '../lib/analytics';
 import { Colors, Typography, Spacing, BorderRadius, Shadows } from '../constants/theme';
 import { AchievementsBlock } from '../components/AchievementsBlock';
+import { AppVersionFooter } from '../components/AppVersionFooter';
 import { ArchetypeChip } from '../components/ArchetypeChip';
 import { ActivityCard } from '../components/notifications/ActivityCard';
 import { MarketEntryBanner } from '../components/market/MarketEntryBanner';
@@ -765,7 +766,7 @@ export default function ProfileScreen() {
           >
             <Text style={styles.footerLink}>Политика конфиденциальности и Условия</Text>
           </TouchableOpacity>
-          <Text style={styles.version}>Вертушка v1.0.0</Text>
+          <AppVersionFooter />
         </View>
       </ScrollView>
     </View>
@@ -971,11 +972,6 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
     textAlign: 'center',
     textDecorationLine: 'underline',
-  },
-  version: {
-    ...Typography.caption,
-    color: Colors.textMuted,
-    textAlign: 'center',
   },
   // Секция «Я дарю»
   giftsCard: {
