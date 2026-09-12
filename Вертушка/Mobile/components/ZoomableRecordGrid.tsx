@@ -625,6 +625,10 @@ export function ZoomableRecordGrid({
                     }
                     onLongPress={onLongPress ? () => onLongPress(item.id) : undefined}
                     isSelectionMode={isSelectionMode}
+                    // Бронь подарка: флаг живёт на item-уровне (см. RecordGrid).
+                    // Без него свой вишлист в grid-режиме терял «Забронировано»,
+                    // которое видно на чужом профиле.
+                    isBooked={'is_booked' in item && item.is_booked === true}
                     hotStock={
                       hotStockMap && item.record.discogs_id
                         ? hotStockMap.get(item.record.discogs_id) ?? undefined
