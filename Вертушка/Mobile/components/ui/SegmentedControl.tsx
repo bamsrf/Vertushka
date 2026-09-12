@@ -77,6 +77,11 @@ export function SegmentedControl<T extends string>({
             disabled={disabled}
           >
             <Text
+              // Три сегмента («Личные / Запросы · N / Скрытые») на узком экране
+              // раньше переносили подпись на вторую строку и рвали высоту 48.
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.85}
               style={[
                 styles.segmentText,
                 isSelected && styles.segmentTextSelected,

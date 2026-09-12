@@ -25,6 +25,7 @@ import type {
 interface MessagesState {
   conversationsPrimary: Conversation[];
   conversationsRequests: Conversation[];
+  conversationsArchived: Conversation[];
   threads: Record<string, Message[]>;
   hasMoreBefore: Record<string, boolean>;
   unread: UnreadCount;
@@ -57,6 +58,7 @@ interface MessagesState {
   rejectRequest: (conversationId: string) => Promise<void>;
   toggleMute: (conversationId: string) => Promise<void>;
   archive: (conversationId: string) => Promise<void>;
+  unarchive: (conversationId: string) => Promise<void>;
   clearHistory: (conversationId: string) => Promise<void>;
   blockUser: (userId: string, conversationId?: string) => Promise<void>;
   togglePin: (conversationId: string) => Promise<void>;
@@ -106,6 +108,7 @@ let listInFlight = 0;
 export const useMessagesStore = create<MessagesState>((set, get) => ({
   conversationsPrimary: [],
   conversationsRequests: [],
+  conversationsArchived: [],
   threads: {},
   hasMoreBefore: {},
   unread: { primary: 0, requests: 0 },
@@ -124,7 +127,8 @@ export const useMessagesStore = create<MessagesState>((set, get) => ({
     try {
       const items = await messagesApi.listConversations(folder);
       if (folder === 'primary') set({ conversationsPrimary: items });
-      else set({ conversationsRequests: items });
+      else if (folder === 'requests') set({ conversationsRequests: items });
+      else set({ conversationsArchived: items });
     } catch (e) {
       console.warn('loadConversations failed', e);
     } finally {
@@ -454,14 +458,48 @@ export const useMessagesStore = create<MessagesState>((set, get) => ({
   },
 
   archive: async (conversationId) => {
+    // Диалог переезжает из своей папки в «Скрытые» локально — без перезагрузки
+    // списка, иначе после свайпа папка «Скрытые» до следующего pull-to-refresh
+    // выглядела бы пустой и «Вернуть» было бы неоткуда нажать.
+    const moved =
+      get().conversationsPrimary.find((c) => c.id === conversationId) ??
+      get().conversationsRequests.find((c) => c.id === conversationId);
     try {
       await messagesApi.archiveConversation(conversationId);
       set((s) => ({
         conversationsPrimary: s.conversationsPrimary.filter((c) => c.id !== conversationId),
         conversationsRequests: s.conversationsRequests.filter((c) => c.id !== conversationId),
+        conversationsArchived: moved
+          ? [moved, ...s.conversationsArchived.filter((c) => c.id !== conversationId)]
+          : s.conversationsArchived,
       }));
     } catch (e: any) {
-      toast.error('Не удалось удалить', String(e?.response?.data?.detail || 'Попробуйте позже'));
+      toast.error('Не удалось скрыть', String(e?.response?.data?.detail || 'Попробуйте позже'));
+      throw e;
+    }
+  },
+
+  unarchive: async (conversationId) => {
+    const moved = get().conversationsArchived.find((c) => c.id === conversationId);
+    try {
+      await messagesApi.unarchiveConversation(conversationId);
+      // Отклонённый запрос возвращается в «Запросы», остальное — в «Личные»:
+      // бекенд request_status при разархивации не меняет.
+      const toRequests = moved?.request_status === 'pending';
+      set((s) => ({
+        conversationsArchived: s.conversationsArchived.filter((c) => c.id !== conversationId),
+        conversationsPrimary:
+          moved && !toRequests
+            ? [moved, ...s.conversationsPrimary.filter((c) => c.id !== conversationId)]
+            : s.conversationsPrimary,
+        conversationsRequests:
+          moved && toRequests
+            ? [moved, ...s.conversationsRequests.filter((c) => c.id !== conversationId)]
+            : s.conversationsRequests,
+      }));
+      get().refreshUnread();
+    } catch (e: any) {
+      toast.error('Не удалось вернуть', String(e?.response?.data?.detail || 'Попробуйте позже'));
       throw e;
     }
   },
@@ -741,6 +779,7 @@ export const useMessagesStore = create<MessagesState>((set, get) => ({
     set({
       conversationsPrimary: [],
       conversationsRequests: [],
+      conversationsArchived: [],
       threads: {},
       hasMoreBefore: {},
       unread: { primary: 0, requests: 0 },

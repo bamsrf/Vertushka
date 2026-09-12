@@ -170,6 +170,10 @@ export const messagesApi = {
     await getClient().delete(`/messages/conversations/${conversationId}/`);
   },
 
+  async unarchiveConversation(conversationId: string): Promise<void> {
+    await getClient().post(`/messages/conversations/${conversationId}/unarchive/`);
+  },
+
   async blockUser(userId: string): Promise<void> {
     await getClient().post(`/messages/block/${userId}/`);
   },
