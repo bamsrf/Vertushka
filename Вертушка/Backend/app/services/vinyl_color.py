@@ -66,6 +66,25 @@ def color_family(raw: str | None) -> str | None:
     return None
 
 
+def non_black_color_family(raw: str | None) -> str | None:
+    """Первая НЕ-чёрная семья цвета, или None, если её нет.
+
+    `color_family()` держит black первым по приоритету — это верно там, где
+    доказывается КОНФЛИКТ цвета листинга и записи, но ломает вопрос «какого
+    цвета эта цветная пластинка»: «Orange With Black Splatter» и «Blue & Black
+    Marbled» — оранжевая и синяя, а семья у обеих выходит чёрной. Двухцветных
+    в дампе 570 из 5 493 значений, 12% (см. `is_colored_vinyl`).
+
+    Чисто чёрное («Cosmic Black») даёт None: это не цветной винил.
+    """
+    if not raw:
+        return None
+    for fam, rx in _COMPILED:
+        if fam != "black" and rx.search(raw):
+            return fam
+    return None
+
+
 # ---- Цвет пресса из дампа Discogs --------------------------------------- #
 #
 # Discogs держит цвет винила в атрибуте `text` у формата: `<format name="Vinyl"
@@ -144,10 +163,7 @@ def is_colored_vinyl(raw: str | None) -> bool:
     """
     if not raw:
         return False
-    for fam, rx in _COMPILED:
-        if fam != "black" and rx.search(raw):
-            return True
-    return bool(_COLORED_MARKER_RE.search(raw))
+    return bool(non_black_color_family(raw)) or bool(_COLORED_MARKER_RE.search(raw))
 
 
 def sql_is_colored_vinyl(col_expr: str) -> str:
