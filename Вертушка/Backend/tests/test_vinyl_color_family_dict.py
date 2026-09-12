@@ -109,6 +109,37 @@ def test_unspecific_markers_deliberately_have_no_family():
 
 # ---- SQL-зеркало не должно разъезжаться с Python ------------------------- #
 
+def test_patterns_contain_no_colon():
+    """Двоеточие в паттерне роняет ЛЮБОЙ запрос, куда подставлено зеркало.
+
+    Регрессия: у grey стояло `сер(?:ый|ая|…)`, и `:ый` внутри `(?:` SQLAlchemy
+    разобрал как именованный bind-параметр — «A value is required for bind
+    parameter 'ый'». Падал при этом не словарь, а Маркет и профиль, потому что
+    sql_is_colored_vinyl подставляется в сырой SQL через text().
+
+    Группировка тут не нужна ни одной семье: окончания перечисляются целиком.
+    """
+    from app.services.vinyl_color import _FAMILY_PATTERNS
+
+    for fam, pat in _FAMILY_PATTERNS:
+        assert ":" not in pat, f"{fam}: двоеточие сломает text()"
+    assert ":" not in sql_nonblack_family_regex()
+
+
+def test_sql_mirrors_survive_sqlalchemy_text():
+    """Прямая проверка того, что уронило CI.
+
+    Живой БД не нужно: text() разбирает bind-параметры на этапе
+    конструирования, так что лишнее двоеточие видно сразу.
+    """
+    from sqlalchemy import text
+
+    from app.services.vinyl_color import sql_color_family, sql_is_colored_vinyl
+
+    for expr in (sql_is_colored_vinyl("c"), sql_color_family("c")):
+        assert text(f"SELECT 1 WHERE ({expr}) IS NOT NULL").compile().params == {}
+
+
 def test_sql_nonblack_regex_covers_every_nonblack_family():
     rx = sql_nonblack_family_regex()
     for fam in ("grey", "cream", "brown", "purple", "orange", "pink", "red"):
