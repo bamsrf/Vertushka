@@ -12,7 +12,7 @@
  * - Тап на блок → navigate в `/achievements` (свой) или `/user/<u>/achievements`.
  */
 import { useEffect, useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator, Platform } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { api } from '../lib/api';
@@ -195,6 +195,9 @@ const styles = StyleSheet.create({
     fontSize: ms(12),
     color: Colors.text,
     textAlign: 'center',
+    // Android 360dp: подпись растягивается на ширину ячейки и режется внутри
+    // неё, а не наезжает на соседнюю («На борту / Распах… / Аватар»).
+    ...Platform.select({ android: { alignSelf: 'stretch' as const }, default: {} }),
   },
   emptyText: {
     color: Colors.textMuted,

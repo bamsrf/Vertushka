@@ -28,6 +28,7 @@ import { useAuthStore, useCollectionStore, useFollowStore, useGiftStore, useProf
 import { useMessagesStore } from '../lib/messagesStore';
 import { useRemoteConfigStore } from '../lib/remoteConfig';
 import { ms } from '../lib/responsive';
+import { useBottomContentInset } from '../lib/useBottomContentInset';
 import { CollectionTab, GiftGivenItem } from '../lib/types';
 import { Button } from '../components/ui';
 import { AnimatedGradientText } from '../components/AnimatedGradientText';
@@ -121,6 +122,10 @@ const RATE_APP_ERROR = `Не удалось открыть ${storeName()}`;
 export default function ProfileScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  // Android (edge-to-edge): без клиренса под системную панель (3-кнопочная
+  // навигация 48dp) низ экрана не докручивался — прятался под панель. iOS: как было.
+  const bottomInset = useBottomContentInset({ extra: Spacing.lg });
+  const contentBottomStyle = Platform.OS === 'android' ? { paddingBottom: bottomInset } : null;
   const { user, logout, setUser } = useAuthStore();
   // Подсветка карандашика после тапа по шагу «Добавить имя и аватар».
   const avatarSpotlight = useCoachSpotlight('profile-avatar');
@@ -390,7 +395,7 @@ export default function ProfileScreen() {
       </View>
 
       <ScrollView
-        contentContainerStyle={styles.content}
+        contentContainerStyle={[styles.content, contentBottomStyle]}
         showsVerticalScrollIndicator={false}
       >
         {/* Аватар и имя */}
