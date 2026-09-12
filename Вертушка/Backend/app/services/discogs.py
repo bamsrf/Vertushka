@@ -29,6 +29,7 @@ from app.services.cache import (
 from app.services.search_cache_db import get_from_search_cache, save_to_search_cache
 from app.services.artist_name import clean_artist_name
 from app.services.release_type import OTHER, classify_format
+from app.services.vinyl_color import vinyl_color_from_format_texts
 from app.schemas.record import (
     RecordSearchResult,
     RecordSearchResponse,
@@ -203,6 +204,28 @@ def _prepend_qty(format_desc: str | None, qty_raw) -> str | None:
     if qty <= 1:
         return format_desc
     return f"{qty}× {format_desc}" if format_desc else f"{qty}×"
+
+
+def _vinyl_color_from_formats(formats: list[dict] | None) -> str | None:
+    """Цвет пресса из массива `formats` ответа Discogs API.
+
+    Смотрим ВСЕ форматы и отдаём разбор общей функции — той же, которой цвет
+    грузится из дампа (`app/scripts/extract_release_formats.py`). Раньше здесь
+    стояло `formats[0].get("text")` как есть, и это давало обе ошибки сразу:
+
+      * цвет ТЕРЯЛСЯ, если лежал не в первом формате. У релиза «Vinyl» +
+        «Box Set» в formats[0].text запросто «Gatefold» или «180 gram» — он и
+        приезжал вместо цвета;
+      * цвет ВЫДУМЫВАЛСЯ из упаковки: «Gold Inner Sleeve» в formats[0] красил
+        чёрную пластинку в золото, потому что фильтр упаковки тут не работал.
+
+    Из-за этого у одного релиза цвет мог быть или не быть в зависимости от
+    того, как он попал в базу: из дампа — правильно, живым фетчем — как
+    повезёт.
+    """
+    return vinyl_color_from_format_texts(
+        [f.get("text") for f in formats or [] if isinstance(f, dict)]
+    )
 
 
 def _transliterate(text: str) -> str | None:
@@ -885,7 +908,7 @@ class DiscogsService:
         # (пасхалка «Гигант на столе») и pricing. Из дампа qty не восстановить,
         # поэтому единственный источник — этот парсер.
         format_desc = _prepend_qty(format_desc, formats[0].get("qty") if formats else None)
-        vinyl_color_raw = formats[0].get("text") if formats else None
+        vinyl_color_raw = _vinyl_color_from_formats(formats)
 
         # Извлекаем штрихкоды
         identifiers = data.get("identifiers", [])
