@@ -66,6 +66,7 @@ import { noteAppLaunch } from '../lib/reviewPrompt';
 import { useRemoteConfigStore } from '../lib/remoteConfig';
 import { ForceUpdateScreen } from '../components/ForceUpdateScreen';
 import { AndroidSheetsHost } from '../components/ui/AndroidSheetsHost';
+import { AndroidEdgeSwipeBack } from '../components/AndroidEdgeSwipeBack';
 // Системный font-scale клэмпится через metro-alias react-native →
 // lib/fontScale/scaledText.tsx (maxFontSizeMultiplier), см. metro.config.js.
 
@@ -501,6 +502,9 @@ function RootLayout() {
       <BottomSheetModalProvider>
         <SafeAreaProvider>
           <StatusBar style="dark" />
+        {/* Android: свайп «назад» от левого края на stack-экранах. iOS —
+            passthrough, дерево не меняется. */}
+        <AndroidEdgeSwipeBack>
         <Stack
           screenOptions={{
             headerShown: false,
@@ -508,8 +512,10 @@ function RootLayout() {
             animation: 'slide_from_right',
             gestureEnabled: true,
             // Свайп «назад» ловится из любой точки экрана, а не только от
-            // левого края — жест ощущается нативнее. iOS-only (на Android
-            // работает системный back-жест). Каверза: на экранах с
+            // левого края — жест ощущается нативнее. iOS-only: в
+            // react-native-screens оба gesture-пропса `@platform ios`, на
+            // Android свайп от левого края даёт AndroidEdgeSwipeBack (обёртка
+            // Stack ниже). Каверза: на экранах с
             // горизонтальным скроллом (авто-рейлы Поиска, карусели релизов/
             // сторов) полноэкранный жест может перехватывать прокрутку ленты —
             // если всплывёт, точечно гасим fullScreenGestureEnabled: false в
@@ -577,6 +583,7 @@ function RootLayout() {
             options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
           />
         </Stack>
+        </AndroidEdgeSwipeBack>
         <AchievementUnlockHost />
         {/* Android-замены Alert.prompt / ActionSheetIOS (lib/promptCompat,
             lib/actionSheetCompat). На iOS — null. */}
