@@ -22,13 +22,19 @@
 ## Режимы
 
   --mode junk     (по умолчанию) только записи, чей сохранённый цвет
-                  исправленный парсер забраковал бы. ~772 записи, ~13 минут.
+                  исправленный парсер забраковал бы. ~750 записей, ~3 часа.
                   Именно здесь лежит вся ложь, ради которой всё затевалось.
 
-  --mode missing  записи вообще без цвета. Их 46 796 — при лимите Discogs
-                  60 запросов в минуту это ~13 часов, поэтому режим только по
-                  явному флагу и всегда с --limit. Улов будет жидкий: у
-                  большинства цвета нет и у Discogs.
+  --mode missing  записи вообще без цвета. Их 46 796 — это несколько СУТОК,
+                  поэтому режим только по явному флагу и всегда с --limit.
+                  Улов будет жидкий: у большинства цвета нет и у Discogs.
+
+Про темп. Считать «60 rpm = запись в секунду» НЕЛЬЗЯ, и первая оценка этого
+скрипта была занижена в десять раз именно так. `get_release` тратит на одну
+пластинку несколько запросов (сам релиз, миниатюра артиста, статистика цен), а
+бакет ещё и делится со всем, что в этот момент ходит в Discogs, — замер на
+проде 12.09 дал ~14 секунд на запись при параллельно идущем пересчёте
+коллекционности. Планируй по 10-15 с/запись, а не по секунде.
 
 ## Что именно меняется
 
@@ -49,7 +55,9 @@ missing при каждом следующем запуске, и скрипт �
 Поэтому перед каждым запросом ключ релиза инвалидируется.
 
 Usage:
-  docker exec vertushka_api python -m app.scripts.refetch_vinyl_colors \\
+  # Контейнер API называется vertushka_api_blue / _green (blue-green деплой),
+  # а не vertushka_api — точное имя смотри в `docker ps`.
+  docker exec vertushka_api_blue python -m app.scripts.refetch_vinyl_colors \\
       [--mode junk|missing] [--limit N] [--dry-run]
 """
 from __future__ import annotations
@@ -57,6 +65,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
+import time
 from datetime import datetime
 
 from sqlalchemy import text
@@ -167,41 +176,76 @@ async def _fresh_color(discogs_id: str) -> tuple[str | None, bool]:
     return data.get("vinyl_color_raw"), True
 
 
+#: Как часто отчитываться о прогрессе. Стояло 100, и при 14 с/запись это были
+#: 23 минуты полной тишины в логе — прогон выглядел зависшим, чему я сам и
+#: поверил, полез искать труп и чуть не перезапустил живой скрипт. Лог должен
+#: доказывать, что работа идёт, чаще, чем раз в получаса.
+_PROGRESS_EVERY = 25
+
+
+def _log_progress(seen: int, total: int, started: float) -> None:
+    """Строка прогресса с темпом и остатком времени.
+
+    ETA считаем по факту, а не по теории про 60 rpm: реальный темп зависит от
+    того, кто ещё в этот момент ходит в Discogs из того же бакета.
+    """
+    if seen % _PROGRESS_EVERY and seen != total:
+        return
+    elapsed = time.monotonic() - started
+    per = elapsed / max(seen, 1)
+    left = per * (total - seen)
+    logger.info(
+        "… %d/%d (%.1f с/запись, осталось ~%d мин)",
+        seen, total, per, round(left / 60),
+    )
+
+
 async def refetch(mode: str, limit: int, dry_run: bool) -> dict[str, int]:
     counters = {"seen": 0, "fixed": 0, "cleared": 0, "same": 0, "failed": 0}
     rows = await _candidates(mode, limit)
     logger.info("к обработке: %d записей (режим %s)", len(rows), mode)
 
-    now = datetime.utcnow().isoformat(timespec="seconds")
+    started = time.monotonic()
 
     for row in rows:
         counters["seen"] += 1
-        old = row["color"]
-        new, ok = await _fresh_color(str(row["discogs_id"]))
+        # finally, а не строка в конце тела: у цикла четыре выхода (сбой сети,
+        # «не изменилось», dry-run, обычный), и на трёх из них прогресс не
+        # печатался бы. Прогон, где всё падает по сети, обязан выглядеть
+        # работающим — иначе его опять примут за труп.
+        try:
+            old = row["color"]
+            # Отметку берём на КАЖДУЮ запись, а не один раз на прогон: при
+            # трёх часах работы общий штамп врал бы на всю длину прогона, а
+            # это единственный след того, когда запись реально проверяли.
+            now = datetime.utcnow().isoformat(timespec="seconds")
+            new, ok = await _fresh_color(str(row["discogs_id"]))
 
-        if not ok:
-            counters["failed"] += 1
-            continue
-        if new == old:
-            counters["same"] += 1
-            continue
+            if not ok:
+                counters["failed"] += 1
+                continue
+            if new == old:
+                counters["same"] += 1
+                continue
 
-        if dry_run:
-            counters["fixed" if new else "cleared"] += 1
-            logger.info("[dry-run] %s: %r -> %r", row["discogs_id"], old, new)
-            continue
+            if dry_run:
+                counters["fixed" if new else "cleared"] += 1
+                logger.info("[dry-run] %s: %r -> %r", row["discogs_id"], old, new)
+                continue
 
-        async with async_session_maker() as s:
-            if new:
-                await s.execute(text(_UPDATE_SET), {"id": row["id"], "color": new, "now": now})
-                counters["fixed"] += 1
-            else:
-                await s.execute(text(_UPDATE_CLEAR), {"id": row["id"], "now": now})
-                counters["cleared"] += 1
-            await s.commit()
-
-        if counters["seen"] % 100 == 0:
-            logger.info("… %d/%d", counters["seen"], len(rows))
+            async with async_session_maker() as s:
+                if new:
+                    await s.execute(
+                        text(_UPDATE_SET),
+                        {"id": row["id"], "color": new, "now": now},
+                    )
+                    counters["fixed"] += 1
+                else:
+                    await s.execute(text(_UPDATE_CLEAR), {"id": row["id"], "now": now})
+                    counters["cleared"] += 1
+                await s.commit()
+        finally:
+            _log_progress(counters["seen"], len(rows), started)
 
     logger.info(
         "ГОТОВО: просмотрено=%d цвет_найден=%d мусор_снесён=%d без_изменений=%d ошибок=%d",
