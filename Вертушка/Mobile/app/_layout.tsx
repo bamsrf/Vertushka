@@ -68,6 +68,7 @@ import { useRemoteConfigStore } from '../lib/remoteConfig';
 import { ForceUpdateScreen } from '../components/ForceUpdateScreen';
 import { AndroidSheetsHost } from '../components/ui/AndroidSheetsHost';
 import { AndroidEdgeSwipeBack } from '../components/AndroidEdgeSwipeBack';
+import { useSwipeBackPopStore } from '../lib/edgeSwipeBack';
 // Системный font-scale клэмпится через metro-alias react-native →
 // lib/fontScale/scaledText.tsx (maxFontSizeMultiplier), см. metro.config.js.
 
@@ -182,6 +183,10 @@ if (amplitudeApiKey) {
 SplashScreen.preventAutoHideAsync();
 
 function RootLayout() {
+  // Android: свайп «назад» сам довозит экран за край окна и на этот pop
+  // просит native-stack не играть свой slide (см. AndroidEdgeSwipeBack).
+  // Кнопка «Назад» и push ездят как прежде. iOS флаг не трогает.
+  const swipePopWithoutAnimation = useSwipeBackPopStore((s) => s.popWithoutAnimation);
   const { checkAuth, isLoading, isAuthenticated, user } = useAuthStore();
   const { checkOnboarding, isReady: onboardingReady } = useOnboardingStore();
   const needsUpdate = useRemoteConfigStore((s) => s.needsUpdate);
@@ -510,7 +515,8 @@ function RootLayout() {
           screenOptions={{
             headerShown: false,
             contentStyle: { backgroundColor: Colors.background },
-            animation: 'slide_from_right',
+            animation:
+              Platform.OS === 'android' && swipePopWithoutAnimation ? 'none' : 'slide_from_right',
             gestureEnabled: true,
             // Свайп «назад» ловится из любой точки экрана, а не только от
             // левого края — жест ощущается нативнее. iOS-only: в

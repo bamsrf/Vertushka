@@ -10,23 +10,27 @@
  *
  * Как устроено: Pan-жест RNGH на обёртке всего Stack, без hitSlop. Тапы и
  * скроллы под ним идут как обычно, пока жест не активировался
- * (`activeOffsetX(25)` вправо). `failOffsetX(-10)` отдаёт движение влево,
- * `failOffsetY(±15)` — вертикальные скроллы.
+ * (`activeOffsetX` вправо). `failOffsetX` отдаёт движение влево,
+ * `failOffsetY` — вертикальные скроллы. Почему пороги не ломают
+ * горизонтальные карусели и свайп-строки — в lib/edgeSwipeBack.ts.
  *
- * Почему не ломает горизонтальные карусели и свайп-строки (проверено по
- * android/ RNGH 2.32):
- *  - Нативный RN ScrollView/FlatList (horizontal) при драге на системном
- *    touch-slop (~8dp) зовёт `requestDisallowInterceptTouchEvent(true)`;
- *    RNGestureHandlerRootView перехватывает это и через
- *    `tryCancelAllHandlers` отменяет все ещё не активные жесты — наш в
- *    том числе. Карусель всегда успевает первой (8 < 25).
- *  - Свои Gesture.Pan (строки сообщений/вишлиста/уведомлений, AutoRail,
- *    ThresholdSheet, ReanimatedSwipeable) активируются на 6–12dp; в
- *    оркестраторе первый активировавшийся отменяет остальных, независимо
- *    от вложенности (`makeActive` → `shouldHandlerBeCancelledBy`).
- *  Итог: там, где под пальцем есть горизонтальный скролл/свайп, он и
- *  выигрывает; свайп «назад» ловится с остального экрана. Никаких реестров
- *  и `manualActivation` не нужно — приоритет задаётся порогами.
+ * Движение: экран идёт за пальцем 1:1 целиком на UI-потоке (shared value в
+ * onUpdate + useAnimatedStyle, без runOnJS). Прыжок на порог активации
+ * компенсируется: translationX в момент onStart запоминается и вычитается.
+ * Слева от уезжающего экрана — фон приложения с тёмной подложкой, которая
+ * светлеет по мере прогресса (как затемнение нижнего экрана в iOS-стеке).
+ *
+ * Commit (дотянул до COMMIT_FRACTION ширины или швырнул): экран доезжает за
+ * край окна withTiming, и только по завершении шлём «Назад». Чтобы
+ * native-stack не проиграл поверх свой slide (экран вернулся бы на 0 и уехал
+ * второй раз), перед pop поднимаем флаг `useSwipeBackPopStore` — `_layout.tsx`
+ * на Android переключает `screenOptions.animation` в 'none' ровно на этот
+ * pop. Порядок гарантирован через useEffect: «Назад» эмулируем только после
+ * коммита рендера с новыми options. После смены маршрута сдвиг сбрасываем в
+ * 0 (иначе следующий экран отрендерится уехавшим) и флаг опускаем — кнопка
+ * «Назад» и push продолжают ездить нативным slide_from_right.
+ * Если маршрут не сменился за POP_FALLBACK_MS — «Назад» съел оверлей
+ * (useAndroidBackClose): экран возвращаем на место.
  *
  * Куда уходим: не `router.back()` напрямую, а эмуляция системной «Назад»
  * через тот же `hardwareBackPress`, на который подписаны `useAndroidBackClose`
@@ -41,26 +45,40 @@
  *
  * iOS: прозрачный passthrough — там работает нативный жест native-stack.
  */
-import { ReactNode, useCallback, useMemo } from 'react';
-import { DeviceEventEmitter, Platform, StyleSheet } from 'react-native';
+import { ReactNode, useCallback, useEffect, useMemo, useRef } from 'react';
+import {
+  DeviceEventEmitter,
+  Platform,
+  StyleSheet,
+  useWindowDimensions,
+  View,
+} from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
+  Easing,
   runOnJS,
   useAnimatedStyle,
   useSharedValue,
   withTiming,
 } from 'react-native-reanimated';
-import { useRouter, useSegments } from 'expo-router';
+import { usePathname, useRouter, useSegments } from 'expo-router';
+import { Colors } from '../constants/theme';
 import {
   ACTIVE_OFFSET_X,
+  backdropOpacity,
+  CANCEL_DURATION_MS,
+  COMMIT_DURATION_MS,
   FAIL_OFFSET_X,
   FAIL_OFFSET_Y,
   followShift,
   isEdgeSwipeEnabledForSegment,
+  POP_FALLBACK_MS,
   shouldCommitSwipeBack,
+  swipeProgress,
+  useSwipeBackPopStore,
 } from '../lib/edgeSwipeBack';
 
-const RESET_DURATION_MS = 160;
+const EASE_OUT = Easing.out(Easing.cubic);
 
 interface AndroidEdgeSwipeBackProps {
   children: ReactNode;
@@ -76,13 +94,64 @@ export function AndroidEdgeSwipeBack({ children }: AndroidEdgeSwipeBackProps) {
 function EdgeSwipeHost({ children }: AndroidEdgeSwipeBackProps) {
   const router = useRouter();
   const segments = useSegments();
+  const pathname = usePathname();
+  const { width } = useWindowDimensions();
   const enabled = isEdgeSwipeEnabledForSegment(segments[0]);
-  const shift = useSharedValue(0);
 
-  const emulateHardwareBack = useCallback(() => {
-    if (!router.canGoBack()) return;
+  const shift = useSharedValue(0);
+  const origin = useSharedValue(0);
+  // Пока экран уехал и ждёт pop — новые касания не двигают сдвиг.
+  const locked = useSharedValue(false);
+
+  const popWithoutAnimation = useSwipeBackPopStore((s) => s.popWithoutAnimation);
+  const setPopWithoutAnimation = useSwipeBackPopStore((s) => s.setPopWithoutAnimation);
+  const pendingPop = useRef(false);
+  const fallbackTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const clearFallback = useCallback(() => {
+    if (fallbackTimer.current === null) return;
+    clearTimeout(fallbackTimer.current);
+    fallbackTimer.current = null;
+  }, []);
+
+  const releaseScreen = useCallback(
+    (animated: boolean) => {
+      clearFallback();
+      pendingPop.current = false;
+      locked.value = false;
+      shift.value = animated ? withTiming(0, { duration: CANCEL_DURATION_MS, easing: EASE_OUT }) : 0;
+      setPopWithoutAnimation(false);
+    },
+    [clearFallback, locked, setPopWithoutAnimation, shift],
+  );
+
+  // Экран уехал за край: просим _layout убрать нативную анимацию у pop.
+  const requestPop = useCallback(() => {
+    if (!router.canGoBack()) {
+      releaseScreen(true);
+      return;
+    }
+    pendingPop.current = true;
+    setPopWithoutAnimation(true);
+  }, [releaseScreen, router, setPopWithoutAnimation]);
+
+  // Эффект родителя Stack бежит после коммита, в котором Stack получил
+  // animation: 'none' — только теперь pop безопасен.
+  useEffect(() => {
+    if (!popWithoutAnimation || !pendingPop.current) return;
     DeviceEventEmitter.emit('hardwareBackPress', {});
-  }, [router]);
+    clearFallback();
+    fallbackTimer.current = setTimeout(() => {
+      if (pendingPop.current) releaseScreen(true);
+    }, POP_FALLBACK_MS);
+  }, [popWithoutAnimation, clearFallback, releaseScreen]);
+
+  // Маршрут сменился — pop прошёл. Следующий экран должен стоять на 0.
+  useEffect(() => {
+    if (pendingPop.current) releaseScreen(false);
+  }, [pathname, releaseScreen]);
+
+  useEffect(() => clearFallback, [clearFallback]);
 
   const pan = useMemo(
     () =>
@@ -92,35 +161,58 @@ function EdgeSwipeHost({ children }: AndroidEdgeSwipeBackProps) {
         .activeOffsetX(ACTIVE_OFFSET_X)
         .failOffsetX(-FAIL_OFFSET_X)
         .failOffsetY([-FAIL_OFFSET_Y, FAIL_OFFSET_Y])
+        .onStart((e) => {
+          if (locked.value) return;
+          origin.value = e.translationX;
+        })
         .onUpdate((e) => {
-          shift.value = followShift(e.translationX);
+          if (locked.value) return;
+          shift.value = followShift(e.translationX, origin.value);
         })
         .onEnd((e) => {
-          if (!shouldCommitSwipeBack(e)) return;
-          // Сброс мгновенный: нативная анимация pop не должна стартовать
-          // из сдвинутого состояния.
-          shift.value = 0;
-          runOnJS(emulateHardwareBack)();
+          if (locked.value) return;
+          if (!shouldCommitSwipeBack(e, width)) return;
+          locked.value = true;
+          shift.value = withTiming(
+            width,
+            { duration: COMMIT_DURATION_MS, easing: EASE_OUT },
+            (finished) => {
+              if (finished) runOnJS(requestPop)();
+            },
+          );
         })
         .onFinalize(() => {
-          // Покрывает и отмену жеста, и «не дотянул»: контент плавно
-          // возвращается на место. После commit это no-op (уже 0).
-          shift.value = withTiming(0, { duration: RESET_DURATION_MS });
+          // Отмена жеста или «не дотянул»: контент плавно возвращается.
+          // После commit сдвиг заперт — не трогаем.
+          if (locked.value) return;
+          shift.value = withTiming(0, { duration: CANCEL_DURATION_MS, easing: EASE_OUT });
         }),
-    [enabled, emulateHardwareBack, shift],
+    [enabled, locked, origin, requestPop, shift, width],
   );
 
-  const style = useAnimatedStyle(() => ({
+  const contentStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: shift.value }],
+  }));
+
+  const backdropStyle = useAnimatedStyle(() => ({
+    opacity: backdropOpacity(swipeProgress(shift.value, width)),
   }));
 
   return (
     <GestureDetector gesture={pan}>
-      <Animated.View style={[styles.host, style]}>{children}</Animated.View>
+      <View style={styles.host}>
+        <Animated.View
+          pointerEvents="none"
+          style={[StyleSheet.absoluteFill, styles.backdrop, backdropStyle]}
+        />
+        <Animated.View style={[styles.content, contentStyle]}>{children}</Animated.View>
+      </View>
     </GestureDetector>
   );
 }
 
 const styles = StyleSheet.create({
-  host: { flex: 1 },
+  host: { flex: 1, backgroundColor: Colors.background },
+  backdrop: { backgroundColor: '#000' },
+  content: { flex: 1 },
 });
