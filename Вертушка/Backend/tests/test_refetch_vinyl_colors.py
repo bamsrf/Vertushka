@@ -67,6 +67,40 @@ def test_empty_is_junk():
     assert _is_junk("") is True
 
 
+# ---- Лог обязан доказывать, что прогон жив -------------------------------- #
+
+def test_progress_is_logged_often_enough_to_look_alive(caplog):
+    """Стояло «каждые 100», и при 14 с/запись это 23 минуты тишины.
+
+    Прогон выглядел зависшим — я сам на это купился, полез искать труп и чуть
+    не перезапустил живой скрипт поверх работающего.
+    """
+    import logging
+
+    from app.scripts import refetch_vinyl_colors as R
+
+    assert R._PROGRESS_EVERY <= 25
+
+    with caplog.at_level(logging.INFO, logger="refetch_vinyl_colors"):
+        for seen in range(1, R._PROGRESS_EVERY + 1):
+            R._log_progress(seen, 700, started=0.0)
+
+    assert len(caplog.records) == 1, "ровно одна строка на каждые _PROGRESS_EVERY"
+    assert "осталось" in caplog.records[0].getMessage()
+
+
+def test_last_record_always_reports(caplog):
+    """Хвост короче шага не должен молча проглатываться."""
+    import logging
+
+    from app.scripts import refetch_vinyl_colors as R
+
+    with caplog.at_level(logging.INFO, logger="refetch_vinyl_colors"):
+        R._log_progress(7, 7, started=0.0)
+
+    assert caplog.records, "последняя запись обязана отчитаться"
+
+
 # ---- SQL скрипта не должен таить лишних bind-параметров ------------------- #
 
 def test_sql_has_exactly_the_intended_binds():
