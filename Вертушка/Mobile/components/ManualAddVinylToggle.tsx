@@ -27,6 +27,7 @@ import Animated, {
   Extrapolation,
 } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
+import { PixelRatio } from 'react-native';
 import { VinylSpinner } from './VinylSpinner';
 import { CoachPulse } from './onboarding/CoachPulse';
 import { SwipeLeftHint, SWIPE_HINT_WIDTH } from './ui/SwipeLeftHint';
@@ -96,7 +97,18 @@ export function ManualAddVinylToggle({ onOpen, bottom = '14%', highlighted = fal
 
   // Ход кноба: от FAB справа до центра экрана (= кнопка затвора).
   const { width: W } = useWindowDimensions();
-  const SLIDE = Math.max(80, W / 2 - RIGHT - 32); // knob center: (W−RIGHT−32) → W/2
+  /**
+   * При крупном системном шрифте трек удлиняется во столько же раз, во сколько
+   * вырос текст. Иначе «Добавить» переставало влезать в остаток ширины и
+   * ломалось пополам («Добави / ть»), а `adjustsFontSizeToFit` не спасал:
+   * у подписи задан явный `lineHeight`, и авто-ужатие с ним на iOS не работает.
+   * Верхняя граница — чтобы пилюля не вылезла за экран.
+   */
+  const FONT_SCALE = Math.min(PixelRatio.getFontScale(), MAX_FONT_SCALE);
+  const SLIDE = Math.min(
+    Math.max(80, (W / 2 - RIGHT - 32) * FONT_SCALE),
+    W - 2 * RIGHT - KNOB - 8,
+  ); // knob center: (W−RIGHT−32) → левее при крупном шрифте
   const PILL_W = SLIDE + KNOB + 8; // трек вмещает полный ход кноба
   /**
    * Шевроны не расширяют пилюлю — они делят с текстом её собственную ширину.
