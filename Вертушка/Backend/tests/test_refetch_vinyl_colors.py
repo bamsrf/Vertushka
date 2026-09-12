@@ -143,7 +143,7 @@ def _patch(monkeypatch, *, result=None, boom=None):
     monkeypatch.setattr(cache_mod, "cache", fake_cache)
 
     class _FakeService:
-        async def get_release(self, release_id, priority=None):
+        async def get_release_vinyl_color(self, release_id, *, priority=None):
             if boom is not None:
                 raise boom
             return result
@@ -164,7 +164,7 @@ async def test_network_failure_is_not_an_empty_colour(monkeypatch):
 @pytest.mark.asyncio
 async def test_discogs_says_no_colour(monkeypatch):
     """А вот это — законный повод снести ключ."""
-    _patch(monkeypatch, result={"vinyl_color_raw": None, "title": "X"})
+    _patch(monkeypatch, result=None)
     color, ok = await _fresh_color("12345")
     assert ok is True
     assert color is None
@@ -172,7 +172,7 @@ async def test_discogs_says_no_colour(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_fresh_colour_is_returned(monkeypatch):
-    _patch(monkeypatch, result={"vinyl_color_raw": "Red Translucent"})
+    _patch(monkeypatch, result="Red Translucent")
     color, ok = await _fresh_color("12345")
     assert (color, ok) == ("Red Translucent", True)
 
@@ -184,7 +184,7 @@ async def test_release_cache_is_invalidated_before_fetch(monkeypatch):
     Без сброса скрипт бы прилежно «перезаписал» то же самое битое значение и
     отчитался, что всё хорошо.
     """
-    fake_cache = _patch(monkeypatch, result={"vinyl_color_raw": "Blue"})
+    fake_cache = _patch(monkeypatch, result="Blue")
     await _fresh_color("777")
     assert ("release", "777") in fake_cache.deleted
 
@@ -200,8 +200,8 @@ async def test_broken_cache_does_not_block_the_fetch(monkeypatch):
             raise ConnectionError("redis down")
 
     class _Svc:
-        async def get_release(self, release_id, priority=None):
-            return {"vinyl_color_raw": "Yellow"}
+        async def get_release_vinyl_color(self, release_id, *, priority=None):
+            return "Yellow"
 
     monkeypatch.setattr(cache_mod, "cache", _DeadCache())
     monkeypatch.setattr(discogs_mod, "DiscogsService", _Svc)

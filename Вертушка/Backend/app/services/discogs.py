@@ -850,6 +850,32 @@ class DiscogsService:
             lambda: self._fetch_release_uncached(release_id, priority),
         )
 
+    async def get_release_vinyl_color(
+        self, release_id: str, *, priority: int = Priority.BATCH
+    ) -> str | None:
+        """Цвет пресса ОДНИМ запросом, без обогащения.
+
+        `get_release` тратит на пластинку три запроса к Discogs: сам релиз,
+        статистику цен с маркетплейса и миниатюру артиста. Для ре-фетча цвета
+        два из трёх — чистый расход: втрое больше токенов из бакета и втрое
+        дольше. На боевом прогоне 12.09 это дало ~14 с/запись и пачку 429 на
+        `marketplace/stats`, когда параллельно шла другая фоновая задача.
+
+        Бросает исключение, если запрос не удался, и возвращает None, если
+        Discogs просто не знает цвета. Разница принципиальна для вызывающего:
+        в первом случае запись трогать нельзя, во втором — надо снести цвет.
+
+        Результат НЕ кладётся в кэш `release`: там лежит полный payload, и
+        подсунуть туда огрызок без цен и миниатюры значит сломать карточку
+        записи для всех остальных.
+        """
+        data = await self._get(
+            f"{self.BASE_URL}/releases/{release_id}", priority=priority
+        )
+        if not isinstance(data, dict):
+            return None
+        return _vinyl_color_from_formats(data.get("formats", []))
+
     async def _fetch_release_uncached(self, release_id: str, priority: int) -> dict[str, Any]:
         # Повторная проверка кэша — пока ждали lock, кто-то мог записать
         cached = await cache.get("release", release_id)
