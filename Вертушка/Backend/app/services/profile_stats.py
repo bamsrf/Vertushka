@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.collection import Collection, CollectionItem
 from app.models.record import Record
 from app.services.genre_vocab import split_genres
+from app.services.vinyl_color import sql_nonblack_family_regex
 
 logger = logging.getLogger(__name__)
 
@@ -137,12 +138,15 @@ async def compute_fun_stats(user_id: UUID, db: AsyncSession) -> list[dict]:
         # Намеренно не через color_family(): у неё black первым в приоритете,
         # и «Red w/ Black Smoke» ушла бы в чёрные. \y — граница слова в
         # Postgres ARE (аналог \b), иначе red ловится внутри hundred.
+        #
+        # Список слов НЕ дублируем: он тянется из _FAMILY_PATTERNS через
+        # sql_nonblack_family_regex(). Раньше копия жила здесь и разъезжалась с
+        # оригиналом на каждой новой семье (grey/cream/brown доехали бы только
+        # в Маркет). `clear` дописан руками — семьёй он не считается намеренно,
+        # но в профиле прозрачную пластинку всегда показывали цветной.
         color_raw = func.coalesce(Record.discogs_data.op("->>")("vinyl_color_raw"), "")
         fmt_desc = func.coalesce(Record.format_description, "")
-        nonblack_color_re = (
-            r"\y(white|teal|turquoise|red|blue|green|yellow|orange|purple|"
-            r"pink|gold|silver|clear)\y"
-        )
+        nonblack_color_re = f"({sql_nonblack_family_regex()}|\\yclear\\y)"
         colored_marker_re = r"colou?r|translucent|marbled|splatter|picture disc|glow"
         color_count = await db.scalar(
             select(func.count(Record.id))
