@@ -51,7 +51,8 @@ import { CollectionItem, WishlistItem } from '../lib/types';
 import { useBottomContentInset } from '../lib/useBottomContentInset';
 import { getCoverUrl, getHeroCoverUrl, sizedCoverUrl } from '../lib/api';
 import { useCoverSource } from '../lib/coverRetry';
-import { RecordCard } from './RecordCard';
+import { RecordCard, CARD_INFO_HEIGHT } from './RecordCard';
+import { MAX_FONT_SCALE } from '../lib/fontScale/maxFontScale';
 import {
   RarityContext,
   RarityFlags,
@@ -104,10 +105,12 @@ const H_PADDING = Spacing.md;
 const COL_GAPS = [Spacing.md, 8, 6, 5, 4, 3] as const;
 const ROW_GAPS = [Spacing.md, 12, 8, 6, 5, 4] as const;
 const RADIUS_LIST = [BorderRadius.md, 10, 8, 6, 4, 4] as const;
-const CAPTION_H_L1 = 38;
-// Должно совпадать со styles.expandedInfo.height в RecordCard.tsx — иначе scrollTo
-// после коммита L0 промахивается и ячейки «прыгают».
-const RECORD_CARD_EXTRA_H = 92;
+// Подпись уровня L1 (артист + название) — тоже текст, растёт вместе со шрифтом.
+const CAPTION_H_L1 = Math.round(38 * Math.min(PixelRatio.getFontScale(), MAX_FONT_SCALE));
+// Раньше здесь лежала копия числа 92 с просьбой «не забыть синхронизировать» с
+// styles.expandedInfo.height в RecordCard. Теперь это одна константа: рассинхрон
+// ломал scrollTo после коммита L0 и ячейки «прыгали».
+const RECORD_CARD_EXTRA_H = CARD_INFO_HEIGHT;
 
 // Пороги pinch — мягче, чтобы лёгкое движение уже срабатывало.
 const SCALE_IN_HARD = 1.18;

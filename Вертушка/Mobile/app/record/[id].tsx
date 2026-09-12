@@ -1697,7 +1697,8 @@ const styles = StyleSheet.create({
   },
   addedButton: {
     flex: 1,
-    height: 56,
+    minHeight: 56,
+    paddingVertical: Spacing.md,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -1719,7 +1720,8 @@ const styles = StyleSheet.create({
   },
   removeButton: {
     flex: 1,
-    height: 56,
+    minHeight: 56,
+    paddingVertical: Spacing.md,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: Colors.surface,

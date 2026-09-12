@@ -41,6 +41,7 @@ import OffersBottomSheet, { type OffersBottomSheetRef } from '../../components/m
 import { type OfferDetailData } from '../../components/market/OfferDetailCard';
 import { Linking } from 'react-native';
 
+import { SelectionFooter } from '../../components/SelectionFooter';
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
@@ -1279,93 +1280,45 @@ export default function CollectionScreen() {
 
       {/* Нижний подвал в режиме выбора */}
       {isSelectionMode && (
-        <View style={styles.selectionFooter}>
-          {activeTab === 'wishlist' && (
-            <TouchableOpacity
-              style={styles.footerButton}
-              onPress={handleBulkMoveToCollection}
-              disabled={selectedItems.size === 0}
-            >
-              <Icon
-                name="arrow-forward-circle"
-                size={24}
-                color={selectedItems.size > 0 ? Colors.royalBlue : Colors.textMuted}
-              />
-              <Text
-                style={[
-                  styles.footerButtonText,
-                  selectedItems.size === 0 && styles.footerButtonTextDisabled,
-                ]}
-              >
-                В коллекцию {selectedItems.size > 0 && `(${selectedItems.size})`}
-              </Text>
-            </TouchableOpacity>
-          )}
-
-          {activeTab === 'wishlist' && (
-            <TouchableOpacity
-              style={styles.footerButton}
-              onPress={() => setShowWishlistFolderPicker(true)}
-              disabled={selectedItems.size === 0}
-            >
-              <Icon
-                name="folder-outline"
-                size={24}
-                color={selectedItems.size > 0 ? Colors.royalBlue : Colors.textMuted}
-              />
-              <Text
-                style={[
-                  styles.footerButtonText,
-                  selectedItems.size === 0 && styles.footerButtonTextDisabled,
-                ]}
-              >
-                В папку {selectedItems.size > 0 && `(${selectedItems.size})`}
-              </Text>
-            </TouchableOpacity>
-          )}
-
-          {activeTab === 'collection' && (
-            <TouchableOpacity
-              style={styles.footerButton}
-              onPress={() => setShowFolderPicker(true)}
-              disabled={selectedItems.size === 0}
-            >
-              <Icon
-                name="folder-outline"
-                size={24}
-                color={selectedItems.size > 0 ? Colors.royalBlue : Colors.textMuted}
-              />
-              <Text
-                style={[
-                  styles.footerButtonText,
-                  selectedItems.size === 0 && styles.footerButtonTextDisabled,
-                ]}
-              >
-                В папку {selectedItems.size > 0 && `(${selectedItems.size})`}
-              </Text>
-            </TouchableOpacity>
-          )}
-
-          <TouchableOpacity
-            style={[styles.footerButton, styles.footerButtonDelete]}
-            onPress={handleBulkDelete}
-            disabled={selectedItems.size === 0}
-          >
-            <Icon
-              name="trash-outline"
-              size={24}
-              color={selectedItems.size > 0 ? Colors.error : Colors.textMuted}
-            />
-            <Text
-              style={[
-                styles.footerButtonText,
-                selectedItems.size === 0 && styles.footerButtonTextDisabled,
-              ]}
-            >
-              Удалить {selectedItems.size > 0 && `(${selectedItems.size})`}
-            </Text>
-          </TouchableOpacity>
-        </View>
+        <SelectionFooter
+          bottom={96} // над плавающим таб-баром (bottom:28 + height:60 + gap:8)
+          selectedCount={selectedItems.size}
+          actions={[
+            ...(activeTab === 'wishlist'
+              ? [
+                  {
+                    key: 'to-collection',
+                    icon: 'arrow-forward-circle',
+                    label: 'В коллекцию',
+                    onPress: handleBulkMoveToCollection,
+                  },
+                  {
+                    key: 'to-wishlist-folder',
+                    icon: 'folder-outline',
+                    label: 'В папку',
+                    onPress: () => setShowWishlistFolderPicker(true),
+                  },
+                ]
+              : []),
+            ...(activeTab === 'collection'
+              ? [
+                  {
+                    key: 'to-folder',
+                    icon: 'folder-outline',
+                    label: 'В папку',
+                    onPress: () => setShowFolderPicker(true),
+                  },
+                ]
+              : []),
+            {
+              key: 'delete',
+              icon: 'trash-outline',
+              label: 'Удалить',
+              onPress: handleBulkDelete,
+              destructive: true,
+            },
+          ]}
+        />
       )}
 
       <FolderPickerModal
@@ -1479,7 +1432,8 @@ const styles = StyleSheet.create({
 
   // Filter button
   filterButton: {
-    height: 36,
+    minHeight: 36,
+    paddingVertical: Spacing.sm,
     paddingHorizontal: isCompact ? 8 : 10,
     borderRadius: 18,
     backgroundColor: Colors.surface,
@@ -1518,9 +1472,9 @@ const styles = StyleSheet.create({
     top: -4,
     right: -4,
     minWidth: 16,
-    height: 16,
+    minHeight: 16,
     paddingHorizontal: 4,
-    borderRadius: 8,
+    borderRadius: 9999,
     backgroundColor: Colors.success,
     alignItems: 'center',
     justifyContent: 'center',
@@ -1609,40 +1563,6 @@ const styles = StyleSheet.create({
   headerButtonAbsolute: {
     position: 'absolute',
     right: 0,
-  },
-
-  selectionFooter: {
-    position: 'absolute',
-    bottom: 96, // above floating tab bar (bottom:28 + height:60 + gap:8)
-    left: 16,
-    right: 16,
-    flexDirection: 'row',
-    backgroundColor: Colors.glassBg,
-    paddingTop: Spacing.md,
-    paddingBottom: Spacing.md,
-    paddingHorizontal: Spacing.md,
-    gap: Spacing.md,
-    borderRadius: BorderRadius.md,
-  },
-  footerButton: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: Spacing.sm,
-    paddingVertical: Spacing.md,
-    backgroundColor: Colors.surface,
-    borderRadius: BorderRadius.md,
-  },
-  footerButtonDelete: {
-    backgroundColor: Colors.surface,
-  },
-  footerButtonText: {
-    ...Typography.buttonSmall,
-    color: Colors.royalBlue,
-  },
-  footerButtonTextDisabled: {
-    color: Colors.textMuted,
   },
 
   // Folders section

@@ -23,10 +23,11 @@ import { WishlistFolderPickerModal } from '../../components/WishlistFolderPicker
 import { api } from '../../lib/api';
 import { useCollectionStore } from '../../lib/store';
 import { WishlistFolder, WishlistItem } from '../../lib/types';
-import { Colors, Typography, Spacing, BorderRadius } from '../../constants/theme';
+import { Colors, Typography, Spacing } from '../../constants/theme';
 import { toast } from '../../lib/toast';
 import { promptText } from '../../lib/promptCompat';
 
+import { SelectionFooter } from '../../components/SelectionFooter';
 export default function WishlistFolderScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
@@ -348,47 +349,25 @@ export default function WishlistFolderScreen() {
       )}
 
       {isSelectionMode && (
-        <View style={styles.selectionFooter}>
-          <TouchableOpacity
-            style={styles.footerButton}
-            onPress={() => setShowFolderPicker(true)}
-            disabled={selectedItems.size === 0}
-          >
-            <Icon
-              name="folder-outline"
-              size={24}
-              color={selectedItems.size > 0 ? Colors.royalBlue : Colors.textMuted}
-            />
-            <Text
-              style={[
-                styles.footerButtonText,
-                selectedItems.size === 0 && styles.footerButtonTextDisabled,
-              ]}
-            >
-              В папку {selectedItems.size > 0 && `(${selectedItems.size})`}
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.footerButton, styles.footerButtonDelete]}
-            onPress={handleBulkRemove}
-            disabled={selectedItems.size === 0}
-          >
-            <Icon
-              name="close-circle-outline"
-              size={24}
-              color={selectedItems.size > 0 ? Colors.error : Colors.textMuted}
-            />
-            <Text
-              style={[
-                styles.footerButtonTextDelete,
-                selectedItems.size === 0 && styles.footerButtonTextDisabled,
-              ]}
-            >
-              Убрать {selectedItems.size > 0 && `(${selectedItems.size})`}
-            </Text>
-          </TouchableOpacity>
-        </View>
+        <SelectionFooter
+          bottom={40}
+          selectedCount={selectedItems.size}
+          actions={[
+            {
+              key: 'move',
+              icon: 'folder-outline',
+              label: 'В папку',
+              onPress: () => setShowFolderPicker(true),
+            },
+            {
+              key: 'remove',
+              icon: 'close-circle-outline',
+              label: 'Убрать',
+              onPress: handleBulkRemove,
+              destructive: true,
+            },
+          ]}
+        />
       )}
 
       <ActionSheet
@@ -480,42 +459,5 @@ const styles = StyleSheet.create({
   cancelButtonText: {
     ...Typography.buttonSmall,
     color: Colors.textSecondary,
-  },
-  selectionFooter: {
-    position: 'absolute',
-    bottom: 40,
-    left: 16,
-    right: 16,
-    flexDirection: 'row',
-    backgroundColor: Colors.glassBg,
-    paddingTop: Spacing.md,
-    paddingBottom: Spacing.md,
-    paddingHorizontal: Spacing.md,
-    gap: Spacing.md,
-    borderRadius: BorderRadius.md,
-  },
-  footerButton: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: Spacing.sm,
-    paddingVertical: Spacing.md,
-    backgroundColor: Colors.surface,
-    borderRadius: BorderRadius.md,
-  },
-  footerButtonDelete: {
-    backgroundColor: Colors.surface,
-  },
-  footerButtonText: {
-    ...Typography.buttonSmall,
-    color: Colors.royalBlue,
-  },
-  footerButtonTextDelete: {
-    ...Typography.buttonSmall,
-    color: Colors.error,
-  },
-  footerButtonTextDisabled: {
-    color: Colors.textMuted,
   },
 });

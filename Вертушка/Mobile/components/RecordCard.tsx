@@ -20,6 +20,23 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import { Colors, Typography, BorderRadius, Shadows, Spacing, Gradients } from '../constants/theme';
+import { MAX_FONT_SCALE } from '../lib/fontScale/maxFontScale';
+
+/**
+ * Высота белого блока с подписью под обложкой (артист / название / мета).
+ *
+ * Она ФИКСИРОВАНА намеренно: `ZoomableRecordGrid` считает по ней геометрию
+ * виртуализированной сетки, и «резиновая» высота ломает scrollTo после
+ * pinch-коммита — ячейки прыгают. Поэтому вместо `minHeight` блок
+ * масштабируется вместе с системным шрифтом: три строки внутри вырастут ровно
+ * во столько же раз, во сколько вырастет текст, и ничего не обрежется.
+ *
+ * Множитель тот же, что и потолок у текста, иначе блок и содержимое разъедутся.
+ * Читается один раз при загрузке модуля — как и `ms()` в lib/responsive.
+ */
+export const CARD_INFO_HEIGHT = Math.round(
+  92 * Math.min(PixelRatio.getFontScale(), MAX_FONT_SCALE),
+);
 import { RecordSearchResult, VinylRecord, MasterSearchResult, ReleaseSearchResult, PublicProfileRecord } from '../lib/types';
 import { getCoverUrl, sizedCoverUrl } from '../lib/api';
 import { useCoverSource } from '../lib/coverRetry';
@@ -536,13 +553,15 @@ function RecordCardComponent({
           {hasCountry && (
             <>
               {hasYear && <Text style={styles.metaDot}>·</Text>}
-              <Text style={styles.metaText}>{(record as { country?: string }).country}</Text>
+              <Text style={styles.metaTextFlexible} numberOfLines={1}>
+                {(record as { country?: string }).country}
+              </Text>
             </>
           )}
           {formatText && (
             <>
               {(hasYear || hasCountry) && <Text style={styles.metaDot}>·</Text>}
-              <Text style={styles.metaText} numberOfLines={1}>{formatText}</Text>
+              <Text style={styles.metaTextFlexible} numberOfLines={1}>{formatText}</Text>
             </>
           )}
           {rarityTier && (
@@ -747,7 +766,7 @@ const styles = StyleSheet.create({
   },
   expandedInfo: {
     padding: 12,
-    height: 92,
+    height: CARD_INFO_HEIGHT,
     overflow: 'hidden',
     backgroundColor: '#FFFFFF',
   },
@@ -777,6 +796,15 @@ const styles = StyleSheet.create({
   metaText: {
     ...Typography.caption,
     color: '#999999',
+  },
+  // Строка меты — nowrap с overflow hidden. Без сжатия последние элементы
+  // («ВИНИЛ · ЛИМИТКА») упирались в край карточки и срезались без многоточия.
+  // Год не ужимаем: он короткий и фиксированной длины, а сжатие превращало
+  // «2025» в «202» без многоточия.
+  metaTextFlexible: {
+    ...Typography.caption,
+    color: '#999999',
+    flexShrink: 1,
   },
   metaDot: {
     ...Typography.caption,

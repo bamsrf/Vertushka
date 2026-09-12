@@ -462,6 +462,9 @@ export function TierLabel({ tier, size = 11 }: TierLabelProps) {
         fontFamily: 'Inter_700Bold',
         color: tokens.textColor,
         letterSpacing: 0.4,
+        // Метка стоит последней в nowrap-строке меты: без сжатия её срезает
+        // край карточки вместо аккуратного многоточия.
+        flexShrink: 1,
       }}
     >
       {tokens.label}

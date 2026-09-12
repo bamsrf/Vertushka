@@ -23,6 +23,7 @@ import { analytics } from '../../lib/analytics';
 import { useCacheStore } from '../../lib/store';
 import { Artist, MasterSearchResult } from '../../lib/types';
 import { Colors, Typography, Spacing, BorderRadius } from '../../constants/theme';
+import { MAX_FONT_SCALE } from '../../lib/fontScale/maxFontScale';
 
 type ReleaseFilter = 'album' | 'ep' | 'single' | 'compilation';
 type SortMode = 'year_desc' | 'year_asc' | 'title';
@@ -106,7 +107,13 @@ function FilterChip({ label, isActive, onPress }: FilterChipProps) {
           { backgroundColor, transform: [{ scale: scaleAnim }] },
         ]}
       >
-        <Animated.Text style={[styles.filterChipText, { color: textColor }]}>
+        <Animated.Text
+          style={[styles.filterChipText, { color: textColor }]}
+          numberOfLines={1}
+          // Animated.Text идёт мимо metro-шима (тот подменяет только Text
+          // из react-native), поэтому потолок системного шрифта ставим руками.
+          maxFontSizeMultiplier={MAX_FONT_SCALE}
+        >
           {label}
         </Animated.Text>
         {isActive && (

@@ -379,7 +379,11 @@ function HeartBurst({ onDone }: { onDone: () => void }) {
 
   return (
     <View pointerEvents="none" style={styles.heartBurstWrap}>
-      <Animated.Text style={[styles.heartBurstEmoji, style]}>❤️</Animated.Text>
+      {/* Декоративная анимация, а не текст: системный «Размер текста» не должен
+          менять её геометрию. Animated.Text идёт мимо metro-шима. */}
+      <Animated.Text style={[styles.heartBurstEmoji, style]} allowFontScaling={false}>
+        ❤️
+      </Animated.Text>
     </View>
   );
 }
@@ -2274,9 +2278,9 @@ const styles = StyleSheet.create({
     top: -6,
     right: -6,
     minWidth: 18,
-    height: 18,
+    minHeight: 18,
     paddingHorizontal: 5,
-    borderRadius: 9,
+    borderRadius: 9999,
     backgroundColor: Colors.royalBlue,
     alignItems: 'center',
     justifyContent: 'center',

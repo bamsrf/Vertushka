@@ -1513,7 +1513,8 @@ const styles = StyleSheet.create({
     // 36×36 + radius 18 — те же размеры, что и в (tabs)/collection.tsx
     // (styles.filterButton), чтобы нижний тулбар чужого профиля визуально
     // совпадал со своим.
-    height: 36,
+    minHeight: 36,
+    paddingVertical: 8,
     paddingHorizontal: 10,
     borderRadius: 18,
     backgroundColor: 'rgba(255,255,255,0.55)',

@@ -279,7 +279,8 @@ const styles = StyleSheet.create({
   },
   primaryBtn: {
     width: '100%',
-    height: 48,
+    minHeight: 48,
+    paddingVertical: Spacing.md,
     borderRadius: BorderRadius.md,
     backgroundColor: Colors.royalBlue,
     alignItems: 'center',
@@ -289,7 +290,8 @@ const styles = StyleSheet.create({
   primaryBtnTxt: { color: '#fff', fontSize: 15, fontWeight: '600' },
   ghostBtn: {
     width: '100%',
-    height: 44,
+    minHeight: 44,
+    paddingVertical: Spacing.sm,
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 4,

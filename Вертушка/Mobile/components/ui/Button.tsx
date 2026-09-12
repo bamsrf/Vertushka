@@ -106,8 +106,12 @@ export function Button({
 }
 
 const styles = StyleSheet.create({
+  // Высота — МИНИМУМ, не фикс: при крупном системном «Размере текста» подпись
+  // в две строки должна растягивать кнопку, а не обрезаться внутри 56pt.
+  // paddingVertical подобран так, что при 100% масштабе высота ровно прежняя.
   base: {
-    height: ComponentSizes.buttonHeight,
+    minHeight: ComponentSizes.buttonHeight,
+    paddingVertical: Spacing.md,
     paddingHorizontal: Spacing.lg,
     borderRadius: 18,
     alignItems: 'center',
@@ -156,7 +160,8 @@ const styles = StyleSheet.create({
 
   // Размеры
   small: {
-    height: ComponentSizes.buttonHeightSmall,
+    minHeight: ComponentSizes.buttonHeightSmall,
+    paddingVertical: Spacing.sm,
     paddingHorizontal: Spacing.md,
   },
 
@@ -174,6 +179,8 @@ const styles = StyleSheet.create({
   text: {
     ...Typography.button,
     textAlign: 'center',
+    // Даём тексту сжиматься и переноситься внутри кнопки, а не выезжать за неё.
+    flexShrink: 1,
   },
   primaryText: {
     color: Colors.background,
