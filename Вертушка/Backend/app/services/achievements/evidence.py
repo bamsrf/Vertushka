@@ -5,8 +5,10 @@
 как xp_awarded: продал пластинку — улика в истории осталась.
 
 Принципы (зафиксированы владельцем):
-- подсвечиваем ТОЛЬКО музыку — никаких имён людей (у подарков показываем
-  пластинку, не получателя/дарителя);
+- подсвечиваем ТОЛЬКО музыку — никаких имён людей;
+- серия подарков (J*) улик не несёт вообще: она про отношения, а не про
+  конкретный релиз. Исключение — J5 «С теплом»: там ровно одна подаренная
+  тебе пластинка, и назвать её уместно;
 - текст максимально короткий: «Artist — Title · и ещё 24».
 
 Формат evidence: {"records": [{id, artist, title, year}], "count": N, "note": s}
@@ -57,12 +59,31 @@ def _record_line(ref: dict[str, Any]) -> str | None:
     return _shorten(line, _LINE_MAX)
 
 
-def evidence_text(metadata: dict[str, Any] | None) -> str | None:
+#: Коды подарочной серии, которым улика больше не положена. Билдеров у них
+#: нет, но у ранних анлоков снапшот уже лежит в ach_metadata — глушим на
+#: чтении, чтобы не бэкфиллить прод. J5 «С теплом» сюда не входит.
+_GIFT_EVIDENCE_FREE_CODES = frozenset({
+    "J1_first_gift",
+    "J2_gift_done",
+    "J3_three_recipients",
+    "J4_ten_recipients",
+    "J7_boomerang",
+    "J8_loved",
+    "J9_santa",
+    "META_gifts",
+})
+
+
+def evidence_text(
+    metadata: dict[str, Any] | None, *, code: str | None = None
+) -> str | None:
     """Короткий текст улики из ach_metadata. None — показывать нечего.
 
     Понимает и «легаси»-ключи H-серии (artist_name/master_name/label_name),
     которые дискография писала до появления evidence.
     """
+    if code in _GIFT_EVIDENCE_FREE_CODES:
+        return None
     if not isinstance(metadata, dict):
         return None
 
@@ -175,43 +196,37 @@ def _python_sampler(predicate) -> EvidenceBuilder:
     return builder
 
 
-def _gift_record_builder(*, received: bool) -> EvidenceBuilder:
-    """Пластинка подарка. Только музыка — получателя/дарителя не подсвечиваем.
+async def _gift_received_builder(
+    db: AsyncSession, user_id: UUID, payload: dict
+) -> dict | None:
+    """Пластинка, подаренная тебе (J5 «С теплом»). Дарителя не называем.
 
     Сначала бронь из payload (живое событие), иначе — последний завершённый
-    подарок юзера (бэкфилл/догон). count — сколько всего долетело.
+    подарок юзера (бэкфилл/догон). count не пишем: «и ещё N» превратило бы
+    улику в счётчик подарков, а речь про одну конкретную пластинку.
     """
-
-    async def builder(db: AsyncSession, user_id: UUID, payload: dict) -> dict | None:
-        side = (
-            GiftBooking.recipient_user_id if received else GiftBooking.booked_by_user_id
+    booking = None
+    booking_id = (payload or {}).get("booking_id")
+    if booking_id:
+        booking = await db.scalar(
+            select(GiftBooking).where(GiftBooking.id == booking_id)
         )
-        booking = None
-        booking_id = (payload or {}).get("booking_id")
-        if booking_id:
-            booking = await db.scalar(
-                select(GiftBooking).where(GiftBooking.id == booking_id)
+    if booking is None:
+        booking = await db.scalar(
+            select(GiftBooking)
+            .where(
+                GiftBooking.recipient_user_id == user_id,
+                GiftBooking.status == GiftStatus.COMPLETED,
             )
-        if booking is None:
-            booking = await db.scalar(
-                select(GiftBooking)
-                .where(side == user_id, GiftBooking.status == GiftStatus.COMPLETED)
-                .order_by(GiftBooking.completed_at.desc().nulls_last())
-                .limit(1)
-            )
-        if booking is None or booking.record_id is None:
-            return None
-        record = await db.scalar(select(Record).where(Record.id == booking.record_id))
-        if record is None:
-            return None
-        count = await db.scalar(
-            select(func.count()).select_from(GiftBooking).where(
-                side == user_id, GiftBooking.status == GiftStatus.COMPLETED
-            )
+            .order_by(GiftBooking.completed_at.desc().nulls_last())
+            .limit(1)
         )
-        return {"records": [_ref(record)], "count": int(count or 0)}
-
-    return builder
+    if booking is None or booking.record_id is None:
+        return None
+    record = await db.scalar(select(Record).where(Record.id == booking.record_id))
+    if record is None:
+        return None
+    return {"records": [_ref(record)]}
 
 
 async def _crown_jewel_builder(
@@ -317,8 +332,6 @@ def _build_registry() -> dict[str, EvidenceBuilder]:
     limited = _sql_sampler(Record.is_limited.is_(True))
     collectible = _sql_sampler(Record.is_collectible.is_(True))
     hot = _sql_sampler(Record.is_hot.is_(True))
-    gift_done = _gift_record_builder(received=False)
-    gift_received = _gift_record_builder(received=True)
 
     def _has_hidden_track(record: Record) -> bool:
         for track in record.tracklist or []:
@@ -368,15 +381,10 @@ def _build_registry() -> dict[str, EvidenceBuilder]:
         "T1_first_tape": _python_sampler(lambda r: _media(r).has(CASSETTE)),
         "CD1_first_cd": _python_sampler(lambda r: _media(r).has(CD)),
         "BX1_first_box": _python_sampler(lambda r: _media(r).has(BOX_SET)),
-        # Подарки — только музыка
-        "J1_first_gift": gift_done,
-        "J2_gift_done": gift_done,
-        "J3_three_recipients": gift_done,
-        "J4_ten_recipients": gift_done,
-        "J5_first_received": gift_received,
-        "J7_boomerang": gift_done,
-        "J8_loved": gift_received,
-        "J9_santa": gift_done,
+        # Подарки: улика только у «С теплом» — одна подаренная тебе
+        # пластинка. Остальные J* про отношения, а не про релиз (см. модульную
+        # докстрингу и _GIFT_EVIDENCE_FREE_CODES).
+        "J5_first_received": _gift_received_builder,
         # Пасхалки про конкретную пластинку
         "R_palindrome": _python_sampler(_is_palindrome_year),
         "R_self_titled": _python_sampler(
