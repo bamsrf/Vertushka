@@ -80,12 +80,11 @@ const SORT_OPTIONS: { id: SortMode; label: string }[] = [
 ];
 
 /**
- * Android 360dp: три столбца статов по ~65dp и кнопка «Вы подписаны» между
- * двумя иконками — подписи и лейбл обрезались многоточием. Ужимаем шрифт под
- * ширину (numberOfLines уже стоит); на iOS пропсы не добавляются.
+ * Android 360dp: кнопка «Вы подписаны» между двумя иконками — лейбл обрезался
+ * многоточием. Ужимаем шрифт под ширину; на iOS пропсы не добавляются.
+ * Подписи статов в шапке так НЕ ужимаем: adjustsFontSizeToFit давал трём
+ * подписям разный кегль и разную высоту — см. heroStatLbl.
  */
-const NARROW_LABEL_FIT =
-  Platform.OS === 'android' ? ({ adjustsFontSizeToFit: true, minimumFontScale: 0.7 } as const) : {};
 const FOLLOW_TXT_FIT =
   Platform.OS === 'android'
     ? ({ numberOfLines: 1, adjustsFontSizeToFit: true, minimumFontScale: 0.8 } as const)
@@ -878,13 +877,13 @@ export default function UserProfileScreen() {
             <View style={styles.heroStatsRow}>
               <View style={styles.heroStatItem}>
                 <Text style={styles.heroStatNum}>{pubProfile.collection_count}</Text>
-                <Text style={styles.heroStatLbl} numberOfLines={1} {...NARROW_LABEL_FIT}>
+                <Text style={styles.heroStatLbl} numberOfLines={1}>
                   в наличии
                 </Text>
               </View>
               <View style={styles.heroStatItem}>
                 <Text style={styles.heroStatNum}>{pubProfile.wishlist_count}</Text>
-                <Text style={styles.heroStatLbl} numberOfLines={1} {...NARROW_LABEL_FIT}>
+                <Text style={styles.heroStatLbl} numberOfLines={1}>
                   в вишлисте
                 </Text>
               </View>
@@ -899,7 +898,7 @@ export default function UserProfileScreen() {
                 activeOpacity={0.7}
               >
                 <Text style={styles.heroStatNum}>{pubProfile.followers_count}</Text>
-                <Text style={[styles.heroStatLbl, styles.heroStatLblLink]} numberOfLines={1} {...NARROW_LABEL_FIT}>
+                <Text style={[styles.heroStatLbl, styles.heroStatLblLink]} numberOfLines={1}>
                   подписчики
                 </Text>
               </TouchableOpacity>
@@ -1353,9 +1352,28 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-around',
   },
-  heroStatItem: { alignItems: 'center', flex: 1 },
+  /* Android 360dp: ряд статов = 360 − 2×GRID_PADDING − аватар 90 − gap 20 = 210,
+     колонка 70dp. Раньше подписи ужимались adjustsFontSizeToFit — три разных
+     кегля на разной высоте. Теперь один фиксированный кегль: ms(9.5) → 9dp на
+     360dp; самая длинная «подписчики» (600) в Inter ≈ 55dp, «в вишлисте» ≈ 51dp —
+     влезают в 70 − 2×4 = 62dp с запасом. lineHeight + includeFontPadding: false
+     сажают все три подписи на одну базовую линию. iOS не трогаем. */
+  heroStatItem: {
+    alignItems: 'center',
+    flex: 1,
+    ...(Platform.OS === 'android' ? { paddingHorizontal: 4 } : {}),
+  },
   heroStatNum: { fontSize: ms(18), fontWeight: '700', color: PP.ink, letterSpacing: -0.2 },
-  heroStatLbl: { fontSize: ms(10.5), color: PP.mute, marginTop: 3, letterSpacing: 0.1, textAlign: 'center' },
+  heroStatLbl: {
+    fontSize: ms(10.5),
+    color: PP.mute,
+    marginTop: 3,
+    letterSpacing: 0.1,
+    textAlign: 'center',
+    ...(Platform.OS === 'android'
+      ? { fontSize: ms(9.5), lineHeight: ms(13), includeFontPadding: false as const }
+      : {}),
+  },
   heroStatLblLink: { color: PP.cobalt, fontWeight: '600' },
 
   /* Identity (ник, имя, bio) под шапкой */
