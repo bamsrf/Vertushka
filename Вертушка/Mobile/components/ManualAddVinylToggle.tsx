@@ -10,7 +10,7 @@
  * После открытия / на возврат фокуса состояние сбрасывается в collapsed.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { View, StyleSheet, Pressable, useWindowDimensions } from 'react-native';
+import { View, StyleSheet, Pressable, useWindowDimensions, type DimensionValue } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
@@ -80,7 +80,7 @@ type Phase = 'collapsed' | 'expanded' | 'activated';
 interface Props {
   onOpen: () => void;
   /** Низ-якорь. По умолчанию '14%' — одна линия с кнопкой затвора. */
-  bottom?: number | string;
+  bottom?: DimensionValue;
   /**
    * Подсветить кноб — для контекстной подсказки про способы добавления.
    * Ореол рисуется ВНУТРИ компонента: root позиционирован абсолютно, и обёртка
@@ -232,7 +232,7 @@ export function ManualAddVinylToggle({ onOpen, bottom = '14%', highlighted = fal
   }));
 
   return (
-    <View style={[styles.root, { bottom: bottom as any }]} pointerEvents="box-none">
+    <View style={[styles.root, { bottom }]} pointerEvents="box-none">
       <CoachPulse active={highlighted} variant="glow" radius={PILL_H / 2} inset={5}>
       <Pressable onPress={onPress}>
         <Animated.View style={[styles.pill, pillStyle]}>

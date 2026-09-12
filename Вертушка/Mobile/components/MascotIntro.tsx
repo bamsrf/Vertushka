@@ -30,7 +30,7 @@
  * «splash → интро». Прогонять скрипт при каждой замене ролика.
  */
 import { useEffect, useRef, useState } from 'react';
-import { Image, StyleSheet, useWindowDimensions } from 'react-native';
+import { Image, Platform, StyleSheet, useWindowDimensions } from 'react-native';
 // Reanimated вместо легаси Animated — приведение к домашнему стилю проекта
 // (все остальные анимации на reanimated) при починке SDK 57.
 import Animated, {
@@ -73,6 +73,22 @@ const INTRO_WIDTH_RATIO = 0.82;
  *   ffmpeg -i assets/video/intro-mascot.mp4 -frames:v 1 assets/video/intro-mascot-first-frame.png
  */
 const INTRO_FIRST_FRAME = require('../assets/video/intro-mascot-first-frame.png');
+
+/**
+ * Android: видео рисуем через TextureView, а не через SurfaceView (дефолт
+ * expo-video). SurfaceView живёт не в иерархии View, а отдельным слоем ПОД
+ * окном и «пробивает» в окне прозрачную дыру своего размера. Под интро на
+ * холодном старте уже смонтирован сканер с камерой, а превью expo-camera —
+ * тоже SurfaceView под окном. В итоге в квадрате интро вместо ролика
+ * просвечивала камера: белая подложка, посередине квадрат ~82% ширины с
+ * живым превью, весь UI сканера накрыт интро. TextureView компонуется как
+ * обычный View — уважает z-order, opacity fade и ничего не пробивает.
+ * На iOS проп не существует, объект пропов там не меняем.
+ */
+const VIDEO_SURFACE_PROPS = Platform.select<{ surfaceType?: 'textureView' }>({
+  android: { surfaceType: 'textureView' },
+  default: {},
+});
 
 interface MascotIntroProps {
   /** Вызывается когда интро отыграло (или сразу, если expo-video недоступен). */
@@ -185,6 +201,7 @@ function IntroVideo({
           player={player}
           style={[styles.media, { width: mediaSize, height: mediaSize }]}
           contentFit="contain"
+          {...VIDEO_SURFACE_PROPS}
           nativeControls={false}
           fullscreenOptions={{ enable: false }}
           allowsPictureInPicture={false}
