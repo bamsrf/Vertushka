@@ -11,7 +11,7 @@ from app.schemas.utc import UtcDatetime
 
 
 RequestStatus = Literal["accepted", "pending"]
-MessageFolder = Literal["primary", "requests"]
+MessageFolder = Literal["primary", "requests", "archived"]
 MuteDuration = Literal["off", "hour", "8hours", "day", "forever"]
 
 

@@ -52,11 +52,12 @@ import type { Conversation } from '../../lib/messagesTypes';
 import { Header } from '../../components/Header';
 import { parseServerDate } from '@/lib/serverDate';
 
-type Folder = 'primary' | 'requests';
+type Folder = 'primary' | 'requests' | 'archived';
 
 const SEGMENTS: { key: Folder; label: string }[] = [
   { key: 'primary', label: 'Личные' },
   { key: 'requests', label: 'Запросы' },
+  { key: 'archived', label: 'Скрытые' },
 ];
 
 function formatTime(iso: string | null): string {
@@ -319,6 +320,7 @@ function ConversationRow({
   onTogglePin,
   onToggleMute,
   onArchive,
+  onUnarchive,
 }: {
   item: Conversation;
   isMine: boolean;
@@ -328,6 +330,8 @@ function ConversationRow({
   onTogglePin?: () => void;
   onToggleMute?: () => void;
   onArchive?: () => void;
+  /** Задан только в папке «Скрытые» — свайп «Вернуть» вместо «Скрыть». */
+  onUnarchive?: () => void;
 }) {
   const previewPrefix = isMine ? 'Вы: ' : '';
   const preview = item.last_message_preview ?? 'Нет сообщений';
@@ -353,7 +357,15 @@ function ConversationRow({
       onPress: onToggleMute,
     });
   }
-  if (onArchive) {
+  if (onUnarchive) {
+    actionSpecs.push({
+      key: 'unhide',
+      icon: 'eye',
+      label: 'Вернуть',
+      bg: '#22A06B',
+      onPress: onUnarchive,
+    });
+  } else if (onArchive) {
     actionSpecs.push({
       key: 'hide',
       icon: 'eye-slash',
@@ -533,6 +545,7 @@ export default function MessagesInboxScreen() {
   const me = useAuthStore((s) => s.user);
   const primary = useMessagesStore((s) => s.conversationsPrimary);
   const requests = useMessagesStore((s) => s.conversationsRequests);
+  const archived = useMessagesStore((s) => s.conversationsArchived);
   const isLoading = useMessagesStore((s) => s.isLoadingList);
   const listLoadedOnce = useMessagesStore((s) => s.listLoadedOnce);
   const loadConversations = useMessagesStore((s) => s.loadConversations);
@@ -542,6 +555,7 @@ export default function MessagesInboxScreen() {
   const togglePin = useMessagesStore((s) => s.togglePin);
   const toggleMute = useMessagesStore((s) => s.toggleMute);
   const archive = useMessagesStore((s) => s.archive);
+  const unarchive = useMessagesStore((s) => s.unarchive);
 
   const [folder, setFolder] = useState<Folder>('primary');
 
@@ -549,13 +563,26 @@ export default function MessagesInboxScreen() {
     await Promise.all([
       loadConversations('primary'),
       loadConversations('requests'),
+      // «Скрытые» тянем только когда папка открыта: на бейдж они не влияют
+      // (compute_total_unread их не считает), так что на входе в инбокс это был
+      // бы лишний round-trip ради вкладки, куда заходят раз в месяц.
+      folder === 'archived' ? loadConversations('archived') : Promise.resolve(),
       refreshUnread(),
     ]);
+  }, [loadConversations, refreshUnread, folder]);
+
+  // Монтирование: две основные папки + бейдж. Архив сюда не входит намеренно.
+  useEffect(() => {
+    loadConversations('primary');
+    loadConversations('requests');
+    refreshUnread();
   }, [loadConversations, refreshUnread]);
 
+  // «Скрытые» подгружаем при первом (и каждом) заходе на вкладку — список там
+  // меняется редко, но должен быть свежим после скрытия с другого устройства.
   useEffect(() => {
-    reload();
-  }, [reload]);
+    if (folder === 'archived') loadConversations('archived');
+  }, [folder, loadConversations]);
 
   // Контекстная точка запроса push-разрешения: юзер открыл сообщения —
   // уведомления о новых сообщениях ему релевантны (см. lib/push.ts).
@@ -571,7 +598,8 @@ export default function MessagesInboxScreen() {
     );
   }, [requests.length]);
 
-  const data = folder === 'primary' ? primary : requests;
+  const data =
+    folder === 'primary' ? primary : folder === 'requests' ? requests : archived;
 
   const renderItem = useCallback(
     ({ item }: { item: Conversation }) => (
@@ -580,7 +608,7 @@ export default function MessagesInboxScreen() {
         isMine={!!me && item.last_message_sender_id === me.id}
         onPress={() => router.push(`/messages/${item.id}` as any)}
         onAccept={
-          item.request_status === 'pending'
+          folder !== 'archived' && item.request_status === 'pending'
             ? () => {
                 acceptRequest(item.id)
                   .then(() => router.push(`/messages/${item.id}` as any))
@@ -591,22 +619,29 @@ export default function MessagesInboxScreen() {
             : undefined
         }
         onReject={
-          item.request_status === 'pending'
+          folder !== 'archived' && item.request_status === 'pending'
             ? () => {
                 rejectRequest(item.id).catch(() => {});
               }
             : undefined
         }
         onTogglePin={
-          item.request_status === 'accepted' ? () => togglePin(item.id) : undefined
+          folder !== 'archived' && item.request_status === 'accepted'
+            ? () => togglePin(item.id)
+            : undefined
         }
         onToggleMute={
-          item.request_status === 'accepted' ? () => toggleMute(item.id) : undefined
+          folder !== 'archived' && item.request_status === 'accepted'
+            ? () => toggleMute(item.id)
+            : undefined
         }
-        onArchive={() => archive(item.id).catch(() => {})}
+        onArchive={folder === 'archived' ? undefined : () => archive(item.id).catch(() => {})}
+        onUnarchive={
+          folder === 'archived' ? () => unarchive(item.id).catch(() => {}) : undefined
+        }
       />
     ),
-    [me, router, acceptRequest, rejectRequest, togglePin, toggleMute, archive]
+    [me, router, acceptRequest, rejectRequest, togglePin, toggleMute, archive, unarchive, folder]
   );
 
   const renderEmpty = () => {
@@ -631,6 +666,18 @@ export default function MessagesInboxScreen() {
             <Icon name="pencil" size={16} color="#fff" />
             <Text style={styles.emptyBtnTxt}>Новое сообщение</Text>
           </TouchableOpacity>
+        </Animated.View>
+      );
+    }
+    if (folder === 'archived') {
+      return (
+        <Animated.View entering={FadeIn.duration(200)} style={styles.empty}>
+          <Icon name="eye-slash" size={36} color={Colors.textMuted} />
+          <Text style={styles.emptyTitle}>Скрытых диалогов нет</Text>
+          <Text style={styles.emptySub}>
+            Сюда попадают диалоги, которые вы скрыли, и отклонённые запросы. Ничего не
+            удаляется — свайп по диалогу вернёт его обратно.
+          </Text>
         </Animated.View>
       );
     }

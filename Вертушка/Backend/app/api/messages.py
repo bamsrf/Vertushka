@@ -220,14 +220,24 @@ async def list_conversations(
 
     folder=primary — request_status='accepted' и не архивированные
     folder=requests — request_status='pending' и не архивированные
+    folder=archived — всё скрытое, без разбора request_status: сюда попадают и
+    свои «Скрыть диалог», и отклонённые запросы, и треды заблокированных — то
+    есть ровно то, что исчезло из двух других папок. Иначе часть архива была бы
+    недостижима и «терялась» бы навсегда.
     """
+    if folder == "archived":
+        folder_filter = (ConversationParticipant.archived_at.is_not(None),)
+    else:
+        folder_filter = (
+            ConversationParticipant.archived_at.is_(None),
+            ConversationParticipant.request_status
+            == ("pending" if folder == "requests" else "accepted"),
+        )
     parts_q = await db.execute(
         select(ConversationParticipant)
         .where(
             ConversationParticipant.user_id == current_user.id,
-            ConversationParticipant.archived_at.is_(None),
-            ConversationParticipant.request_status
-            == ("pending" if folder == "requests" else "accepted"),
+            *folder_filter,
         )
     )
     parts = parts_q.scalars().all()
@@ -299,14 +309,14 @@ async def list_conversations(
             )
         )
 
-    # Сначала закреплённые (Telegram-style), внутри секции — по last_message_at desc
-    from datetime import datetime as _dt
-    fallback = _dt.min
-
+    # Сначала закреплённые (Telegram-style), внутри секции — по last_message_at desc.
+    # Диалог без сообщений (открыли «Написать», но не написали) уезжает в конец через
+    # -inf, а не через datetime.min.timestamp(): последний на macOS кидает
+    # ValueError: year 0 is out of range и роняет весь список 500-кой.
     def sort_key(r: ConversationRead) -> tuple:
         return (
             0 if r.pinned else 1,
-            -(r.last_message_at.timestamp() if r.last_message_at else fallback.timestamp()),
+            -r.last_message_at.timestamp() if r.last_message_at else float("inf"),
         )
 
     items.sort(key=sort_key)
@@ -366,13 +376,11 @@ async def get_conversation_detail(
     if not conv:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Диалог не найден")
 
-    # Открытие треда (например, по deep link/пушу, минуя create_or_get_conversation) —
-    # тоже явное вовлечение: снимаем архивацию, иначе диалог виден только в текущей
-    # сессии клиента (локальный upsert в сторе), а после перезапуска приложения снова
-    # пропадёт из GET /conversations/, потому что archived_at там не сбрасывался.
-    if me_part.archived_at is not None:
-        me_part.archived_at = None
-        await db.commit()
+    # Просмотр скрытого треда (из папки «Скрытые», по deep link или пушу) архивацию
+    # НЕ снимает: раньше снимал — это был единственный путь назад, пока папки не было.
+    # Теперь «посмотреть» и «вернуть» — разные действия, и заглянуть в скрытый диалог
+    # можно, не возвращая его в список. Вернёт его POST .../unarchive/ либо отправка
+    # сообщения (см. send_message) — то есть явное действие, а не открытие экрана.
 
     partner_id = partner_id_of(conv, current_user.id)
     partner = await db.get(User, partner_id)
@@ -1032,6 +1040,26 @@ async def archive_conversation(
 
     me_part = await require_participant(db, conversation_id, current_user.id)
     me_part.archived_at = _dt.utcnow()
+    await db.commit()
+    return {"status": "ok"}
+
+
+@router.post(
+    "/conversations/{conversation_id}/unarchive/",
+    status_code=status.HTTP_200_OK,
+)
+async def unarchive_conversation(
+    conversation_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Вернуть скрытый диалог в список. Идемпотентно.
+
+    Отклонённый запрос возвращается именно запросом (request_status не трогаем):
+    «вернуть» — это отмена скрытия, а не автоприём.
+    """
+    me_part = await require_participant(db, conversation_id, current_user.id)
+    me_part.archived_at = None
     await db.commit()
     return {"status": "ok"}
 

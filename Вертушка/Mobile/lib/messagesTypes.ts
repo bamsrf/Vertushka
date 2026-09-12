@@ -2,7 +2,7 @@
  * Типы личных сообщений. Вынесены в отдельный файл от `types.ts`, чтобы
  * автоматический форматтер `types.ts` не сносил эти определения.
  */
-export type MessageFolder = 'primary' | 'requests';
+export type MessageFolder = 'primary' | 'requests' | 'archived';
 export type RequestStatus = 'accepted' | 'pending';
 
 export interface ConversationPartner {
