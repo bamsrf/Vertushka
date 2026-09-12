@@ -91,16 +91,28 @@ def vinyl_color_from_format_texts(texts: list[str] | None) -> str | None:
 
     Возвращает исходную строку (например «Red Translucent»), а не семью:
     хранить лучше то, что написал Discogs, семью выведут потребители.
-    Куски про упаковку игнорируются, из остальных берётся первый, где есть
-    известное цветовое слово.
+    Куски про упаковку игнорируются целиком.
+
+    Проходов два, и это важно:
+      1. кусок с КОНКРЕТНЫМ цветом («Red Translucent») — он ценнее всего;
+      2. если такого нет — кусок с неспецифичным маркером («Clear», «Coloured
+         Vinyl», «Splatter», «Glow In The Dark»).
+
+    Без второго прохода терялся бы весь этот класс: семьи у него нет, но на
+    нём держатся фильтр «цветной винил» в Маркете, счётчик цветных в профиле и
+    пасхалка «Светится в темноте» (она ищет подстроку glow). На проде такие
+    значения у 2 091 записи из 6 390 непустых — треть, выбрасывать нельзя.
     """
+    fallback: str | None = None
     for text in texts or []:
         cleaned = (text or "").strip()
         if not cleaned or _PACKAGING_RE.search(cleaned):
             continue
         if color_family(cleaned):
             return cleaned
-    return None
+        if fallback is None and is_colored_vinyl(cleaned):
+            fallback = cleaned
+    return fallback
 
 
 # ---- «Цветной ли винил» — вопрос, отдельный от семьи -------------------- #
