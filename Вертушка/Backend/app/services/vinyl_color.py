@@ -202,6 +202,23 @@ def is_colored_vinyl(raw: str | None) -> bool:
     return bool(non_black_color_family(raw)) or bool(_COLORED_MARKER_RE.search(raw))
 
 
+def _pg_regex(pat: str) -> str:
+    """Python-regex → литерал, пригодный для `text()` поверх Postgres.
+
+    Два перевода, и оба обязательные:
+      • `\\b` → `\\y`: Postgres ARE не знает `\\b` как границу слова.
+      • `:` → `\\:`: SQLAlchemy `text()` читает `:слово` как имя бинда, и
+        двоеточие внутри регулярки роняет запрос целиком — на этом уже горели
+        фасеты Маркета (214c92b), где RU-стем семьи цвета был записан
+        non-capturing группой `(?:ый|ая)`. Там лечили сам паттерн; здесь —
+        место, через которое паттерны вообще попадают в SQL, чтобы следующая
+        группировка не повторила это молча. Обратный слэш SQLAlchemy съедает
+        сам, в Postgres уезжает обычное двоеточие.
+    """
+    bs = chr(92)
+    return pat.replace(bs + "b", bs + "y").replace(":", bs + ":")
+
+
 def sql_nonblack_family_regex() -> str:
     """Альтернатива из паттернов всех НЕ-чёрных семей, в диалекте Postgres.
 
@@ -211,7 +228,7 @@ def sql_nonblack_family_regex() -> str:
     что место остаётся ровно одно, это.
     """
     return "|".join(
-        pat.replace(chr(92) + "b", chr(92) + "y")
+        _pg_regex(pat)
         for fam, pat in _FAMILY_PATTERNS
         if fam != "black"
     )
@@ -225,7 +242,7 @@ def sql_is_colored_vinyl(col_expr: str) -> str:
     вернулся бы чёрным.
     """
     nonblack = sql_nonblack_family_regex()
-    marker = _COLORED_MARKER.replace(chr(92) + "b", chr(92) + "y")
+    marker = _pg_regex(_COLORED_MARKER)
     return (
         f"(lower({col_expr}) ~ '({nonblack})'"
         f" OR lower({col_expr}) ~ '{marker}')"
@@ -244,7 +261,7 @@ def sql_color_family(col_expr: str) -> str:
     # Postgres ARE не знает \b — транслируем в \y (граница слова). RU-стемы без
     # \b проходят как есть.
     branches = "\n".join(
-        f"      WHEN lower({col_expr}) ~ '({pat.replace(chr(92) + 'b', chr(92) + 'y')})' THEN '{fam}'"
+        f"      WHEN lower({col_expr}) ~ '({_pg_regex(pat)})' THEN '{fam}'"
         for fam, pat in _FAMILY_PATTERNS
     )
     return f"""CASE
