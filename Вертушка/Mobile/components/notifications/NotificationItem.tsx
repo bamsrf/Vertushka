@@ -23,6 +23,7 @@ const RADAR_TINT: Record<string, string> = {
 };
 import { resolveMediaUrl, getCoverUrl } from '@/lib/api';
 import { DESIGN_PNGS } from '@/assets/achievements/designs';
+import { pinImageSource } from '@/lib/pinImageSource';
 import type { NotificationItem as NotificationItemType, NotificationType } from '@/lib/types';
 import { FollowRequestActions } from './FollowRequestActions';
 import { NotificationSwipe } from './NotificationSwipe';
@@ -270,7 +271,7 @@ export const NotificationItem: React.FC<Props> = ({
         {levelKey ? (
           <LevelUpIcon level={levelKey} size={44} animated />
         ) : pinSource ? (
-          <Image source={pinSource} style={styles.pin} contentFit="contain" cachePolicy="memory-disk" />
+          <Image source={pinImageSource(pinSource)} style={styles.pin} contentFit="contain" cachePolicy="memory-disk" />
         ) : avatarUrl ? (
           <>
             <Image source={avatarUrl} style={styles.avatar} cachePolicy="disk" />

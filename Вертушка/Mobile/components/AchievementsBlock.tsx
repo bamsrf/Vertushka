@@ -18,7 +18,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { api } from '../lib/api';
 import { Colors, Spacing, BorderRadius, Typography } from '../constants/theme';
 import { ms } from '../lib/responsive';
-import { AchievementPin } from './AchievementPin';
+import { AchievementPin, PIN_GRID } from './AchievementPin';
 import type { AchievementItem, MyAchievementsResponse } from '../lib/types';
 
 interface Props {
@@ -111,7 +111,7 @@ export function AchievementsBlock({ username, compact = false }: Props) {
         ) : (
           recent.map((it) => (
             <View key={it.code} style={styles.pinCell}>
-              <AchievementPin item={it} size={72} />
+              <AchievementPin item={it} size={PIN_GRID} />
               <Text numberOfLines={1} style={styles.pinLabel}>
                 {it.title_ru || ''}
               </Text>

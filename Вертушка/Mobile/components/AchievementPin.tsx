@@ -25,6 +25,7 @@ import {
   Animated,
   Easing,
   ImageSourcePropType,
+  Platform,
   StyleProp,
   StyleSheet,
   Text,
@@ -42,6 +43,8 @@ import {
 } from './achievement-scenes';
 import { PIN_SVGS } from '../assets/achievements/pins/pins-index';
 import { DESIGN_PNGS } from '../assets/achievements/designs';
+import { pinImageSource } from '../lib/pinImageSource';
+import { isCompact } from '../lib/responsive';
 import type { AchievementItem } from '../lib/types';
 
 // Локальные ассеты-заглушки для locked-состояний без своего SVG.
@@ -74,7 +77,21 @@ const SERIES_PLACEHOLDERS: Record<string, ImageSourcePropType> = {
   origins: PLACEHOLDER_TROPHY,
 };
 
-type PinSize = 56 | 72 | 96 | 140;
+/**
+ * Ступени пинов. Базовые — 56 / 72 / 96 / 140; на Android-компакте (360dp)
+ * грид, мета и шит берут уменьшенные ступени из PIN_* ниже — те же пропорции,
+ * чуть меньше «громоздкости». iOS-ветка остаётся на базовых.
+ */
+type PinSize = number;
+
+const ANDROID_COMPACT = Platform.OS === 'android' && isCompact;
+
+/** Пин в гриде серии / превью на профиле. */
+export const PIN_GRID: PinSize = ANDROID_COMPACT ? 64 : 72;
+/** Мета-пин в гриде серии: на 360dp ячейка 87 — 84 влезает вместе со звездой. */
+export const PIN_META: PinSize = ANDROID_COMPACT ? 84 : 96;
+/** Пин в bottom-sheet с деталями. */
+export const PIN_SHEET: PinSize = ANDROID_COMPACT ? 120 : 140;
 
 interface Props {
   item: AchievementItem;
@@ -191,7 +208,9 @@ export function AchievementPin({ item, size = 72, style, glowOverride = false, o
   } else if (asset?.kind === 'png') {
     content = (
       <Image
-        source={asset.source}
+        // Android: только uri, без width/height — иначе Glide декодирует файл
+        // в полный размер (512²/2048²) и рисует его в 216px с алиасингом.
+        source={pinImageSource(asset.source)}
         style={{ width: size, height: size }}
         contentFit="contain"
         cachePolicy="memory-disk"
@@ -339,5 +358,8 @@ const styles = StyleSheet.create({
     color: '#7A4E00',
     fontWeight: '900',
     lineHeight: 14,
+    // Android: без этого фонт-паддинг сдвигает звезду вниз и режет её
+    // по lineHeight 14 — звезда выглядела «наехавшей» на рамку бейджа.
+    ...Platform.select({ android: { includeFontPadding: false } }),
   },
 });
