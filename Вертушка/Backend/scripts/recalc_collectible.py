@@ -58,6 +58,16 @@ logger = logging.getLogger(__name__)
 #: молча не распознаёт как параметр, и ошибка вылезает только в проде.
 SQL_SET_RECORD = "UPDATE records SET is_collectible = :v WHERE discogs_id = :id"
 
+#: Сброс окна свежести у отрицательных вердиктов старой формулы. Вариант
+#: EXCEPT щадит строки, проверенные текущим прогоном (см.
+#: _invalidate_negative_index).
+SQL_INVALIDATE_ALL = (
+    "UPDATE discogs_releases_index SET collectible_checked_at = NULL "
+    "WHERE is_collectible IS NOT TRUE AND collectible_checked_at IS NOT NULL"
+)
+
+SQL_INVALIDATE_EXCEPT = SQL_INVALIDATE_ALL + " AND NOT (discogs_id = ANY(:skip))"
+
 SQL_SET_INDEX = (
     "UPDATE discogs_releases_index "
     "SET is_collectible = :v, collectible_checked_at = now() "
@@ -144,18 +154,27 @@ async def _apply(discogs_id: str, value: bool) -> bool:
         return False
 
 
-async def _invalidate_negative_index() -> int:
+async def _invalidate_negative_index(verified: list[str] | None = None) -> int:
     """Сбрасываем окно свежести у «проверено и не редкий».
 
     Эти строки считались по старым порогам, где спрос не учитывался вовсе.
     Обнулённый collectible_checked_at заставит фоновое обогащение перепроверить
     их по новой формуле — лениво, по мере открытия мастеров.
+
+    verified — discogs_id, по которым прогон ТОЛЬКО ЧТО вынес вердикт. Их
+    исключаем: они уже посчитаны по новой формуле, и сброс окна означал бы
+    выбросить работу, за которую только что заплачено запросами к Discogs.
+    Раньше исключения не было, и прогон обнулял в том числе свои же свежие
+    отрицательные вердикты — каждый из них пришлось бы перепроверять заново.
     """
+    ids = [int(x) for x in (verified or []) if x.isdigit()]
     async with async_session_maker() as db:
-        res = await db.execute(text(
-            "UPDATE discogs_releases_index SET collectible_checked_at = NULL "
-            "WHERE is_collectible IS NOT TRUE AND collectible_checked_at IS NOT NULL"
-        ))
+        if ids:
+            res = await db.execute(
+                text(SQL_INVALIDATE_EXCEPT), {"skip": ids}
+            )
+        else:
+            res = await db.execute(text(SQL_INVALIDATE_ALL))
         await db.commit()
         return res.rowcount or 0
 
@@ -181,6 +200,7 @@ async def run(apply: bool, delay: float, limit: int | None) -> None:
     set_on: list[dict] = []
     set_off: list[dict] = []
     unknown: list[dict] = []
+    verified: list[str] = []
     failed = 0
     write_failed = 0
 
@@ -196,6 +216,8 @@ async def run(apply: bool, delay: float, limit: int | None) -> None:
             continue
 
         label = f"{row['artist']} — {row['title']}"[:52]
+        if now is not None:
+            verified.append(did)
         if now is None:
             if was:
                 unknown.append(row)
@@ -226,8 +248,12 @@ async def run(apply: bool, delay: float, limit: int | None) -> None:
                 logger.info("    %s  %s — %s", r["discogs_id"], r["artist"], r["title"])
 
     if apply:
-        reset = await _invalidate_negative_index()
-        logger.info("Сброшено окно свежести у %d строк индекса — перепроверятся лениво", reset)
+        reset = await _invalidate_negative_index(verified)
+        logger.info(
+            "Сброшено окно свежести у %d строк индекса — перепроверятся лениво "
+            "(%d свежепроверенных не тронуто)",
+            reset, len(verified),
+        )
 
     discogs_limiter.stop()
     await close_db()

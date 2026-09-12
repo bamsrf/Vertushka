@@ -149,9 +149,39 @@ def test_recalc_sql_binds_every_parameter():
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
     from sqlalchemy import text
     from sqlalchemy.dialects import postgresql
-    from scripts.recalc_collectible import SQL_SET_INDEX, SQL_SET_RECORD
+    from scripts.recalc_collectible import (
+        SQL_INVALIDATE_ALL,
+        SQL_INVALIDATE_EXCEPT,
+        SQL_SET_INDEX,
+        SQL_SET_RECORD,
+    )
 
-    for sql, expected in ((SQL_SET_RECORD, {"v", "id"}), (SQL_SET_INDEX, {"v", "did"})):
+    cases = (
+        (SQL_SET_RECORD, {"v", "id"}),
+        (SQL_SET_INDEX, {"v", "did"}),
+        (SQL_INVALIDATE_ALL, set()),
+        (SQL_INVALIDATE_EXCEPT, {"skip"}),
+    )
+    for sql, expected in cases:
         compiled = text(sql).compile(dialect=postgresql.dialect())
         assert set(compiled.params) == expected, sql
         assert ":" not in compiled.string, f"нераспознанный плейсхолдер: {compiled.string}"
+
+
+def test_invalidate_skips_rows_checked_by_this_run():
+    """Сброс окна свежести не должен задевать строки текущего прогона.
+
+    Прогон платит запросом к Discogs за каждый вердикт. Обнуляя
+    collectible_checked_at подряд, он выбрасывал в том числе свои же свежие
+    отрицательные вердикты — и следующий заход считал их заново.
+    """
+    import sys
+    from pathlib import Path
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    from scripts.recalc_collectible import SQL_INVALIDATE_ALL, SQL_INVALIDATE_EXCEPT
+
+    assert SQL_INVALIDATE_EXCEPT.startswith(SQL_INVALIDATE_ALL)
+    assert "NOT (discogs_id = ANY(:skip))" in SQL_INVALIDATE_EXCEPT
+    # База исключений не содержит — иначе пустой список id молча ничего не сбросил бы
+    assert "skip" not in SQL_INVALIDATE_ALL
