@@ -53,6 +53,17 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+#: Вынесены на модуль, чтобы тест мог проверить их компиляцию без живой БД:
+#: сломанный плейсхолдер (например постфиксный каст `:id::bigint`) SQLAlchemy
+#: молча не распознаёт как параметр, и ошибка вылезает только в проде.
+SQL_SET_RECORD = "UPDATE records SET is_collectible = :v WHERE discogs_id = :id"
+
+SQL_SET_INDEX = (
+    "UPDATE discogs_releases_index "
+    "SET is_collectible = :v, collectible_checked_at = now() "
+    "WHERE discogs_id = :did"
+)
+
 CANDIDATES_SQL = """
 SELECT DISTINCT ON (discogs_id) discogs_id, artist, title, is_collectible, src
 FROM (
@@ -109,21 +120,28 @@ async def _recompute(discogs: DiscogsService, discogs_id: str) -> bool | None:
     )
 
 
-async def _apply(discogs_id: str, value: bool) -> None:
-    async with async_session_maker() as db:
-        await db.execute(
-            text("UPDATE records SET is_collectible = :v WHERE discogs_id = :id"),
-            {"v": value, "id": discogs_id},
-        )
-        await db.execute(
-            text(
-                "UPDATE discogs_releases_index "
-                "SET is_collectible = :v, collectible_checked_at = now() "
-                "WHERE discogs_id = :id::bigint"
-            ),
-            {"v": value, "id": discogs_id},
-        )
-        await db.commit()
+async def _apply(discogs_id: str, value: bool) -> bool:
+    """Пишет флаг в records и в durable-индекс. True, если записалось.
+
+    discogs_id в records — текст, в discogs_releases_index — bigint. Приводим
+    типы в Python, а не в SQL: постфиксный каст `:id::bigint` ломает парсер
+    text() — он видит `:id:` и падает синтаксической ошибкой. Из-за этого
+    первый прогон с --apply записал НОЛЬ изменений: оба UPDATE шли одной
+    транзакцией, второй валился, первый откатывался вместе с ним.
+    """
+    try:
+        async with async_session_maker() as db:
+            await db.execute(text(SQL_SET_RECORD), {"v": value, "id": discogs_id})
+            await db.execute(
+                text(SQL_SET_INDEX), {"v": value, "did": int(discogs_id)}
+            )
+            await db.commit()
+        return True
+    except Exception:
+        # Одна сбойная строка не должна уносить прогон: остальные 250 записей
+        # ни при чём, а перезапуск стоит получаса сетевого времени.
+        logger.exception("Не удалось записать флаг для %s", discogs_id)
+        return False
 
 
 async def _invalidate_negative_index() -> int:
@@ -164,6 +182,7 @@ async def run(apply: bool, delay: float, limit: int | None) -> None:
     set_off: list[dict] = []
     unknown: list[dict] = []
     failed = 0
+    write_failed = 0
 
     for i, row in enumerate(candidates, 1):
         did = row["discogs_id"]
@@ -184,19 +203,20 @@ async def run(apply: bool, delay: float, limit: int | None) -> None:
         elif now and not was:
             set_on.append(row)
             logger.info("[%d/%d] %s · %s → СТАВИМ", i, len(candidates), did, label)
-            if apply:
-                await _apply(did, True)
+            if apply and not await _apply(did, True):
+                write_failed += 1
         elif was and not now:
             set_off.append(row)
             logger.info("[%d/%d] %s · %s → СНИМАЕМ", i, len(candidates), did, label)
-            if apply:
-                await _apply(did, False)
+            if apply and not await _apply(did, False):
+                write_failed += 1
 
         await asyncio.sleep(delay)
 
     logger.info(
-        "Итог: ставим %d · снимаем %d · без вердикта %d · ошибок %d%s",
+        "Итог: ставим %d · снимаем %d · без вердикта %d · ошибок %d%s%s",
         len(set_on), len(set_off), len(unknown), failed,
+        f" · НЕ ЗАПИСАЛОСЬ {write_failed}" if write_failed else "",
         "" if apply else "  (ничего не записано, это сухой прогон)",
     )
     for title, rows in (("СТАВИМ", set_on), ("СНИМАЕМ", set_off)):
