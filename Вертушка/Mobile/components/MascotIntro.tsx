@@ -30,7 +30,7 @@
  * «splash → интро». Прогонять скрипт при каждой замене ролика.
  */
 import { useEffect, useRef, useState } from 'react';
-import { Image, StyleSheet } from 'react-native';
+import { Image, StyleSheet, useWindowDimensions } from 'react-native';
 // Reanimated вместо легаси Animated — приведение к домашнему стилю проекта
 // (все остальные анимации на reanimated) при починке SDK 57.
 import Animated, {
@@ -62,6 +62,8 @@ try {
 }
 
 const INTRO_SOURCE = require('../assets/video/intro-mascot.mp4');
+/** Доля ширины экрана под квадрат интро. Размер считается в пикселях — см. ниже. */
+const INTRO_WIDTH_RATIO = 0.82;
 /**
  * Первый кадр ролика (960×960, снят ffmpeg'ом с intro-mascot.mp4). Показывается
  * ровно до `readyToPlay`: на медленной отдаче mp4 (Metro по сети, бюджетный
@@ -108,6 +110,13 @@ function IntroVideo({
   // статичный первый кадр — снимается в момент `readyToPlay`, так что мигания
   // нет: картинка и видео совпадают попиксельно.
   const [ready, setReady] = useState(false);
+  // Размер квадрата задаётся в пикселях, а не через width:'82%' + aspectRatio.
+  // С процентами <Image> на старте показывался ~0.3с в собственном размере PNG
+  // (960×960 без суффикса @Nx = 960 точек, это 2.4 ширины экрана): на iOS 1.1.0
+  // это читалось как «первый кадр интро в зуме», потом картинка скачком
+  // вставала на место. Ловится на симуляторе покадрово при холодном старте.
+  const { width } = useWindowDimensions();
+  const mediaSize = Math.round(width * INTRO_WIDTH_RATIO);
 
   const player = useVideoPlayer(INTRO_SOURCE, (p) => {
     p.loop = false;
@@ -174,7 +183,7 @@ function IntroVideo({
       {ready ? (
         <VideoView
           player={player}
-          style={styles.video}
+          style={[styles.media, { width: mediaSize, height: mediaSize }]}
           contentFit="contain"
           nativeControls={false}
           fullscreenOptions={{ enable: false }}
@@ -183,7 +192,7 @@ function IntroVideo({
       ) : (
         <Image
           source={INTRO_FIRST_FRAME}
-          style={styles.video}
+          style={[styles.media, { width: mediaSize, height: mediaSize }]}
           resizeMode="contain"
           accessible={false}
         />
@@ -200,8 +209,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     zIndex: 9999,
   },
-  video: {
-    width: '82%',
-    aspectRatio: 1,
+  // Ширина/высота приходят пропом — зависят от ширины экрана.
+  media: {
+    alignSelf: 'center',
   },
 });
