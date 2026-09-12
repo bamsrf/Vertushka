@@ -118,6 +118,18 @@ function FollowRequestsMenuItem({ onPress }: { onPress: () => void }) {
 // Подпись и адреса магазина по платформе — lib/storeLinks.ts (A12):
 // iOS — App Store с `?action=write-review`, Android — Google Play.
 const RATE_APP_LABEL = rateAppLabel();
+
+/**
+ * Android 360dp: в карточке «Ваш профиль» два действия «Копировать» и
+ * «Поделиться» стояли авто-шириной с paddingHorizontal 16 — на 264dp
+ * внутренней ширины карточки второй лейбл вылезал за правый край
+ * («Поделить|»). На Android кнопки делят ширину поровну, а текст ужимается
+ * под неё; на iOS (390+) всё помещается, пропсы и стили не добавляются.
+ */
+const LINK_ACTIONS_NARROW = Platform.OS === 'android';
+const LINK_BTN_TXT_FIT = LINK_ACTIONS_NARROW
+  ? ({ numberOfLines: 1, adjustsFontSizeToFit: true, minimumFontScale: 0.85 } as const)
+  : {};
 const RATE_APP_ERROR = `Не удалось открыть ${storeName()}`;
 
 export default function ProfileScreen() {
@@ -473,15 +485,36 @@ export default function ProfileScreen() {
         >
           <View style={[styles.linkCard, Shadows.sm]}>
             <Text style={styles.linkLabel}>Ваш профиль</Text>
-            <Text style={styles.linkUrl} numberOfLines={1} ellipsizeMode="tail">{profileUrl}</Text>
+            <Text
+              style={styles.linkUrl}
+              numberOfLines={1}
+              ellipsizeMode={LINK_ACTIONS_NARROW ? 'middle' : 'tail'}
+            >
+              {profileUrl}
+            </Text>
             <View style={styles.linkActions}>
-              <TouchableOpacity style={styles.linkButton} onPress={handleCopyLink}>
-                <Icon name={copied ? "checkmark-outline" : "copy-outline"} size={18} color={Colors.royalBlue} />
-                <Text style={styles.linkButtonText}>{copied ? 'Скопировано' : 'Копировать'}</Text>
+              <TouchableOpacity
+                style={[styles.linkButton, LINK_ACTIONS_NARROW && styles.linkButtonNarrow]}
+                onPress={handleCopyLink}
+              >
+                <Icon
+                  name={copied ? "checkmark-outline" : "copy-outline"}
+                  size={18}
+                  color={Colors.royalBlue}
+                  style={styles.linkButtonIcon}
+                />
+                <Text style={styles.linkButtonText} {...LINK_BTN_TXT_FIT}>
+                  {copied ? 'Скопировано' : 'Копировать'}
+                </Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.linkButton} onPress={handleShareProfile}>
-                <Icon name="share-outline" size={18} color={Colors.royalBlue} />
-                <Text style={styles.linkButtonText}>Поделиться</Text>
+              <TouchableOpacity
+                style={[styles.linkButton, LINK_ACTIONS_NARROW && styles.linkButtonNarrow]}
+                onPress={handleShareProfile}
+              >
+                <Icon name="share-outline" size={18} color={Colors.royalBlue} style={styles.linkButtonIcon} />
+                <Text style={styles.linkButtonText} {...LINK_BTN_TXT_FIT}>
+                  Поделиться
+                </Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -914,6 +947,19 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.md,
     backgroundColor: Colors.surface,
     borderRadius: BorderRadius.md,
+  },
+  // Android: кнопки делят ряд поровну, minWidth: 0 разрешает flex ужать их
+  // ниже собственной ширины текста (иначе flex: 1 не спасает от вылета).
+  // Боковой паддинг уже, чем на iOS: на 360dp текст «Скопировано» иначе
+  // не влезает даже при minimumFontScale 0.85.
+  linkButtonNarrow: {
+    flex: 1,
+    minWidth: 0,
+    justifyContent: 'center',
+    paddingHorizontal: Spacing.sm,
+  },
+  linkButtonIcon: {
+    flexShrink: 0,
   },
   linkButtonText: {
     ...Typography.buttonSmall,
