@@ -31,7 +31,7 @@ import { Colors, Spacing, BorderRadius, androidShadow } from '../constants/theme
 import { isCompact, ms } from '../lib/responsive';
 import { shareWithForegroundFallback } from '../lib/shareCompat';
 import { useAndroidBackClose } from '../lib/useAndroidBackClose';
-import { AchievementPin } from '../components/AchievementPin';
+import { AchievementPin, PIN_GRID, PIN_META, PIN_SHEET } from '../components/AchievementPin';
 import { prewarmAchievementPins, prefetchAchievementAsset } from '../lib/achievementAssets';
 import { AchievementsHero } from '../components/AchievementsHero';
 import { setCurrentLevelFrom } from '../lib/levelStore';
@@ -365,7 +365,7 @@ function SeriesGroup({
             onPress={() => onPin(it)}
             activeOpacity={0.7}
           >
-            <AchievementPin item={it} size={72} />
+            <AchievementPin item={it} size={PIN_GRID} />
             <Text
               numberOfLines={1}
               style={[
@@ -389,9 +389,10 @@ function SeriesGroup({
             onPress={() => onPin(meta)}
             activeOpacity={0.7}
           >
-            {/* Пин фиксированных размеров (PinSize); на узких экранах он
-                чуть шире ячейки и заходит в гэп — это ок, он центрирован. */}
-            <AchievementPin item={meta} size={96} />
+            {/* Пин фиксированных ступеней (PIN_META): на iOS mini он чуть шире
+                ячейки и заходит в гэп — это ок, он центрирован; на Android
+                360dp берётся 84 — влезает в ячейку 87 вместе со звездой. */}
+            <AchievementPin item={meta} size={PIN_META} />
             <Text
               numberOfLines={1}
               style={[
@@ -470,7 +471,7 @@ function SurpriseBlock({
               onPress={() => onPin(it)}
               activeOpacity={0.7}
             >
-              <AchievementPin item={it} size={72} />
+              <AchievementPin item={it} size={PIN_GRID} />
               <Text numberOfLines={1} style={styles.gridLabel}>
                 {it.title_ru || '?'}
               </Text>
@@ -632,7 +633,7 @@ function DetailsSheet({
       <View style={[styles.sheet, { paddingBottom: insets.bottom + 24 }]}>
         <View style={styles.sheetHandle} />
         <View style={styles.sheetTopRow}>
-          <AchievementPin item={item} size={140} />
+          <AchievementPin item={item} size={PIN_SHEET} />
         </View>
         <Text style={styles.sheetTitle}>
           {item.title_ru || '🥚 Пасхалка'}
@@ -959,6 +960,12 @@ const styles = StyleSheet.create({
     color: M_IVORY,
     textAlign: 'center',
     fontWeight: '600',
+    // Android 360dp: ячейка 87 и гэп 16 — подписи соседних ячеек с
+    // compact-boost шрифта почти смыкались; 2pt воздуха по бокам + без
+    // фонт-паддинга, чтобы строки под пином не растягивали ячейку.
+    ...Platform.select({
+      android: { paddingHorizontal: 2, includeFontPadding: false },
+    }),
   },
   gridLabelMeta: {
     fontWeight: '800',
@@ -970,12 +977,14 @@ const styles = StyleSheet.create({
     color: M_GOLD,
     fontWeight: '700',
     letterSpacing: 1,
+    ...Platform.select({ android: { includeFontPadding: false } }),
   },
   gridProgress: {
     marginTop: 2,
     fontSize: ms(11),
     color: M_IVORY_MUTED,
     fontWeight: '600',
+    ...Platform.select({ android: { includeFontPadding: false } }),
   },
   surpriseEmpty: {
     paddingVertical: Spacing.lg,

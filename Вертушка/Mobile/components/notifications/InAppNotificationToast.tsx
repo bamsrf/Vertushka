@@ -26,6 +26,7 @@ import { Icon, RootOverlay } from '@/components/ui';
 import { resolveMediaUrl } from '@/lib/api';
 import { useNotificationsStore } from '@/lib/notificationsStore';
 import { DESIGN_PNGS } from '@/assets/achievements/designs';
+import { pinImageSource } from '@/lib/pinImageSource';
 import { routeForPush } from '@/lib/pushRouting';
 
 export interface ToastPayload {
@@ -158,7 +159,7 @@ export const InAppNotificationToastHost: React.FC = () => {
           <View style={styles.card}>
             <View style={[styles.iconWrap, pin ? styles.iconWrapPin : null]}>
               {pin ? (
-                <Image source={pin} style={styles.pin} contentFit="contain" />
+                <Image source={pinImageSource(pin)} style={styles.pin} contentFit="contain" />
               ) : avatarUrl ? (
                 <Image source={avatarUrl} style={styles.avatar} cachePolicy="disk" />
               ) : (
