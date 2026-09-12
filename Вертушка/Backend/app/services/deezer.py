@@ -66,6 +66,28 @@ def normalize_title(title: str) -> str:
     return s
 
 
+def titles_match(ours: str, theirs: str) -> bool:
+    """Гейт названия для матчинга по метаданным: РАВЕНСТВО нормализованных ключей.
+
+    Раньше хватало подстроки в любую сторону, и это дважды подменило обложки в
+    коллекции владельца (12.09.2026): «SVN» прошёл как «SVN Session #3» другого
+    артиста, «Flower of Devotion» — как «Flower of Devotion Remixed». Издательский
+    мусор в скобках (Remastered, Deluxe, …) normalize_title уже снимает, так что
+    равенство не режет переиздания — только чужие альбомы с лишними словами.
+    """
+    a = normalize_title(ours)
+    b = normalize_title(theirs)
+    return bool(a) and a == b
+
+
+def artists_match(ours: str, theirs: str) -> bool:
+    """Артист: подстрока в обе стороны остаётся — «Nirvana» vs «Nirvana (2)»,
+    «Tyler, The Creator» vs «Tyler The Creator» и коллаборации через feat."""
+    a = normalize_artist(ours)
+    b = normalize_artist(theirs)
+    return bool(a) and bool(b) and (a in b or b in a)
+
+
 def normalize_artist(artist: str) -> str:
     """Ключ артиста: снять discogs-суффикс `(2)`, feat., пунктуацию."""
     if not artist:
@@ -263,9 +285,9 @@ async def cover_by_meta(
 ) -> DeezerCover | None:
     """Лучший матч обложки альбома в Deezer по нормализованным метаданным.
 
-    Матч: нормализованные artist И title совпадают (substring в обе стороны).
-    При наличии year — один добор /album/{id} за release_date и отсев кандидатов
-    дальше year_tolerance лет (защита от одноимённых альбомов/сборников).
+    Матч: артист — подстрока в обе стороны (artists_match), название — строгое
+    равенство нормализованных ключей (titles_match). Год — только мягкий
+    тай-брейк между кандидатами, прошедшими оба гейта.
     Возвращает cover_xl или None.
     """
     artist_n = normalize_artist(artist)
@@ -296,13 +318,11 @@ async def cover_by_meta(
 
     candidates = []
     for item in results:
-        item_artist = normalize_artist((item.get("artist") or {}).get("name", ""))
-        item_title = normalize_title(item.get("title", ""))
-        if not item_artist or not item_title or not item.get("cover_xl"):
+        item_artist = (item.get("artist") or {}).get("name", "")
+        item_title = item.get("title", "")
+        if not item.get("cover_xl"):
             continue
-        artist_ok = artist_n in item_artist or item_artist in artist_n
-        title_ok = title_n in item_title or item_title in title_n
-        if artist_ok and title_ok:
+        if artists_match(artist, item_artist) and titles_match(title, item_title):
             candidates.append(item)
 
     if not candidates:

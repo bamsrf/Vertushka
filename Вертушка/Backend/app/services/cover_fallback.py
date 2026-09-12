@@ -225,11 +225,14 @@ async def _itunes_throttle() -> None:
 async def cover_url_by_artist_title(artist: str, title: str) -> str | None:
     """Обложка альбома из iTunes Search API по artist + title.
 
-    Матч строгий: нормализованные artist И title должны совпасть
-    (substring в обе стороны) — иначе рискуем прицепить чужую обложку.
+    Матч строгий: артист — подстрока в обе сторону, название — равенство
+    нормализованных ключей (deezer.titles_match) — иначе прицепим чужую
+    обложку: «Flower of Devotion Remixed» проходил как «Flower of Devotion».
     iTunes отдаёт artwork УРОВНЯ АЛЬБОМА (не конкретного издания) —
     поэтому это ПОСЛЕДНИЙ fallback после CAA и Discogs.
     """
+    from app.services.deezer import artists_match, titles_match
+
     artist_n = _norm(artist)
     title_n = _norm(title)
     if not artist_n or not title_n or artist_n == "various":
@@ -267,9 +270,9 @@ async def cover_url_by_artist_title(artist: str, title: str) -> str | None:
                 break
         if not item_title:
             continue
-        artist_ok = artist_n in item_artist or item_artist in artist_n
-        title_ok = title_n in item_title or item_title in title_n
-        if artist_ok and title_ok:
+        if artists_match(artist, item.get("artistName", "")) and titles_match(
+            title, item.get("collectionName", "")
+        ):
             # 600x600 — документированный вариант размера у mzstatic
             # (в отличие от 3000x3000, который часто 403).
             return artwork.replace("100x100bb", "600x600bb")
