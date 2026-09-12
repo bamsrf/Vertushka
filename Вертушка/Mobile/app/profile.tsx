@@ -941,8 +941,8 @@ const styles = StyleSheet.create({
   },
   followReqBadge: {
     minWidth: 22,
-    height: 22,
-    borderRadius: 11,
+    minHeight: 22,
+    borderRadius: 9999,
     paddingHorizontal: 6,
     backgroundColor: Colors.royalBlue,
     alignItems: 'center',

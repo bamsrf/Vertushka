@@ -584,7 +584,8 @@ const styles = StyleSheet.create({
     borderTopColor: Colors.divider,
   },
   actionButton: {
-    height: 52,
+    minHeight: 52,
+    paddingVertical: Spacing.md,
     borderRadius: BorderRadius.lg,
     backgroundColor: Colors.royalBlue,
     alignItems: 'center',

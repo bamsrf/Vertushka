@@ -160,9 +160,9 @@ const styles = StyleSheet.create({
   },
   badge: {
     minWidth: 20,
-    height: 20,
+    minHeight: 20,
     paddingHorizontal: 6,
-    borderRadius: 10,
+    borderRadius: 9999,
     backgroundColor: Colors.error,
     alignItems: 'center',
     justifyContent: 'center',

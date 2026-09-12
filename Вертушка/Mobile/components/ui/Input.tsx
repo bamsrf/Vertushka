@@ -148,7 +148,7 @@ const styles = StyleSheet.create({
   inputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    height: ComponentSizes.inputHeight,
+    minHeight: ComponentSizes.inputHeight,
     backgroundColor: Colors.surface,
     borderRadius: BorderRadius.xl,
     borderWidth: 1.5,
@@ -164,9 +164,14 @@ const styles = StyleSheet.create({
   inputContainerDisabled: {
     opacity: 0.6,
   },
+  // `alignSelf: stretch` вместо `height: '100%'`: у контейнера теперь minHeight,
+  // а процент от auto-высоты в Yoga не определён. Stretch даёт то же самое —
+  // поле занимает всю высоту строки, тап-зона остаётся полной, — но растёт
+  // вместе с контейнером при крупном системном шрифте.
   input: {
     flex: 1,
-    height: '100%',
+    alignSelf: 'stretch',
+    paddingVertical: Spacing.sm,
     paddingHorizontal: Spacing.md,
     ...Typography.body,
     color: Colors.text,
