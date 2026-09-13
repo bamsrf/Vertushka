@@ -77,6 +77,7 @@ import {
   swipeProgress,
   useSwipeBackPopStore,
 } from '../lib/edgeSwipeBack';
+import { notifySwipeBackPerformed } from '../lib/swipeBackPerformed';
 
 const EASE_OUT = Easing.out(Easing.cubic);
 
@@ -131,6 +132,11 @@ function EdgeSwipeHost({ children }: AndroidEdgeSwipeBackProps) {
       releaseScreen(true);
       return;
     }
+    // Жест доведён до конца — человек его знает. Единственная точка во всём
+    // приложении, где это известно ТОЧНО: на iOS свайп везёт нативный стек, и
+    // от нажатия стрелки в шапке он неотличим. Отсюда подсказка про свайп
+    // назад гаснет навсегда (lib/swipeBackPerformed.ts).
+    notifySwipeBackPerformed();
     pendingPop.current = true;
     setPopWithoutAnimation(true);
   }, [releaseScreen, router, setPopWithoutAnimation]);

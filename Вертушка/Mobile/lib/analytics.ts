@@ -370,6 +370,18 @@ export const analytics = {
   onboardingHintShown: (key: string) => track('onboarding_hint_shown', { key }),
   /** Тап по действию в подсказке («Открыть Радар», «Создать папку»). */
   onboardingHintAction: (key: string) => track('onboarding_hint_action', { key }),
+  /**
+   * Показ жест-подсказки: строку дёрнули, чтобы стало видно, что она двигается.
+   */
+  gestureHintShown: (key: string) => track('gesture_hint_shown', { key }),
+  /**
+   * Человек сделал жест сам. `after_hint` отделяет тех, кому подсказали, от
+   * тех, кто знал и так: без этого поля доля «освоивших» просто повторяла бы
+   * долю активных, и понять, работает ли нудж, было бы нечем.
+   */
+  gestureHintPerformed: (key: string, afterHint: boolean) =>
+    track('gesture_hint_performed', { key, after_hint: afterHint }),
+
   /** Тап по невыполненному пункту чеклиста «Первые шаги». */
   onboardingStepTap: (key: string) => track('onboarding_step_tap', { key }),
   /**

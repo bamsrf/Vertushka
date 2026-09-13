@@ -55,6 +55,14 @@ export function setCoachSpotlight(key: SpotlightKey | null, opts?: { ttlMs?: num
   }
 }
 
+/**
+ * Горит ли сейчас хоть какая-нибудь подсветка. Читай: «на экране показывают
+ * контекстную подсказку». Нужен жест-подсказкам, чтобы не выехать поверх неё.
+ */
+export function isAnyCoachSpotlightActive(): boolean {
+  return activeKey !== null;
+}
+
 /** Снять спотлайт, только если он всё ещё «наш». */
 export function clearCoachSpotlight(key: SpotlightKey) {
   if (activeKey !== key) return;

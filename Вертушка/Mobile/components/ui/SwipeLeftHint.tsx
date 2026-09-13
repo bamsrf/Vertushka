@@ -1,5 +1,5 @@
 /**
- * SwipeLeftHint — три шеврона «‹‹‹» с волной, бегущей справа налево.
+ * SwipeLeftHint — пара шевронов с волной, бегущей в сторону жеста.
  *
  * Ставится слева от элемента, который надо утянуть влево (винил-кноб в
  * ManualAddVinylToggle). Проблема, которую решает: раскрытую пилюлю люди жмут,
@@ -13,6 +13,10 @@
  *
  * Анимация живёт только пока active=true и снимается через cancelAnimation —
  * фоновых таймеров после сворачивания не остаётся.
+ *
+ * `direction` появился для подсказки про возврат назад: там жест идёт вправо,
+ * а волна обязана идти туда же. Зеркалим и глиф, и порядок загорания —
+ * ближний к пальцу шеврон первый в обе стороны.
  */
 import { useEffect } from 'react';
 import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
@@ -46,10 +50,14 @@ const LEAD = 0.15;
 /** Ширина группы — нужна снаружи, чтобы отвести ей место в раскладке. */
 export const SWIPE_HINT_WIDTH = COUNT * GLYPH + (COUNT - 1) * OVERLAP;
 
+export type SwipeHintDirection = 'left' | 'right';
+
 interface SwipeLeftHintProps {
   active: boolean;
   /** По умолчанию — цвет текста пилюли, чтобы подсказка не спорила с кнобом. */
   color?: string;
+  /** Куда ведёт жест. По умолчанию влево — исторический вызов в пилюле. */
+  direction?: SwipeHintDirection;
   style?: StyleProp<ViewStyle>;
 }
 
@@ -59,17 +67,20 @@ interface ChevronProps {
   color: string;
   /** Наложение на предыдущий шеврон; у первого в ряду отступа нет. */
   offset: number;
+  /** +1 — остриё вправо, −1 — влево. Задаёт и глиф, и подачу при подсветке. */
+  sign: number;
 }
 
-function Chevron({ progress, delay, color, offset }: ChevronProps) {
+function Chevron({ progress, delay, color, offset, sign }: ChevronProps) {
   const style = useAnimatedStyle(() => {
     // Фаза шеврона в цикле: +1 и %1 — чтобы отрицательная разница завернулась.
     const local = (progress.value - delay + 1) % 1;
     return {
       opacity: interpolate(local, [0, 0.1, 0.34, 1], [0.22, 1, 0.22, 0.22]),
       transform: [
-        // Подсвеченный шеврон чуть подаётся влево — направление, а не мерцание.
-        { translateX: interpolate(local, [0, 0.1, 0.34, 1], [0, -2.5, 0, 0]) },
+        // Подсвеченный шеврон чуть подаётся в сторону жеста — направление, а
+        // не мерцание.
+        { translateX: interpolate(local, [0, 0.1, 0.34, 1], [0, 2.5 * sign, 0, 0]) },
         { scale: interpolate(local, [0, 0.1, 0.34, 1], [0.92, 1.08, 0.92, 0.92]) },
       ],
     };
@@ -79,7 +90,7 @@ function Chevron({ progress, delay, color, offset }: ChevronProps) {
     <Animated.View style={[{ marginLeft: offset }, style]}>
       <Svg width={GLYPH} height={GLYPH} viewBox="0 0 14 14">
         <Path
-          d="M9.4 2 L3.8 7 L9.4 12"
+          d={sign > 0 ? 'M4.6 2 L10.2 7 L4.6 12' : 'M9.4 2 L3.8 7 L9.4 12'}
           stroke={color}
           strokeWidth={2.4}
           strokeLinecap="round"
@@ -91,7 +102,13 @@ function Chevron({ progress, delay, color, offset }: ChevronProps) {
   );
 }
 
-export function SwipeLeftHint({ active, color = '#23244D', style }: SwipeLeftHintProps) {
+export function SwipeLeftHint({
+  active,
+  color = '#23244D',
+  direction = 'left',
+  style,
+}: SwipeLeftHintProps) {
+  const sign = direction === 'right' ? 1 : -1;
   const progress = useSharedValue(0);
 
   useEffect(() => {
@@ -118,10 +135,12 @@ export function SwipeLeftHint({ active, color = '#23244D', style }: SwipeLeftHin
         <Chevron
           key={i}
           progress={progress}
-          // Ближний к кнобу (правый) загорается первым.
-          delay={(COUNT - 1 - i) * LEAD}
+          // Ближний к пальцу загорается первым: для жеста влево это правый
+          // шеврон, для жеста вправо — левый.
+          delay={(sign > 0 ? i : COUNT - 1 - i) * LEAD}
           color={color}
           offset={i === 0 ? 0 : OVERLAP}
+          sign={sign}
         />
       ))}
     </View>
