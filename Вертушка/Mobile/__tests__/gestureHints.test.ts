@@ -37,20 +37,41 @@ describe('каталог', () => {
     expect(new Set(priorities).size).toBe(priorities.length);
   });
 
-  it('дистанция ненулевая — подсказка обязана быть заметной', () => {
-    GESTURE_HINTS.forEach((m) => expect(Math.abs(m.distance)).toBeGreaterThanOrEqual(20));
+  it('заданная дистанция ненулевая — подсказка обязана быть заметной', () => {
+    GESTURE_HINTS.filter((m) => m.distance !== undefined).forEach((m) =>
+      expect(Math.abs(m.distance as number)).toBeGreaterThanOrEqual(20),
+    );
+  });
+
+  it('свайп «назад» дистанции не имеет — двигать нечего, он рисует себя сам', () => {
+    // На iOS экран везёт нативный стек, своей shared value нет. Появление
+    // здесь числа означало бы, что кто-то попробовал нуджить весь Stack.
+    expect(getGestureHint('swipe-back').distance).toBeUndefined();
+  });
+
+  it('свайп «назад» важнее остальных: он живёт на каждом вложенном экране', () => {
+    const others = GESTURE_HINTS.filter((m) => m.key !== 'swipe-back');
+    others.forEach((m) =>
+      expect(getGestureHint('swipe-back').priority).toBeLessThan(m.priority),
+    );
+  });
+
+  it('нудж-подсказки объявляют дистанцию — иначе показывать нечего', () => {
+    GESTURE_HINTS.filter((m) => m.key !== 'swipe-back').forEach((m) =>
+      expect(typeof m.distance).toBe('number'),
+    );
   });
 
   it('свайп-удаление не дотягивает до порога срабатывания', () => {
     // Порог удаления в NotificationSwipe — 50% от 88pt. Подсказка обязана
     // остаться заметно ниже: она показывает возможность, а не удаляет за
     // человека.
-    expect(Math.abs(getGestureHint('notification-delete').distance)).toBeLessThan(88 * 0.5);
+    expect(Math.abs(getGestureHint('notification-delete').distance!)).toBeLessThan(88 * 0.5);
   });
 
   it('свайп-ответ не дотягивает до порога ответа', () => {
     // SWIPE_REPLY_THRESHOLD в чате — 56pt.
-    expect(Math.abs(getGestureHint('chat-reply').distance)).toBeLessThan(56);
+    expect(Math.abs(getGestureHint('chat-reply').distance!)).toBeLessThan(56);
   });
 
   it('неизвестный ключ — явная ошибка, а не молчаливый undefined', () => {
@@ -145,5 +166,77 @@ describe('сброс', () => {
     GESTURE_HINTS.forEach((m) => {
       expect(isGestureHintSuppressed(states.get(m.key))).toBe(false);
     });
+  });
+});
+
+describe('мостик «свайп назад сделан»', () => {
+  it('без подписчика вызов безопасен — подсказки на экране может не быть', () => {
+    const { notifySwipeBackPerformed } = require('@/lib/swipeBackPerformed');
+    expect(() => notifySwipeBackPerformed()).not.toThrow();
+  });
+
+  it('подписчика зовут, отписка его снимает', () => {
+    const {
+      notifySwipeBackPerformed,
+      setSwipeBackPerformedHandler,
+    } = require('@/lib/swipeBackPerformed');
+
+    const seen = jest.fn();
+    const off = setSwipeBackPerformedHandler(seen);
+    notifySwipeBackPerformed();
+    expect(seen).toHaveBeenCalledTimes(1);
+
+    off();
+    notifySwipeBackPerformed();
+    expect(seen).toHaveBeenCalledTimes(1);
+  });
+
+  it('второй подписчик перетирает первого — хост в приложении один', () => {
+    const {
+      notifySwipeBackPerformed,
+      setSwipeBackPerformedHandler,
+    } = require('@/lib/swipeBackPerformed');
+
+    const stale = jest.fn();
+    const fresh = jest.fn();
+    setSwipeBackPerformedHandler(stale);
+    const off = setSwipeBackPerformedHandler(fresh);
+    notifySwipeBackPerformed();
+
+    expect(stale).not.toHaveBeenCalled();
+    expect(fresh).toHaveBeenCalledTimes(1);
+    off();
+  });
+
+  it('отписка мёртвого хоста не гасит живого', () => {
+    const {
+      notifySwipeBackPerformed,
+      setSwipeBackPerformedHandler,
+    } = require('@/lib/swipeBackPerformed');
+
+    const stale = jest.fn();
+    const fresh = jest.fn();
+    const offStale = setSwipeBackPerformedHandler(stale);
+    const offFresh = setSwipeBackPerformedHandler(fresh);
+    // Порядок эффектов при hot-reload: сначала подписался новый, потом
+    // отписался старый. Его отписка не должна снимать чужой колбэк.
+    offStale();
+    notifySwipeBackPerformed();
+
+    expect(fresh).toHaveBeenCalledTimes(1);
+    offFresh();
+  });
+});
+
+describe('экраны, где свайп «назад» имеет смысл', () => {
+  it('подсказка молчит там же, где выключен сам жест', () => {
+    const { isEdgeSwipeEnabledForSegment } = require('@/lib/edgeSwipeBack');
+    // Условие показа подсказки — ровно этот предикат (SwipeBackHintHost).
+    ['(tabs)', '(auth)', 'onboarding'].forEach((seg) =>
+      expect(isEdgeSwipeEnabledForSegment(seg)).toBe(false),
+    );
+    ['record', 'master', 'messages', 'settings'].forEach((seg) =>
+      expect(isEdgeSwipeEnabledForSegment(seg)).toBe(true),
+    );
   });
 });

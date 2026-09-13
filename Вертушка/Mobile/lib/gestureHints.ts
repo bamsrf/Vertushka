@@ -32,6 +32,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export type GestureHintKey =
+  | 'swipe-back'
   | 'notification-delete'
   | 'conversation-actions'
   | 'chat-reply';
@@ -45,8 +46,12 @@ export interface GestureHintMeta {
    * Не «сколько нужно протянуть, чтобы сработало»: подсказка показывает
    * ВОЗМОЖНОСТЬ движения, а не выполняет действие за человека. Поэтому
    * дистанция заведомо меньше порога срабатывания каждой поверхности.
+   *
+   * Пусто у подсказок, которые двигать нечего: свайп «назад» везёт ЭКРАН, а
+   * на iOS его тащит нативный стек — своей shared value там нет. Такие
+   * подсказки рисуют себя сами (см. components/onboarding/SwipeBackHint.tsx).
    */
-  distance: number;
+  distance?: number;
   /**
    * Меньше — важнее. Нужен на случай, когда две поверхности всё-таки сошлись
    * на одном экране: без явного порядка выигрывала бы та, чей эффект успел
@@ -56,6 +61,14 @@ export interface GestureHintMeta {
 }
 
 export const GESTURE_HINTS: GestureHintMeta[] = [
+  {
+    key: 'swipe-back',
+    // Самый высокий приоритет: это единственный жест, который живёт на КАЖДОМ
+    // вложенном экране, а не на одном списке. Не зная его, человек ищет
+    // стрелку в шапке на каждой странице приложения.
+    label: 'С любой страницы можно вернуться свайпом вправо',
+    priority: 5,
+  },
   {
     key: 'notification-delete',
     label: 'Уведомление можно смахнуть влево, чтобы удалить',

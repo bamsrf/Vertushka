@@ -68,6 +68,7 @@ import { useRemoteConfigStore } from '../lib/remoteConfig';
 import { ForceUpdateScreen } from '../components/ForceUpdateScreen';
 import { AndroidSheetsHost } from '../components/ui/AndroidSheetsHost';
 import { AndroidEdgeSwipeBack } from '../components/AndroidEdgeSwipeBack';
+import { SwipeBackHintHost } from '../components/onboarding/SwipeBackHintHost';
 import { useSwipeBackPopStore } from '../lib/edgeSwipeBack';
 // Системный font-scale клэмпится через metro-alias react-native →
 // lib/fontScale/scaledText.tsx (maxFontSizeMultiplier), см. metro.config.js.
@@ -591,6 +592,10 @@ function RootLayout() {
           />
         </Stack>
         </AndroidEdgeSwipeBack>
+        {/* Подсказка «вернуться можно свайпом вправо». Снаружи обёртки
+            намеренно: внутри неё плашка ехала бы вместе с экраном во время
+            самого свайпа, которому учит. */}
+        <SwipeBackHintHost />
         <AchievementUnlockHost />
         {/* Android-замены Alert.prompt / ActionSheetIOS (lib/promptCompat,
             lib/actionSheetCompat). На iOS — null. */}

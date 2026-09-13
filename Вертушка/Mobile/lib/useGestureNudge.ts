@@ -1,6 +1,7 @@
 /**
- * Хук жест-подсказки: коротко двигает саму цель, чтобы стало видно, что она
- * двигается. Правила показа — в lib/gestureHints.ts.
+ * Жест-подсказка формой «нудж»: коротко двигаем саму строку, чтобы стало
+ * видно, что она двигается. Правила показа — в lib/useGestureHintGate.ts,
+ * каталог — в lib/gestureHints.ts.
  *
  * Использование (внутри компонента строки):
  *
@@ -19,15 +20,11 @@
  * человек, тронувший строку во время нуджа, просто перехватывает управление:
  * присваивание в onUpdate отменяет анимацию само.
  *
- * `enabled` — «эта строка вообще подходит под подсказку». Обычно «строка
- * первая в списке»: дёргать сразу все строки списка нельзя, а нижние человек
- * может и не видеть.
- *
  * ВАЖНО про `performed`: это обычная JS-функция, вызывать из ворклета через
- * `runOnJS`. Не `useCallback`-обёртка вокруг shared value — состояние жеста
- * живёт в AsyncStorage, а туда с UI-потока не дотянуться.
+ * `runOnJS`. Состояние жеста живёт в AsyncStorage, с UI-потока туда не
+ * дотянуться.
  */
-import { useCallback, useEffect, useRef, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { useIsFocused } from 'expo-router';
 import {
   Easing,
@@ -38,33 +35,9 @@ import {
   type SharedValue,
 } from 'react-native-reanimated';
 
-import { analytics } from './analytics';
-import { useAuthStore } from './store';
-import { useAppForeground, useReduceMotion } from './useAnimationGate';
-import { isAnyCoachSpotlightActive } from './coachSpotlight';
-import {
-  GestureHintKey,
-  getGestureHint,
-  getGestureHintRevision,
-  isGestureHintSuppressed,
-  isGestureSlotTaken,
-  loadGestureHintStates,
-  markGestureHintShown,
-  markGesturePerformed,
-  releaseGestureSlot,
-  subscribeGestureHints,
-  takeGestureSlot,
-} from './gestureHints';
-
-/**
- * Пауза перед нуджем. Экран должен успеть доехать и замереть: подсказка,
- * стартующая одновременно с появлением списка, сливается с анимацией перехода
- * и читается как рывок вёрстки, а не как приглашение к жесту.
- *
- * 900 мс — та же пауза, что у авто-тизера вишлиста (WishlistListSwipe),
- * проверенная на реальном экране.
- */
-const DWELL_MS = 900;
+import { useReduceMotion } from './useAnimationGate';
+import { useGestureHintGate } from './useGestureHintGate';
+import { GestureHintKey, getGestureHint } from './gestureHints';
 
 /** Туда. */
 const OUT_MS = 420;
@@ -99,90 +72,41 @@ export function useGestureNudge(
   translation: SharedValue<number>,
   { enabled, distance }: UseGestureNudgeOptions,
 ): UseGestureNudgeResult {
-  const userId = useAuthStore((s) => s.user?.id);
+  // Фокус спрашиваем здесь: нудж всегда живёт внутри экрана, а гейт общий и
+  // про навигацию ничего не знает (см. его комментарий к `enabled`).
   const focused = useIsFocused();
-  const foreground = useAppForeground();
   const reduceMotion = useReduceMotion();
-  const revision = useSyncExternalStore(
-    subscribeGestureHints,
-    getGestureHintRevision,
-    () => 0,
-  );
+  const { armed, performed, finish } = useGestureHintGate(key, {
+    enabled: enabled && focused,
+  });
 
   /** Двигал ли translation именно ЭТОТ хук — чтобы гасить только своё. */
   const owns = useRef(false);
-  /** Жест уже засчитан в этой сессии — не ходим в AsyncStorage на каждый пан. */
-  const notedRef = useRef(false);
-  /** Нудж этой строки уже отыграл — нужно аналитике, чтобы отделить
-   *  «освоил после подсказки» от «знал и так». */
-  const nudgedRef = useRef(false);
-
-  const performed = useCallback(() => {
-    // Нудж и палец на одной shared value: как только человек тронул строку,
-    // подсказка перестаёт быть нашей — снимаем владение, чтобы размонтирование
-    // не сбросило в ноль то, что сейчас держит палец.
-    owns.current = false;
-    if (notedRef.current || !userId) return;
-    notedRef.current = true;
-    analytics.gestureHintPerformed(key, nudgedRef.current);
-    void markGesturePerformed(userId, key);
-  }, [userId, key]);
 
   useEffect(() => {
-    if (!userId || !enabled || !focused || !foreground) return;
-    if (notedRef.current) return;
-    if (isGestureSlotTaken()) return;
+    if (!armed) return;
 
-    let cancelled = false;
-    let timer: ReturnType<typeof setTimeout> | null = null;
+    const base = distance ?? getGestureHint(key).distance ?? 0;
+    if (!base) return;
+    const shift = reduceMotion ? base * REDUCED_SCALE : base;
+    const factor = reduceMotion ? REDUCED_FACTOR : 1;
 
-    (async () => {
-      const states = await loadGestureHintStates(userId);
-      if (cancelled || isGestureHintSuppressed(states.get(key))) return;
-
-      // Пауза ДО заявки на слот: пока идёт ожидание, слот свободен, и
-      // подсказка соседнего экрана не блокируется зря.
-      await new Promise<void>((resolve) => {
-        timer = setTimeout(resolve, DWELL_MS);
-      });
-      if (cancelled) return;
-
-      // Контекстная подсказка на экране — молчим. Две онбординг-штуки разом
-      // человек читает как сбой, а не как заботу.
-      if (isAnyCoachSpotlightActive()) return;
-      if (!takeGestureSlot()) return;
-      if (cancelled) {
-        releaseGestureSlot();
-        return;
-      }
-
-      const base = distance ?? getGestureHint(key).distance;
-      const shift = reduceMotion ? base * REDUCED_SCALE : base;
-      const factor = reduceMotion ? REDUCED_FACTOR : 1;
-
-      owns.current = true;
-      translation.value = withSequence(
-        withTiming(shift, {
-          duration: OUT_MS * factor,
-          easing: reduceMotion ? Easing.linear : Easing.out(Easing.cubic),
+    owns.current = true;
+    translation.value = withSequence(
+      withTiming(shift, {
+        duration: OUT_MS * factor,
+        easing: reduceMotion ? Easing.linear : Easing.out(Easing.cubic),
+      }),
+      withDelay(
+        HOLD_MS,
+        withTiming(0, {
+          duration: BACK_MS * factor,
+          easing: reduceMotion ? Easing.linear : Easing.in(Easing.cubic),
         }),
-        withDelay(
-          HOLD_MS,
-          withTiming(0, {
-            duration: BACK_MS * factor,
-            easing: reduceMotion ? Easing.linear : Easing.in(Easing.cubic),
-          }),
-        ),
-      );
-
-      nudgedRef.current = true;
-      analytics.gestureHintShown(key);
-      void markGestureHintShown(userId, key);
-    })();
+      ),
+    );
 
     return () => {
-      cancelled = true;
-      if (timer) clearTimeout(timer);
       // Экран ушёл посреди нуджа — снимаем анимацию и возвращаем строку на
       // место. Иначе она осталась бы сдвинутой в переиспользованной ячейке
       // списка, и человек увидел бы «сломанную» вёрстку на другой строке.
@@ -192,17 +116,25 @@ export function useGestureNudge(
         translation.value = 0;
       }
     };
-  }, [
-    userId,
-    key,
-    enabled,
-    focused,
-    foreground,
-    reduceMotion,
-    distance,
-    translation,
-    revision,
-  ]);
+  }, [armed, distance, key, reduceMotion, translation]);
 
-  return { performed };
+  // Нудж отыграл — отпускаем слот-владение в гейте. Отдельным эффектом, чтобы
+  // не завязывать снятие анимации на тот же таймер.
+  useEffect(() => {
+    if (!armed) return;
+    const total =
+      (OUT_MS + HOLD_MS + BACK_MS) * (reduceMotion ? REDUCED_FACTOR : 1);
+    const timer = setTimeout(finish, total);
+    return () => clearTimeout(timer);
+  }, [armed, reduceMotion, finish]);
+
+  const performedAndRelease = useCallback(() => {
+    // Нудж и палец на одной shared value: как только человек тронул строку,
+    // подсказка перестаёт быть нашей — снимаем владение, чтобы
+    // размонтирование не сбросило в ноль то, что сейчас держит палец.
+    owns.current = false;
+    performed();
+  }, [performed]);
+
+  return { performed: performedAndRelease };
 }
