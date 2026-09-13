@@ -2,7 +2,7 @@
  * Экран оценки стоимости коллекции
  * Анимированная шкала + бегущие цифры + самая дорогая пластинка
  */
-import { useEffect, useCallback } from 'react';
+import { useEffect, useCallback, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -28,7 +28,9 @@ import Animated, {
   Easing,
 } from 'react-native-reanimated';
 import { Header } from '../../components/Header';
-import { useCollectionStore } from '../../lib/store';
+import { StoryPickerSheet } from '../../components/share/StoryPickerSheet';
+import type { CollectionStoryData } from '../../components/share/CollectionValueStory';
+import { useAuthStore, useCollectionStore } from '../../lib/store';
 import { api } from '../../lib/api';
 import { CollectionItem } from '../../lib/types';
 import { cleanArtistName, formatGroupedWorklet } from '../../lib/format';
@@ -108,6 +110,7 @@ export default function CollectionValueScreen() {
   const listBottomPad = useBottomContentInset({ extra: Spacing.xxl + Spacing.md });
   const router = useRouter();
   const { stats, isLoadingStats, fetchStats, defaultCollection } = useCollectionStore();
+  const user = useAuthStore((state) => state.user);
 
   // Локальный список items только для оценки. Грузим напрямую через api БЕЗ
   // exclude_foldered — папка это группировка, а не вынос с полки: релиз в
@@ -236,7 +239,61 @@ export default function CollectionValueScreen() {
     );
   }, []);
 
-  if (isLoadingStats) {
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [deltaRub, setDeltaRub] = useState<number | null>(null);
+
+  // Прирост за месяц считает только публичный профиль — берём его по своему
+  // username, если профиль включён. Нет — сторис просто без строки прироста.
+  useEffect(() => {
+    if (!user?.username) return;
+    api.getPublicProfile(user.username)
+      .then((profile) => setDeltaRub(profile.monthly_value_delta_rub ?? null))
+      .catch(() => setDeltaRub(null));
+  }, [user?.username]);
+
+  const storyData = useMemo<CollectionStoryData | null>(() => {
+    if (!stats?.total_estimated_value_rub || !user) return null;
+    const byDecade = new Map<number, number>();
+    Object.entries(stats.records_by_year || {}).forEach(([year, count]) => {
+      const decade = Math.floor(Number(year) / 10) * 10;
+      byDecade.set(decade, (byDecade.get(decade) || 0) + count);
+    });
+    const topDecade = [...byDecade.entries()].sort((a, b) => b[1] - a[1])[0];
+    return {
+      username: user.username,
+      totalRub: stats.total_estimated_value_rub,
+      totalUsd: stats.total_estimated_value_median ?? null,
+      deltaRub,
+      recordsCount: stats.total_records,
+      oldestYear: stats.oldest_record_year ?? null,
+      favoriteDecade: topDecade ? `${topDecade[0]}-е` : null,
+      top: sortedByPrice.slice(0, 3).map((item) => {
+        const record = item.record;
+        const metaParts = [
+          cleanArtistName(record.artist),
+          [record.label, record.year].filter(Boolean).join(', '),
+        ].filter(Boolean);
+        return {
+          title: record.title,
+          artist: cleanArtistName(record.artist),
+          meta: metaParts.join(' · '),
+          priceRub: item.estimated_price_rub || 0,
+          coverUrl: record.cover_image_url || record.thumb_image_url || undefined,
+          isCollectible: !!record.is_collectible,
+        };
+      }),
+    };
+  }, [stats, user, sortedByPrice, deltaRub]);
+
+  const handleShare = useCallback(() => {
+    if (!storyData) return;
+    setPickerOpen(true);
+  }, [storyData]);
+
+  // Спиннер только пока статистики ещё нет. Повторный fetchStats (его дёргает
+  // экран профиля под стеком, когда докручиваются подарки) раньше размонтировал
+  // весь список и ронял бегущие цифры в «~0 ₽».
+  if (isLoadingStats && !stats) {
     return (
       <View style={styles.container}>
         <Header title="Оценка стоимости" showBack showProfile={false} />
@@ -306,6 +363,19 @@ export default function CollectionValueScreen() {
                   <Text style={styles.usdValue}>
                     {formatUsd(stats.total_estimated_value_median)} на Discogs
                   </Text>
+                )}
+
+                {!!storyData && (
+                  <TouchableOpacity
+                    style={styles.shareButton}
+                    onPress={handleShare}
+                    activeOpacity={0.85}
+                    accessibilityRole="button"
+                    accessibilityLabel="Поделиться стоимостью коллекции"
+                  >
+                    <Icon name="share" size={18} color={Colors.royalBlue} />
+                    <Text style={styles.shareButtonText}>Поделиться</Text>
+                  </TouchableOpacity>
                 )}
               </View>
             </View>
@@ -400,6 +470,12 @@ export default function CollectionValueScreen() {
             </Text>
           </View>
         }
+      />
+
+      <StoryPickerSheet
+        visible={pickerOpen}
+        data={storyData}
+        onClose={() => setPickerOpen(false)}
       />
     </View>
   );
@@ -519,6 +595,22 @@ const styles = StyleSheet.create({
     padding: 0,
     margin: 0,
     backgroundColor: 'transparent',
+  },
+  shareButton: {
+    alignSelf: 'stretch',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.sm,
+    height: 48,
+    marginTop: Spacing.lg,
+    borderRadius: BorderRadius.md,
+    backgroundColor: '#FFFFFF',
+    ...Shadows.md,
+  },
+  shareButtonText: {
+    ...Typography.button,
+    color: Colors.royalBlue,
   },
   usdValue: {
     ...Typography.bodySmall,
