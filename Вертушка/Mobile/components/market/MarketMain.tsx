@@ -15,8 +15,18 @@
  * соответствующим местом в Поиске.
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, FlatList, Keyboard, StyleSheet, Text, View } from 'react-native';
+import {
+  ActivityIndicator,
+  FlatList,
+  Keyboard,
+  Platform,
+  StyleSheet,
+  Text,
+  View,
+  type LayoutChangeEvent,
+} from 'react-native';
 import { useRouter } from 'expo-router';
+import { GestureDetector, type ComposedGesture, type GestureType } from 'react-native-gesture-handler';
 import Animated, {
   Extrapolation,
   interpolate,
@@ -73,6 +83,22 @@ interface MarketMainProps {
    * закрепил бы пластинку первого захода за всеми следующими.
    */
   releaseScope?: MarketReleaseScope | null;
+  /**
+   * Android-overdrag выхода (lib/useAndroidOverdrag.ts): RNGH-жест
+   * (Pan ∥ Native) вокруг списка. Без пропа дерево прежнее — iOS его не
+   * передаёт.
+   */
+  listGesture?: ComposedGesture | GestureType;
+  /**
+   * Знаковый translateY шапки при pull-down (rubberBand хода пальца). На
+   * Android contentOffset выше нуля не уходит, и MarketExitHint (сидит на
+   * marginTop −70 над заголовком) остался бы под кромкой — двигаем шапку
+   * сами. Применяется только когда проп задан.
+   */
+  headerShift?: SharedValue<number>;
+  /** Метрики списка для overdrag'а до первого onScroll. */
+  onListLayout?: (e: LayoutChangeEvent) => void;
+  onContentSizeChange?: (w: number, h: number) => void;
 }
 
 // ─── Exit hint ─────────────────────────────────────────────────────────
@@ -181,7 +207,17 @@ export function MarketMain({
   paddingTop,
   pullFraction,
   releaseScope: incomingScope = null,
+  listGesture: incomingGesture,
+  headerShift: incomingShift,
+  onListLayout,
+  onContentSizeChange,
 }: MarketMainProps) {
+  // Только Android: iOS-дерево не меняется, даже если пропы передали.
+  const listGesture = Platform.OS === 'android' ? incomingGesture : undefined;
+  const headerShift = Platform.OS === 'android' ? incomingShift : undefined;
+  const headerShiftStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: headerShift ? headerShift.value : 0 }],
+  }));
   // Маркет-слой живёт и в табе Поиска (под пилюлей GlassTabBar), и стековым
   // экраном /market — клиренс считаем под пилюлю в обоих случаях (iOS: 120).
   const listBottomPad = useBottomContentInset({ tabBar: true, extra: 32 });
@@ -432,8 +468,48 @@ export function MarketMain({
     [handleSearchItemPress],
   );
 
-  return (
-    <>
+  const header = (
+    <View style={{ paddingTop }}>
+      {/* Exit-hint выше МАРКЕТ heading. Сидит на negative margin —
+          layout не сдвигает. Видимый только при overdrag сверху. */}
+      {pullFraction && <MarketExitHint pullFraction={pullFraction} />}
+      {marketStores.length > 0 && (
+        <MarketSection
+          stores={isSearchActive ? [] : marketStores}
+          searchValue={marketSearch}
+          onSearchChange={handleSearchChange}
+          onSearchSubmit={Keyboard.dismiss}
+          filters={filters}
+          onFiltersChange={setFilters}
+          facets={facets}
+          totalStores={marketStores.length}
+          totalItems={marketStores.reduce((sum, s) => sum + s.totalCount, 0)}
+          onStorePress={handleStorePress}
+          onItemPress={(item) => handleItemPress(item)}
+          headerPaddingTop={0}
+        />
+      )}
+      {marketStores.length === 0 && (
+        <View style={styles.empty}>
+          <Text style={styles.emptyText}>
+            Магазины ещё не подключены или временно недоступны
+          </Text>
+        </View>
+      )}
+      {/* Плашка сужения — последней в шапке, вплотную к сетке: она
+          объясняет именно её состав. Пока идёт первая загрузка, не
+          рисуем: «именно этой версии нет» до ответа сервера — догадка. */}
+      {releaseScope && !searchLoading && searchItems.length > 0 && (
+        <MarketReleaseScopeBar
+          scope={releaseScope}
+          exactInStock={exactInStock}
+          onReset={() => clearReleaseScope('chip')}
+        />
+      )}
+    </View>
+  );
+
+  const list = (
     <AnimatedFlatList
       // Результаты живут в data (а не в шапке) — только так FlatList знает
       // длину списка и дёргает onEndReached для подгрузки следующей страницы.
@@ -484,47 +560,17 @@ export function MarketMain({
           </View>
         ) : null
       }
+      onLayout={onListLayout}
+      onContentSizeChange={onContentSizeChange}
       ListHeaderComponent={
-        <View style={{ paddingTop }}>
-          {/* Exit-hint выше МАРКЕТ heading. Сидит на negative margin —
-              layout не сдвигает. Видимый только при overdrag сверху. */}
-          {pullFraction && <MarketExitHint pullFraction={pullFraction} />}
-          {marketStores.length > 0 && (
-            <MarketSection
-              stores={isSearchActive ? [] : marketStores}
-              searchValue={marketSearch}
-              onSearchChange={handleSearchChange}
-              onSearchSubmit={Keyboard.dismiss}
-              filters={filters}
-              onFiltersChange={setFilters}
-              facets={facets}
-              totalStores={marketStores.length}
-              totalItems={marketStores.reduce((sum, s) => sum + s.totalCount, 0)}
-              onStorePress={handleStorePress}
-              onItemPress={(item) => handleItemPress(item)}
-              headerPaddingTop={0}
-            />
-          )}
-          {marketStores.length === 0 && (
-            <View style={styles.empty}>
-              <Text style={styles.emptyText}>
-                Магазины ещё не подключены или временно недоступны
-              </Text>
-            </View>
-          )}
-          {/* Плашка сужения — последней в шапке, вплотную к сетке: она
-              объясняет именно её состав. Пока идёт первая загрузка, не
-              рисуем: «именно этой версии нет» до ответа сервера — догадка. */}
-          {releaseScope && !searchLoading && searchItems.length > 0 && (
-            <MarketReleaseScopeBar
-              scope={releaseScope}
-              exactInStock={exactInStock}
-              onReset={() => clearReleaseScope('chip')}
-            />
-          )}
-        </View>
+        headerShift ? <Animated.View style={headerShiftStyle}>{header}</Animated.View> : header
       }
     />
+  );
+
+  return (
+    <>
+      {listGesture ? <GestureDetector gesture={listGesture}>{list}</GestureDetector> : list}
       <MarketReleaseMissModal
         visible={missVisible}
         scope={releaseScope}

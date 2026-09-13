@@ -11,8 +11,10 @@ import {
   ActivityIndicator,
   RefreshControl,
   TouchableOpacity,
+  type LayoutChangeEvent,
 } from 'react-native';
-import Animated, { FadeInUp } from 'react-native-reanimated';
+import { GestureDetector, type ComposedGesture, type GestureType } from 'react-native-gesture-handler';
+import Animated, { FadeInUp, useAnimatedStyle, type SharedValue } from 'react-native-reanimated';
 
 // Animated.FlatList — нужно для useAnimatedScrollHandler из родителя
 // (Маркет в (tabs)/search.tsx, см. MARKET_AND_PRICE_DRAWER.md §1.3).
@@ -100,6 +102,23 @@ interface RecordGridProps<T extends RecordItem = RecordItem> {
   useOfferBadge?: boolean;
   /** record.id-множество пластинок на радаре — рисуем бейдж на карточке. */
   radarRecordIds?: Set<string>;
+  /**
+   * Android-overdrag Маркета (lib/useAndroidOverdrag.ts): RNGH-жест
+   * (Pan ∥ Native) вокруг списка. Без пропа дерево прежнее — iOS его не
+   * передаёт. Игнорируется вместе с onRefresh: с RefreshControl host-view
+   * списка — SwipeRefreshLayout, и Native-хук цепляется не к ScrollView.
+   */
+  listGesture?: ComposedGesture | GestureType;
+  /**
+   * Знаковый translateY контента при overdrag'е (rubberBand хода пальца).
+   * На Android contentOffset за край не уходит, поэтому CTA-блок в шапке
+   * (home-view Поиска — это целиком ListHeaderComponent) двигаем сами.
+   * Применяется к обёртке ListHeaderComponent только когда проп задан.
+   */
+  contentShift?: SharedValue<number>;
+  /** Метрики списка для overdrag'а до первого onScroll. */
+  onListLayout?: (e: LayoutChangeEvent) => void;
+  onContentSizeChange?: (w: number, h: number) => void;
 }
 
 function RecordGridComponent<T extends RecordItem = RecordItem>({
@@ -135,8 +154,27 @@ function RecordGridComponent<T extends RecordItem = RecordItem>({
   rowWrapper,
   useOfferBadge = false,
   radarRecordIds,
+  listGesture,
+  contentShift,
+  onListLayout,
+  onContentSizeChange,
 }: RecordGridProps<T>) {
   const insets = useSafeAreaInsets();
+  // С RefreshControl паттерн Pan ∥ Native не работает (см. проп) — overdrag
+  // молча выключаем, в dev — предупреждаем, чтобы не искать «мёртвый жест».
+  const overdragBlocked = !!onRefresh && !!(listGesture || contentShift);
+  useEffect(() => {
+    if (__DEV__ && overdragBlocked) {
+      console.warn('RecordGrid: listGesture/contentShift игнорируются вместе с onRefresh');
+    }
+  }, [overdragBlocked]);
+  // Только Android: iOS-дерево не меняется, даже если пропы передали.
+  const overdragActive = Platform.OS === 'android' && !overdragBlocked;
+  const gesture = overdragActive ? listGesture : undefined;
+  const shift = overdragActive ? contentShift : undefined;
+  const shiftStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: shift ? shift.value : 0 }],
+  }));
   // Internal ref для scrollToOffset вызова (search.tsx, market navigation).
   // Populate переданного scrollToTopRef один раз на mount.
   const listRef = useRef<FlatList<T>>(null);
@@ -317,7 +355,7 @@ function RecordGridComponent<T extends RecordItem = RecordItem>({
     return index.toString();
   };
 
-  return (
+  const list = (
     <AnimatedFlatList
       ref={listRef as any}
       data={data}
@@ -336,13 +374,17 @@ function RecordGridComponent<T extends RecordItem = RecordItem>({
       showsVerticalScrollIndicator={false}
       keyboardShouldPersistTaps="handled"
       keyboardDismissMode="on-drag"
-      ListHeaderComponent={ListHeaderComponent}
+      ListHeaderComponent={
+        shift ? <Animated.View style={shiftStyle}>{ListHeaderComponent}</Animated.View> : ListHeaderComponent
+      }
       ListEmptyComponent={renderEmpty}
       ListFooterComponent={renderFooter}
       onEndReached={onEndReached}
       onEndReachedThreshold={0.5}
       onScroll={onScroll}
       scrollEventThrottle={scrollEventThrottle}
+      onLayout={onListLayout}
+      onContentSizeChange={onContentSizeChange}
       refreshControl={
         onRefresh ? (
           <RefreshControl
@@ -354,6 +396,9 @@ function RecordGridComponent<T extends RecordItem = RecordItem>({
       }
     />
   );
+
+  if (!gesture) return list;
+  return <GestureDetector gesture={gesture}>{list}</GestureDetector>;
 }
 
 const styles = StyleSheet.create({

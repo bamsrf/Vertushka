@@ -1,0 +1,311 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`MarketMain (iOS) дерево совпадает со снимком 1`] = `
+<RCTScrollView
+  ListEmptyComponent={null}
+  ListFooterComponent={null}
+  ListHeaderComponent={
+    <View {
+      "children": [
+        <MarketExitHint {
+          "pullFraction": {
+            "value": 0,
+          },
+        }>,
+        false,
+        <View {
+          "children": <Text {
+            "children": "Магазины ещё не подключены или временно недоступны",
+            "style": {
+              "color": "rgba(255,255,255,0.65)",
+              "fontFamily": "Inter_400Regular",
+              "fontSize": 14,
+              "textAlign": "center",
+            },
+          }>,
+          "style": {
+            "alignItems": "center",
+            "paddingHorizontal": 32,
+            "paddingVertical": 80,
+          },
+        }>,
+        null,
+      ],
+      "style": {
+        "paddingTop": 67,
+      },
+    }>
+  }
+  alwaysBounceVertical={true}
+  bounces={true}
+  contentContainerStyle={
+    {
+      "paddingBottom": 120,
+    }
+  }
+  data={[]}
+  getItem={[Function]}
+  getItemCount={[Function]}
+  keyExtractor={[Function]}
+  keyboardDismissMode="on-drag"
+  keyboardShouldPersistTaps="handled"
+  onContentSizeChange={[Function]}
+  onEndReachedThreshold={0.6}
+  onLayout={[Function]}
+  onMomentumScrollBegin={[Function]}
+  onMomentumScrollEnd={[Function]}
+  onScroll={[Function]}
+  onScrollBeginDrag={[Function]}
+  onScrollEndDrag={[Function]}
+  overScrollMode="always"
+  removeClippedSubviews={false}
+  renderItem={[Function]}
+  scrollEnabled={true}
+  scrollEventThrottle={16}
+  showsVerticalScrollIndicator={false}
+  stickyHeaderIndices={[]}
+  viewabilityConfigCallbackPairs={[]}
+>
+  <View>
+    <View
+      collapsable={false}
+      onLayout={[Function]}
+    >
+      <View
+        style={
+          {
+            "paddingTop": 67,
+          }
+        }
+      >
+        <View
+          pointerEvents="none"
+          style={
+            [
+              {
+                "height": 70,
+                "justifyContent": "flex-end",
+                "marginHorizontal": 16,
+                "marginTop": -70,
+                "paddingBottom": 14,
+              },
+            ]
+          }
+        >
+          <View
+            style={
+              [
+                {
+                  "backgroundColor": "rgba(255,255,255,0.10)",
+                  "borderColor": "rgba(255,255,255,0.18)",
+                  "borderRadius": 12,
+                  "borderWidth": 0.5,
+                  "overflow": "hidden",
+                  "paddingHorizontal": 14,
+                  "paddingVertical": 10,
+                },
+                {
+                  "opacity": undefined,
+                  "transform": [
+                    {
+                      "scale": undefined,
+                    },
+                  ],
+                },
+              ]
+            }
+          >
+            <View
+              style={
+                {
+                  "alignItems": "center",
+                  "flexDirection": "row",
+                  "gap": 8,
+                  "justifyContent": "center",
+                }
+              }
+            >
+              <View
+                hitSlop={
+                  {
+                    "bottom": 14,
+                    "left": 14,
+                    "right": 14,
+                    "top": 14,
+                  }
+                }
+                style={
+                  [
+                    {
+                      "alignItems": "center",
+                      "height": 16,
+                      "justifyContent": "center",
+                      "width": 16,
+                    },
+                    {
+                      "opacity": 0.85,
+                    },
+                  ]
+                }
+              >
+                <RNSVGSvgView
+                  align="xMidYMid"
+                  bbHeight={16}
+                  bbWidth={16}
+                  className="caret-down-regular__svg-icon-phosphor"
+                  color="#FFFFFF"
+                  fill="currentColor"
+                  focusable={false}
+                  height={16}
+                  meetOrSlice={0}
+                  minX={0}
+                  minY={0}
+                  style={
+                    [
+                      {
+                        "backgroundColor": "transparent",
+                        "borderWidth": 0,
+                      },
+                      [
+                        undefined,
+                        undefined,
+                        {},
+                      ],
+                      {
+                        "flex": 0,
+                        "height": 16,
+                        "width": 16,
+                      },
+                    ]
+                  }
+                  testID="phosphor-react-native-caret-down-regular"
+                  vbHeight={256}
+                  vbWidth={256}
+                  width={16}
+                >
+                  <RNSVGGroup
+                    fill={
+                      {
+                        "type": 2,
+                      }
+                    }
+                    propList={
+                      [
+                        "fill",
+                      ]
+                    }
+                  >
+                    <RNSVGGroup
+                      fill={
+                        {
+                          "payload": 4294967295,
+                          "type": 0,
+                        }
+                      }
+                      propList={
+                        [
+                          "fill",
+                        ]
+                      }
+                    >
+                      <RNSVGPath
+                        d="m213.66 101.66-80 80a8 8 0 0 1-11.32 0l-80-80a8 8 0 0 1 11.32-11.32L128 164.69l74.34-74.35a8 8 0 0 1 11.32 11.32"
+                        fill={
+                          {
+                            "payload": 4278190080,
+                            "type": 0,
+                          }
+                        }
+                      />
+                    </RNSVGGroup>
+                  </RNSVGGroup>
+                </RNSVGSvgView>
+              </View>
+              <Text
+                style={
+                  {
+                    "color": "rgba(255,255,255,0.85)",
+                    "fontFamily": "Inter_500Medium",
+                    "fontSize": 13,
+                    "letterSpacing": 0.1,
+                  }
+                }
+              >
+                Потяни вниз, чтобы вернуться в 
+                <Text
+                  style={
+                    {
+                      "color": "#FFFFFF",
+                      "fontFamily": "Inter_700Bold",
+                      "fontWeight": "700",
+                    }
+                  }
+                >
+                  Поиск
+                </Text>
+              </Text>
+            </View>
+            <View
+              style={
+                {
+                  "backgroundColor": "rgba(255,255,255,0.12)",
+                  "bottom": 0,
+                  "height": 3,
+                  "left": 0,
+                  "position": "absolute",
+                  "right": 0,
+                }
+              }
+            >
+              <View
+                style={
+                  [
+                    {
+                      "backgroundColor": "#FFFFFF",
+                      "bottom": 0,
+                      "left": 0,
+                      "position": "absolute",
+                      "top": 0,
+                      "transformOrigin": "left",
+                      "width": "100%",
+                    },
+                    {
+                      "transform": [
+                        {
+                          "scaleX": 0,
+                        },
+                      ],
+                    },
+                  ]
+                }
+              />
+            </View>
+          </View>
+        </View>
+        <View
+          style={
+            {
+              "alignItems": "center",
+              "paddingHorizontal": 32,
+              "paddingVertical": 80,
+            }
+          }
+        >
+          <Text
+            style={
+              {
+                "color": "rgba(255,255,255,0.65)",
+                "fontFamily": "Inter_400Regular",
+                "fontSize": 14,
+                "textAlign": "center",
+              }
+            }
+          >
+            Магазины ещё не подключены или временно недоступны
+          </Text>
+        </View>
+      </View>
+    </View>
+  </View>
+</RCTScrollView>
+`;
