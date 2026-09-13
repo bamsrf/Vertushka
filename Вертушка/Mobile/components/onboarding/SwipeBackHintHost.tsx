@@ -28,6 +28,7 @@ import { useSegments } from 'expo-router';
 import { SwipeBackHint } from './SwipeBackHint';
 import { useGestureHintGate } from '../../lib/useGestureHintGate';
 import { isEdgeSwipeEnabledForSegment } from '../../lib/edgeSwipeBack';
+import { isRecordTourRunning } from '../../lib/recordTour';
 import { setSwipeBackPerformedHandler } from '../../lib/swipeBackPerformed';
 
 /**
@@ -43,6 +44,11 @@ export function SwipeBackHintHost() {
   const { armed, performed, finish } = useGestureHintGate('swipe-back', {
     enabled: onDeepScreen,
     dwellMs: DWELL_MS,
+    // Единственный экран, где плашка мешала бы: карточка релиза во время
+    // разбора. Разбор — последовательность из нескольких карточек подряд, и
+    // своя подсказка посреди неё читается как сбой. Одиночная контекстная
+    // подсказка помехой не считается: она в потоке страницы, плашка у края.
+    blockedWhile: isRecordTourRunning,
   });
 
   // Android умеет сказать точно, что человек сделал свайп. Держим подписку,

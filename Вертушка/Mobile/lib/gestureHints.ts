@@ -19,15 +19,21 @@
  *   - подсказка гаснет НАВСЕГДА, как только человек сделал жест сам
  *     (markGesturePerformed) — учить освоенному незачем;
  *   - пока не сделал, показываем максимум MAX_SHOWS раз за всё время;
- *   - не больше ОДНОЙ жест-подсказки за запуск приложения на все поверхности;
- *   - не показываем поверх контекстной подсказки: две онбординг-штуки
- *     одновременно на экране — это уже не подсказка, а перехват управления.
+ *   - не больше ОДНОЙ жест-подсказки за запуск приложения В СВОЁМ слоте.
  *
- * Почему слот один на все ключи, без групп. Групп в coachMarks две, потому что
- * подсказки коллекции забирали общий слот раньше, чем человек вообще доходил до
- * карточки релиза. Здесь такой беды нет: поверхности лежат на РАЗНЫХ экранах,
- * человек не бывает на двух сразу, и каждая рано или поздно получает свой
- * запуск.
+ * Слотов два, и это та же развилка, что у групп в coachMarks. Подсказка про
+ * возврат назад живёт на КАЖДОМ вложенном экране, подсказки строк — на трёх
+ * конкретных списках. С общим слотом кто угодно из строк мог отнять запуск у
+ * навигации, хотя навигация нужнее: без неё человек не знает, как уйти с
+ * экрана вообще.
+ *
+ * Чего здесь СОЗНАТЕЛЬНО нет — глобальной проверки «не поверх контекстной
+ * подсказки». Она была и молча выключала фичу: `coachSpotlight` — один флаг на
+ * всё приложение, гаснет он при закрытии подсказки или размонтировании её
+ * экрана, а вкладки остаются смонтированными. Не закрытая крестиком `scan-ways`
+ * на вкладке сканера держала флаг поднятым весь запуск, и подсказка про возврат
+ * не появлялась ни на одном экране (проверено на живом аккаунте 13.09.2026).
+ * Точечные запреты вместо этого — через `blockedWhile` у вызывающего.
  */
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -37,8 +43,15 @@ export type GestureHintKey =
   | 'conversation-actions'
   | 'chat-reply';
 
+/**
+ * Слот «одна подсказка за запуск». Навигация и строки не конкурируют.
+ */
+export type GestureHintSlot = 'nav' | 'row';
+
 export interface GestureHintMeta {
   key: GestureHintKey;
+  /** По умолчанию 'row'. */
+  slot?: GestureHintSlot;
   /** Человеческое описание — для экрана «Как это работает». */
   label: string;
   /**
@@ -67,6 +80,7 @@ export const GESTURE_HINTS: GestureHintMeta[] = [
     // вложенном экране, а не на одном списке. Не зная его, человек ищет
     // стрелку в шапке на каждой странице приложения.
     label: 'С любой страницы можно вернуться свайпом вправо',
+    slot: 'nav',
     priority: 5,
   },
   {
@@ -164,18 +178,21 @@ export async function loadGestureHintStates(
   return states;
 }
 
-/** Слот «одна жест-подсказка за запуск» — общий на все поверхности. */
-let slotTaken = false;
+/** Слоты «одна жест-подсказка за запуск» — свой у навигации и у строк. */
+const slotTaken: Record<GestureHintSlot, boolean> = { nav: false, row: false };
 
-export const isGestureSlotTaken = () => slotTaken;
+export const slotOf = (key: GestureHintKey): GestureHintSlot =>
+  getGestureHint(key).slot ?? 'row';
+
+export const isGestureSlotTaken = (slot: GestureHintSlot = 'row') => slotTaken[slot];
 
 /**
  * Занять слот. Возвращает false, если его уже забрали, — тогда подсказка
  * молчит до следующего запуска.
  */
-export function takeGestureSlot(): boolean {
-  if (slotTaken) return false;
-  slotTaken = true;
+export function takeGestureSlot(slot: GestureHintSlot = 'row'): boolean {
+  if (slotTaken[slot]) return false;
+  slotTaken[slot] = true;
   return true;
 }
 
@@ -183,8 +200,8 @@ export function takeGestureSlot(): boolean {
  * Вернуть слот: победитель не смог показаться (экран ушёл, пока шла пауза).
  * Без этого запуск остался бы вообще без подсказки.
  */
-export function releaseGestureSlot() {
-  slotTaken = false;
+export function releaseGestureSlot(slot: GestureHintSlot = 'row') {
+  slotTaken[slot] = false;
 }
 
 /**
@@ -251,8 +268,9 @@ export async function resetGestureHints(userId: string, key?: GestureHintKey) {
   if (stateCache?.userId === userId) {
     targets.forEach((k) => stateCache!.states.delete(k));
   }
-  // Сброс — явный запрос увидеть подсказки снова, поэтому освобождаем и слот:
+  // Сброс — явный запрос увидеть подсказки снова, поэтому освобождаем и слоты:
   // иначе пришлось бы перезапускать приложение.
-  slotTaken = false;
+  slotTaken.nav = false;
+  slotTaken.row = false;
   bumpRevision();
 }

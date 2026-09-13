@@ -187,6 +187,14 @@ export const useRecordTourDone = () => useRecordTourStore((s) => s.done);
 /** Вернуть тур из «Как это работает». */
 export const resetRecordTour = () => useRecordTourStore.getState().reset();
 
+/**
+ * Идёт ли разбор карточки прямо сейчас. Нужен жест-подсказке про возврат
+ * назад: разбор — последовательность из нескольких шагов на одном экране, и
+ * лезть в него посреди со своей плашкой незачем.
+ */
+export const isRecordTourRunning = () =>
+  useRecordTourStore.getState().queue.length > 0;
+
 export interface RecordTourApi {
   /** Идёт ли тур прямо сейчас — по нему глушатся обычные подсказки экрана. */
   active: boolean;

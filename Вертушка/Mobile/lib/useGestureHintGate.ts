@@ -19,7 +19,6 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from '
 import { analytics } from './analytics';
 import { useAuthStore } from './store';
 import { useAppForeground } from './useAnimationGate';
-import { isAnyCoachSpotlightActive } from './coachSpotlight';
 import {
   GestureHintKey,
   getGestureHintRevision,
@@ -29,6 +28,7 @@ import {
   markGestureHintShown,
   markGesturePerformed,
   releaseGestureSlot,
+  slotOf,
   subscribeGestureHints,
   takeGestureSlot,
 } from './gestureHints';
@@ -56,6 +56,16 @@ interface UseGestureHintGateOptions {
   enabled: boolean;
   /** Своя пауза, если экрану нужно больше времени на въезд. */
   dwellMs?: number;
+  /**
+   * Точечный запрет ровно на момент показа. Проверяется ПОСЛЕ паузы, потому
+   * что за неё обстановка на экране успевает поменяться.
+   *
+   * Общей проверки «не поверх любой контекстной подсказки» здесь больше нет:
+   * `coachSpotlight` — один флаг на всё приложение, и не закрытая подсказка на
+   * смонтированной вкладке держала его весь запуск, молча выключая фичу на
+   * всех экранах. Запрещать надо адресно и тем, кто знает свой экран.
+   */
+  blockedWhile?: () => boolean;
 }
 
 export interface GestureHintGate {
@@ -72,7 +82,7 @@ export interface GestureHintGate {
 
 export function useGestureHintGate(
   key: GestureHintKey,
-  { enabled, dwellMs = DWELL_MS }: UseGestureHintGateOptions,
+  { enabled, dwellMs = DWELL_MS, blockedWhile }: UseGestureHintGateOptions,
 ): GestureHintGate {
   const userId = useAuthStore((s) => s.user?.id);
   const foreground = useAppForeground();
@@ -82,6 +92,7 @@ export function useGestureHintGate(
     () => 0,
   );
 
+  const slot = slotOf(key);
   const [armed, setArmed] = useState(false);
   /** Слот держим мы — вернуть при размонтировании, если не отыграли. */
   const ownsSlot = useRef(false);
@@ -108,7 +119,7 @@ export function useGestureHintGate(
   useEffect(() => {
     if (!userId || !enabled || !foreground) return;
     if (armed || notedRef.current) return;
-    if (isGestureSlotTaken()) return;
+    if (isGestureSlotTaken(slot)) return;
 
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
@@ -124,12 +135,12 @@ export function useGestureHintGate(
       });
       if (cancelled) return;
 
-      // Контекстная подсказка на экране — молчим. Две онбординг-штуки разом
-      // человек читает как сбой, а не как заботу.
-      if (isAnyCoachSpotlightActive()) return;
-      if (!takeGestureSlot()) return;
+      // Адресный запрет вызывающего: например, на карточке релиза идёт разбор
+      // из нескольких шагов, и лезть в него со своей плашкой незачем.
+      if (blockedWhile?.()) return;
+      if (!takeGestureSlot(slot)) return;
       if (cancelled) {
-        releaseGestureSlot();
+        releaseGestureSlot(slot);
         return;
       }
 
@@ -147,10 +158,10 @@ export function useGestureHintGate(
       // останется вообще без подсказки.
       if (ownsSlot.current) {
         ownsSlot.current = false;
-        releaseGestureSlot();
+        releaseGestureSlot(slot);
       }
     };
-  }, [userId, key, enabled, foreground, dwellMs, armed, revision]);
+  }, [userId, key, slot, enabled, foreground, dwellMs, blockedWhile, armed, revision]);
 
   return { armed, performed, finish };
 }
