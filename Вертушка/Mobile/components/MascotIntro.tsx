@@ -30,7 +30,7 @@
  * «splash → интро». Прогонять скрипт при каждой замене ролика.
  */
 import { useEffect, useRef, useState } from 'react';
-import { Image, StyleSheet, useWindowDimensions } from 'react-native';
+import { Image, StyleSheet, useWindowDimensions, View } from 'react-native';
 // Reanimated вместо легаси Animated — приведение к домашнему стилю проекта
 // (все остальные анимации на reanimated) при починке SDK 57.
 import Animated, {
@@ -78,16 +78,25 @@ const INTRO_FIRST_FRAME = require('../assets/video/intro-mascot-first-frame.png'
 interface MascotIntroProps {
   /** Вызывается когда интро отыграло (или сразу, если expo-video недоступен). */
   onFinish: () => void;
+  /**
+   * Вызывается один раз, когда на экране ФАКТИЧЕСКИ есть первый кадр интро.
+   * По нему `_layout` снимает нативный splash: снимать его раньше нельзя —
+   * подложка к тому моменту ещё не отрисована, и на стыке зияет пустой экран
+   * (замерено на Release-сборке: от 1 до 9 кадров, плавает от прогона к прогону).
+   */
+  onFirstPaint?: () => void;
 }
 
-export function MascotIntro({ onFinish }: MascotIntroProps) {
-  if (!videoModule) return <IntroSkipped onFinish={onFinish} />;
-  return <IntroVideo onFinish={onFinish} video={videoModule} />;
+export function MascotIntro({ onFinish, onFirstPaint }: MascotIntroProps) {
+  if (!videoModule) return <IntroSkipped onFinish={onFinish} onFirstPaint={onFirstPaint} />;
+  return <IntroVideo onFinish={onFinish} onFirstPaint={onFirstPaint} video={videoModule} />;
 }
 
 /** Ветка «модуля нет» — отдельным компонентом, чтобы хуки ниже вызывались безусловно. */
-function IntroSkipped({ onFinish }: MascotIntroProps) {
+function IntroSkipped({ onFinish, onFirstPaint }: MascotIntroProps) {
   useEffect(() => {
+    // Рисовать нечего — отпускаем splash сразу, иначе он провисит весь таймаут.
+    onFirstPaint?.();
     onFinish();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -96,6 +105,7 @@ function IntroSkipped({ onFinish }: MascotIntroProps) {
 
 function IntroVideo({
   onFinish,
+  onFirstPaint,
   video,
 }: MascotIntroProps & { video: typeof import('expo-video') }) {
   const { VideoView, useVideoPlayer } = video;
@@ -117,6 +127,14 @@ function IntroVideo({
   // кадр интро в зуме». Ловится на симуляторе покадрово при холодном старте.
   const { width } = useWindowDimensions();
   const mediaSize = Math.round(width * INTRO_WIDTH_RATIO);
+  // onFirstPaint зовём ровно один раз: и по успешной загрузке подложки, и по
+  // ошибке — иначе при битом ассете splash провисит весь страховочный таймаут.
+  const firstPaintFired = useRef(false);
+  const firePaint = () => {
+    if (firstPaintFired.current) return;
+    firstPaintFired.current = true;
+    onFirstPaint?.();
+  };
 
   const player = useVideoPlayer(INTRO_SOURCE, (p) => {
     p.loop = false;
@@ -180,23 +198,37 @@ function IntroVideo({
 
   return (
     <Animated.View style={[styles.fill, fadeStyle]} pointerEvents="auto">
-      {ready ? (
-        <VideoView
-          player={player}
-          style={[styles.media, { width: mediaSize, height: mediaSize }]}
-          contentFit="contain"
-          nativeControls={false}
-          fullscreenOptions={{ enable: false }}
-          allowsPictureInPicture={false}
-        />
-      ) : (
+      {/* Подложка лежит ПОД видео, а не вместо него. Через тернарник
+          `ready ? <VideoView/> : <Image/>` в кадре подмены не отрисовано ни
+          то, ни другое — замерен ровно один пустой кадр (25мс). Здесь
+          картинка не размонтируется никогда, видео просто накрывает её
+          сверху: размеры у обоих одинаковые, совпадение попиксельное.
+
+          Размеры ОБЯЗАТЕЛЬНО явные в пикселях у каждого элемента, а не
+          StyleSheet.absoluteFill от контейнера: с absoluteFill <Image> до
+          применения лэйаута уходит в собственный размер PNG (960×960 без
+          суффикса @Nx = 960 точек) и на старте мелькает гигантским — тот же
+          зум, что чинился в #204. Проверено: с absoluteFill баг возвращается. */}
+      <View style={{ width: mediaSize, height: mediaSize }}>
         <Image
           source={INTRO_FIRST_FRAME}
-          style={[styles.media, { width: mediaSize, height: mediaSize }]}
+          style={[styles.layer, { width: mediaSize, height: mediaSize }]}
           resizeMode="contain"
           accessible={false}
+          onLoad={firePaint}
+          onError={firePaint}
         />
-      )}
+        {ready && (
+          <VideoView
+            player={player}
+            style={[styles.layer, { width: mediaSize, height: mediaSize }]}
+            contentFit="contain"
+            nativeControls={false}
+            fullscreenOptions={{ enable: false }}
+            allowsPictureInPicture={false}
+          />
+        )}
+      </View>
     </Animated.View>
   );
 }
@@ -209,8 +241,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     zIndex: 9999,
   },
-  // Ширина/высота приходят пропом — зависят от ширины экрана.
-  media: {
-    alignSelf: 'center',
+  // Оба слоя интро лежат друг на друге в левом верхнем углу контейнера;
+  // конкретные ширина/высота приходят пропом, см. комментарий в разметке.
+  layer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
   },
 });

@@ -181,6 +181,13 @@ if (amplitudeApiKey) {
 
 SplashScreen.preventAutoHideAsync();
 
+/**
+ * Потолок ожидания первого кадра интро перед снятием splash. Нужен только как
+ * страховка: если интро не отрисуется (нет expo-video, битый ассет), приложение
+ * всё равно покажется, а не зависнет на splash.
+ */
+const SPLASH_HOLD_MAX_MS = 1000;
+
 function RootLayout() {
   const { checkAuth, isLoading, isAuthenticated, user } = useAuthStore();
   const { checkOnboarding, isReady: onboardingReady } = useOnboardingStore();
@@ -197,6 +204,9 @@ function RootLayout() {
   // Интро-заставка маскота — играет один раз за холодный старт, поверх UI,
   // сразу после того как скрылся native splash. См. MascotIntro / ТЗ §6.
   const [introDone, setIntroDone] = useState(false);
+  // Нативный splash снимаем не по готовности данных, а по факту отрисовки
+  // первого кадра интро — см. SPLASH_HOLD_MAX_MS ниже.
+  const [introPainted, setIntroPainted] = useState(false);
   // Целевой путь тапнутого пуша, ожидающий готовности навигации/авторизации.
   // Стейт (не ref), чтобы установка из listener/cold-start триггерила flush-эффект.
   const [pendingRoute, setPendingRoute] = useState<string | null>(null);
@@ -434,11 +444,23 @@ function RootLayout() {
     };
   }, [isAuthenticated]);
 
+  // Снимать splash по одной только готовности шрифтов/авторизации/онбординга
+  // нельзя: интро в этот момент ещё не нарисовано (подложке нужно смонтироваться
+  // и декодировать PNG), и на стыке зияет пустой экран — на Release-сборке
+  // замерено от 1 до 9 кадров, плавает от прогона к прогону. Поэтому ждём
+  // onFirstPaint от MascotIntro, а таймаут страхует случаи, когда интро не
+  // отрисуется вовсе (нет нативного expo-video, битый ассет).
   useEffect(() => {
-    if (fontsLoaded && !isLoading && onboardingReady) {
+    if (!fontsLoaded || isLoading || !onboardingReady) return;
+    if (introPainted || introDone) {
       SplashScreen.hideAsync().catch(() => {});
+      return;
     }
-  }, [fontsLoaded, isLoading, onboardingReady]);
+    const t = setTimeout(() => {
+      SplashScreen.hideAsync().catch(() => {});
+    }, SPLASH_HOLD_MAX_MS);
+    return () => clearTimeout(t);
+  }, [fontsLoaded, isLoading, onboardingReady, introPainted, introDone]);
 
   // Глобальный auth-watchdog: если пользователь был залогинен и потерял сессию
   // (refresh-токен невалиден) — уводим на login независимо от текущего экрана.
@@ -574,7 +596,12 @@ function RootLayout() {
             с забронированным пунктом вишлиста. Живёт здесь, а не на экранах:
             добавить в коллекцию можно из скана, поиска и карточки релиза. */}
         <GiftMatchModal />
-        {!introDone && <MascotIntro onFinish={() => setIntroDone(true)} />}
+        {!introDone && (
+          <MascotIntro
+            onFinish={() => setIntroDone(true)}
+            onFirstPaint={() => setIntroPainted(true)}
+          />
+        )}
         <InAppNotificationToastHost />
         {/* Порядок = z-order оверлеев: каждый следующий RootOverlay создаёт
             своё UIWindow выше предыдущего. Тост последний — он самый срочный
