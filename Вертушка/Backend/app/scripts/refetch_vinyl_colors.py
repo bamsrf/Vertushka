@@ -159,21 +159,27 @@ async def _fresh_color(discogs_id: str) -> tuple[str | None, bool]:
     from app.services.discogs import DiscogsService
     from app.services.rate_limiter import Priority
 
-    # В кэше payload, разобранный СТАРЫМ парсером, — без сброса вернётся он же.
+    # Кэш сбрасываем, хотя сами его больше не читаем: в ключе `release` лежит
+    # payload, разобранный СТАРЫМ парсером, и пока он там, карточка записи и
+    # офферы будут показывать тот самый битый цвет. Ре-фетч обязан протухший
+    # payload выбросить, иначе в базе правда, а у пользователя — нет.
     try:
         await cache.delete("release", discogs_id)
     except Exception:  # noqa: BLE001
         logger.debug("cache delete failed for %s", discogs_id, exc_info=True)
 
+    # Узкий метод вместо get_release: один запрос к Discogs вместо трёх.
+    # get_release попутно тянет статистику цен и миниатюру артиста — для цвета
+    # это чистый расход бакета, и именно он давал 429 на marketplace/stats.
     try:
-        data = await DiscogsService().get_release(discogs_id, priority=Priority.BATCH)
+        color = await DiscogsService().get_release_vinyl_color(
+            discogs_id, priority=Priority.BATCH
+        )
     except Exception:  # noqa: BLE001
         logger.debug("discogs fetch failed for %s", discogs_id, exc_info=True)
         return None, False
 
-    if not isinstance(data, dict):
-        return None, False
-    return data.get("vinyl_color_raw"), True
+    return color, True
 
 
 #: Как часто отчитываться о прогрессе. Стояло 100, и при 14 с/запись это были
