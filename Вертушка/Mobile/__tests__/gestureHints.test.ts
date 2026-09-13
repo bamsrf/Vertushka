@@ -19,6 +19,7 @@ import {
   markGesturePerformed,
   releaseGestureSlot,
   resetGestureHints,
+  slotOf,
   takeGestureSlot,
 } from '@/lib/gestureHints';
 
@@ -125,24 +126,42 @@ describe('освоенный жест', () => {
   });
 });
 
-describe('слот «одна подсказка за запуск»', () => {
-  it('второй претендент уходит ни с чем', () => {
-    expect(takeGestureSlot()).toBe(true);
-    expect(takeGestureSlot()).toBe(false);
-    expect(isGestureSlotTaken()).toBe(true);
+describe('слоты «одна подсказка за запуск»', () => {
+  it('второй претендент в том же слоте уходит ни с чем', () => {
+    expect(takeGestureSlot('row')).toBe(true);
+    expect(takeGestureSlot('row')).toBe(false);
+    expect(isGestureSlotTaken('row')).toBe(true);
+  });
+
+  it('навигация и строки не отнимают запуск друг у друга', () => {
+    // Регресс: с общим слотом любая строка могла съесть запуск у подсказки про
+    // возврат назад, хотя та нужнее — без неё человек не знает, как уйти с
+    // экрана вообще.
+    takeGestureSlot('row');
+    expect(isGestureSlotTaken('nav')).toBe(false);
+    expect(takeGestureSlot('nav')).toBe(true);
+  });
+
+  it('свайп назад сидит в слоте навигации, остальные — в строках', () => {
+    expect(slotOf('swipe-back')).toBe('nav');
+    ['notification-delete', 'conversation-actions', 'chat-reply'].forEach((k) =>
+      expect(slotOf(k as never)).toBe('row'),
+    );
   });
 
   it('возврат слота даёт запуску второй шанс', () => {
-    takeGestureSlot();
-    releaseGestureSlot();
-    expect(isGestureSlotTaken()).toBe(false);
-    expect(takeGestureSlot()).toBe(true);
+    takeGestureSlot('row');
+    releaseGestureSlot('row');
+    expect(isGestureSlotTaken('row')).toBe(false);
+    expect(takeGestureSlot('row')).toBe(true);
   });
 
-  it('сброс из настроек освобождает слот — без перезапуска приложения', async () => {
-    takeGestureSlot();
+  it('сброс из настроек освобождает оба слота — без перезапуска приложения', async () => {
+    takeGestureSlot('row');
+    takeGestureSlot('nav');
     await resetGestureHints(USER);
-    expect(isGestureSlotTaken()).toBe(false);
+    expect(isGestureSlotTaken('row')).toBe(false);
+    expect(isGestureSlotTaken('nav')).toBe(false);
   });
 });
 
