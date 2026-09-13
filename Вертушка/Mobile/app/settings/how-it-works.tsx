@@ -34,6 +34,7 @@ import {
 import { restoreFirstSteps, useFirstStepsDismissed } from '../../lib/onboardingProgress';
 import { pickDemoRecordId } from '../../lib/onboardingDemoRecord';
 import { resetRecordTour, useRecordTourDone } from '../../lib/recordTour';
+import { resetGestureHints } from '../../lib/gestureHints';
 import { BorderRadius, Colors, Shadows, Spacing, Typography } from '../../constants/theme';
 
 export default function HowItWorksScreen() {
@@ -130,6 +131,19 @@ export default function HowItWorksScreen() {
     }
     await resetRecordTour();
     toast.success('Вернули', 'Покажем при следующем открытии карточки');
+  };
+
+  /**
+   * Жест-подсказки живут отдельно от каталога: они ничего не рассказывают, а
+   * показывают, что строка двигается, и гаснут не по крестику, а по факту
+   * освоенного жеста. Своя кнопка нужна ровно потому, что «Сбросить все
+   * подсказки» их не касается — иначе человек жал бы её и не понимал, почему
+   * свайп больше не показывают.
+   */
+  const handleReplayGestures = async () => {
+    if (!userId) return;
+    await resetGestureHints(userId);
+    toast.success('Вернули', 'Покажем свайпы в уведомлениях и переписке');
   };
 
   const handleReplayWelcome = async () => {
@@ -230,6 +244,11 @@ export default function HowItWorksScreen() {
           <Text style={styles.secondaryText}>
             {tourDone ? 'Повторить разбор карточки релиза' : 'Разбор карточки релиза включён'}
           </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.secondary} onPress={handleReplayGestures}>
+          <Icon name="refresh-outline" size={20} color={Colors.royalBlue} />
+          <Text style={styles.secondaryText}>Повторить подсказки жестов</Text>
         </TouchableOpacity>
 
         <TouchableOpacity style={styles.secondary} onPress={handleReplayWelcome}>

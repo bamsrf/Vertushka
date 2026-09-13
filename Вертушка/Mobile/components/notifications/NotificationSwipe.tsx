@@ -15,6 +15,12 @@
  *     только к tap-ветке, а delete вызывается из onEnd жеста.
  *
  * Иконка корзины — в полную высоту, без scale-анимации.
+ *
+ * `hintFirst` — эта строка первая в списке, и на ней разрешено показать
+ * жест-подсказку (lib/useGestureNudge.ts): баннера в покое не видно вовсе,
+ * поэтому без нуджа про свайп узнают только случайно. Дёргать все строки
+ * списка нельзя — это выглядело бы как сбой отрисовки, — поэтому право на
+ * подсказку выдаёт вызывающий, ровно одной строке.
  */
 import React, { useCallback } from 'react';
 import { Pressable, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
@@ -28,12 +34,15 @@ import Animated, {
 } from 'react-native-reanimated';
 
 import { Icon } from '../ui';
+import { useGestureNudge } from '../../lib/useGestureNudge';
 import { Colors, Spacing } from '../../constants/theme';
 
 interface NotificationSwipeProps {
   children: React.ReactNode;
   onDelete: () => void;
   style?: StyleProp<ViewStyle>;
+  /** Первая строка списка — только ей разрешено показать жест-подсказку. */
+  hintFirst?: boolean;
 }
 
 const FULL_WIDTH = 88; // полная ширина баннера удаления при open
@@ -42,10 +51,21 @@ const VELOCITY_OPEN = -650;
 const ACTIVE_OFFSET = 12;
 const FAIL_OFFSET_Y = 14;
 
-export function NotificationSwipe({ children, onDelete, style }: NotificationSwipeProps) {
+export function NotificationSwipe({
+  children,
+  onDelete,
+  style,
+  hintFirst = false,
+}: NotificationSwipeProps) {
   // dragX: 0 (rest) → -FULL_WIDTH (open). Двигает контент И растит баннер.
   const dragX = useSharedValue(0);
   const startX = useSharedValue(0);
+
+  // Нудж двигает ТУ ЖЕ dragX, что и палец: баннер корзины приоткрывается
+  // ровно так же, как при настоящем свайпе, и обещание совпадает с делом.
+  const { performed } = useGestureNudge('notification-delete', dragX, {
+    enabled: hintFirst,
+  });
 
   const triggerDelete = useCallback(() => {
     onDelete();
@@ -55,6 +75,10 @@ export function NotificationSwipe({ children, onDelete, style }: NotificationSwi
     .activeOffsetX([-ACTIVE_OFFSET, ACTIVE_OFFSET])
     .failOffsetY([-FAIL_OFFSET_Y, FAIL_OFFSET_Y])
     .onStart(() => {
+      // Тронул строку — жест освоен, подсказка больше не нужна никогда.
+      // Отсюда же снимается владение нуджем, поэтому недоигранная анимация
+      // не станет спорить с пальцем.
+      runOnJS(performed)();
       startX.value = dragX.value;
     })
     .onUpdate((e) => {

@@ -53,6 +53,8 @@ import Animated, {
   type EntryAnimationsValues,
 } from 'react-native-reanimated';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+
+import { useGestureNudge } from '@/lib/useGestureNudge';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -672,14 +674,29 @@ function SwipeableMessage({
   children,
   isMine,
   onReply,
+  hintFirst = false,
 }: {
   children: React.ReactNode;
   isMine: boolean;
   onReply: () => void;
+  /** Нижнее (самое свежее) сообщение — носитель жест-подсказки. */
+  hintFirst?: boolean;
 }) {
   const tx = useSharedValue(0);
   const triggered = useSharedValue(false);
   const popScale = useSharedValue(1);
+
+  // Иконка ответа проявляется только по ходу жеста, в покое её нет — про
+  // свайп-ответ узнать неоткуда. Нудж двигает ту же tx, поэтому иконка
+  // приоткрывается сама, как при настоящем свайпе.
+  //
+  // Знак — по владельцу сообщения: свои тянут влево, чужие вправо (см.
+  // onUpdate). Модуль вдвое меньше порога ответа (56), так что подсказка
+  // физически не может отправить человека в ответ за него.
+  const { performed } = useGestureNudge('chat-reply', tx, {
+    enabled: hintFirst,
+    distance: isMine ? -24 : 24,
+  });
 
   const triggerReply = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
@@ -689,6 +706,10 @@ function SwipeableMessage({
   const pan = Gesture.Pan()
     .activeOffsetX(isMine ? [-12, 9999] : [-9999, 12])
     .failOffsetY([-12, 12])
+    .onStart(() => {
+      // Потянул сам — жест освоен, подсказка гаснет навсегда.
+      runOnJS(performed)();
+    })
     .onUpdate((e) => {
       const raw = isMine
         ? Math.max(0, -e.translationX)
@@ -1470,7 +1491,7 @@ export default function ConversationScreen() {
   );
 
   const renderItem: ListRenderItem<FeedItem> = useCallback(
-    ({ item }) => {
+    ({ item, index }) => {
       if (item.type === 'date') return <DateDivider date={item.date} />;
       if (item.type === 'unread-divider') return <UnreadDivider />;
       const m = item.message;
@@ -1511,6 +1532,9 @@ export default function ConversationScreen() {
         <SwipeableMessage
           isMine={item.isMine}
           onReply={() => setReplyTo(m)}
+          // Список inverted: индекс 0 — самое свежее сообщение, оно всегда
+          // на виду внизу. Подсказка на невидимой строке бесполезна.
+          hintFirst={index === 0}
         >
           {bubble}
         </SwipeableMessage>

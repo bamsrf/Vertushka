@@ -38,6 +38,12 @@ interface Props {
   onMarkRead?: (item: NotificationItemType) => void;
   onDelete?: (item: NotificationItemType) => void;
   /**
+   * Самая первая строка ленты. Только ей разрешено показать жест-подсказку
+   * про свайп-удаление: баннер корзины в покое не видно вовсе, а дёргать
+   * подряд все строки — это уже не подсказка, а сбой отрисовки.
+   */
+  hintFirst?: boolean;
+  /**
    * Тап по самой иконке радара — увести на экран радара. Иконка была обычным
    * <View> внутри TouchableOpacity всей строки, поэтому нажатие на неё
    * отрабатывала строка и уводила в карточку релиза: выглядело как «по радару
@@ -229,6 +235,7 @@ export const NotificationItem: React.FC<Props> = ({
   onLongPress,
   onDelete,
   onPressRadar,
+  hintFirst,
 }) => {
   const unread = !item.read_at;
   const text = useMemo(() => buildText(item), [item]);
@@ -367,7 +374,11 @@ export const NotificationItem: React.FC<Props> = ({
 
   if (!onDelete) return row;
 
-  return <NotificationSwipe onDelete={() => onDelete(item)}>{row}</NotificationSwipe>;
+  return (
+    <NotificationSwipe onDelete={() => onDelete(item)} hintFirst={hintFirst}>
+      {row}
+    </NotificationSwipe>
+  );
 };
 
 /** Инициалы актора для fallback-аватара (когда есть actor, но нет фото). */

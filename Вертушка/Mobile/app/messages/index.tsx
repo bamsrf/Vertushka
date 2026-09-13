@@ -21,6 +21,8 @@ import {
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+
+import { useGestureNudge } from '@/lib/useGestureNudge';
 import Animated, {
   LinearTransition,
   FadeIn,
@@ -199,10 +201,13 @@ let closeOpenSwipeRow: (() => void) | null = null;
 function SwipeableActionsRow({
   specs,
   onRowPress,
+  hintFirst = false,
   children,
 }: {
   specs: SwipeActionSpec[];
   onRowPress: () => void;
+  /** Первая строка списка — только ей разрешена жест-подсказка. */
+  hintFirst?: boolean;
   children: React.ReactNode;
 }) {
   const fullW = specs.length * SWIPE_BTN_W;
@@ -210,6 +215,13 @@ function SwipeableActionsRow({
   const startX = useSharedValue(0);
   const crossed = useSharedValue(false);
   const lastSwipeEndRef = useRef(0);
+
+  // Панель действий в покое не видна вообще — узнать о ней можно только
+  // случайно. Нудж двигает ту же tx, что и палец, поэтому из-под строки
+  // выглядывает настоящая панель, а не её имитация.
+  const { performed } = useGestureNudge('conversation-actions', tx, {
+    enabled: hintFirst,
+  });
 
   const close = useCallback(() => {
     tx.value = withSpring(0, CALM_SPRING);
@@ -262,6 +274,8 @@ function SwipeableActionsRow({
     .activeOffsetX([-12, 12])
     .failOffsetY([-10, 10])
     .onStart(() => {
+      // Потянул сам — жест освоен, подсказка гаснет навсегда.
+      runOnJS(performed)();
       startX.value = tx.value;
       crossed.value = -tx.value >= fullW * SWIPE_OPEN_FRACTION;
     })
@@ -321,9 +335,12 @@ function ConversationRow({
   onToggleMute,
   onArchive,
   onUnarchive,
+  hintFirst,
 }: {
   item: Conversation;
   isMine: boolean;
+  /** Самая верхняя строка списка — носитель жест-подсказки. */
+  hintFirst?: boolean;
   onPress: () => void;
   onAccept?: () => void;
   onReject?: () => void;
@@ -450,7 +467,7 @@ function ConversationRow({
   }
 
   return (
-    <SwipeableActionsRow specs={actionSpecs} onRowPress={onPress}>
+    <SwipeableActionsRow specs={actionSpecs} onRowPress={onPress} hintFirst={hintFirst}>
       {content}
     </SwipeableActionsRow>
   );
@@ -602,9 +619,10 @@ export default function MessagesInboxScreen() {
     folder === 'primary' ? primary : folder === 'requests' ? requests : archived;
 
   const renderItem = useCallback(
-    ({ item }: { item: Conversation }) => (
+    ({ item, index }: { item: Conversation; index: number }) => (
       <ConversationRow
         item={item}
+        hintFirst={index === 0}
         isMine={!!me && item.last_message_sender_id === me.id}
         onPress={() => router.push(`/messages/${item.id}` as any)}
         onAccept={

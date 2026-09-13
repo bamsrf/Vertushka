@@ -6,3 +6,9 @@ jest.mock('expo-haptics', () => ({
   impactAsync: jest.fn(),
   ImpactFeedbackStyle: { Light: 'light' },
 }));
+
+// AsyncStorage: нативного модуля в jest нет, берём официальный in-memory mock
+// из самого пакета. Нужен всему, что помнит состояние между запусками —
+// онбординг-подсказки, жест-подсказки, кэши сторов.
+jest.mock('@react-native-async-storage/async-storage', () =>
+  require('@react-native-async-storage/async-storage/jest/async-storage-mock'));

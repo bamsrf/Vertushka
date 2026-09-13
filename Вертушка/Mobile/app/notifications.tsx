@@ -360,6 +360,11 @@ export default function NotificationsScreen() {
     [markRead],
   );
 
+  // Первая строка всей ленты — носитель жест-подсказки про свайп-удаление.
+  // Сравниваем по id, а не по паре (индекс, секция): секции здесь — корзины
+  // дат, и «индекс 0» есть в каждой из них.
+  const firstPersonalId = personalSections[0]?.data[0]?.id;
+
   const renderPersonal = ({ item }: { item: NotificationItemType }) => {
     // Синтетическая дайджест-строка: тап открывает поп-ап с корешками, без
     // swipe-delete/long-press (удалять/снузить нечего — это виртуальная свёртка).
@@ -377,6 +382,7 @@ export default function NotificationsScreen() {
         onDelete={(it) => removePersonal(it.id)}
         onLongPress={handleLongPress}
         onPressRadar={handleOpenRadar}
+        hintFirst={item.id === firstPersonalId}
       />
     );
   };
