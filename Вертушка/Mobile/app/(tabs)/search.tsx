@@ -135,11 +135,30 @@ const TAB_BAR_AIR = 24;
 const BOTTOM_FADE_EXTRA = 28;
 
 /**
- * Android 360dp: «Артист, альбом или @username» не влезал в пилюлю поиска и
- * обрезался. Короче на Android; строка iOS прежняя.
+ * Android 360dp: под плейсхолдер в пилюле остаётся ~204dp
+ * (360 − 2×16 экранных полей − 52 кнопка фильтров − 8 gap = 268 пилюля;
+ * минус 2×16 внутренних полей, 2×2 рамки, 20 лупа и 8 gap). «Артист, альбом,
+ * @username» при ms(16)≈15px в Inter занимает ~205dp — уже на грани, а с
+ * системным font-scale > 1 гарантированно не влезает, и Android-EditText
+ * переносит hint по слову вместо усечения. Короткая строка (~19 знаков,
+ * ~150dp) держит запас до font-scale ≈1.3; строка iOS прежняя.
  */
 const SEARCH_PLACEHOLDER =
-  Platform.OS === 'android' ? 'Артист, альбом, @username' : 'Артист, альбом или @username';
+  Platform.OS === 'android' ? 'Артист, альбом, ник' : 'Артист, альбом или @username';
+
+/**
+ * Строка Curtain-CTA на Android 360dp: внутри плашки остаётся
+ * 360 − 2×16 (marginHorizontal) − 2×14 (padding) − 2×1 (рамка) = 298dp,
+ * из них 20 шеврон + 8 gap → 270dp тексту. «Прокрути вниз или нажми — и ты
+ * в Маркете» — 40 знаков caption 12px Inter ≈ 268dp: на грани, поэтому при
+ * любом font-scale строка ломалась на две и центрирование ряда «уезжало».
+ * Ужимаем строку, а не переносим (см. дизайн-правило про заголовки).
+ * iOS (≥375dp) влезает без ужимания — там пропов не добавляем.
+ */
+const SEARCH_HINT_TEXT_FIT =
+  Platform.OS === 'android'
+    ? ({ numberOfLines: 1, adjustsFontSizeToFit: true, minimumFontScale: 0.85 } as const)
+    : ({} as const);
 
 // Пороги overdrag'а и spring занавеса — на уровне модуля, чтобы Android-жест
 // (useAndroidOverdrag, useMemo по колбэкам) не пересобирался каждый рендер
@@ -1090,7 +1109,7 @@ export default function SearchScreen() {
         >
           <View style={styles.searchHintRow}>
             <Icon name="chevron-down" size={20} color={Colors.royalBlue} />
-            <Text style={styles.searchHintText}>
+            <Text style={styles.searchHintText} {...SEARCH_HINT_TEXT_FIT}>
               Прокрути вниз или нажми — и ты в{' '}
               <Text style={styles.searchHintBrand}>Маркете</Text>
             </Text>
@@ -1262,6 +1281,11 @@ export default function SearchScreen() {
             onChangeText={handleSearchInputChange}
             placeholder={isUserSearch ? "Имя пользователя..." : SEARCH_PLACEHOLDER}
             placeholderTextColor={Colors.textMuted}
+            multiline={false}
+            // maxLines=1 у EditText: без него Android переносит длинный hint
+            // по слову («Артист, альбом,» + вторая строка). На iOS проп для
+            // однострочного поля инертен — рендер не меняется.
+            numberOfLines={1}
             returnKeyType="search"
             onSubmitEditing={handleSearch}
             onFocus={() => { setInputFocused(true); setShowHistory(true); }}
@@ -1697,12 +1721,19 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 10,
+    // Шеврон и текст — одна группа по центру плашки; на Android чуть плотнее,
+    // чтобы после ужимания текст не отрывался от стрелки.
+    gap: Platform.OS === 'android' ? 8 : 10,
   },
   searchHintText: {
     ...Typography.caption,
     color: Colors.textSecondary,
     lineHeight: 16,
+    // flexShrink: без него Text не отдаёт ширину и вылезает за плашку —
+    // ряд перестаёт центрироваться, поля слева/справа расходятся.
+    ...Platform.select({
+      android: { flexShrink: 1, includeFontPadding: false, textAlign: 'center' as const },
+    }),
   },
   searchHintBrand: {
     fontFamily: 'Inter_700Bold',
@@ -1766,6 +1797,9 @@ const styles = StyleSheet.create({
     padding: 0,
     margin: 0,
     textAlignVertical: 'center',
+    // Android добавляет к строке font-padding, из-за которого хвост hint'а
+    // при большом font-scale уходит под обрезку раньше времени.
+    ...Platform.select({ android: { includeFontPadding: false } }),
   },
   filterButton: {
     width: 52,
