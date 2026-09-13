@@ -5,7 +5,8 @@
  * - Сверху шапка: аватар + @username + custom_title + bio + ачивки + стоимость коллекции
  * - Ниже — как личная вкладка коллекции: segmented «В наличии / Вишлист», формат-фильтры, grid/list
  * - Бронь подарка из вишлиста доступна только если ты подписан (is_following === true).
- * - В модалке брони имя/email берутся из учётки автоматически — спрашиваем только сообщение.
+ * - В модалке брони имя/email берутся из учётки автоматически, ничего не спрашиваем:
+ *   бронь анонимная, поэтому и поля «сообщение владельцу» здесь нет.
  */
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import {
@@ -16,9 +17,7 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   Modal,
-  TextInput,
   TouchableWithoutFeedback,
-  KeyboardAvoidingView,
   Platform,
   Animated,
   Easing,
@@ -273,7 +272,6 @@ export default function UserProfileScreen() {
   const [isFollowLoading, setIsFollowLoading] = useState(false);
 
   const [bookingItem, setBookingItem] = useState<WishlistPublicItem | null>(null);
-  const [bookingMessage, setBookingMessage] = useState('');
   const [isBooking, setIsBooking] = useState(false);
 
   // Booking sheet анимация — фон фейдится на месте, лист выезжает снизу.
@@ -622,16 +620,16 @@ export default function UserProfileScreen() {
         toast.error('Не удалось забронировать', 'Заполните имя и email в своём профиле');
         return;
       }
+      // Сообщение дарителя не спрашиваем: бронь анонимная, показать его владельцу
+      // было бы деанонимизацией, поэтому канала доставки у текста не было.
       await api.bookGift({
         wishlist_item_id: bookingItem.id,
         gifter_name: gifterName,
         gifter_email: gifterEmail,
-        gifter_message: bookingMessage.trim() || undefined,
       });
       analytics.bookGift(bookingItem.id);
       toast.success('Готово!', 'Бронь на 60 дней. Подтверждение отправлено на email.');
       setBookingItem(null);
-      setBookingMessage('');
       await loadWishlist();
     } catch (error: any) {
       toast.error('Ошибка', error?.response?.data?.detail || 'Не удалось забронировать');
@@ -639,7 +637,7 @@ export default function UserProfileScreen() {
       setIsBooking(false);
       isBookingRef.current = false;
     }
-  }, [bookingItem, bookingMessage, currentUser, loadWishlist]);
+  }, [bookingItem, currentUser, loadWishlist]);
 
   const collectionValueRub = pubProfile?.collection_value_rub;
   const monthlyDelta = pubProfile?.monthly_value_delta_rub;
@@ -814,7 +812,6 @@ export default function UserProfileScreen() {
     const recordId = bookingItem?.record?.id;
     if (!recordId) return;
     setBookingItem(null);
-    setBookingMessage('');
     router.push(`/record/${recordId}`);
   }, [bookingItem, router]);
 
@@ -1205,10 +1202,7 @@ export default function UserProfileScreen() {
           <TouchableWithoutFeedback onPress={() => setBookingItem(null)}>
             <View style={StyleSheet.absoluteFill} />
           </TouchableWithoutFeedback>
-          <KeyboardAvoidingView
-            style={{ width: '100%' }}
-            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          >
+          <View style={{ width: '100%' }}>
             <Animated.View
               onLayout={(e) => { bookingSheetH.current = e.nativeEvent.layout.height; }}
               style={[
@@ -1275,14 +1269,6 @@ export default function UserProfileScreen() {
               За 7 дней до истечения мы напомним на email. Если подарок не вручён — бронь
               освободится автоматически.
             </Text>
-            <TextInput
-              style={[styles.input, styles.textarea]}
-              placeholder="Сообщение владельцу (необязательно)"
-              placeholderTextColor={PP.mute}
-              value={bookingMessage}
-              onChangeText={setBookingMessage}
-              multiline
-            />
             <TouchableOpacity
               style={[styles.confirmBtn, isBooking && { opacity: 0.55 }]}
               onPress={handleBookGift}
@@ -1295,7 +1281,7 @@ export default function UserProfileScreen() {
               )}
             </TouchableOpacity>
             </Animated.View>
-          </KeyboardAvoidingView>
+          </View>
         </Animated.View>
       </Modal>
     </View>
@@ -1640,14 +1626,6 @@ const styles = StyleSheet.create({
   modalRecLinkRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 5 },
   modalRecLinkTxt: { fontSize: ms(11.5), color: PP.cobalt, fontWeight: '600' },
   modalInfo: { fontSize: ms(12.5), color: PP.slate, lineHeight: ms(18), marginBottom: 12 },
-  input: {
-    height: 46, paddingHorizontal: 14, borderRadius: 14,
-    backgroundColor: 'rgba(255,255,255,0.75)',
-    borderWidth: 1, borderColor: PP.hairline,
-    fontSize: ms(14), color: PP.ink,
-    marginBottom: 10,
-  },
-  textarea: { height: 80, paddingTop: 12, textAlignVertical: 'top' },
   confirmBtn: {
     marginTop: 8, height: 50, borderRadius: 14,
     alignItems: 'center', justifyContent: 'center',
