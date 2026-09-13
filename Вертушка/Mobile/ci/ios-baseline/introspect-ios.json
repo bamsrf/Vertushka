@@ -187,6 +187,9 @@
         "backgroundColor": "#FAFBFF",
         "ios": {
           "enableFullScreenImage_legacy": true
+        },
+        "android": {
+          "imageWidth": 200
         }
       }
     ],
