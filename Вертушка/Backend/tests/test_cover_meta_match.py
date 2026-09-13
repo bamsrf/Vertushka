@@ -113,3 +113,19 @@ async def test_itunes_rejects_remixed_for_original(monkeypatch):
     monkeypatch.setattr(cover_fallback.httpx, "AsyncClient", _IClient)
     monkeypatch.setattr(cover_fallback, "_itunes_throttle", fake_throttle)
     assert await cover_fallback.cover_url_by_artist_title("Dehd", "Flower of Devotion") is None
+
+
+def test_mirror_candidates_always_include_canonical_path():
+    """Указатель в БД пуст — файл всё равно надо убрать с диска.
+
+    SVN 19674628 пережил первый прогон возврата именно так: зеркало легло
+    живым резолвом до создания записи, cover_local_path остался NULL, файл
+    не был убран, и download_and_store усыновил чужую картинку.
+    """
+    from app.scripts.refresh_cover_mirror import _mirror_candidates
+
+    assert _mirror_candidates("19674628", None) == ["covers/19674628.jpg"]
+    assert _mirror_candidates("19674628", "covers/19674628.jpg") == ["covers/19674628.jpg"]
+    assert _mirror_candidates("42", "covers/legacy/42.jpg") == [
+        "covers/42.jpg", "covers/legacy/42.jpg",
+    ]

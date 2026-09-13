@@ -38,6 +38,19 @@ logger = logging.getLogger("refresh_cover_mirror")
 _STREAMING_HOSTS = ("dzcdn.net", "mzstatic.com")
 
 
+def _mirror_candidates(discogs_id: str, cover_local_path: str | None) -> list[str]:
+    """Все относительные пути, по которым может лежать зеркало этого релиза.
+
+    Канонический `covers/{id}.jpg` — всегда, даже когда БД о нём не знает:
+    `download_and_store` смотрит на файл, а не на указатель, и оставленный на
+    диске файл отменяет перекачку.
+    """
+    paths = [f"covers/{discogs_id}.jpg"]
+    if cover_local_path and cover_local_path not in paths:
+        paths.append(cover_local_path)
+    return paths
+
+
 async def refresh(ids: list[str], dry_run: bool = False) -> dict:
     from app.services.cover_storage import CoverStorageService
 
@@ -61,10 +74,20 @@ async def refresh(ids: list[str], dry_run: bool = False) -> dict:
                 logger.info("%s → %s", did, url[:80])
                 continue
 
-            old = Path("uploads", row["cover_local_path"]) if row["cover_local_path"] else None
-            stash = old.with_suffix(old.suffix + ".rollback") if old else None
-            if old and old.exists():
-                old.replace(stash)
+            # Убираем ВСЕ файлы-кандидаты, а не только тот, на который смотрит
+            # cover_local_path. Указатель бывает пустым, когда зеркало легло
+            # мимо записи — например живым резолвом /covers/{id}.jpg до её
+            # создания. Именно так SVN 19674628 пережил первый прогон: файл
+            # остался на диске, download_and_store увидел dest.exists() при
+            # cover_min_side IS NULL, признал апгрейд ненужным и усыновил
+            # чужую картинку вместо скачивания правильной.
+            stashed: list[tuple[Path, Path]] = []
+            for rel in _mirror_candidates(did, row["cover_local_path"]):
+                path = Path("uploads", rel)
+                if path.exists():
+                    stash = path.with_suffix(path.suffix + ".rollback")
+                    path.replace(stash)
+                    stashed.append((path, stash))
             await s.execute(text(
                 "UPDATE records SET cover_local_path = NULL, cover_cached_at = NULL, "
                 "cover_min_side = NULL, cover_image_url = :u WHERE discogs_id = :d"
@@ -85,15 +108,17 @@ async def refresh(ids: list[str], dry_run: bool = False) -> dict:
                 logger.debug("download failed for %s", did, exc_info=True)
             if not ok:
                 stats["failed"] += 1
-                if stash and stash.exists():
-                    stash.replace(old)
+                for path, stash in stashed:
+                    if stash.exists():
+                        stash.replace(path)
+                if stashed:
                     await s.execute(text(
                         "UPDATE records SET cover_local_path = :p WHERE discogs_id = :d"
                     ), {"p": row["cover_local_path"], "d": did})
                     await s.commit()
                 logger.warning("%s: новая обложка не встала — вернул прежний файл", did)
                 continue
-            if stash and stash.exists():
+            for _path, stash in stashed:
                 stash.unlink(missing_ok=True)
             stats["refreshed"] += 1
             logger.info("%s: обложка возвращена из %s", did, url[:80])
