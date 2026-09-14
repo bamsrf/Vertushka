@@ -60,35 +60,70 @@ function formatUsd(value: number): string {
 
 const AnimatedTextInput = Animated.createAnimatedComponent(TextInput);
 
+/** Пауза перед стартом бега цифр и его длительность. */
+const COUNT_DELAY_MS = 300;
+const COUNT_RUN_MS = 2000;
+
 /**
  * Бегущие цифры итоговой суммы.
  *
  * Раньше: useDerivedValue → runOnJS(setState) на КАЖДЫЙ кадр анимации плюс
  * `toLocaleString('ru-RU')` внутри worklet'а. На Android это 60–120 прыжков
  * через мост в секунду с React-рендером на каждом; кадры терялись, сумма
- * «скакала». Теперь текст пишется в TextInput через useAnimatedProps прямо на
- * UI-потоке — стандартный приём reanimated, JS-поток не участвует. TextInput
- * нередактируемый и стилизован под прежний Text: на iOS вид прежний.
+ * «скакала». Поэтому во время анимации текст пишется в TextInput через
+ * useAnimatedProps прямо на UI-потоке, JS-поток не участвует.
+ *
+ * ПОЧЕМУ ПОСЛЕ АНИМАЦИИ — ОБЫЧНЫЙ Text. Текст, записанный в TextInput с
+ * UI-потока, живёт только в нативном свойстве: в React-пропсах его нет.
+ * Стоит компоненту перерендериться (а он внутри ListHeaderComponent
+ * FlatList'а, который перерисовывается по ходу скролла), как RN заново
+ * применяет декларативные пропсы — и текст возвращается к `defaultValue`.
+ * Анимация к тому моменту закончилась, перезаписать его некому, и сумма
+ * навсегда застревает на нуле. Ровно это ловил владелец 14.09.2026: «~0 ₽»
+ * при живой кнопке «Поделиться», которая рисуется только когда сумма НЕ нулевая
+ * — то есть данные были на месте, врал именно текст.
+ *
+ * Досчитали — отдаём число статичным Text. Его нечем сбросить: значение лежит
+ * в пропсах React, а не в нативном поле. Стиль тот же, поэтому строка не
+ * прыгает. Выигрыш по мосту сохраняется: JS не участвует ровно там, где идёт
+ * анимация.
  */
-function AnimatedValue({ targetValue, prefix = '', suffix = '' }: {
+// Экспортируется ради регресс-теста «после анимации сумма не сбрасывается»:
+// поднять весь экран в jest дороже (стор, api, роутер), а проверять надо
+// именно эту развилку.
+export function AnimatedValue({ targetValue, prefix = '', suffix = '' }: {
   targetValue: number;
   prefix?: string;
   suffix?: string;
 }) {
   const progress = useSharedValue(0);
+  /** Бег закончился — дальше число статично. */
+  const [settled, setSettled] = useState(false);
 
   useEffect(() => {
+    setSettled(false);
+    // Таймер ставим ПЕРВЫМ. Если анимация почему-то не заведётся, число всё
+    // равно доедет до статичного Text и покажет правду — а не застрянет в
+    // поле, куда его больше некому записать.
+    const timer = setTimeout(() => setSettled(true), COUNT_DELAY_MS + COUNT_RUN_MS);
     progress.value = 0;
     progress.value = withDelay(
-      300,
-      withTiming(1, { duration: 2000, easing: Easing.out(Easing.cubic) })
+      COUNT_DELAY_MS,
+      withTiming(1, { duration: COUNT_RUN_MS, easing: Easing.out(Easing.cubic) })
     );
+    return () => clearTimeout(timer);
   }, [targetValue, progress]);
 
   const animatedProps = useAnimatedProps<TextInputProps & { text: string }>(() => {
     const text = `${prefix}${formatGroupedWorklet(progress.value * targetValue)}${suffix}`;
     return { text };
   });
+
+  const finalText = `${prefix}${formatGroupedWorklet(targetValue)}${suffix}`;
+
+  if (settled) {
+    return <Text style={styles.animatedValueText}>{finalText}</Text>;
+  }
 
   return (
     <AnimatedTextInput
@@ -97,7 +132,10 @@ function AnimatedValue({ targetValue, prefix = '', suffix = '' }: {
       pointerEvents="none"
       underlineColorAndroid="transparent"
       animatedProps={animatedProps}
-      defaultValue={`${prefix}0${suffix}`}
+      // Итоговое значение, а не ноль: если рендер перетрёт нативный текст
+      // посреди анимации, кадр придётся на правильное число, а не на «0».
+      // Сама анимация перепишет его на следующем кадре.
+      defaultValue={finalText}
     />
   );
 }
