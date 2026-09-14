@@ -378,9 +378,23 @@ class Settings(BaseSettings):
     # Ниже этого числа запросов доля ошибок — статистический шум.
     health_min_requests: int = Field(default=20, alias="HEALTH_MIN_REQUESTS")
     health_error_rate_threshold: float = Field(default=0.10, alias="HEALTH_ERROR_RATE_THRESHOLD")
-    # 5с: обычный ответ укладывается в сотни мс, поиск на холодном Discogs —
-    # в единицы секунд. Выше — уже не «медленно», а «сломано».
-    health_p99_threshold_ms: float = Field(default=5000.0, alias="HEALTH_P99_THRESHOLD_MS")
+    # Пороги задержки — по классам запросов (см. health_metrics.classify).
+    # Один порог на всё сразу и шумел, и слепнул: обычная ручка отвечает за
+    # 0.25с и могла деградировать в двадцать раз, оставаясь ниже общих 5с, а
+    # /covers/ штатно ходит во внешние источники по 3–7с и будил на нормальной
+    # работе. Значения держим в env, чтобы крутить без выкатки кода.
+    #
+    # 2с для обычных ручек: медиана 0.25с, восьмикратный запас.
+    health_p99_threshold_ms: float = Field(default=2000.0, alias="HEALTH_P99_THRESHOLD_MS")
+    # 4с для обложек. NB: замеренная медиана холодного резолва — 3.2с, p90 —
+    # 7.1с, так что порог ниже штатного хвоста и канал будет разговорчивым.
+    # Поднять до 8–10с, когда надоест (одна переменная, без деплоя).
+    health_p99_covers_ms: float = Field(default=4000.0, alias="HEALTH_P99_COVERS_MS")
+    # 6с для скана: OpenAI Vision в одиночку съедает ~6с, дальше Discogs и CLIP.
+    health_p99_scan_ms: float = Field(default=6000.0, alias="HEALTH_P99_SCAN_MS")
+    # Скан — редкая ручка (десятки в сутки), общий минимум в 20 запросов она в
+    # пятиминутном окне не наберёт никогда, и аларм по ней не сработал бы вовсе.
+    health_min_requests_scan: int = Field(default=3, alias="HEALTH_MIN_REQUESTS_SCAN")
     health_rate_limited_threshold: int = Field(default=50, alias="HEALTH_RATE_LIMITED_THRESHOLD")
 
     def secret_problems(self) -> list[str]:

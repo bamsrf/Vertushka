@@ -12,14 +12,16 @@ from app.services.health_metrics import RequestMetrics
 
 
 class _Sent(list):
-    """Список ключей алармов, который помнит ещё и тела сообщений."""
+    """Список ключей алармов, который помнит ещё заголовки и тела сообщений."""
 
     def __init__(self):
         super().__init__()
         self.bodies: dict[str, str] = {}
+        self.titles: dict[str, str] = {}
 
-    def add(self, key: str, body: str) -> None:
+    def add(self, key: str, title: str, body: str) -> None:
         self.append(key)
+        self.titles[key] = title
         self.bodies[key] = body
 
 
@@ -28,7 +30,7 @@ def captured_alerts(monkeypatch):
     sent = _Sent()
     monkeypatch.setattr(
         health_metrics.alerts, "fire_and_forget",
-        lambda key, title, body="": sent.add(key, body),
+        lambda key, title, body="": sent.add(key, title, body),
     )
     # Свежее окно на каждый тест.
     monkeypatch.setattr(health_metrics, "_metrics", None)
@@ -125,7 +127,7 @@ class TestLatencyAlert:
         """Деградация без ошибок: ответы честные, но пользоваться нельзя."""
         feed(200, 30, duration_ms=9000.0)
 
-        assert "p99_latency" in captured_alerts
+        assert "p99_latency:default" in captured_alerts
         assert "error_rate" not in captured_alerts
 
     def test_fast_traffic_is_silent(self, captured_alerts):
@@ -225,7 +227,7 @@ class TestSlowestEndpoints:
     def test_alert_body_names_the_slow_endpoint(self, captured_alerts):
         feed(200, 30, duration_ms=9000.0, endpoint="GET /api/records/{record_id}")
 
-        body = captured_alerts.bodies["p99_latency"]
+        body = captured_alerts.bodies["p99_latency:default"]
         assert "GET /api/records/{record_id}" in body
         assert "9.0с" in body
 
@@ -247,8 +249,81 @@ class TestSlowestEndpoints:
         """Путь может не приехать (404 мимо роутера) — аларм всё равно уходит."""
         feed(200, 30, duration_ms=9000.0)
 
-        assert "p99_latency" in captured_alerts
-        assert "9.0с" in captured_alerts.bodies["p99_latency"]
+        assert "p99_latency:default" in captured_alerts
+        assert "9.0с" in captured_alerts.bodies["p99_latency:default"]
 
     def test_empty_window_has_no_slowest(self):
         assert RequestMetrics(window_seconds=300).snapshot().slowest == ()
+
+
+class TestPerClassThresholds:
+    """У каждого класса запросов свой порог.
+
+    Один порог на всё сразу и шумел, и слепнул: обычная ручка отвечает за
+    0.25с и могла деградировать в двадцать раз, оставаясь ниже общих 5с, —
+    настоящая авария проходила молча. А /covers/ штатно ходит во внешние
+    источники по 3–7с и будил на нормальной работе.
+    """
+
+    COVERS = "GET /covers/{discogs_id}"
+    SCAN = "POST /api/records/scan/cover/"
+    PLAIN = "GET /api/config/"
+
+    def test_classify(self):
+        assert health_metrics.classify(self.COVERS) == "covers"
+        assert health_metrics.classify(self.SCAN) == "scan"
+        assert health_metrics.classify(self.PLAIN) == "default"
+        assert health_metrics.classify("") == "default"
+
+    def test_slow_covers_do_not_wake_default_alert(self, captured_alerts):
+        """Обложки на 5с — штатный хвост, а не авария обычных ручек."""
+        feed(200, 30, duration_ms=5000.0, endpoint=self.COVERS)
+
+        assert "p99_latency:default" not in captured_alerts
+        assert "p99_latency:covers" in captured_alerts
+
+    def test_plain_endpoint_alerts_at_two_seconds(self, captured_alerts):
+        """Ради этого разрез и делался: 2.5с на конфиге — уже авария.
+
+        При старом общем пороге 5с это молчало.
+        """
+        feed(200, 30, duration_ms=2500.0, endpoint=self.PLAIN)
+
+        assert "p99_latency:default" in captured_alerts
+
+    def test_covers_below_own_threshold_are_silent(self, captured_alerts):
+        feed(200, 30, duration_ms=3000.0, endpoint=self.COVERS)
+
+        assert captured_alerts == []
+
+    def test_scan_alerts_on_small_sample(self, captured_alerts):
+        """Скан редкий: общие 20 запросов в окне он не наберёт никогда."""
+        feed(200, 4, duration_ms=9000.0, endpoint=self.SCAN)
+
+        assert "p99_latency:scan" in captured_alerts
+
+    def test_scan_below_own_threshold_is_silent(self, captured_alerts):
+        """~5с для скана — это OpenAI Vision в штатном режиме."""
+        feed(200, 4, duration_ms=5000.0, endpoint=self.SCAN)
+
+        assert captured_alerts == []
+
+    def test_classes_do_not_throttle_each_other(self, captured_alerts):
+        """Разговорчивые обложки не должны глушить аларм про обычные ручки."""
+        feed(200, 25, duration_ms=9000.0, endpoint=self.COVERS)
+        feed(200, 25, duration_ms=9000.0, endpoint=self.PLAIN)
+
+        assert "p99_latency:covers" in captured_alerts
+        assert "p99_latency:default" in captured_alerts
+
+    def test_alert_names_the_class_in_russian(self, captured_alerts):
+        feed(200, 30, duration_ms=9000.0, endpoint=self.COVERS)
+
+        assert "обложки" in captured_alerts.titles["p99_latency:covers"]
+
+    def test_error_rate_still_counted_across_whole_window(self, captured_alerts):
+        """Пятисотки — авария независимо от того, какая ручка их отдаёт."""
+        feed(500, 10, duration_ms=100.0, endpoint=self.COVERS)
+        feed(200, 25, duration_ms=100.0, endpoint=self.PLAIN)
+
+        assert "error_rate" in captured_alerts
