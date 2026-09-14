@@ -215,26 +215,53 @@ services:
       - default
       - glitchtip
 
-  # imgproxy — ресайз обложек под размер ячейки/экрана на лету из локального
-  # мастера (uploads/covers/{id}.jpg). Внутренний: порт наружу НЕ публикуется,
-  # доступен только nginx по Docker DNS (imgproxy:8080). UNSAFE_URL безопасен —
-  # снаружи не достучаться, только через внутренний nginx-роут /covers/w/.
-  # enlarge=0 в rewrite → никогда не апскейлит выше мастера (≤1000px) = без
-  # пикселей. mem_limit скромный: pure-resize, при 10 юзерах нагрузка мизерная.
+  # imgproxy — ресайз обложек под размер ячейки/экрана на лету. Внутренний:
+  # порт наружу НЕ публикуется, доступен только nginx по Docker DNS
+  # (imgproxy:8080). UNSAFE_URL безопасен — снаружи не достучаться, только
+  # через внутренние nginx-роуты /covers/. enlarge=0 в rewrite → никогда не
+  # апскейлит выше мастера (≤1000px) = без пикселей.
+  #
+  # Источников ДВА, и оба нужны одновременно (imgproxy выбирает по схеме в
+  # URL, а не по конфигу):
+  #   local:///covers/… — файл на диске, если он ещё там;
+  #   s3://bucket/covers/… — вечный слой, куда dual-write кладёт КАЖДОЕ
+  #                          зеркало (s3_covers.py).
+  # До этой правки был только local, поэтому эвиктнутая LRU обложка ТРЕБОВАЛА
+  # возврата файла на диск ради одного показа: диск отрастал обратно за сутки,
+  # а из бакета за месяц выкачивалось ~40 ГБ (втрое больше, чем в нём лежит).
+  # Теперь чтение обслуживается прямо из бакета, и диск — только буфер записи.
+  #
+  # Ключи те же, что у бэкенда (S3_ACCESS_KEY_ID/S3_SECRET_ACCESS_KEY в
+  # .env.prod): imgproxy читает их из стандартных AWS_*, поэтому переменные
+  # прокидываются с переименованием, а не дублируются в файле.
+  # PATH_STYLE=true — как в boto3-клиенте (s3_covers.make_client): у
+  # S3-клонов virtual-hosted адресация работает не всегда.
   imgproxy:
     image: darthsim/imgproxy:v3.27
     container_name: vertushka_imgproxy
     restart: always
+    env_file:
+      - .env.prod
     environment:
       - IMGPROXY_ALLOW_UNSAFE_URL=1
       - IMGPROXY_LOCAL_FILESYSTEM_ROOT=/app/uploads
+      - IMGPROXY_USE_S3=true
+      - IMGPROXY_S3_ENDPOINT=${S3_ENDPOINT_URL}
+      - IMGPROXY_S3_REGION=${S3_REGION:-ru-1}
+      - IMGPROXY_S3_ENDPOINT_USE_PATH_STYLE=true
+      - AWS_ACCESS_KEY_ID=${S3_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${S3_SECRET_ACCESS_KEY}
       - IMGPROXY_QUALITY=82
       - IMGPROXY_WORKERS=2
       - IMGPROXY_MAX_SRC_RESOLUTION=20
       - IMGPROXY_TTL=2592000
     volumes:
       - uploads_data:/app/uploads:ro
-    mem_limit: 128m
+    # 128 → 256: raw-стриминг из S3 (legacy-путь /covers/{id}.jpg) держит
+    # соединение до бакета на каждый промах локального кэша. Сам raw память
+    # почти не ест (не грузит картинку в память), но HTTP-буферы под сотню
+    # параллельных стримов в 128m упирались.
+    mem_limit: 256m
     networks:
       - default
 
