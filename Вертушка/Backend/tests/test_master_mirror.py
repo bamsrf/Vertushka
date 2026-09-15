@@ -73,7 +73,10 @@ def test_paid_channel_excluded_from_queue():
     from app.tasks import master_mirror_tasks
 
     sql = inspect.getsource(master_mirror_tasks.mirror_master_covers_batch)
-    assert "source IS DISTINCT FROM 'discogs'" in sql
+    # По ХОСТУ, а не по колонке source: 15.09.2026 оказалось, что source
+    # описывает того, кто нашёл СТРОКУ, а не того, чья в ней картинка —
+    # 9 215 строк с i.discogs.com были помечены caa/deezer/store/NULL.
+    assert "cover_image_url NOT LIKE '%i.discogs.com%'" in sql
 
 
 def test_queue_cannot_stall_on_one_row():
