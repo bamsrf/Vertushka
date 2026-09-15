@@ -236,6 +236,13 @@ async def lifespan(app: FastAPI):
             from app.tasks.master_mirror_tasks import mirror_master_covers_batch
             scheduler.add_job(mirror_master_covers_batch, 'interval', minutes=2,
                               id='master_cover_mirror', max_instances=1, coalesce=True)
+            # Прогрев витрины Маркета — вглубь по тому, что реально видят
+            # люди, в отличие от зеркалирования мастеров (вширь по каталогу).
+            # Каждую минуту: очередь конечна и её надо закрыть до притока
+            # пользователей, а квоту Discogs задача не трогает вовсе.
+            from app.tasks.market_cover_warm_tasks import warm_market_covers_batch
+            scheduler.add_job(warm_market_covers_batch, 'interval', minutes=1,
+                              id='market_cover_warm', max_instances=1, coalesce=True)
 
             # Bulk-backfill обложек (Deezer) — in-process интервальная джоба вместо
             # хрупкого detached `docker exec -d` (не переживал деплой, детект

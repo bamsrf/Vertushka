@@ -239,6 +239,16 @@ class Settings(BaseSettings):
     # каждый файл ложится в бакет навсегда, вся очередь (848 тыс.) весит
     # ~85 ГБ. 20 000/сутки ≈ 2 ГБ/сутки — предсказуемый прирост, который
     # можно поднять, когда посчитан тариф хранилища.
+    # ── Прогрев витрины Маркета из бесплатных источников ────────────────
+    # Порядок по СПРОСУ: это первый экран, который видит человек. Квоту
+    # Discogs не трогает вовсе — только адреса, которые уже ведут на CAA,
+    # Deezer, iTunes или в сам магазин. Темп выше, чем у зеркалирования
+    # мастеров: очередь конечна (8 405 записей на 15.09.2026) и её надо
+    # закрыть, а не растянуть.
+    market_warm_enabled: bool = Field(default=True, alias="MARKET_WARM_ENABLED")
+    market_warm_batch: int = Field(default=60, ge=1, le=500, alias="MARKET_WARM_BATCH")
+    market_warm_caa_batch: int = Field(default=20, ge=0, le=200, alias="MARKET_WARM_CAA_BATCH")
+    market_warm_pace_sec: float = Field(default=0.3, ge=0.0, alias="MARKET_WARM_PACE_SEC")
     master_mirror_enabled: bool = Field(default=True, alias="MASTER_MIRROR_ENABLED")
     master_mirror_batch: int = Field(default=40, ge=1, le=500, alias="MASTER_MIRROR_BATCH")
     master_mirror_pace_sec: float = Field(default=0.4, ge=0.0, alias="MASTER_MIRROR_PACE_SEC")
