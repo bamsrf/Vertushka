@@ -10,9 +10,9 @@
  * Источник: record-card.jsx variant 'carousel' из Design Claude handoff
  * + docs/plans/market/MARKET_AND_PRICE_DRAWER.md §1.9.
  */
-import React, { useEffect, useRef, useState } from 'react';
+import React from 'react';
 import {
-  Image,
+  PixelRatio,
   Pressable,
   StyleSheet,
   Text,
@@ -20,6 +20,10 @@ import {
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
+import { Image } from 'expo-image';
+
+import { sizedCoverUrl } from '../../lib/api';
+import { useCoverSource } from '../../lib/coverRetry';
 
 import MiniPriceBadge from '../MiniPriceBadge';
 import { ms } from '../../lib/responsive';
@@ -45,56 +49,38 @@ interface MarketCarouselCardProps {
   style?: StyleProp<ViewStyle>;
 }
 
-// Один отложенный ретрай: первый запрос `/covers/{id}.jpg` бьёт в nginx
-// @covers_fallback → 302 + фоновое зеркалирование. Повтор через 3с обычно
-// попадает уже в готовый локальный файл. После — плейсхолдер.
-const RETRY_DELAY_MS = 3000;
-
 export function MarketCarouselCard({
   data,
   width = 132,
   onPress,
   style,
 }: MarketCarouselCardProps) {
-  const [failed, setFailed] = useState(false);
-  const [retry, setRetry] = useState(0);
-  const retriedRef = useRef(false);
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => {
-    // Новый URL — сбрасываем состояние ретрая.
-    retriedRef.current = false;
-    setFailed(false);
-    setRetry(0);
-  }, [data.coverUrl]);
-
-  useEffect(() => {
-    return () => {
-      if (timerRef.current) clearTimeout(timerRef.current);
-    };
-  }, []);
-
-  const handleError = () => {
-    if (!retriedRef.current) {
-      retriedRef.current = true;
-      timerRef.current = setTimeout(() => setRetry((n) => n + 1), RETRY_DELAY_MS);
-      return;
-    }
-    setFailed(true);
-  };
-
-  const showImage = data.coverUrl && !failed;
-  const uri = retry > 0 ? `${data.coverUrl}?r=${retry}` : data.coverUrl;
+  // Нарезка под фактический слот вместо мастера. Карусель рисует плитку в
+  // 132pt, а мост отдавал мастер 1000px — замер 15.09.2026: 331 399 байт
+  // против 28 806 у ступени 320. Десять плиток ряда — 3.3 МБ вместо 290 КБ.
+  const imageUrl = sizedCoverUrl(
+    data.coverUrl ?? undefined,
+    Math.ceil(width * PixelRatio.get()),
+  );
+  // Общий ретрай вместо самодельного. Прежний дописывал `?r=N` прямо в URI, и
+  // для клиента это была ДРУГАЯ картинка: дисковый кэш дробился, а успешный
+  // повтор не переиспользовался. Хук держит cacheKey исходным и умеет откат
+  // на прямой внешний URL.
+  const cover = useCoverSource(imageUrl, data.coverUrl ?? undefined);
+  const showImage = !!cover.source;
 
   const content = (
     <View style={[{ width }, style]}>
       <View style={[styles.coverWrap, { width, height: width }]}>
         {showImage ? (
           <Image
-            source={{ uri: uri as string }}
+            source={cover.source}
             style={styles.cover}
-            resizeMode="cover"
-            onError={handleError}
+            contentFit="cover"
+            transition={120}
+            cachePolicy="memory-disk"
+            onLoad={cover.onLoad}
+            onError={cover.onError}
           />
         ) : (
           <View style={[styles.cover, styles.coverPlaceholder]} />
