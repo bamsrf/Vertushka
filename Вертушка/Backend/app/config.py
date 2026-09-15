@@ -233,6 +233,16 @@ class Settings(BaseSettings):
     # и накопленные 13k разбирались бы больше месяца. При 7200с — ~1500 за ночь,
     # то есть около девяти ночей. Запускается в 03:40, к 05:40 заканчивается,
     # до метрики покрытия в 06:15 не доходит; load average ночью 0.00.
+    # ── Зеркалирование мастер-обложек из известных URL ──────────────────
+    # Мастер закрывает в среднем 3.1 релиза, источники на 98% бесплатные
+    # (CAA/Deezer). Дневной потолок — это про деньги, а не про нагрузку:
+    # каждый файл ложится в бакет навсегда, вся очередь (848 тыс.) весит
+    # ~85 ГБ. 20 000/сутки ≈ 2 ГБ/сутки — предсказуемый прирост, который
+    # можно поднять, когда посчитан тариф хранилища.
+    master_mirror_enabled: bool = Field(default=True, alias="MASTER_MIRROR_ENABLED")
+    master_mirror_batch: int = Field(default=40, ge=1, le=500, alias="MASTER_MIRROR_BATCH")
+    master_mirror_pace_sec: float = Field(default=0.4, ge=0.0, alias="MASTER_MIRROR_PACE_SEC")
+    master_mirror_daily_cap: int = Field(default=20000, ge=0, alias="MASTER_MIRROR_DAILY_CAP")
     cover_upgrade_enabled: bool = Field(default=True, alias="COVER_UPGRADE_ENABLED")
     cover_upgrade_batch: int = Field(default=2000, alias="COVER_UPGRADE_BATCH")
     cover_upgrade_max_seconds: int = Field(default=7200, alias="COVER_UPGRADE_MAX_SECONDS")

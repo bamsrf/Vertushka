@@ -229,6 +229,13 @@ async def lifespan(app: FastAPI):
                               id='purge_deleted_users', max_instances=1, coalesce=True)
             # Drip-прогрев обложек: каждую минуту, тратит только простой app-bucket'а
             scheduler.add_job(drip_covers_batch, 'interval', minutes=1, id='cover_drip', max_instances=1, coalesce=True)
+            # Зеркалирование мастеров из уже известных бесплатных URL. Это
+            # НЕ дрип: внешних API нет, спрашивать «есть ли обложка» не надо,
+            # адрес уже лежит в discogs_master_covers. Каждые 2 минуты, темп и
+            # дневной потолок — в конфиге (MASTER_MIRROR_*).
+            from app.tasks.master_mirror_tasks import mirror_master_covers_batch
+            scheduler.add_job(mirror_master_covers_batch, 'interval', minutes=2,
+                              id='master_cover_mirror', max_instances=1, coalesce=True)
 
             # Bulk-backfill обложек (Deezer) — in-process интервальная джоба вместо
             # хрупкого detached `docker exec -d` (не переживал деплой, детект
