@@ -155,6 +155,18 @@ const SEARCH_PLACEHOLDER =
  * Ужимаем строку, а не переносим (см. дизайн-правило про заголовки).
  * iOS (≥375dp) влезает без ужимания — там пропов не добавляем.
  */
+/**
+ * maxLines=1 у Android-EditText: без него длинный hint переносится по слову
+ * («Артист, альбом,» + вторая строка). ТОЛЬКО Android: вопреки распространённому
+ * мнению, на iOS проп не инертен — RN прокидывает numberOfLines и в
+ * RCTTextInputView (TextInput.js), оттуда он попадает в
+ * paragraphAttributes.maximumNumberOfLines и участвует в измерении инпута
+ * (BaseTextInputShadowNode). У поля нет фиксированной высоты, поэтому текст
+ * уезжал вниз относительно лупы. multiline={false} — и так дефолт, не ставим.
+ */
+const SEARCH_INPUT_LINE_PROPS =
+  Platform.OS === 'android' ? ({ numberOfLines: 1 } as const) : ({} as const);
+
 const SEARCH_HINT_TEXT_FIT =
   Platform.OS === 'android'
     ? ({ numberOfLines: 1, adjustsFontSizeToFit: true, minimumFontScale: 0.85 } as const)
@@ -1281,11 +1293,7 @@ export default function SearchScreen() {
             onChangeText={handleSearchInputChange}
             placeholder={isUserSearch ? "Имя пользователя..." : SEARCH_PLACEHOLDER}
             placeholderTextColor={Colors.textMuted}
-            multiline={false}
-            // maxLines=1 у EditText: без него Android переносит длинный hint
-            // по слову («Артист, альбом,» + вторая строка). На iOS проп для
-            // однострочного поля инертен — рендер не меняется.
-            numberOfLines={1}
+            {...SEARCH_INPUT_LINE_PROPS}
             returnKeyType="search"
             onSubmitEditing={handleSearch}
             onFocus={() => { setInputFocused(true); setShowHistory(true); }}
@@ -1792,6 +1800,11 @@ const styles = StyleSheet.create({
   searchInput: {
     flex: 1,
     minWidth: 0,
+    // Явная высота вместо высоты «по измеренному тексту»: инпут занимает всю
+    // пилюлю и центрирует текст сам, независимо от font-scale и от того, как
+    // RN намерил строку. lineHeight тут не ставим — на iOS он сдвигает базовую
+    // линию в UITextField.
+    height: '100%',
     fontSize: ms(16),
     color: Colors.text,
     padding: 0,
