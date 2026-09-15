@@ -7,7 +7,7 @@
  *
  * Жест выхода: overdrag сверху → router.back(). См. MarketMain + curtain.
  */
-import React, { useCallback, useEffect, useRef } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -43,13 +43,44 @@ export default function MarketIndexScreen() {
   // MarketEntry в lib/analytics.ts). Здесь ловим только заход, который никто
   // не объявил: диплинк, пуш, ручной ввод роута. Без этой ветки такие сессии
   // выпадали бы из воронки целиком.
-  const { from } = useLocalSearchParams<{ from?: string }>();
+  const { from, rel, rel_artist: relArtist, rel_title: relTitle, rel_at: relAt } =
+    useLocalSearchParams<{
+      from?: string;
+      rel?: string;
+      rel_artist?: string;
+      rel_title?: string;
+      rel_at?: string;
+    }>();
+
   useEffect(() => {
     if (!from) analytics.viewMarket('deeplink');
     // Mount-only. Экран живёт с тем `from`, с которым открылся, а повторный
     // прогон эффекта дал бы второе событие на тот же самый заход.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Вход «В Маркет» с карточки релиза. Имя и артиста несём в роуте, а не
+  // дозапрашиваем: плашка «показываем только это» обязана стоять в первом же
+  // кадре — иначе человек секунду смотрит на сужённую выдачу без объяснения,
+  // ровно на ту секунду, ради которой фича и делалась.
+  //
+  // Пересчитывается на каждую смену параметров и уезжает в MarketMain живым
+  // пропом. Этот экран — единственный на весь стек, и вернуться на него можно
+  // не только push'ем: `router.navigate` из OffersBlock поднимает уже живой
+  // инстанс. Прочитать параметры один раз на монтировании значит навсегда
+  // запомнить пластинку первого захода и показывать её имя всем следующим.
+  const releaseScope = useMemo(
+    () =>
+      rel && relArtist && relTitle
+        ? {
+            recordId: rel,
+            artist: relArtist,
+            title: relTitle,
+            visitKey: `${rel}:${relAt ?? ''}`,
+          }
+        : null,
+    [rel, relArtist, relTitle, relAt],
+  );
 
   const exitProgress = useSharedValue(0);
   const dragging = useSharedValue(0);
@@ -88,11 +119,26 @@ export default function MarketIndexScreen() {
     // Жест называется pull-to-search → всегда ведём в Поиск, а не back()
     // к экрану, что запушил Маркет (запись/коллекция).
     //
-    // /market — root-route поверх (tabs). replace монтирует СВЕЖИЙ search-
-    // таб, который читает committed из persisted marketStore. Сбрасываем
-    // committed=false ДО навигации, иначе search re-открывает Маркет-слой.
+    // /market — root-route поверх (tabs), то есть Поиск ВСЁ ЕЩЁ смонтирован
+    // под ним: с прогретой историей, новинками, рейлом Маркета и каруселями
+    // магазинов в состоянии. Уходить отсюда через `replace` значит выбросить
+    // живой экран и собрать вместо него новый — он перезапрашивает всё это с
+    // нуля (десяток запросов и под две сотни обложек), и выход из Маркета
+    // упирается в пустой, медленно наполняющийся Поиск. Поэтому сначала
+    // пробуем СНЯТЬ Маркет со стека и вернуться на тот самый экран; замена
+    // остаётся для случая, когда возвращаться некуда, — диплинк или пуш прямо
+    // в /market.
+    //
+    // committed=false ставим ДО навигации в обоих путях: свежий search-таб
+    // читает флаг из persisted marketStore на монтировании, а живой — через
+    // подписку (см. (tabs)/search.tsx). Иначе Поиск встретил бы человека тем
+    // самым Маркет-слоем, из которого он только что вышел.
     setMarketCommitted(false);
-    router.replace('/(tabs)/search');
+    if (router.canDismiss()) {
+      router.dismissTo('/(tabs)/search');
+    } else {
+      router.replace('/(tabs)/search');
+    }
   }, [router, setMarketCommitted]);
 
   const onScroll = useAnimatedScrollHandler({
@@ -123,7 +169,12 @@ export default function MarketIndexScreen() {
   return (
     <View style={styles.root}>
       <MarketBackground forcedMode="market" />
-      <MarketMain onScroll={onScroll} paddingTop={insets.top + 16} pullFraction={exitProgress} />
+      <MarketMain
+        releaseScope={releaseScope}
+        onScroll={onScroll}
+        paddingTop={insets.top + 16}
+        pullFraction={exitProgress}
+      />
     </View>
   );
 }

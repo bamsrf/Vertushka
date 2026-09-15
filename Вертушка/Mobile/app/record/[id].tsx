@@ -43,7 +43,7 @@ import { Colors, Typography, Spacing, BorderRadius, Gradients } from '../../cons
 import { ms } from '../../lib/responsive';
 import { VinylColorTag } from '../../components/VinylColorTag';
 import { VinylSpinner } from '../../components/VinylSpinner';
-import { OffersBlock } from '../../components/OffersBlock';
+import { OffersBlock, type OffersResolved } from '../../components/OffersBlock';
 import { CoachTip } from '../../components/onboarding/CoachTip';
 import { CoachPulse } from '../../components/onboarding/CoachPulse';
 import { useCoachMark } from '../../lib/useCoachMark';
@@ -170,9 +170,15 @@ export default function RecordDetailScreen() {
   // Блок офферов может быть запрошен, но не отрисован: наличие discogs_id не
   // значит, что магазины что-то предлагают. Для тура важен именно факт
   // отрисовки, поэтому ждём ответ самого блока.
-  const [offersCount, setOffersCount] = useState<number | null>(null);
+  const [offersResolved, setOffersResolved] = useState<OffersResolved | null>(null);
+  const offersCount = offersResolved?.total ?? null;
   const offersRequested = Boolean(record?.discogs_id || record?.source === 'store');
   const hasOffers = offersRequested && (offersCount ?? 0) > 0;
+  // Чип «Есть в Маркете» — обещание, которое выполняет ДРУГОЙ экран, поэтому
+  // считается по его правилам, а не по числу строк в блоке офферов. Предзаказ
+  // и листинг без цены в блоке есть, а плиткой в Маркете не станут: обещать по
+  // ним наличие значит привести человека к попапу «этой пластинки пока нет».
+  const hasMarketOffers = offersRequested && (offersResolved?.marketVisible ?? 0) > 0;
   const hasHistory = Boolean(priceHistory && priceHistory.points.length > 0);
   const hasVersions = Boolean(
     record?.discogs_master_id && record.discogs_master_id !== '0',
@@ -197,7 +203,34 @@ export default function RecordDetailScreen() {
   // отрисуется, — иначе объясняли бы витрину рядом с пустотой. Пока идёт тур,
   // она молчит: две карточки-объяснения на одном экране спорят друг с другом,
   // и обе читаются хуже.
-  const marketTip = useCoachMark('market', true, hasOffers && !tour.active);
+  const marketTip = useCoachMark('market', true, hasMarketOffers && !tour.active);
+
+  // Переход в Маркет из карточки релиза — всегда с контекстом пластинки:
+  // Маркет откроется суженным до неё и её изданий, а когда в наличии ничего
+  // нет, скажет это словами. Без контекста кнопка высаживала человека на
+  // общую витрину, где про его пластинку ни строчки, и читалась как обман.
+  //
+  // Артиста и название кладём в роут: плашка на той стороне обязана быть
+  // готова в первом же кадре, дозапрос дал бы её через полсекунды.
+  const openMarketForRecord = useCallback(
+    (entry: 'record_chip' | 'record_coachmark') => {
+      if (!record) return;
+      analytics.viewMarket(entry);
+      const params = new URLSearchParams({
+        from: entry,
+        rel: record.id,
+        rel_artist: record.artist,
+        rel_title: record.title,
+        // Отметка нажатия. Экран Маркета живёт в стеке и переиспользуется, а
+        // сброшенное сужение он помнит по ключу захода: без отметки повторный
+        // приход за той же пластинкой считался бы уже сброшенным и молча не
+        // показал бы ничего.
+        rel_at: String(Date.now()),
+      });
+      router.push(`/market?${params.toString()}` as any);
+    },
+    [record, router],
+  );
 
   // Подсказки про свойства самой пластинки. Условие у каждой — факт отрисовки
   // соответствующего блока, поэтому они срабатывают на первом релизе, где это
@@ -860,22 +893,28 @@ export default function RecordDetailScreen() {
               </TouchableOpacity>
             ) : null}
             <TouchableOpacity
-              onPress={() => {
-                // Событие шлём здесь, а не на экране Маркета: /market
-                // открывается и через navigate с переиспользованием живого
-                // инстанса, который повторно не монтируется. `from` в роуте —
-                // чтобы экран не посчитал этот заход вторым разом как deeplink.
-                analytics.viewMarket('record_chip');
-                router.push('/market?from=record_chip' as any);
-              }}
+              // Событие шлёт кнопка, а не экран Маркета: /market открывается и
+              // через navigate с переиспользованием живого инстанса, который
+              // повторно не монтируется. `from` в роуте — чтобы экран не
+              // посчитал этот заход вторым разом как deeplink.
+              onPress={() => openMarketForRecord('record_chip')}
               hitSlop={8}
               activeOpacity={0.8}
               accessibilityRole="button"
-              accessibilityLabel="Перейти в Маркет"
+              accessibilityLabel={
+                hasMarketOffers ? 'Смотреть эту пластинку в Маркете' : 'Перейти в Маркет'
+              }
               style={styles.marketChip}
             >
               <Icon name="disc-outline" size={16} color={Colors.royalBlue} />
-              <Text style={styles.marketChipText}>В Маркет</Text>
+              {/* Кнопка называет факт, когда он известен: офферы уже
+                  посчитаны блоком ниже, до которого человек ещё не долистал.
+                  Пока счёт не приехал — нейтральное «В Маркет»: обещать
+                  наличие авансом значит воспроизвести ровно тот обман,
+                  который экран Маркета потом разгребает попапом. */}
+              <Text style={styles.marketChipText}>
+                {hasMarketOffers ? 'Есть в Маркете' : 'В Маркет'}
+              </Text>
             </TouchableOpacity>
           </View>
         }
@@ -1156,10 +1195,9 @@ export default function RecordDetailScreen() {
             onDismiss={marketTip.dismiss}
             action={{
               label: 'Открыть Маркет',
-              onPress: () => {
-                analytics.viewMarket('record_coachmark');
-                router.push('/market?from=record_coachmark' as any);
-              },
+              // Подсказка показывается только когда офферы есть (hasOffers), —
+              // тем более незачем высаживать на общую витрину.
+              onPress: () => openMarketForRecord('record_coachmark'),
             }}
           />
         )}
@@ -1182,7 +1220,7 @@ export default function RecordDetailScreen() {
             {record.discogs_id ? (
               <OffersBlock
                 discogsId={record.discogs_id}
-                onOffersResolved={setOffersCount}
+                onOffersResolved={setOffersResolved}
                 clickSource={entrySource}
               />
             ) : (
@@ -1191,7 +1229,7 @@ export default function RecordDetailScreen() {
               // master_id), только exact-match листинги магазинов.
               <OffersBlock
                 recordId={record.id}
-                onOffersResolved={setOffersCount}
+                onOffersResolved={setOffersResolved}
                 clickSource={entrySource}
               />
             )}
