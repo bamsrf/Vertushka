@@ -20,15 +20,19 @@ COVER_DRIP_MAX_PER_RUN, COVER_DRIP_PACE_SEC. Дефолты щадящие (юз
 (mb_discogs_map.caa_checked_at IS NULL), пропускаются — их закроет бесплатный
 источник, Discogs-токены на них не тратим.
 
-cover_checked_at ставится после КАЖДОЙ попытки (включая «у релиза нет
-обложки») — строка навсегда уходит из очереди. Ложные промахи из-за сетевых
-ошибок возможны, но редки (headroom-гейт исключает 429); при желании
-перепроверить: UPDATE ... SET cover_checked_at = NULL.
+cover_checked_at ставится после каждой ЗАВЕРШЁННОЙ попытки: «у релиза нет
+обложки», а также 4xx-ответ Discogs (404 = релиз удалён после выгрузки дампа,
+обложки не будет никогда). Временная ошибка (сеть, таймаут лимитера, 5xx)
+строку не помечает — но и не блокирует очередь: после _TRANSIENT_FAIL_LIMIT
+падений подряд строка уходит в карантин. Перепроверить помеченное:
+UPDATE ... SET cover_checked_at = NULL.
 """
 import asyncio
 import time
 import logging
 from datetime import datetime
+
+import httpx
 
 from sqlalchemy import text
 
@@ -46,6 +50,34 @@ _BUCKET_CAPACITY = get_limiter(_BUCKET_KEY)._capacity
 _BUCKET_REFILL = get_limiter(_BUCKET_KEY)._refill_rate
 # Жёсткий потолок длительности прогона — меньше минутного интервала джобы.
 _MAX_RUN_SECONDS = 55
+# Столько ПОДРЯД временных падений на одной строке терпим, прежде чем увести её
+# в карантин (пометить проверенной). Смысл не в самой строке, а в очереди: до
+# 15.09.2026 любая незакрывающаяся ошибка держала голову очереди вечно, потому
+# что выборка детерминированная (ORDER BY year DESC) и каждый следующий прогон
+# брал ту же строку. Так drip простоял минимум сутки с нулём прогретых обложек.
+_TRANSIENT_FAIL_LIMIT = 3
+_FAIL_NS = "cover_drip_fail"
+# Счётчик живёт сутки: если между падениями прошёл день, это уже не «та же
+# авария», и строка заслуживает полного набора попыток заново.
+_FAIL_TTL = 86400
+
+
+def _is_permanent(exc: BaseException) -> bool:
+    """4xx (кроме 401/403/429) — ответ Discogs «такого релиза нет».
+
+    Дамп содержит строки, удалённые из Discogs после его выгрузки: для них
+    404 — это окончательный ответ «обложки не будет», ровно та же семантика,
+    что и пустой images[] у живого релиза. Помечаем и идём дальше.
+
+    401/403 — это про НАШ токен, а не про строку: выжигать по ним очередь
+    нельзя, иначе протухший ключ за ночь уничтожит миллионы кандидатов.
+    429 — прямое «притормози», обрабатывается общим гейтом.
+    """
+    return (
+        isinstance(exc, httpx.HTTPStatusError)
+        and 400 <= exc.response.status_code < 500
+        and exc.response.status_code not in (401, 403, 429)
+    )
 
 
 def _below_headroom(tokens: float | None, headroom: int) -> bool:
@@ -62,6 +94,26 @@ def _run_budget(tokens: float | None, headroom: int, cap: int) -> int:
     if _below_headroom(tokens, headroom):
         return 0
     return min(int(tokens - headroom), cap)
+
+
+async def _mark_checked(session, did: str, cover: str | None = None) -> None:
+    """Строка проверена: уходит из очереди навсегда (при cover — ещё и с URL).
+
+    Commit на каждую строку: прогон при жирном профиле длится почти минуту, а
+    копившаяся транзакция держала row-locks против statement_timeout=30s
+    соседних бэкфиллов и теряла весь батч (и потраченную API-квоту) при
+    рестарте на деплое.
+    """
+    await session.execute(
+        text(
+            "UPDATE discogs_releases_index "
+            "SET cover_image_url = COALESCE(cover_image_url, :url), "
+            "    cover_checked_at = :now "
+            "WHERE discogs_id = :did"
+        ),
+        {"url": cover, "did": int(did), "now": datetime.utcnow()},
+    )
+    await session.commit()
 
 
 async def drip_covers_batch() -> None:
@@ -130,26 +182,46 @@ async def drip_covers_batch() -> None:
             # строку: bucket и так под давлением.
             try:
                 cover = await discogs.get_release_cover(did, swallow_errors=False)
-            except Exception:
-                logger.warning("cover drip: запрос %s упал, строка не помечена", did)
+            except Exception as exc:
+                if _is_permanent(exc):
+                    # Окончательный ответ «обложки нет» — помечаем строку и
+                    # продолжаем прогон. Раньше сюда попадал и 404, из-за чего
+                    # один удалённый из Discogs релиз (37511514) держал всю
+                    # очередь: прогон падал на нём каждую минуту, помечал ноль
+                    # строк и выходил.
+                    await _mark_checked(session, did)
+                    checked += 1
+                    logger.info(
+                        "cover drip: %s — %s от Discogs, строка закрыта",
+                        did, exc.response.status_code,
+                    )
+                    continue
+                fails = await cache.incr(_FAIL_NS, did, _FAIL_TTL)
+                if fails is not None and fails >= _TRANSIENT_FAIL_LIMIT:
+                    # Redis жив и строка падает подряд — уводим в карантин,
+                    # чтобы очередь двигалась. Потерять строку не страшно:
+                    # cover_checked_at обнуляется руками, а прогрев для неё
+                    # всё равно не работал.
+                    await _mark_checked(session, did)
+                    await cache.delete(_FAIL_NS, did)
+                    logger.warning(
+                        "cover drip: %s падает %d-й раз подряд — карантин, "
+                        "строка помечена проверенной",
+                        did, fails,
+                    )
+                    continue
+                # Единичная сетевая ошибка: строку не трогаем, окно уступаем —
+                # bucket и так под давлением.
+                logger.warning(
+                    "cover drip: запрос %s упал (%d/%d), строка не помечена",
+                    did, fails or 0, _TRANSIENT_FAIL_LIMIT,
+                )
                 break
+            await cache.delete(_FAIL_NS, did)
             checked += 1
             if cover:
                 warmed += 1
-            await session.execute(
-                text(
-                    "UPDATE discogs_releases_index "
-                    "SET cover_image_url = COALESCE(cover_image_url, :url), "
-                    "    cover_checked_at = :now "
-                    "WHERE discogs_id = :did"
-                ),
-                {"url": cover, "did": int(did), "now": datetime.utcnow()},
-            )
-            # Commit на каждую строку: прогон при жирном профиле длится почти
-            # минуту, а копившаяся транзакция держала row-locks против
-            # statement_timeout=30s соседних бэкфиллов и теряла весь батч
-            # (и потраченную API-квоту) при рестарте на деплое.
-            await session.commit()
+            await _mark_checked(session, did, cover)
 
         if checked:
             logger.info(
