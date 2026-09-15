@@ -122,8 +122,26 @@ export default function MarketIndexScreen() {
     // /market — root-route поверх (tabs). replace монтирует СВЕЖИЙ search-
     // таб, который читает committed из persisted marketStore. Сбрасываем
     // committed=false ДО навигации, иначе search re-открывает Маркет-слой.
+    // /market — root-route поверх (tabs), то есть Поиск ВСЁ ЕЩЁ смонтирован
+    // под ним: с прогретой историей, новинками, рейлом Маркета и каруселями
+    // магазинов в состоянии. Уходить отсюда через `replace` значит выбросить
+    // живой экран и собрать вместо него новый — он перезапрашивает всё это с
+    // нуля (десяток запросов и под две сотни обложек), и выход из Маркета
+    // упирается в пустой, медленно наполняющийся Поиск. Поэтому сначала
+    // пробуем СНЯТЬ Маркет со стека и вернуться на тот самый экран; замена
+    // остаётся для случая, когда возвращаться некуда, — диплинк или пуш прямо
+    // в /market.
+    //
+    // committed=false ставим ДО навигации в обоих путях: свежий search-таб
+    // читает флаг из persisted marketStore на монтировании, а живой — через
+    // подписку (см. (tabs)/search.tsx). Иначе Поиск встретил бы человека тем
+    // самым Маркет-слоем, из которого он только что вышел.
     setMarketCommitted(false);
-    router.replace('/(tabs)/search');
+    if (router.canDismiss()) {
+      router.dismissTo('/(tabs)/search');
+    } else {
+      router.replace('/(tabs)/search');
+    }
   }, [router, setMarketCommitted]);
 
   const onScroll = useAnimatedScrollHandler({

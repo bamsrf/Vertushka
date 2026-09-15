@@ -69,17 +69,36 @@ def test_vinyl_with_a_download_code_is_still_vinyl():
 def test_scope_without_master_keeps_only_the_record_itself():
     # Store-native: мастера нет, аналогов не существует в принципе.
     sql, params = _release_scope_clause(None, "vinyl")
-    assert sql == " AND r.id = :rel_rec"
+    assert sql == " AND (r.id = :rel_rec OR r.merged_into_id = :rel_rec)"
     assert params == {}
+
+
+def test_scope_counts_records_merged_into_the_anchor_as_the_anchor():
+    """Листинги остаются на проигравшей записи, а карточку релиза человек
+    открывает по discogs_id — то есть счётчик офферов их видит. Не пустить их
+    в выдачу значит обещать наличие и показать «этой пластинки пока нет»."""
+    for sql in (
+        _release_scope_clause(None, "vinyl")[0],
+        _release_scope_clause("12345", "vinyl")[0],
+    ):
+        assert "r.merged_into_id = :rel_rec" in sql
+
+
+def test_siblings_never_include_records_merged_away():
+    """«Другая версия» обязана быть живой записью: слитую уже представляет
+    победитель, и вдвоём они дали бы в выдаче один прессинг двумя плитками."""
+    sql, _params = _release_scope_clause("12345", "vinyl")
+    siblings = sql.split(" OR (", 1)[1]
+    assert "r.merged_into_id IS NULL" in siblings
 
 
 def test_scope_gates_siblings_by_medium_but_never_the_record_itself():
     sql, params = _release_scope_clause("12345", "vinyl")
-    head, siblings = sql.split(" OR ", 1)
+    head, siblings = sql.split(" OR (", 1)
     # Сама запись проходит без единого условия по формату: предикат смотрит в
     # listing.format_raw, и криво распарсенный магазином формат вычеркнул бы
     # именно тот оффер, ради которого человек сюда шёл.
-    assert head == " AND (r.id = :rel_rec"
+    assert head == " AND ((r.id = :rel_rec OR r.merged_into_id = :rel_rec)"
     assert "format_raw" not in head
     # «Другие версии» — только тот же носитель: мастер на Discogs объединяет
     # винил, CD и mp3-файл.
