@@ -93,6 +93,22 @@ fi
 # таблицы/индексы; без DROP/RENAME/NOT NULL без дефолта). Breaking-изменение —
 # отдельным двухфазным деплоем.
 COMPOSE="docker compose -f docker-compose.prod.yml"
+
+# S3-переменные для ПОДСТАНОВКИ в compose (imgproxy читает бакет напрямую).
+# Тонкость: `${VAR}` в docker-compose.yml compose берёт из окружения и файла
+# `.env`, но НЕ из `env_file:` сервиса — а боевые ключи лежат в `.env.prod`.
+# Дублировать секреты во второй файл не хочется, поэтому экспортируем ровно
+# четыре нужные строки. Кавычки и решётки в значениях не встречаются (ключи
+# S3 — base64-алфавит), но берём только `KEY=VALUE` до первого пробела.
+# Без этого блока compose подставит пустые строки и imgproxy стартует без
+# доступа к бакету — обложки будут отдаваться только с диска, молча.
+if [ -f .env.prod ]; then
+    for _v in S3_ENDPOINT_URL S3_REGION S3_ACCESS_KEY_ID S3_SECRET_ACCESS_KEY; do
+        _line=$(grep -E "^${_v}=" .env.prod | tail -1) || true
+        [ -n "$_line" ] && export "$_line"
+    done
+    unset _v _line
+fi
 STATE_FILE="nginx/.active_color"
 UPSTREAM_FILE="nginx/active_upstream.conf"
 
