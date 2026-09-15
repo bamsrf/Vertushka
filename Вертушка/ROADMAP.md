@@ -7,7 +7,7 @@
 | **Репо** | [bamsrf/Vertushka](https://github.com/bamsrf/Vertushka) |
 | **Прод-API** | https://api.vinyl-vertushka.ru/api |
 | **TestFlight / Google Play** | TestFlight build prep ✅, soak в процессе (M2) |
-| **Последнее обновление** | 2026-09-10 |
+| **Последнее обновление** | 2026-09-15 |
 | **Текущий milestone** | M2 (Release prep) параллельно M5/M6 (зашиты в продукт) |
 | **Прогресс** | M0 ✅ · M1 🟨 · M2 🟨 · M3 🟨 · M4 🟨 · M5 🟨 · M6 🟨 · M7 🟨 · M8 ⬜ · M9 ⬜ · M10 🟨 |
 
@@ -849,6 +849,7 @@ ROADMAP.md — это _верхнеуровневый зонтик_. Кажды�
 
 ### 2026-09
 
+- **2026-09-15** — [#247](https://github.com/bamsrf/Vertushka/pull/247) fix(covers): зеркала снова кладутся на диск — UnboundLocalError в первой записи
 - **2026-09-10** — [#185](https://github.com/bamsrf/Vertushka/pull/185) fix(roadmap): досинк добирает больше сотни PR и не пишет сам про себя
 
 ### 2026-07
