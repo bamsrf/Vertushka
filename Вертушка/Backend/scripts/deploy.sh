@@ -109,7 +109,31 @@ if [ -f .env.prod ]; then
     done
     unset _v _line
 fi
+
+# ГЕЙТ. Пустая переменная здесь — это не «чуть хуже», а тихая поломка раздачи:
+# nginx уже просит у imgproxy `s3://…`, и без ключей КАЖДАЯ обложка, которой
+# нет на диске, уходит в фолбэк. Compose на пустую подстановку отвечает лишь
+# warning'ом в общем потоке, который теряется среди вывода сборки (так и
+# случилось на первом выкате 15.09.2026). Поэтому падаем сразу.
+for _v in S3_ENDPOINT_URL S3_ACCESS_KEY_ID S3_SECRET_ACCESS_KEY; do
+    if [ -z "$(eval "echo \"\${$_v}\"")" ]; then
+        echo "❌ $_v пуст — imgproxy не получит доступ к бакету обложек."
+        echo "   Проверь строку ^$_v= в $(pwd)/.env.prod"
+        exit 1
+    fi
+done
+unset _v
 STATE_FILE="nginx/.active_color"
+
+# imgproxy держит конфиг источников (local + S3) в переменных окружения, а те
+# читаются только при СОЗДАНИИ контейнера. Штатный `up -d` его не трогал —
+# 15.09.2026 контейнер так и остался пятинедельным, без ключей S3, хотя nginx
+# уже просил у него `s3://…`: раздача молча свалилась на фолбэк. Пересоздаём
+# явно вместе с nginx — эти двое меняются только парой.
+recreate_imgproxy() {
+    echo "🖼  Пересоздаю imgproxy (источники local + S3 задаются при создании)..."
+    $COMPOSE up -d --no-deps --force-recreate imgproxy
+}
 UPSTREAM_FILE="nginx/active_upstream.conf"
 
 echo "🔨 Собираю Docker образ (api + scheduler)..."
@@ -170,6 +194,7 @@ if docker inspect vertushka_api >/dev/null 2>&1; then
     validate_nginx_conf
     echo "🔁 Пересоздаю nginx (подхватить mount active_upstream.conf)..."
     $COMPOSE up -d --force-recreate nginx
+    recreate_imgproxy
     echo "🗑  Сношу легаси-контейнер vertushka_api..."
     docker rm -f vertushka_api 2>/dev/null || true   # -f форс-удаляет запущенный
     ACTIVE="blue"
@@ -184,6 +209,7 @@ else
     # nginx-секции compose он ПЕРЕСОЗДАСТ nginx — валидируем конфиг до.
     validate_nginx_conf
     $COMPOSE up -d
+    recreate_imgproxy
 
     $COMPOSE --profile "$TARGET" up -d --no-deps --force-recreate "api-$TARGET"
 
