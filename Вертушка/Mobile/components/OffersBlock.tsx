@@ -34,6 +34,33 @@ import { Typography, Spacing, BorderRadius, MarketPalette, Gradients } from '../
 import { ms } from '../lib/responsive';
 import StoreLogo from './market/StoreLogo';
 
+/**
+ * Что блок насчитал по офферам — двумя разными числами, потому что вопросы
+ * разные.
+ */
+export interface OffersResolved {
+  /** Сколько строк отрисуется в блоке. Ноль означает, что блока на экране нет. */
+  total: number;
+  /**
+   * Сколько из них Маркет реально покажет карточкой.
+   *
+   * Витрина Маркета строит плитку из цены и наличия: `status='in_stock'` и
+   * `price_rub IS NOT NULL`. Блок офферов мягче — он показывает и предзаказ, и
+   * листинг без цены («уточняйте»). Считать по `total` значит обещать на
+   * карточке «Есть в Маркете» и высаживать человека на попап «этой пластинки
+   * пока нет»: оба экрана правы, просто отвечают на разные вопросы. Кнопка
+   * обязана отвечать на тот, куда ведёт.
+   */
+  marketVisible: number;
+}
+
+/** Покажет ли Маркет этот оффер плиткой. Зеркало WHERE в /market/search. */
+function isMarketVisible(offer: Offer): boolean {
+  if (offer.status !== 'in_stock') return false;
+  const price = Number(offer.price_rub);
+  return Number.isFinite(price) && price > 0;
+}
+
 interface OffersBlockProps {
   /** Discogs ID — обычный путь /records/{discogs_id}/offers/full с alt-version'ами. */
   discogsId?: string;
@@ -47,7 +74,7 @@ interface OffersBlockProps {
    * блок, которого на экране нет — подсказка встала бы над пустотой, а ореол
    * лёг бы на соседний блок.
    */
-  onOffersResolved?: (count: number) => void;
+  onOffersResolved?: (result: OffersResolved) => void;
   /**
    * Точка входа на карточку — уезжает в `offer_clicks.source`.
    *
@@ -88,14 +115,17 @@ export function OffersBlock({
         const list = data?.offers ?? [];
         setOffers(list);
         analytics.viewOffers(analyticsId, list.length);
-        onOffersResolved?.(list.length);
+        onOffersResolved?.({
+          total: list.length,
+          marketVisible: list.filter(isMarketVisible).length,
+        });
       })
       .catch((e) => {
         if (!alive) return;
         setError(String(e?.message ?? 'Не удалось загрузить предложения'));
         // Плашка ошибки — тоже блок на экране, но объяснять «живые предложения
         // магазинов» на ней нечего. Для родителя это то же самое, что пусто.
-        onOffersResolved?.(0);
+        onOffersResolved?.({ total: 0, marketVisible: 0 });
       });
     return () => {
       alive = false;

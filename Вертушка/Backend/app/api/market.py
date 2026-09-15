@@ -412,17 +412,27 @@ def _release_scope_clause(
 
     Бинд `:rel_rec` подставляет вызывающий — он же решает, какая запись якорь.
     """
+    # Якорем считается и сама запись, и всё, что в неё слили: rematch переносит
+    # победителя, но листинги остаются висеть на проигравшей записи. Без второй
+    # ветки такой оффер виден на карточке релиза (там запись ищут по
+    # discogs_id, слияние не учитывая) и невидим в Маркете — ровно то
+    # расхождение, из-за которого кнопка обещает наличие, а витрина показывает
+    # «пока нет».
+    anchor = "(r.id = :rel_rec OR r.merged_into_id = :rel_rec)"
     if not master_id:
         # Store-native и записи без мастера: аналогов не существует в принципе.
-        return (" AND r.id = :rel_rec", {})
+        return (f" AND {anchor}", {})
 
-    sibling = "r.discogs_master_id = :rel_master AND r.id <> :rel_rec"
+    sibling = (
+        "r.discogs_master_id = :rel_master"
+        " AND r.id <> :rel_rec AND r.merged_into_id IS NULL"
+    )
     params: dict = {"rel_master": master_id}
     if media_key:
         fmt_sql, fmt_params = _format_clause(media_key)
         sibling += fmt_sql
         params.update(fmt_params)
-    return (f" AND (r.id = :rel_rec OR ({sibling}))", params)
+    return (f" AND ({anchor} OR ({sibling}))", params)
 
 
 async def _resolve_release_anchor(
@@ -816,9 +826,9 @@ async def search_market(
     # для стабильности ключа независимо от порядка чипов.
     genre_key = ",".join(sorted(genre_list)) if genre_list else ""
     cache_key = (
-        # v3 в префиксе — версия жанровых паттернов: правишь GENRES/GENRE_STRICT,
+        # v4 в префиксе — версия жанровых паттернов: правишь GENRES/GENRE_STRICT,
         # бампаешь версию, иначе старые (неверные) выдачи доживут в кэше до TTL.
-        f"search:v3:{q or ''}:{format or 'all'}:{sort}:{limit}:{offset}"
+        f"search:v4:{q or ''}:{format or 'all'}:{sort}:{limit}:{offset}"
         f":g={genre_key}:c={int(colored)}:l={int(limited)}:n={int(new)}"
         f":rel={rel_cache_key}"
     )
@@ -833,9 +843,24 @@ async def search_market(
     # В режиме релиза — ровно наоборот: группируем по r.id, потому что разные
     # прессинги здесь и есть содержание выдачи. Схлопни их по мастеру — и на
     # экране «эта пластинка и её аналоги» останется одна плитка.
+    #
+    # Слитую запись схлопываем на победителя: листинг с неё — это листинг той
+    # же пластинки, и отдельной плиткой он был бы дублем самой себя.
     dedup_expr = (
-        "r.id::text" if release_record is not None
+        "COALESCE(r.merged_into_id::text, r.id::text)" if release_record is not None
         else "COALESCE(r.discogs_master_id, r.id::text)"
+    )
+    # Какую запись показывать карточкой. В режиме релиза — победителя слияния:
+    # у проигравшей записи мета и обложка устарели, ради чего слияние и делали.
+    record_pick_expr = (
+        "COALESCE(r.merged_into_id, r.id)" if release_record is not None else "r.id"
+    )
+    # Слитые записи в общей витрине отброшены (их место занял победитель), а в
+    # режиме релиза допущены — но только те, что слиты в сам якорь.
+    merged_sql = (
+        "AND (r.merged_into_id IS NULL OR r.merged_into_id = :rel_rec)"
+        if release_record is not None
+        else "AND r.merged_into_id IS NULL"
     )
     # Требование обложки в режиме релиза снято. На общей витрине карточка без
     # картинки — серая дыра среди сотен нормальных, и отбросить её дешевле, чем
@@ -857,7 +882,7 @@ async def search_market(
                 COUNT(DISTINCT sl.store_id) AS stores_with_stock,
                 MAX(sl.first_seen_at) AS first_seen_at,
                 (ARRAY_AGG(s.slug ORDER BY sl.price_rub ASC NULLS LAST))[1] AS cheapest_store_slug,
-                (ARRAY_AGG(r.id ORDER BY sl.price_rub ASC NULLS LAST))[1] AS chosen_record_id,
+                (ARRAY_AGG({record_pick_expr} ORDER BY sl.price_rub ASC NULLS LAST))[1] AS chosen_record_id,
                 (ARRAY_AGG(sl.raw_payload->>'image_url' ORDER BY sl.price_rub ASC NULLS LAST))[1] AS chosen_store_photo
             FROM store_listings sl
             JOIN stores s ON s.id = sl.store_id
@@ -867,7 +892,7 @@ async def search_market(
               AND sl.matched_record_id IS NOT NULL
               AND sl.price_rub IS NOT NULL
               AND sl.last_seen_at >= :cutoff
-              AND r.merged_into_id IS NULL
+              {merged_sql}
               {cover_sql}
               {fmt_sql}
               {filt_sql}

@@ -45,7 +45,7 @@ import { Colors, Typography, Spacing, BorderRadius, Gradients } from '../../cons
 import { ms } from '../../lib/responsive';
 import { VinylColorTag } from '../../components/VinylColorTag';
 import { VinylSpinner } from '../../components/VinylSpinner';
-import { OffersBlock } from '../../components/OffersBlock';
+import { OffersBlock, type OffersResolved } from '../../components/OffersBlock';
 import { CoachTip } from '../../components/onboarding/CoachTip';
 import { CoachPulse } from '../../components/onboarding/CoachPulse';
 import { useCoachMark } from '../../lib/useCoachMark';
@@ -186,9 +186,15 @@ export default function RecordDetailScreen() {
   // Блок офферов может быть запрошен, но не отрисован: наличие discogs_id не
   // значит, что магазины что-то предлагают. Для тура важен именно факт
   // отрисовки, поэтому ждём ответ самого блока.
-  const [offersCount, setOffersCount] = useState<number | null>(null);
+  const [offersResolved, setOffersResolved] = useState<OffersResolved | null>(null);
+  const offersCount = offersResolved?.total ?? null;
   const offersRequested = Boolean(record?.discogs_id || record?.source === 'store');
   const hasOffers = offersRequested && (offersCount ?? 0) > 0;
+  // Чип «Есть в Маркете» — обещание, которое выполняет ДРУГОЙ экран, поэтому
+  // считается по его правилам, а не по числу строк в блоке офферов. Предзаказ
+  // и листинг без цены в блоке есть, а плиткой в Маркете не станут: обещать по
+  // ним наличие значит привести человека к попапу «этой пластинки пока нет».
+  const hasMarketOffers = offersRequested && (offersResolved?.marketVisible ?? 0) > 0;
   const hasHistory = Boolean(priceHistory && priceHistory.points.length > 0);
   const hasVersions = Boolean(
     record?.discogs_master_id && record.discogs_master_id !== '0',
@@ -213,7 +219,7 @@ export default function RecordDetailScreen() {
   // отрисуется, — иначе объясняли бы витрину рядом с пустотой. Пока идёт тур,
   // она молчит: две карточки-объяснения на одном экране спорят друг с другом,
   // и обе читаются хуже.
-  const marketTip = useCoachMark('market', true, hasOffers && !tour.active);
+  const marketTip = useCoachMark('market', true, hasMarketOffers && !tour.active);
 
   // Переход в Маркет из карточки релиза — всегда с контекстом пластинки:
   // Маркет откроется суженным до неё и её изданий, а когда в наличии ничего
@@ -914,7 +920,7 @@ export default function RecordDetailScreen() {
               activeOpacity={0.8}
               accessibilityRole="button"
               accessibilityLabel={
-                hasOffers ? 'Смотреть эту пластинку в Маркете' : 'Перейти в Маркет'
+                hasMarketOffers ? 'Смотреть эту пластинку в Маркете' : 'Перейти в Маркет'
               }
               style={styles.marketChip}
             >
@@ -925,7 +931,7 @@ export default function RecordDetailScreen() {
                   наличие авансом значит воспроизвести ровно тот обман,
                   который экран Маркета потом разгребает попапом. */}
               <Text style={styles.marketChipText}>
-                {hasOffers ? 'Есть в Маркете' : 'В Маркет'}
+                {hasMarketOffers ? 'Есть в Маркете' : 'В Маркет'}
               </Text>
             </TouchableOpacity>
           </View>
@@ -1236,7 +1242,7 @@ export default function RecordDetailScreen() {
             {record.discogs_id ? (
               <OffersBlock
                 discogsId={record.discogs_id}
-                onOffersResolved={setOffersCount}
+                onOffersResolved={setOffersResolved}
                 clickSource={entrySource}
               />
             ) : (
@@ -1245,7 +1251,7 @@ export default function RecordDetailScreen() {
               // master_id), только exact-match листинги магазинов.
               <OffersBlock
                 recordId={record.id}
-                onOffersResolved={setOffersCount}
+                onOffersResolved={setOffersResolved}
                 clickSource={entrySource}
               />
             )}
