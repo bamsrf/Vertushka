@@ -13,6 +13,7 @@ import uuid
 from datetime import date, datetime, timedelta
 from io import BytesIO
 from pathlib import Path
+from typing import NamedTuple
 from urllib.parse import urlparse
 
 import httpx
@@ -118,14 +119,38 @@ def _compute_blurhash(img: "Image.Image") -> str | None:
         return None
 
 
-def _encode_and_place(raw: bytes, tmp_path: Path, dest: Path) -> tuple[str | None, int]:
+class PlacedCover(NamedTuple):
+    """Итог записи зеркала. `written=False` — файл на диске НЕ тронут."""
+    blurhash: str | None
+    min_side: int
+    written: bool
+
+
+def _encode_and_place(
+    raw: bytes,
+    tmp_path: Path,
+    dest: Path,
+    *,
+    replace_floor: int | None = None,
+) -> PlacedCover:
     """CPU-bound: decode → blurhash → resize (LANCZOS) → JPEG q85 → атомарный
-    rename. Возвращает `(blurhash | None, min_side)`, где min_side — меньшая
-    сторона УЖЕ УЛОЖЕННОГО файла (после даунскейла, но без апскейла).
+    rename. Возвращает `PlacedCover(blurhash, min_side, written)`, где
+    min_side — меньшая сторона СКАЧАННОГО кадра (после даунскейла, без
+    апскейла), а written говорит, заменили ли файл на диске.
 
     min_side — авторитетная проверка тира: формы URL у источников меняются, а
     пиксели не врут. Пишется в `records.cover_min_side`, по нему потом решается,
     можно ли перезаписать мастер лучшим источником (см. download_and_store).
+
+    `replace_floor` — размер того, что УЖЕ лежит по этому пути. Новый кадр
+    заменяет старый, только если он строго крупнее. Без этого гейта ветка
+    апгрейда работала в одну сторону: она проверяла, что старый файл мельче
+    порога, но не проверяла, что новый лучше старого. Источник с картинкой
+    199px спокойно затирал имеющиеся 475px — и на диске, и в бакете (ключ тот
+    же), то есть безвозвратно. В логах 14.09.2026 такие записи идут подряд:
+    «stored below master threshold (min_side=475)», следом «(min_side=199)».
+    Накопленная база обложек обязана только расти в качестве, никогда не
+    деградировать.
 
     Pillow-ресайз 1000px + optimize=True — это 50-150мс чистого CPU на файл.
     В single-worker проде (--workers 1) вызов прямо в корутине морозил event
@@ -139,6 +164,18 @@ def _encode_and_place(raw: bytes, tmp_path: Path, dest: Path) -> tuple[str | Non
     bhash = _compute_blurhash(img)
     if img.width > _MAX_SIDE or img.height > _MAX_SIDE:
         img.thumbnail((_MAX_SIDE, _MAX_SIDE), Image.LANCZOS)
+    min_side = min(img.width, img.height)
+
+    # Гейт деградации. Проверяем ДО rename: сам rename атомарен, но он же и
+    # необратим — прежних байтов после него нет ни на диске, ни в бакете.
+    if replace_floor is not None and min_side <= replace_floor:
+        logger.info(
+            "cover_storage: %s — новый кадр %dpx не лучше имеющихся %dpx, "
+            "оставляем старый",
+            dest.name, min_side, replace_floor,
+        )
+        return PlacedCover(bhash, min_side, written=False)
+
     img.save(tmp_path, format="JPEG", quality=_JPEG_QUALITY, optimize=True)
     os.rename(tmp_path, dest)
     # Dual-write в вечный S3-слой (no-op пока COVERS_S3_ENABLED=false).
@@ -146,7 +183,7 @@ def _encode_and_place(raw: bytes, tmp_path: Path, dest: Path) -> tuple[str | Non
     # попадает любой мастер. Никогда не бросает.
     from app.services.s3_covers import schedule_upload
     schedule_upload(dest)
-    return bhash, min(img.width, img.height)
+    return PlacedCover(bhash, min_side, written=True)
 
 
 class CoverStorageService:
@@ -323,7 +360,20 @@ class CoverStorageService:
 
             # Конвертация + resize + атомарный rename — CPU-bound, в threadpool,
             # иначе single-worker event loop морозится на всю пачку прогрева.
-            bhash, min_side = await asyncio.to_thread(_encode_and_place, raw, tmp_path, dest)
+            # replace_floor — только на ветке апгрейда: там по этому пути уже
+            # лежит файл, и заменить его можно лишь чем-то крупнее. При первой
+            # записи (файла нет) пола нет — кладём что дали, даже мелкое:
+            # мелкая обложка лучше серого квадрата, её потом догонит апгрейд.
+            placed = await asyncio.to_thread(
+                _encode_and_place, raw, tmp_path, dest,
+                replace_floor=stored_min_side if needs_upgrade else None,
+            )
+            bhash, min_side = placed.blurhash, placed.min_side
+            if not placed.written:
+                # Старый файл на месте, БД про него уже всё знает. Трогать
+                # cover_cached_at нельзя: это пометило бы деградацию как
+                # свежую добычу и увело бы запись из очереди перегрева.
+                return rel_path
             tmp_path = None  # переименован — не удалять в finally
 
             # Файл кладём даже если он оказался мелким (демоут, не удаление —
@@ -378,6 +428,8 @@ class CoverStorageService:
             dest = self._cover_path(key)
             tmp_path = self._tmp_path(key)
             # Синхронно: функция сама документирована как «вызывать из threadpool».
+            # Пола нет: это загруженное юзером фото, оно единственный источник
+            # правды для своей записи и всегда замещает прежнее.
             _encode_and_place(raw, tmp_path, dest)
             tmp_path = None
             return f"covers/{self._cover_filename(key)}"
@@ -723,7 +775,10 @@ async def _download_store_native_cover_background(
         resp.raise_for_status()
         raw = resp.content
 
-        bhash, min_side = await asyncio.to_thread(_encode_and_place, raw, tmp_path, dest)
+        # Пол не нужен: выше стоит `if dest.exists(): return` — этот путь
+        # пишет только когда файла ещё нет, перезаписи здесь не бывает.
+        placed = await asyncio.to_thread(_encode_and_place, raw, tmp_path, dest)
+        bhash, min_side = placed.blurhash, placed.min_side
         tmp_path = None
 
         rel_path = f"{rel_subdir}/{filename}"

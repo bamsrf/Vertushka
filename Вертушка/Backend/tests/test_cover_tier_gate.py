@@ -49,7 +49,7 @@ def test_encoder_reports_min_side_of_stored_file(tmp_path: Path):
     dest = tmp_path / "cover.jpg"
     tmp = tmp_path / ".tmp_cover.jpg"
 
-    _bhash, min_side = _encode_and_place(_jpeg_bytes(1400, 1400), tmp, dest)
+    _bhash, min_side, _written = _encode_and_place(_jpeg_bytes(1400, 1400), tmp, dest)
 
     # Мастер капится 1000px по большей стороне ⇒ меньшая тоже 1000.
     assert min_side == 1000
@@ -66,7 +66,7 @@ def test_encoder_does_not_upscale_small_source(tmp_path: Path):
     dest = tmp_path / "cover.jpg"
     tmp = tmp_path / ".tmp_cover.jpg"
 
-    _bhash, min_side = _encode_and_place(_jpeg_bytes(150, 150), tmp, dest)
+    _bhash, min_side, _written = _encode_and_place(_jpeg_bytes(150, 150), tmp, dest)
 
     assert min_side == 150
     assert min_side < MASTER_MIN_SIDE
@@ -79,6 +79,6 @@ def test_encoder_uses_shorter_side_for_non_square(tmp_path: Path):
     dest = tmp_path / "cover.jpg"
     tmp = tmp_path / ".tmp_cover.jpg"
 
-    _bhash, min_side = _encode_and_place(_jpeg_bytes(400, 300), tmp, dest)
+    _bhash, min_side, _written = _encode_and_place(_jpeg_bytes(400, 300), tmp, dest)
 
     assert min_side == 300
