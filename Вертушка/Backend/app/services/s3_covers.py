@@ -209,6 +209,40 @@ def restore_sync(name: str) -> bool:
         return False
 
 
+def exists_sync(name: str) -> bool:
+    """Лежит ли covers/{name}.jpg в вечном слое.
+
+    HEAD вместо GET: зовущему (зеркалирование мастеров) нужен факт наличия, а
+    не байты. Один HEAD стоит миллисекунды и экономит полную перекачку файла
+    с чужого CDN — на старте очереди таких уже зеркалированных ~29 тысяч.
+
+    Ошибку наружу не пускаем: недоступность бакета не должна выглядеть как
+    «файла нет» и провоцировать лавину повторных скачиваний... поэтому при
+    любой неожиданной ошибке возвращаем True («считаем, что есть») — пропуск
+    строки дешевле, чем перекачка всей очереди заново.
+    """
+    if not enabled():
+        return False
+    try:
+        _get_restore_client().head_object(
+            Bucket=get_settings().s3_bucket_covers,
+            Key=f"{Path(get_settings().covers_dir).name}/{name}.jpg",
+        )
+        return True
+    except Exception as exc:
+        text = str(exc)
+        if "404" in text or "Not Found" in text or "NoSuchKey" in text:
+            return False
+        logger.warning("s3_covers: HEAD %s не удался — считаем, что файл есть", name)
+        return True
+
+
+async def cover_exists(name: str) -> bool:
+    """Async-обёртка exists_sync: сетевой I/O уводим из event loop."""
+    import asyncio
+    return await asyncio.to_thread(exists_sync, name)
+
+
 async def restore_cover(name: str) -> bool:
     """Async-обёртка restore_sync: сетевой I/O уводим из event loop."""
     import asyncio
