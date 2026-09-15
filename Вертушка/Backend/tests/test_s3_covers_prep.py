@@ -116,7 +116,8 @@ def test_encode_and_place_calls_dual_write(monkeypatch, tmp_path):
     monkeypatch.setattr(s3_covers, "schedule_upload", lambda p: seen.append(p))
 
     dest = tmp_path / "77.jpg"
-    bhash, min_side = _encode_and_place(raw_io.getvalue(), tmp_path / ".tmp_77.jpg", dest)
+    bhash, min_side, written = _encode_and_place(raw_io.getvalue(), tmp_path / ".tmp_77.jpg", dest)
+    assert written is True
     assert dest.exists()
     assert min_side == 20
     assert seen == [dest]
