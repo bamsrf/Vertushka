@@ -11,7 +11,7 @@
  * Тест сторожит оба вывода сразу: высота задана явно, а numberOfLines не
  * уходит на iOS.
  */
-import { Platform, StyleSheet } from 'react-native';
+import { Platform, StyleSheet, TextInput } from 'react-native';
 import renderer, { act } from 'react-test-renderer';
 import React from 'react';
 
@@ -36,9 +36,10 @@ function inputStyleAndProps(placeholder?: string) {
       <MarketSearchInput value="" onChangeText={() => {}} placeholder={placeholder} />,
     );
   });
-  const node = tree.root.findAll(
-    (n) => typeof n.type === 'string' && n.type === 'TextInput',
-  )[0];
+  // findAllByType, а не сравнение n.type со строкой: RN-типы host-элементов
+  // не включают 'TextInput', и tsc справедливо ругается на невозможное
+  // сравнение.
+  const node = tree.root.findAllByType(TextInput)[0];
   return { style: StyleSheet.flatten(node.props.style), props: node.props };
 }
 
