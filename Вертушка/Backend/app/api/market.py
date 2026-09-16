@@ -249,9 +249,9 @@ def _filters_clause(
 # Cache-namespace зашит с версией: при изменении формы ответа (например,
 # дедупа по master_id вместо record_id) бампаем суффикс — старые ключи
 # в Redis самотухнут по TTL, а свежие запросы сразу получают новую логику.
-CACHE_NS_STORES = "market_stores:v4"
-CACHE_NS_STORE_LISTINGS = "market_store_listings:v5"
-CACHE_NS_SEARCH = "market_search:v14"  # v14: мост знает про бакет (cover_cached_at)
+CACHE_NS_STORES = "market_stores:v5"
+CACHE_NS_STORE_LISTINGS = "market_store_listings:v6"
+CACHE_NS_SEARCH = "market_search:v15"  # v15: ?v= в URL обложки — годовой immutable вместо недели
 CACHE_TTL_STORES = 1800       # 30 мин — список магазинов меняется редко
 CACHE_TTL_LISTINGS = 600      # 10 мин — карусели чаще обновляем
 CACHE_TTL_SEARCH = 300        # 5 мин — поиск свежее
@@ -272,6 +272,26 @@ CACHE_TTL_SEARCH = 300        # 5 мин — поиск свежее
 # потеряем store-фото. Store-native (discogs_id IS NULL) отдаём по
 # `/covers/store/{uuid}.jpg` (== '/' || cover_local_path). При смене выражения
 # бампать cache namespace versions выше.
+# Метка версии в URL — то, что превращает обложку в вечно кэшируемый объект.
+#
+# Без `?v=` nginx отдаёт Cache-Control на НЕДЕЛЮ (см. map $arg_v выше): дольше
+# нельзя, потому что файл по этому пути перезаписывается апгрейдом качества, и
+# клиент показывал бы старую картинку. С меткой URL меняется вместе с
+# содержимым, поэтому можно честно сказать «immutable, год» — и телефон
+# перестаёт спрашивать обложку вообще.
+#
+# Именно этой метки не хватало Маркету: остальные экраны получают её из схем
+# (build_cover_url в schemas/record.py), а витрина строила URL в SQL и метку
+# теряла. Отсюда «одни и те же обложки грузятся заново» при каждом заходе.
+# CAST(... AS bigint), а не `::bigint`: guard tests/test_sql_bindparam_cast.py
+# запрещает форму `:x::type` — SQLAlchemy не распознаёт bindparam перед `::`,
+# и asyncpg падает на syntax error. Здесь параметра нет, но регулярка guard'а
+# (и человек при чтении) этого не различает, а предписанная форма и читается
+# яснее. `||` с bigint работает без явного приведения к тексту.
+_VERSION_SUFFIX = (
+    "COALESCE('?v=' || CAST(extract(epoch from r.cover_cached_at) AS bigint), '')"
+)
+
 # ⚠️ cover_cached_at — ТРЕТИЙ источник, наравне с local/url.
 #
 # До S3 «зеркало есть» означало «есть файл на диске», и условие смотрело только
@@ -290,9 +310,9 @@ _COVER_BRIDGE = (
     "WHEN r.discogs_id IS NOT NULL "
     "AND (r.cover_local_path IS NOT NULL OR r.cover_image_url IS NOT NULL "
     "     OR r.cover_cached_at IS NOT NULL) "
-    "THEN '/covers/' || r.discogs_id || '.jpg' "
+    "THEN '/covers/' || r.discogs_id || '.jpg' || " + _VERSION_SUFFIX + " "
     "WHEN r.cover_local_path IS NOT NULL "
-    "THEN '/' || r.cover_local_path END"
+    "THEN '/' || r.cover_local_path || " + _VERSION_SUFFIX + " END"
 )
 _COVER_EXPR_LISTING = (
     f"COALESCE({_COVER_BRIDGE}, r.cover_image_url, sl.raw_payload->>'image_url')"

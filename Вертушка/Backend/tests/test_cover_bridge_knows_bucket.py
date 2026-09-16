@@ -57,7 +57,19 @@ def test_cache_namespaces_bumped():
 
     Ответы Маркета лежат в Redis с уже готовыми URL: без бампа витрина ещё
     5–30 минут отдавала бы старые ссылки на магазины.
+
+    Проверяем НИЖНЮЮ границу, а не точное число: версии бампаются при каждом
+    изменении формы ответа, и жёсткая привязка ломала бы этот тест на каждой
+    следующей правке — так и случилось сразу же, в PR про кэш обложек.
+    Смысл теста — «не ниже той версии, на которой мост узнал про бакет».
     """
-    assert market.CACHE_NS_SEARCH.endswith(":v14")
-    assert market.CACHE_NS_STORE_LISTINGS.endswith(":v5")
-    assert market.CACHE_NS_STORES.endswith(":v4")
+    import re
+
+    def version(ns: str) -> int:
+        m = re.search(r":v(\d+)$", ns)
+        assert m, f"namespace без версии: {ns}"
+        return int(m.group(1))
+
+    assert version(market.CACHE_NS_SEARCH) >= 14
+    assert version(market.CACHE_NS_STORE_LISTINGS) >= 5
+    assert version(market.CACHE_NS_STORES) >= 4
