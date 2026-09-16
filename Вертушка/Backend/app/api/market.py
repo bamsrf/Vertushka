@@ -238,9 +238,9 @@ def _filters_clause(
 # Cache-namespace зашит с версией: при изменении формы ответа (например,
 # дедупа по master_id вместо record_id) бампаем суффикс — старые ключи
 # в Redis самотухнут по TTL, а свежие запросы сразу получают новую логику.
-CACHE_NS_STORES = "market_stores:v3"
-CACHE_NS_STORE_LISTINGS = "market_store_listings:v4"
-CACHE_NS_SEARCH = "market_search:v13"  # v13: цвет пресса из Discogs, когда магазин молчит
+CACHE_NS_STORES = "market_stores:v4"
+CACHE_NS_STORE_LISTINGS = "market_store_listings:v5"
+CACHE_NS_SEARCH = "market_search:v14"  # v14: мост знает про бакет (cover_cached_at)
 CACHE_TTL_STORES = 1800       # 30 мин — список магазинов меняется редко
 CACHE_TTL_LISTINGS = 600      # 10 мин — карусели чаще обновляем
 CACHE_TTL_SEARCH = 300        # 5 мин — поиск свежее
@@ -261,10 +261,24 @@ CACHE_TTL_SEARCH = 300        # 5 мин — поиск свежее
 # потеряем store-фото. Store-native (discogs_id IS NULL) отдаём по
 # `/covers/store/{uuid}.jpg` (== '/' || cover_local_path). При смене выражения
 # бампать cache namespace versions выше.
+# ⚠️ cover_cached_at — ТРЕТИЙ источник, наравне с local/url.
+#
+# До S3 «зеркало есть» означало «есть файл на диске», и условие смотрело только
+# на cover_local_path. С включённым вечным слоем (28.08.2026) LRU-эвикция
+# стирает указатель, НО оставляет cover_cached_at — файл жив, он в бакете, и
+# мост его отдаёт (nginx → imgproxy → s3). Условие об этом не знало, поэтому у
+# выселенной записи без внешнего URL мост схлопывался в NULL, и COALESCE
+# подставлял фото с сайта магазина.
+#
+# Замер 16.09.2026 по витрине «Скифмьюзика»: 5 842 из 14 677 плиток (40%)
+# отдавались ссылкой на skifmusic.ru вместо нашей копии. Своя копия при этом
+# лежала в бакете и отдавалась за 15 КБ и 0.1с, а витрина магазина с телефона
+# грузилась минутами — владелец ждал обложки по 10 минут.
 _COVER_BRIDGE = (
     "CASE "
     "WHEN r.discogs_id IS NOT NULL "
-    "AND (r.cover_local_path IS NOT NULL OR r.cover_image_url IS NOT NULL) "
+    "AND (r.cover_local_path IS NOT NULL OR r.cover_image_url IS NOT NULL "
+    "     OR r.cover_cached_at IS NOT NULL) "
     "THEN '/covers/' || r.discogs_id || '.jpg' "
     "WHEN r.cover_local_path IS NOT NULL "
     "THEN '/' || r.cover_local_path END"
@@ -595,7 +609,7 @@ async def get_store_listings(
               AND sl.price_rub IS NOT NULL
               AND sl.last_seen_at >= :cutoff
               AND r.merged_into_id IS NULL
-              AND COALESCE(r.cover_local_path, r.cover_image_url, sl.raw_payload->>'image_url') IS NOT NULL
+              AND COALESCE(r.cover_local_path, r.cover_image_url, r.cover_cached_at::text, sl.raw_payload->>'image_url') IS NOT NULL
             ORDER BY COALESCE(r.discogs_master_id, r.id::text), sl.price_rub ASC NULLS LAST
         )
         SELECT * FROM ranked
@@ -700,7 +714,7 @@ async def get_store_all(
               AND sl.price_rub IS NOT NULL
               AND sl.last_seen_at >= :cutoff
               AND r.merged_into_id IS NULL
-              AND COALESCE(r.cover_local_path, r.cover_image_url, sl.raw_payload->>'image_url') IS NOT NULL
+              AND COALESCE(r.cover_local_path, r.cover_image_url, r.cover_cached_at::text, sl.raw_payload->>'image_url') IS NOT NULL
               {fmt_sql}
               {filt_sql}
               {q_clause}
@@ -869,7 +883,7 @@ async def search_market(
     cover_sql = (
         "" if release_record is not None
         else (
-            "AND COALESCE(r.cover_local_path, r.cover_image_url,"
+            "AND COALESCE(r.cover_local_path, r.cover_image_url, r.cover_cached_at::text,"
             " sl.raw_payload->>'image_url') IS NOT NULL"
         )
     )
@@ -1064,7 +1078,7 @@ async def market_facets(
               AND sl.price_rub IS NOT NULL
               AND sl.last_seen_at >= :cutoff
               AND r.merged_into_id IS NULL
-              AND COALESCE(r.cover_local_path, r.cover_image_url, sl.raw_payload->>'image_url') IS NOT NULL
+              AND COALESCE(r.cover_local_path, r.cover_image_url, r.cover_cached_at::text, sl.raw_payload->>'image_url') IS NOT NULL
               {store_clause}
               {fmt_sql}
               {q_clause}
