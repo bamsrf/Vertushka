@@ -1275,6 +1275,13 @@ export interface DiscogsImportResult {
   /** Сколько пластинок ушло в фоновую дозагрузку цен. 0 — добирать нечего.
    *  У импорта вишлиста отсутствует — дозагрузки цен у него нет. */
   prices_pending?: number;
+  /** Сколько всего лежит на Discogs. Отсутствует на старом бэкенде. */
+  available?: number;
+  /** true — упёрлись в лимит импорта, хвост списка не скачан. */
+  truncated?: boolean;
+  /** Не удалось ни найти, ни создать запись. Отсутствует на старом бэкенде.
+   *  imported + skipped + failed === total; иначе контракт разъехался. */
+  failed?: number;
 }
 
 /** Фаза самого импорта (фонового) — поле `import` статус-ручки. */
@@ -1282,7 +1289,15 @@ export type DiscogsImportPhase = {
   status: 'idle' | 'running' | 'done' | 'failed';
   imported: number;
   skipped: number;
+  /** Сколько пластинок реально скачали с Discogs (после обрезки по лимиту). */
   total: number;
+  /** Сколько всего лежит на Discogs. Отсутствует на старом бэкенде. */
+  available?: number;
+  /** true — упёрлись в лимит импорта, хвост списка не скачан. */
+  truncated?: boolean;
+  /** Не удалось ни найти, ни создать запись. Отсутствует на старом бэкенде.
+   *  imported + skipped + failed === total; иначе контракт разъехался. */
+  failed?: number;
   error?: string | null;
 };
 

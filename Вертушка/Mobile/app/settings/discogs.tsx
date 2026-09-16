@@ -30,7 +30,7 @@ import { analytics } from '../../lib/analytics';
 import { useCollectionStore } from '../../lib/store';
 import { setDiscogsConnected } from '../../lib/onboardingProgress';
 import { Colors, Spacing, BorderRadius, Typography } from '../../constants/theme';
-import type { DiscogsImportPhase, DiscogsPriceJobStatus } from '../../lib/types';
+import type { DiscogsImportPhase, DiscogsImportResult, DiscogsPriceJobStatus } from '../../lib/types';
 
 const REDIRECT = 'vertushka://discogs-callback';
 
@@ -130,6 +130,33 @@ export default function DiscogsSettings() {
     }
   }, []);
 
+  /** Строка итога одного списка. Пока лимит импорта не выбран, читается как
+      раньше: «добавлено N, пропущено M из T». Если упёрлись в лимит — T это
+      уже не размер списка юзера, и молчать об этом нельзя: «из 3000» юзер
+      читает как «столько у меня и было».
+
+      Повторный импорт хвост НЕ дотянет: обход всегда идёт с первой страницы и
+      обрежется на том же месте, — поэтому советовать «запустите ещё раз»
+      нельзя, это ложное обещание. Ограничиваемся фактом. */
+  const importLine = useCallback(
+    (label: string, nums: DiscogsImportPhase | DiscogsImportResult) => {
+      const failed = nums.failed ?? 0;
+      // Про failed молчим, когда их нет: в норме это всегда 0, и лишнее число
+      // в итоге импорта только пугает.
+      const base =
+        `${label}: добавлено ${nums.imported}, пропущено ${nums.skipped}` +
+        (failed > 0 ? `, не удалось ${failed}` : '') +
+        ` из ${nums.total}`;
+      if (!nums.truncated) return base;
+      const rest = Math.max(0, (nums.available ?? 0) - nums.total);
+      return rest > 0
+        ? `${base}.\nЭто не весь список: на Discogs ${nums.available}, за один импорт ` +
+            `переносим не больше ${nums.total} — ${rest} осталось за бортом. Напишите нам, перенесём остальное.`
+        : `${base}.\nЭто не весь список — он обрезан по лимиту импорта. Напишите нам, перенесём остальное.`;
+    },
+    []
+  );
+
   /** Пост-обработка импорта коллекции: аналитика, рефетч полки, поллинг цен.
       Возвращает, сколько пластинок ушло в фоновую дозагрузку цен. */
   const afterCollectionImport = useCallback(
@@ -165,7 +192,8 @@ export default function DiscogsSettings() {
 
   /** Финал одиночного импорта коллекции: эффекты + прежний алерт. */
   const finishImport = useCallback(
-    async (imported: number, skipped: number, total: number) => {
+    async (nums: DiscogsImportPhase | DiscogsImportResult) => {
+      const { imported, skipped, total } = nums;
       const pricesPending = await afterCollectionImport(imported, skipped, total);
       // Alert, а не toast: итог импорта — это три числа плюс приписка
       // про фоновые цены, такое не влезает в плашку и его хочется
@@ -173,13 +201,13 @@ export default function DiscogsSettings() {
       // живёт в RootOverlay, см. components/ToastHost.tsx.)
       Alert.alert(
         'Импорт завершён',
-        `Добавлено: ${imported}, пропущено: ${skipped} из ${total}` +
+        importLine('Коллекция', nums) +
           (pricesPending > 0
             ? `.\n\nЦены подтягиваются в фоне — это займёт несколько минут.`
             : '')
       );
     },
-    [afterCollectionImport]
+    [afterCollectionImport, importLine]
   );
 
   const loadStatus = useCallback(async () => {
@@ -203,7 +231,7 @@ export default function DiscogsSettings() {
               .then(async (phase) => {
                 if (!mountedRef.current) return;
                 if (phase && phase.status === 'done') {
-                  await finishImport(phase.imported, phase.skipped, phase.total);
+                  await finishImport(phase);
                 }
               })
               .finally(() => {
@@ -318,7 +346,7 @@ export default function DiscogsSettings() {
           // Одиночный импорт коллекции — прежний UX один в один.
           const nums = await runCollectionImport();
           if (!mountedRef.current) return;
-          await finishImport(nums.imported, nums.skipped, nums.total);
+          await finishImport(nums);
           return;
         }
 
@@ -331,13 +359,13 @@ export default function DiscogsSettings() {
           const nums = await runCollectionImport();
           if (!mountedRef.current) return;
           pricesPending = await afterCollectionImport(nums.imported, nums.skipped, nums.total);
-          lines.push(`Коллекция: добавлено ${nums.imported}, пропущено ${nums.skipped} из ${nums.total}`);
+          lines.push(importLine('Коллекция', nums));
         }
 
         const wNums = await runWishlistImport();
         if (!mountedRef.current) return;
         await useCollectionStore.getState().fetchWishlistItems();
-        lines.push(`Вишлист: добавлено ${wNums.imported}, пропущено ${wNums.skipped} из ${wNums.total}`);
+        lines.push(importLine('Вишлист', wNums));
 
         if (pricesPending > 0) {
           lines.push('', 'Цены подтягиваются в фоне — это займёт несколько минут.');
@@ -352,7 +380,7 @@ export default function DiscogsSettings() {
         if (mountedRef.current) setImporting(false);
       }
     },
-    [runCollectionImport, runWishlistImport, afterCollectionImport, finishImport]
+    [runCollectionImport, runWishlistImport, afterCollectionImport, finishImport, importLine]
   );
 
   const handleImport = useCallback(() => {

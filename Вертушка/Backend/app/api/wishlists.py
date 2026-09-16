@@ -1512,6 +1512,9 @@ async def import_discogs_wishlist(
         "imported": 0,
         "skipped": 0,
         "total": 0,
+        "available": 0,
+        "truncated": False,
+        "failed": 0,
         "error": None,
         "finished_at": None,
     }
@@ -1547,10 +1550,13 @@ async def import_discogs_wishlist_status(
     if state is None:
         return {
             "status": "idle", "imported": 0, "skipped": 0, "total": 0,
-            "error": None,
+            "available": 0, "truncated": False, "failed": 0, "error": None,
         }
     return {
-        k: state[k] for k in ("status", "imported", "skipped", "total", "error")
+        k: state[k] for k in (
+            "status", "imported", "skipped", "total", "available",
+            "truncated", "failed", "error",
+        )
     }
 
 
@@ -1570,8 +1576,16 @@ async def _import_discogs_wishlist_background(
     state = _discogs_wishlist_imports[user_id]
     try:
         discogs = DiscogsService()
-        releases = await discogs.get_wantlist_releases(discogs_username, creds)
+        fetched = await discogs.get_wantlist_releases(discogs_username, creds)
+        releases = fetched.releases
         state["total"] = len(releases)
+        state["available"] = fetched.available
+        state["truncated"] = fetched.truncated
+        if fetched.truncated:
+            logger.warning(
+                "discogs wishlist import truncated: user=%s fetched=%d available=%d",
+                user_id, len(releases), fetched.available,
+            )
 
         async with async_session_maker() as db:
             await _write_imported_wants(db, user_id, releases, state)
@@ -1593,8 +1607,10 @@ async def _import_discogs_wishlist_background(
 
         state["status"] = "done"
         logger.info(
-            "discogs wishlist import done: user=%s imported=%d skipped=%d total=%d",
-            user_id, state["imported"], state["skipped"], state["total"],
+            "discogs wishlist import done: user=%s imported=%d skipped=%d "
+            "failed=%d total=%d available=%d truncated=%s",
+            user_id, state["imported"], state["skipped"], state["failed"],
+            state["total"], state["available"], state["truncated"],
         )
     except Exception:
         logger.exception("discogs wishlist import failed for %s", user_id)
@@ -1663,6 +1679,13 @@ async def _write_imported_wants(
         for did in chunk_ids:
             record = records_by_did.get(did)
             if record is None:
+                # Релиз не удалось ни найти, ни создать (гоночная ветка
+                # _resolve_import_chunk добрала не всё, битый
+                # basic_information). Раньше здесь был молчаливый continue:
+                # пластинка исчезала без следа, imported + skipped переставало
+                # сходиться с total, и понять это можно было только
+                # арифметикой постфактум. Считаем отдельно.
+                state["failed"] += 1
                 continue
             if record.id in existing_record_ids or record.id in owned_record_ids:
                 state["skipped"] += 1

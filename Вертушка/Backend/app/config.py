@@ -45,6 +45,13 @@ class Settings(BaseSettings):
     discogs_api_secret: str = Field(default="", alias="DISCOGS_API_SECRET")
     discogs_token: str = Field(default="", alias="DISCOGS_TOKEN")
     discogs_user_agent: str = Field(default="VertushkaApp/1.0", alias="DISCOGS_USER_AGENT")
+    # Потолок импорта коллекции/вишлиста из Discogs, в пластинках. Было 3000
+    # хардкодом в discogs.py: юзер с wantlist'ом на 3157 молча получал 3000, а
+    # диалог показывал «из 3000» — неотличимо от «столько у меня и было».
+    # 20000 при per_page=100 — это 200 страниц под личным лимитом 60/min, т.е.
+    # ~3.5 минуты фоновой задачи в худшем случае. Обрезка сверх этого уже не
+    # молчит — см. DiscogsUserReleases.truncated.
+    discogs_import_max_items: int = Field(default=20000, alias="DISCOGS_IMPORT_MAX_ITEMS")
     discogs_oauth_callback_url: str = Field(default="https://api.vinyl-vertushka.ru/api/auth/discogs/callback", alias="DISCOGS_OAUTH_CALLBACK_URL")
     discogs_oauth_app_redirect: str = Field(default="vertushka://discogs-callback", alias="DISCOGS_OAUTH_APP_REDIRECT")
     discogs_token_encryption_key: str = Field(default="", alias="DISCOGS_TOKEN_ENCRYPTION_KEY")
