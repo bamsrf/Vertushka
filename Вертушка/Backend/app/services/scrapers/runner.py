@@ -370,6 +370,16 @@ async def _upsert_listing(db, store_id, dto: ListingDTO) -> bool:
     content_changed = _content_now.op("IS DISTINCT FROM")(_content_new)
     seen_stale = StoreListing.last_seen_at < now - timedelta(hours=_SEEN_BUMP_HOURS)
 
+    # Возврат в наличие. В set_ слева от знака равенства `StoreListing.status` —
+    # это ЗНАЧЕНИЕ ДО апдейта, `excluded.status` — то, что принёс обход; ровно
+    # это и нужно, чтобы поймать переход. Считаем перезавозом любой приход в
+    # in_stock из другого статуса, включая preorder → in_stock (для покупателя
+    # это и есть «появилось»). Вставка новой строки сюда не попадает: у неё
+    # свежий first_seen_at, и restocked_at остаётся NULL.
+    restocked = (StoreListing.status != ListingStatus.IN_STOCK) & (
+        stmt.excluded.status == ListingStatus.IN_STOCK
+    )
+
     stmt = stmt.on_conflict_do_update(
         index_elements=["store_id", "external_id"],
         set_={
@@ -385,6 +395,7 @@ async def _upsert_listing(db, store_id, dto: ListingDTO) -> bool:
             "status": stmt.excluded.status,
             "last_seen_at": stmt.excluded.last_seen_at,
             "raw_payload": stmt.excluded.raw_payload,
+            "restocked_at": case((restocked, now), else_=StoreListing.restocked_at),
             # updated_at — сигнал «содержимое изменилось» (его читают окна
             # уведомлений). Суточный пульс last_seen_at его НЕ трогает.
             "updated_at": case((content_changed, now), else_=StoreListing.updated_at),

@@ -123,16 +123,19 @@ STORES: list[dict] = [
     },
     {
         # Заведён в прод-БД руками 2026-08-09 мимо этого скрипта; значения
-        # ниже сняты с прода 2026-08-23. rating=0 и avg_shipping_rub=None на
-        # проде так и не заполнены — при простановке реальных значений менять
-        # здесь, прод подтянется прогоном сидинга.
+        # ниже сняты с прода 2026-08-23. avg_shipping_rub на проде не заполнен.
         "slug": "skifmusic",
         "name": "Скифмьюзик",
         "domain": "skifmusic.ru",
         "base_url": "https://skifmusic.ru",
         "parser_class": "skifmusic",
         "logo_url": None,  # Mobile рендерит локальный assets/skifmusic.png по slug
-        "rating": Decimal("0.00"),
+        # Было 0.00 — магазин заводили руками и поле не проставили. Поскольку
+        # rating это де-факто ключ сортировки, самый КРУПНЫЙ магазин маркета
+        # (15 962 позиции в наличии на 15.09, больше любого другого) стоял в
+        # витрине последним. 4.55 — сразу под курированной пятёркой от 10.09:
+        # порядок топ-5 сохраняется, магазин уходит из хвоста.
+        "rating": Decimal("4.55"),
         "is_active": True,
         "requires_browser": False,
         "avg_shipping_rub": None,
@@ -140,16 +143,16 @@ STORES: list[dict] = [
     },
     {
         # Заведён в прод-БД руками 2026-08-11 мимо этого скрипта; значения
-        # ниже сняты с прода 2026-08-23. rating=0 и avg_shipping_rub=None на
-        # проде так и не заполнены — при простановке реальных значений менять
-        # здесь, прод подтянется прогоном сидинга.
+        # ниже сняты с прода 2026-08-23. avg_shipping_rub на проде не заполнен.
         "slug": "rotaryrecords",
         "name": "Rotary Records",
         "domain": "rotaryrecords.store",
         "base_url": "https://rotaryrecords.store",
         "parser_class": "rotaryrecords",
         "logo_url": None,  # Mobile рендерит локальный assets/rotaryrecords.png по slug
-        "rating": Decimal("0.00"),
+        # Было 0.00 по той же причине, что у skifmusic. 4.45 — середина пачки:
+        # ~1.8k позиций, меньше mirvinila/long_play, больше vinylfamily.
+        "rating": Decimal("4.45"),
         "is_active": True,
         "requires_browser": False,
         "avg_shipping_rub": None,

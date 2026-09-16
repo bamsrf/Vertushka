@@ -51,7 +51,18 @@ router = APIRouter()
 
 STALE_AFTER_DAYS = 7
 NEW_TODAY_HOURS = 24
-NEW_ARRIVAL_DAYS = 30  # окно «недавно появился в продаже» (first_seen_at)
+NEW_ARRIVAL_DAYS = 30  # окно «недавно появился в продаже» (см. _FRESH_AT)
+
+# Свежесть листинга для витрины: появился ИЛИ вернулся в наличие. Один
+# источник истины — «новинки», сортировка «сначала свежие» и new_today_count в
+# матвью обязаны считать её одинаково, иначе чип и карусель разойдутся.
+#
+# Почему не просто first_seen_at: у магазина со стабильным ассортиментом
+# перезавоз идёт под тем же external_id, новых строк не появляется, и
+# «новинками» оставались позиции с даты онбординга (Коробка Винила — май).
+# NULL в GREATEST Postgres игнорирует, так что для листинга без перезавоза
+# выражение равно first_seen_at.
+_FRESH_AT = "GREATEST(sl.first_seen_at, sl.restocked_at)"
 NEW_RELEASE_LOOKBACK_YEARS = 1  # «свежий релиз»: год ≥ текущий − 1
 
 # ────────────────────────────────────────────────────────────────────────
@@ -181,10 +192,10 @@ _COLORED_PRED = (
     f" AND {_VINYL_LISTING_PRED} AND {_VINYL_RECORD_PRED})"
 )
 # «Новинки» (вариант C): свежий релиз (r.year ≥ текущий−1) И недавно появился в
-# продаже (first_seen ≤ 30д). Только first_seen мало: при онбординге магазина ВСЕ
+# продаже (свежесть ≤ 30д). Только свежести мало: при онбординге магазина ВСЕ
 # его листинги (включая советское старьё) получают свежий first_seen → в
 # «Новинках» висело бы старьё. Двойное условие оставляет реально новое.
-_NEW_PRED = "sl.first_seen_at >= :new_cutoff AND r.year >= :new_year"
+_NEW_PRED = f"{_FRESH_AT} >= :new_cutoff AND r.year >= :new_year"
 FEATURES: list[tuple[str, str, str]] = [
     ("colored", "Цветной винил", _COLORED_PRED),
     ("limited", "Лимитка",       "r.is_limited = true"),
@@ -577,8 +588,11 @@ async def get_store_listings(
 
     cutoff = datetime.utcnow() - timedelta(days=STALE_AFTER_DAYS)
     # Outer ORDER BY работает с колонками CTE — без `sl.` префикса.
+    # Сортируем по fresh_at (появился ИЛИ вернулся в наличие), а отдаём наружу
+    # по-прежнему first_seen_at: поле в схеме означает «впервые увидели в
+    # продаже», и подменять его смысл ради порядка нельзя.
     order_clause = (
-        "first_seen_at DESC" if sort == "newest"
+        "fresh_at DESC" if sort == "newest"
         else "price_rub ASC NULLS LAST"
     )
 
@@ -595,6 +609,7 @@ async def get_store_listings(
                 sl.matched_record_id AS record_id,
                 sl.price_rub,
                 sl.first_seen_at,
+                {_FRESH_AT} AS fresh_at,
                 s.slug AS store_slug,
                 r.discogs_id, r.artist, r.title, r.year,
                 COALESCE(r.format_type, sl.format_raw) AS format_type,
@@ -681,7 +696,7 @@ async def get_store_all(
     # без него страницы offset-пагинации перемешиваются на равных ценах.
     order_clause = (
         "price_rub ASC NULLS LAST, dedup_key" if sort == "price_asc"
-        else "first_seen_at DESC, dedup_key"
+        else "fresh_at DESC, dedup_key"
     )
 
     q_clause = ""
@@ -700,6 +715,7 @@ async def get_store_all(
                 sl.matched_record_id AS record_id,
                 sl.price_rub,
                 sl.first_seen_at,
+                {_FRESH_AT} AS fresh_at,
                 s.slug AS store_slug,
                 r.discogs_id, r.artist, r.title, r.year,
                 COALESCE(r.format_type, sl.format_raw) AS format_type,
@@ -820,7 +836,7 @@ async def search_market(
     # дублируют одни карточки и теряют другие. dedup_key = GROUP BY-ключ, уникален.
     order_clause = (
         "min_price ASC NULLS LAST, agg.dedup_key" if sort == "price_asc"
-        else "first_seen_at DESC, agg.dedup_key"
+        else "agg.fresh_at DESC, agg.dedup_key"
     )
     if release_record is not None:
         # Прессинг, с карточки которого пришли, — всегда первой плиткой, даже
@@ -895,6 +911,7 @@ async def search_market(
                 MIN(sl.price_rub) AS min_price,
                 COUNT(DISTINCT sl.store_id) AS stores_with_stock,
                 MAX(sl.first_seen_at) AS first_seen_at,
+                MAX({_FRESH_AT}) AS fresh_at,
                 (ARRAY_AGG(s.slug ORDER BY sl.price_rub ASC NULLS LAST))[1] AS cheapest_store_slug,
                 (ARRAY_AGG({record_pick_expr} ORDER BY sl.price_rub ASC NULLS LAST))[1] AS chosen_record_id,
                 (ARRAY_AGG(sl.raw_payload->>'image_url' ORDER BY sl.price_rub ASC NULLS LAST))[1] AS chosen_store_photo

@@ -61,6 +61,7 @@ async def _row(db, store_id, ext):
         select(
             StoreListing.id, StoreListing.price_rub, StoreListing.status,
             StoreListing.updated_at, StoreListing.last_seen_at,
+            StoreListing.first_seen_at, StoreListing.restocked_at,
         ).where(
             StoreListing.store_id == store_id, StoreListing.external_id == ext
         )
@@ -151,3 +152,68 @@ async def test_status_change_updates(db, store):
     await db.commit()
     after = await _row(db, s.id, ext)
     assert after.status == "out_of_stock"
+
+
+# ---- restocked_at: возврат позиции в наличие ---------------------------- #
+# «Новинки» и сортировка «сначала свежие» считались по first_seen_at, поэтому
+# магазин, который перезавозит те же наименования под тем же external_id, в
+# новинки не попадал вообще (Коробка Винила: свежий листинг «от 23 мая» при
+# живом перезавозе). Дата возврата живёт отдельным полем — first_seen_at
+# перезаписывать нельзя, на него смотрят очередь матчера и гейт persistence.
+
+
+async def test_new_listing_has_no_restocked_at(db, store):
+    """Первый показ — это не перезавоз: свежесть уже несёт first_seen_at."""
+    s = await store()
+    ext = uuid.uuid4().hex[:10]
+    await _upsert_listing(db, s.id, _dto(ext))
+    await db.commit()
+    assert (await _row(db, s.id, ext)).restocked_at is None
+
+
+async def test_return_to_stock_sets_restocked_at(db, store):
+    s = await store()
+    ext = uuid.uuid4().hex[:10]
+    await _upsert_listing(db, s.id, _dto(ext, status="in_stock"))
+    await db.commit()
+    first_seen = (await _row(db, s.id, ext)).first_seen_at
+
+    await _upsert_listing(db, s.id, _dto(ext, status="out_of_stock"))
+    await db.commit()
+    assert (await _row(db, s.id, ext)).restocked_at is None
+
+    await _upsert_listing(db, s.id, _dto(ext, status="in_stock"))
+    await db.commit()
+    after = await _row(db, s.id, ext)
+    assert after.restocked_at is not None
+    # Возраст листинга не тронут — иначе матчер и store-native-гейт получат
+    # заново «новую» позицию при каждом перезавозе.
+    assert after.first_seen_at == first_seen
+    assert after.restocked_at >= first_seen
+
+
+async def test_preorder_arriving_counts_as_restock(db, store):
+    """Для покупателя приход предзаказа — это «появилось в наличии»."""
+    s = await store()
+    ext = uuid.uuid4().hex[:10]
+    await _upsert_listing(db, s.id, _dto(ext, status="preorder"))
+    await db.commit()
+    await _upsert_listing(db, s.id, _dto(ext, status="in_stock"))
+    await db.commit()
+    assert (await _row(db, s.id, ext)).restocked_at is not None
+
+
+async def test_staying_in_stock_does_not_move_restocked_at(db, store):
+    """Цена меняется, наличие — нет: перезавоза не было, дату не двигаем."""
+    s = await store()
+    ext = uuid.uuid4().hex[:10]
+    await _upsert_listing(db, s.id, _dto(ext, status="out_of_stock"))
+    await db.commit()
+    await _upsert_listing(db, s.id, _dto(ext, status="in_stock", price="3990"))
+    await db.commit()
+    restocked = (await _row(db, s.id, ext)).restocked_at
+    assert restocked is not None
+
+    await _upsert_listing(db, s.id, _dto(ext, status="in_stock", price="4490"))
+    await db.commit()
+    assert (await _row(db, s.id, ext)).restocked_at == restocked

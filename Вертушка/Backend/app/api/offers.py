@@ -395,8 +395,11 @@ async def get_market_new_arrivals(
     Возвращает последние N листингов со статусом in_stock из всех активных магазинов.
 
     Дедуп по `matched_record_id`: на одну запись отдаём только самый дешёвый листинг
-    из всех магазинов. Сортировка — по дате появления листинга в БД (новинки в продаже
-    сверху). Это даёт «N разных пластинок» в карусели, а не «N дублей одной обложки».
+    из всех магазинов. Сортировка — по свежести листинга: появился ИЛИ вернулся в
+    наличие, GREATEST(first_seen_at, restocked_at). Раньше был только first_seen_at,
+    и магазин, который перезавозит те же наименования под тем же external_id, в
+    «новинки» не попадал вообще. Это даёт «N разных пластинок» в карусели, а не
+    «N дублей одной обложки».
 
     Кэш — Redis, TTL 15 минут. Инвалидируется при `parse_listing` через
     `invalidate_market_feed` (по аналогии с `invalidate_record_offers`).
@@ -420,6 +423,7 @@ async def get_market_new_arrivals(
                 sl.matched_record_id AS record_id,
                 sl.price_rub,
                 sl.first_seen_at,
+                GREATEST(sl.first_seen_at, sl.restocked_at) AS fresh_at,
                 s.slug AS store_slug,
                 r.discogs_id,
                 r.artist,
@@ -449,7 +453,7 @@ async def get_market_new_arrivals(
         )
         SELECT *
         FROM ranked
-        ORDER BY first_seen_at DESC
+        ORDER BY fresh_at DESC
         LIMIT :limit
         """
     )
