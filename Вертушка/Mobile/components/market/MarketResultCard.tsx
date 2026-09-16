@@ -16,13 +16,20 @@
  * на всю ширину.
  */
 import React from 'react';
-import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Dimensions, PixelRatio, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Image } from 'expo-image';
 
 import { ms } from '../../lib/responsive';
-import { resolveMediaUrl } from '../../lib/api';
+import { resolveMediaUrl, sizedCoverUrl } from '../../lib/api';
+import { useCoverSource } from '../../lib/coverRetry';
 import MiniPriceBadge from '../MiniPriceBadge';
 import StoreLogo, { getStoreName } from './StoreLogo';
 import type { MarketSearchItem } from '../../lib/types';
+
+// Ячейка занимает 48% ширины экрана (см. styles.card). Считаем слот один раз
+// на модуль: sizedCoverUrl округлит вверх до ступени 320/640, и вместо мастера
+// в 331 КБ приедет нарезка в 28.8 КБ (замер 15.09.2026).
+const CARD_SLOT_PX = Math.ceil(Dimensions.get('window').width * 0.48 * PixelRatio.get());
 
 interface MarketResultCardProps {
   item: MarketSearchItem;
@@ -32,9 +39,12 @@ interface MarketResultCardProps {
 }
 
 export function MarketResultCard({ item, onPress, showStore = false }: MarketResultCardProps) {
-  const cover = item.cover_image_url
+  const rawCover = item.cover_image_url
     ? resolveMediaUrl(item.cover_image_url) ?? item.cover_image_url
-    : null;
+    : undefined;
+  // Ретрай общий (lib/coverRetry): он держит cacheKey исходным, поэтому повтор
+  // не дробит дисковый кэш, и умеет откатиться на прямой внешний URL.
+  const cover = useCoverSource(sizedCoverUrl(rawCover, CARD_SLOT_PX), rawCover);
 
   return (
     <Pressable
@@ -44,8 +54,16 @@ export function MarketResultCard({ item, onPress, showStore = false }: MarketRes
       accessibilityLabel={`${item.artist} — ${item.title}, ${Number(item.min_price_rub)} рублей`}
     >
       <View style={styles.coverWrap}>
-        {cover ? (
-          <Image source={{ uri: cover }} style={styles.cover} resizeMode="cover" />
+        {cover.source ? (
+          <Image
+            source={cover.source}
+            style={styles.cover}
+            contentFit="cover"
+            transition={120}
+            cachePolicy="memory-disk"
+            onLoad={cover.onLoad}
+            onError={cover.onError}
+          />
         ) : (
           <View style={[styles.cover, styles.coverPlaceholder]} />
         )}
