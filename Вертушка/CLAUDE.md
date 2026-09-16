@@ -49,6 +49,20 @@ git push && ssh deploy@85.198.85.12 'bash ~/vertushka/Вертушка/Backend/s
 cd Mobile && npm start
 ```
 
+### ⚠️ iOS ↔ Android: разграничение правок
+
+> Полные правила: [docs/plans/quality/PLATFORM_EDITS_RULES.md](docs/plans/quality/PLATFORM_EDITS_RULES.md).
+> Обязательны для любой правки в `Mobile/`.
+
+Коротко, то, что нарушать нельзя:
+1. **Классифицируй до правки**: `platform: ios` / `platform: android` / `platform: both` — первой строкой в описании PR.
+2. **Guard или both.** Правка в общем файле ради одной платформы либо обнесена `Platform.OS`, либо это `both` и проверены обе. Комментарий «только для Android» guard'ом не является.
+3. **«На другой платформе проп инертен» — миф.** Так уже сломали iOS через `numberOfLines` (#231 → #241 → #253). Прокидывать условно: `Platform.OS === 'android' ? {...} : {}`.
+4. **Больше 3 `Platform.OS` в компоненте или расходится структура** → разводить `.ios.tsx` / `.android.tsx`; целая фича одной платформы → отдельный модуль (`AndroidEdgeSwipeBack`, `useAndroidOverdrag`).
+5. **jest настроен только на iOS** (`preset: jest-expo/ios`) — Android-рендер не покрыт. Изменившийся iOS-снапшот в PR с `platform: android` — стоп-сигнал, а не повод обновить baseline. Android покрывается unit-тестами на чистых функциях.
+6. **`app.config.js` / плагины / зависимости — всегда общие**; гейт `Mobile/ci/check-ios-baseline.sh`.
+7. **Каналы OTA разные**: `both` выкатывать в оба (`update:prod:ios` + `update:prod:android`).
+
 ## Гайдлайны кода
 
 ### TypeScript (Mobile)
