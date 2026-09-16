@@ -12,6 +12,7 @@
  */
 import React, { useState } from 'react';
 import {
+  Platform,
   Pressable,
   StyleSheet,
   TextInput,
@@ -88,6 +89,7 @@ export function MarketSearchInput({
         placeholderTextColor="rgba(255,255,255,0.5)"
         selectionColor="#E85A2A"
         style={styles.input}
+        {...PLACEHOLDER_LINE_PROPS}
         returnKeyType="search"
         accessibilityLabel="Поиск в Маркете"
       />
@@ -109,6 +111,17 @@ export function MarketSearchInput({
     </BlurViewCompat>
   );
 }
+
+/**
+ * maxLines=1 у Android-EditText: длинный плейсхолдер («Найти в Kultura Record
+ * Store…») иначе переносится по слову. ТОЛЬКО Android — на iOS проп НЕ инертен:
+ * RN прокидывает numberOfLines и в iOS-ветку, оттуда он уходит в
+ * paragraphAttributes.maximumNumberOfLines и участвует в ИЗМЕРЕНИИ инпута.
+ * Именно так плейсхолдер в поиске на главной уехал вниз на ~9pt (PR #241) —
+ * повторять эту ошибку здесь не будем.
+ */
+const PLACEHOLDER_LINE_PROPS =
+  Platform.OS === 'android' ? ({ numberOfLines: 1 } as const) : ({} as const);
 
 const styles = StyleSheet.create({
   container: {
@@ -136,12 +149,25 @@ const styles = StyleSheet.create({
   },
   input: {
     flex: 1,
+    minWidth: 0,
+    // Явная высота вместо высоты «по измеренному тексту». Без неё положение
+    // текста определяется тем, как RN намерил строку, а мерит он вместе с
+    // плейсхолдером: на экране магазина тот длинный («Найти в Kultura Record
+    // Store…»), и текст уезжал вниз относительно лупы. Инпут занимает всю
+    // пилюлю и центрирует содержимое сам — от длины плейсхолдера и от
+    // font-scale это больше не зависит.
+    //
+    // lineHeight намеренно НЕ ставим: на iOS он сдвигает базовую линию в
+    // UITextField. Та же правка и по той же причине уже сделана в поиске на
+    // главной (PR #241).
+    height: '100%',
     fontFamily: 'Inter_500Medium',
     fontSize: 15,
     fontWeight: '500',
     color: MarketPalette.chrome.textPrimary,
     padding: 0, // зашитый padding TextInput'а на Android портит alignment
     includeFontPadding: false,
+    textAlignVertical: 'center',
   },
 });
 
