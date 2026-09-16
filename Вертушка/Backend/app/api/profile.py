@@ -314,7 +314,7 @@ async def _get_market_storefront(
         WITH agg AS (
             SELECT
                 COALESCE(r.discogs_master_id, r.id::text) AS dedup_key,
-                MAX(sl.first_seen_at) AS first_seen_at,
+                MAX(GREATEST(sl.first_seen_at, sl.restocked_at)) AS fresh_at,
                 (ARRAY_AGG(r.id ORDER BY sl.price_rub ASC NULLS LAST))[1] AS chosen_record_id
             FROM store_listings sl
             JOIN stores s ON s.id = sl.store_id
@@ -330,7 +330,7 @@ async def _get_market_storefront(
         )
         SELECT chosen_record_id
         FROM agg
-        ORDER BY first_seen_at DESC NULLS LAST
+        ORDER BY fresh_at DESC NULLS LAST
         LIMIT :limit
         """
     )

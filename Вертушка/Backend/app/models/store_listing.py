@@ -65,6 +65,24 @@ class StoreListing(Base):
 
     first_seen_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
     last_seen_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
+    # Когда листинг ПОСЛЕДНИЙ РАЗ вернулся в наличие (любой статус → in_stock).
+    # Отдельное поле, а не обновление first_seen_at: возраст листинга нужен
+    # как есть — на него опираются очередь матчера и гейт persistence у
+    # store-native (STORE_NATIVE_MIN_PERSIST_DAYS), и перезапись first_seen
+    # обнуляла бы этот стаж при каждом перезавозе.
+    #
+    # Зачем вообще. «Новинки» и сортировка «сначала свежие» считались по
+    # first_seen_at, то есть по дате ПЕРВОГО показа. Магазин со стабильным
+    # ассортиментом (Коробка Винила: ~700 позиций в наличии, все строки
+    # созданы при онбординге в мае) перезавозит те же наименования под тем же
+    # external_id — строка уже есть, first_seen остаётся майским, и витрина
+    # показывала «новинки» четырёхмесячной давности при живом перезавозе
+    # (замер 15.09: самый свежий видимый листинг магазина — 23 мая).
+    #
+    # Витрина читает свежесть как GREATEST(first_seen_at, restocked_at) —
+    # NULL в GREATEST Postgres игнорирует, поэтому листингу, который ни разу
+    # не уходил из наличия, поле ничего не меняет.
+    restocked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     raw_payload: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
