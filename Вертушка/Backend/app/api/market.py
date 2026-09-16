@@ -283,8 +283,13 @@ CACHE_TTL_SEARCH = 300        # 5 мин — поиск свежее
 # Именно этой метки не хватало Маркету: остальные экраны получают её из схем
 # (build_cover_url в schemas/record.py), а витрина строила URL в SQL и метку
 # теряла. Отсюда «одни и те же обложки грузятся заново» при каждом заходе.
+# CAST(... AS bigint), а не `::bigint`: guard tests/test_sql_bindparam_cast.py
+# запрещает форму `:x::type` — SQLAlchemy не распознаёт bindparam перед `::`,
+# и asyncpg падает на syntax error. Здесь параметра нет, но регулярка guard'а
+# (и человек при чтении) этого не различает, а предписанная форма и читается
+# яснее. `||` с bigint работает без явного приведения к тексту.
 _VERSION_SUFFIX = (
-    "COALESCE('?v=' || extract(epoch from r.cover_cached_at)::bigint::text, '')"
+    "COALESCE('?v=' || CAST(extract(epoch from r.cover_cached_at) AS bigint), '')"
 )
 
 # ⚠️ cover_cached_at — ТРЕТИЙ источник, наравне с local/url.
