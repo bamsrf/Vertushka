@@ -3,6 +3,7 @@
 Кэширование через Redis (graceful fallback на работу без кэша).
 """
 import asyncio
+import dataclasses
 import logging
 import re
 import time
@@ -72,6 +73,20 @@ def _build_year_query(
     if year_max is not None:
         return query, year_max
     return query, year
+
+
+@dataclasses.dataclass(frozen=True)
+class DiscogsUserReleases:
+    """Результат постраничной выкачки списка юзера (коллекция/wantlist).
+
+    available — сколько всего лежит на Discogs (pagination.items), независимо
+    от обрезки. truncated — упёрлись ли в max_items. Без этих двух полей
+    вызывающий не мог отличить «у юзера ровно столько» от «мы недокачали».
+    """
+
+    releases: list[dict]
+    available: int
+    truncated: bool
 
 
 class CircuitOpenError(Exception):
@@ -1028,90 +1043,100 @@ class DiscogsService:
     # Коллекция пользователя (для импорта)
     # ------------------------------------------------------------------
 
+    async def _paginate_user_releases(
+        self,
+        url: str,
+        creds: "tuple[str, str]",
+        items_key: str,
+        max_items: int,
+        extra_params: dict | None = None,
+    ) -> "DiscogsUserReleases":
+        """Общий постраничный обход списков юзера (коллекция, wantlist).
+
+        Возвращает не голый список, а DiscogsUserReleases: вызывающему нужно
+        знать не только что скачалось, но и сколько всего лежит на Discogs и
+        упёрлись ли мы в max_items. Раньше обрезка была молчаливой — юзер
+        видел «из 3000» и читал это как размер своего списка.
+        """
+        per_page = 100
+        page = 1
+        out: list[dict] = []
+        available = 0
+        while True:
+            # BATCH, а не DETAIL: импорт идёт фоновой задачей (никто не ждёт
+            # ответа в запросе), и занимать им слоты интерактивного семафора
+            # на минуты нельзя. Лимит всё равно личный — токен юзера.
+            params = {"per_page": per_page, "page": page}
+            if extra_params:
+                params.update(extra_params)
+            data = await self._get(
+                url, params=params, priority=Priority.BATCH, creds=creds,
+            )
+            entries = data.get(items_key, [])
+            pagination = data.get("pagination", {})
+            # items приходит на каждой странице и не зависит от обрезки —
+            # это и есть настоящий размер списка на Discogs.
+            available = max(available, int(pagination.get("items") or 0))
+
+            for entry in entries:
+                basic = entry.get("basic_information")
+                if basic:
+                    out.append(basic)
+                if len(out) >= max_items:
+                    return DiscogsUserReleases(
+                        releases=out,
+                        available=max(available, len(out)),
+                        truncated=True,
+                    )
+
+            total_pages = pagination.get("pages", page)
+            if page >= total_pages or not entries:
+                break
+            page += 1
+        return DiscogsUserReleases(
+            releases=out, available=max(available, len(out)), truncated=False,
+        )
+
     async def get_collection_releases(
         self,
         username: str,
         creds: "tuple[str, str]",
         *,
-        max_items: int = 3000,
-    ) -> list[dict]:
-        """Все релизы из коллекции юзера (folder 0 = All). Возвращает список
-        basic_information dict'ов — их достаточно чтобы создать slim Record без
-        per-release detail-вызова. Идёт под токеном юзера (его лимит 60/min).
+        max_items: int | None = None,
+    ) -> "DiscogsUserReleases":
+        """Все релизы из коллекции юзера (folder 0 = All). basic_information
+        dict'ов достаточно чтобы создать slim Record без per-release
+        detail-вызова. Идёт под токеном юзера (его лимит 60/min).
 
-        max_items — защита от гигантских коллекций; режем хвост.
+        max_items — защита от гигантских коллекций; хвост режется, но об
+        обрезке говорит DiscogsUserReleases.truncated, а не тишина.
         """
-        per_page = 100
-        page = 1
-        out: list[dict] = []
-        while True:
-            # BATCH, а не DETAIL: импорт идёт фоновой задачей (никто не ждёт
-            # ответа в запросе), и занимать им слоты интерактивного семафора
-            # на минуты нельзя. Лимит всё равно личный — токен юзера.
-            data = await self._get(
-                f"{self.BASE_URL}/users/{username}/collection/folders/0/releases",
-                params={
-                    "per_page": per_page,
-                    "page": page,
-                    "sort": "added",
-                    "sort_order": "desc",
-                },
-                priority=Priority.BATCH,
-                creds=creds,
-            )
-            releases = data.get("releases", [])
-            for entry in releases:
-                basic = entry.get("basic_information")
-                if basic:
-                    out.append(basic)
-                if len(out) >= max_items:
-                    return out
-
-            pagination = data.get("pagination", {})
-            total_pages = pagination.get("pages", page)
-            if page >= total_pages or not releases:
-                break
-            page += 1
-        return out
+        return await self._paginate_user_releases(
+            f"{self.BASE_URL}/users/{username}/collection/folders/0/releases",
+            creds,
+            "releases",
+            max_items if max_items is not None else settings.discogs_import_max_items,
+            extra_params={"sort": "added", "sort_order": "desc"},
+        )
 
     async def get_wantlist_releases(
         self,
         username: str,
         creds: "tuple[str, str]",
         *,
-        max_items: int = 3000,
-    ) -> list[dict]:
+        max_items: int | None = None,
+    ) -> "DiscogsUserReleases":
         """Все релизы из вишлиста (wantlist) юзера — те же basic_information
         dict'ы, что у get_collection_releases. Идёт под токеном юзера.
 
-        max_items — та же защита от гигантских списков, что у коллекции.
+        max_items — та же защита, что у коллекции, с той же индикацией.
         """
-        per_page = 100
-        page = 1
-        out: list[dict] = []
-        while True:
-            # BATCH по той же причине, что у коллекции: фоновая задача не
-            # должна занимать слоты интерактивного семафора на минуты.
-            data = await self._get(
-                f"{self.BASE_URL}/users/{username}/wants",
-                params={"per_page": per_page, "page": page},
-                priority=Priority.BATCH,
-                creds=creds,
-            )
-            wants = data.get("wants", [])
-            for entry in wants:
-                basic = entry.get("basic_information")
-                if basic:
-                    out.append(basic)
-                if len(out) >= max_items:
-                    return out
-
-            pagination = data.get("pagination", {})
-            total_pages = pagination.get("pages", page)
-            if page >= total_pages or not wants:
-                break
-            page += 1
-        return out
+        return await self._paginate_user_releases(
+            f"{self.BASE_URL}/users/{username}/wants",
+            creds,
+            "wants",
+            max_items if max_items is not None else settings.discogs_import_max_items,
+        )
 
     # ------------------------------------------------------------------
     # Мастер-релизы (кэшируются на 7 дней)
