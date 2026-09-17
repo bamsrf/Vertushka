@@ -36,10 +36,42 @@ def test_unmirrored_discogs_cover_goes_through_bridge():
     assert brief().cover_url == "/covers/123456.jpg"
 
 
-def test_mirrored_cover_keeps_uploads_path_with_stamp():
+def test_flat_mirror_goes_through_bridge_not_uploads():
+    # 17.09.2026: зеркало на диске отдавалось как /uploads/covers/x.jpg, а
+    # витрина то же самое — как /covers/x.jpg. Два следствия, оба дорогие:
+    # разные ключи кэша на одну картинку, и клиентский sizedCoverUrl (он ищет
+    # ровно /covers/{name}.jpg) такой URL не резал — карточка тянула полный
+    # мастер вместо ступени 640.
     stamp = datetime(2026, 9, 10, 12, 0, tzinfo=timezone.utc)
     rb = brief(cover_local_path="covers/123456.jpg", cover_cached_at=stamp)
-    assert rb.cover_url == f"/uploads/covers/123456.jpg?v={int(stamp.timestamp())}"
+    assert rb.cover_url == f"/covers/123456.jpg?v={int(stamp.timestamp())}"
+
+
+def test_nested_mirror_still_uses_uploads():
+    # covers/store/… мостом не отдать: регекс nginx не пускает слэши в имя.
+    stamp = datetime(2026, 9, 10, 12, 0, tzinfo=timezone.utc)
+    rb = brief(
+        discogs_id=None, source="store",
+        cover_local_path="covers/store/abc.jpg", cover_cached_at=stamp,
+    )
+    assert rb.cover_url == f"/uploads/covers/store/abc.jpg?v={int(stamp.timestamp())}"
+
+
+def test_nested_mirror_uses_uploads_even_with_numeric_id():
+    # Числовой id сам по себе не повод мостить: файла /covers/{id}.jpg нет.
+    stamp = datetime(2026, 9, 10, 12, 0, tzinfo=timezone.utc)
+    rb = brief(cover_local_path="covers/store/abc.jpg", cover_cached_at=stamp)
+    assert rb.cover_url == f"/uploads/covers/store/abc.jpg?v={int(stamp.timestamp())}"
+
+
+def test_version_marker_truncates_like_postgres_floor():
+    # Витрина строит метку в SQL: CAST(floor(extract(epoch …)) AS bigint).
+    # Голый CAST округлял, python int() отбрасывает — на обложке с .5+ в
+    # микросекундах URL расходились на секунду. Обе стороны обязаны отбрасывать.
+    stamp = datetime(2026, 9, 10, 12, 0, 10, 600000, tzinfo=timezone.utc)
+    rb = brief(cover_local_path="covers/123456.jpg", cover_cached_at=stamp)
+    assert rb.cover_url.endswith(f"?v={int(stamp.timestamp())}")
+    assert not rb.cover_url.endswith(f"?v={round(stamp.timestamp())}")
 
 
 def test_explicit_cover_url_is_not_overridden():
@@ -118,7 +150,9 @@ def test_unmirrored_still_has_no_version():
     assert brief().cover_url == "/covers/123456.jpg"
 
 
-def test_local_path_wins_over_bridge():
-    # Пока локальная копия на месте — отдаём её, мост не вмешивается.
-    rb = brief(cover_local_path="covers/123456.jpg", cover_cached_at=EVICTED_STAMP)
-    assert rb.cover_url == f"/uploads/covers/123456.jpg{EVICTED_V}"
+def test_disk_and_bucket_give_the_same_url():
+    # Главный инвариант: выселено зеркало или нет — URL один и тот же. Иначе
+    # эвикция меняла бы ключ кэша у клиента и картинка качалась бы заново.
+    on_disk = brief(cover_local_path="covers/123456.jpg", cover_cached_at=EVICTED_STAMP)
+    in_bucket = brief(cover_local_path=None, cover_cached_at=EVICTED_STAMP)
+    assert on_disk.cover_url == in_bucket.cover_url == f"/covers/123456.jpg{EVICTED_V}"

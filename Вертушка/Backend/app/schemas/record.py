@@ -48,10 +48,27 @@ class RecordCreate(RecordBase):
     tracklist: list | None = None
 
 
+def is_flat_mirror(local_path: str | None) -> bool:
+    """Зеркало лежит плоско в covers/ — значит адресуемо как /covers/{id}.jpg.
+
+    Вложенные пути (covers/store/…, user_photos/…) отдаются только как
+    /uploads/…: регекс nginx не пускает слэши в имя, а imgproxy-нарезка и мост
+    работают лишь по плоскому имени.
+    """
+    if not local_path:
+        return False
+    name = local_path.removeprefix("covers/")
+    return local_path.startswith("covers/") and "/" not in name
+
+
 def build_cover_url(
     local_path: str | None, cached_at: datetime | None
 ) -> str | None:
     """URL зеркалированной обложки: /uploads/-путь плюс метка перезалива.
+
+    Только для того, что мостом не отдать: вложенные пути и ручные фото. Для
+    плоского зеркала URL строит bridge_cover_url — см. там, почему /uploads/
+    для него хуже.
 
     Cache-bust по cover_cached_at обязателен: перезалив меняет файл по тому
     же пути, и без метки клиент (expo-image disk / nginx expires 7d) показал
@@ -69,6 +86,7 @@ def bridge_cover_url(
     discogs_id: str | None,
     cover_image_url: str | None,
     cached_at: datetime | None = None,
+    local_path: str | None = None,
 ) -> str | None:
     """Путь `/covers/{discogs_id}.jpg` — и для зеркала в бакете, и self-healing.
 
@@ -83,6 +101,12 @@ def bridge_cover_url(
        `_COVER_BRIDGE` витрины (api/market.py): третий источник наравне с
        local/url. Без неё карточка релиза для выселенной обложки отдавала
        `cover_url=None` и клиент падал на i.discogs.com.
+
+    1б. Зеркало лежит плоско на диске (`local_path` = covers/{id}.jpg). Мост
+       отдаёт его тем же путём, а не через /uploads/: так URL совпадает с
+       витриной (общий кэш), и клиентский sizedCoverUrl умеет его нарезать —
+       он ищет только /covers/{name}.jpg. С /uploads/-путём карточка тянула
+       полный мастер вместо ступени.
 
     2. Зеркала ЕЩЁ нет (`cached_at` пуст). Тогда мост self-healing: nginx не
        найдёт файл, уйдёт в `@covers_fallback` → get_cover → 302 на оригинал +
@@ -101,6 +125,11 @@ def bridge_cover_url(
     качается дважды и живёт неделю вместо года.
     """
     if not discogs_id or not str(discogs_id).isdigit():
+        return None
+
+    # Локальная копия есть, но лежит НЕ плоско (covers/store/…) — мостом такое
+    # не отдать: регекс nginx не пускает слэши в имя. Пусть строит /uploads/.
+    if local_path and not is_flat_mirror(local_path):
         return None
 
     if cached_at is None:
@@ -176,11 +205,15 @@ class RecordResponse(BaseModel):
     @model_validator(mode="after")
     def _populate_cover_url(self) -> "RecordResponse":
         if not self.cover_url:
-            self.cover_url = build_cover_url(
-                self.cover_local_path, self.cover_cached_at
-            ) or bridge_cover_url(
-                self.discogs_id, self.cover_image_url, self.cover_cached_at
-            )
+            # Мост ПЕРВЫМ, /uploads/ — только для того, что мостом не отдать.
+            # Иначе зеркало на диске отдавалось как /uploads/covers/x.jpg, а
+            # витрина то же самое — как /covers/x.jpg: разные ключи кэша, и
+            # клиентский sizedCoverUrl (он ищет только /covers/{name}.jpg)
+            # такой URL не режет вовсе — карточка тянула полный мастер.
+            self.cover_url = bridge_cover_url(
+                self.discogs_id, self.cover_image_url, self.cover_cached_at,
+                local_path=self.cover_local_path,
+            ) or build_cover_url(self.cover_local_path, self.cover_cached_at)
         return self
 
 
@@ -215,11 +248,15 @@ class RecordBrief(BaseModel):
     @model_validator(mode="after")
     def _populate_cover_url(self) -> "RecordBrief":
         if not self.cover_url:
-            self.cover_url = build_cover_url(
-                self.cover_local_path, self.cover_cached_at
-            ) or bridge_cover_url(
-                self.discogs_id, self.cover_image_url, self.cover_cached_at
-            )
+            # Мост ПЕРВЫМ, /uploads/ — только для того, что мостом не отдать.
+            # Иначе зеркало на диске отдавалось как /uploads/covers/x.jpg, а
+            # витрина то же самое — как /covers/x.jpg: разные ключи кэша, и
+            # клиентский sizedCoverUrl (он ищет только /covers/{name}.jpg)
+            # такой URL не режет вовсе — карточка тянула полный мастер.
+            self.cover_url = bridge_cover_url(
+                self.discogs_id, self.cover_image_url, self.cover_cached_at,
+                local_path=self.cover_local_path,
+            ) or build_cover_url(self.cover_local_path, self.cover_cached_at)
         return self
 
 

@@ -249,9 +249,9 @@ def _filters_clause(
 # Cache-namespace зашит с версией: при изменении формы ответа (например,
 # дедупа по master_id вместо record_id) бампаем суффикс — старые ключи
 # в Redis самотухнут по TTL, а свежие запросы сразу получают новую логику.
-CACHE_NS_STORES = "market_stores:v5"
-CACHE_NS_STORE_LISTINGS = "market_store_listings:v6"
-CACHE_NS_SEARCH = "market_search:v15"  # v15: ?v= в URL обложки — годовой immutable вместо недели
+CACHE_NS_STORES = "market_stores:v6"
+CACHE_NS_STORE_LISTINGS = "market_store_listings:v7"
+CACHE_NS_SEARCH = "market_search:v16"  # v16: floor() у метки — URL совпал с карточкой
 CACHE_TTL_STORES = 1800       # 30 мин — список магазинов меняется редко
 CACHE_TTL_LISTINGS = 600      # 10 мин — карусели чаще обновляем
 CACHE_TTL_SEARCH = 300        # 5 мин — поиск свежее
@@ -289,7 +289,12 @@ CACHE_TTL_SEARCH = 300        # 5 мин — поиск свежее
 # (и человек при чтении) этого не различает, а предписанная форма и читается
 # яснее. `||` с bigint работает без явного приведения к тексту.
 _VERSION_SUFFIX = (
-    "COALESCE('?v=' || CAST(extract(epoch from r.cover_cached_at) AS bigint), '')"
+    # floor(), а НЕ голый CAST: приведение numeric→bigint в Postgres ОКРУГЛЯЕТ,
+    # а схемы записи ставят метку через python int(...timestamp()), который
+    # ОТБРАСЫВАЕТ дробь. У обложки с .5+ в микросекундах витрина и карточка
+    # расходились на секунду — разные ключи кэша, одна картинка качалась дважды.
+    # Ровно та беда, которую метка и была призвана устранить.
+    "COALESCE('?v=' || CAST(floor(extract(epoch from r.cover_cached_at)) AS bigint), '')"
 )
 
 # ⚠️ cover_cached_at — ТРЕТИЙ источник, наравне с local/url.
