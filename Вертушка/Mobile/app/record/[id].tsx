@@ -33,7 +33,7 @@ import { Header } from '../../components/Header';
 import { GradientText } from '../../components/GradientText';
 import { FolderPickerModal } from '../../components/FolderPickerModal';
 import { Button, Card, ActionSheet, ActionSheetAction } from '../../components/ui';
-import { api, apiErrorText, getMasterCoverUrl, getPlaceholderCoverUrl } from '../../lib/api';
+import { api, apiErrorText, getFastPlaceholderUrl, getMasterCoverUrl } from '../../lib/api';
 import { useCoverSource } from '../../lib/coverRetry';
 import { analytics } from '../../lib/analytics';
 import { getForcedCoachMark } from '../../lib/coachMarks';
@@ -170,7 +170,7 @@ export default function RecordDetailScreen() {
   // Пока record грузится, source = превью из параметров; дальше — то же, что
   // imageUrl в основной ветке (мастер, иначе лучшее мелкое).
   const heroSourceUrl = record
-    ? getMasterCoverUrl(record) || previewThumb || getPlaceholderCoverUrl(record)
+    ? getMasterCoverUrl(record) || previewThumb || getFastPlaceholderUrl(record)
     : previewCover || undefined;
   const heroCover = useCoverSource(heroSourceUrl, record?.cover_image_url || undefined);
 
@@ -885,7 +885,7 @@ export default function RecordDetailScreen() {
   // навсегда залипала плейсхолдером: экран вечно «грузился», а показывал
   // 150px-thumb вместо 300px-обложки из соседнего поля.
   const masterUrl = getMasterCoverUrl(record);
-  const thumbUrl = previewThumb || getPlaceholderCoverUrl(record);
+  const thumbUrl = previewThumb || getFastPlaceholderUrl(record);
   const imageUrl = masterUrl || thumbUrl;
 
   // UGC: чужая user-запись — жалоба доступна из хедера даже вне коллекции.

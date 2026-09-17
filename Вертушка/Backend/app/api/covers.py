@@ -109,9 +109,32 @@ async def _deny_discogs_by_budget(url: str | None) -> bool:
     return bool(url) and is_discogs_image_url(url) and await discogs_img_budget_exhausted()
 
 
+async def _free_sources_on_budget_denial(
+    db: AsyncSession, discogs_id: str, meta: dict | None = None
+) -> str | None:
+    """Бесплатные источники вместо жёсткого 404, когда бюджет Discogs выеден.
+
+    Раньше отказ по бюджету заканчивался 404, и клиент оставался с заглушкой
+    навсегда — при том что CAA/Deezer/iTunes/Yandex бюджета Discogs не тратят
+    вовсе и лестница к ним уже написана. Отказывали ровно там, где бесплатные
+    каналы и нужны: бюджет выеден именно в час пик.
+
+    Лестница идёт под теми же гейтами, что и обычный живой резолв
+    (negative-cache → семафор → дедуп → таймаут, см. _live_resolve_guarded):
+    ни один запрос не висит, сессия БД отпускается до сетевых вызовов. Последняя
+    ступень (Discogs) выключена — см. allow_discogs.
+
+    meta=None допустимо: ступень CAA работает по одному discogs_id через
+    офлайн-маппинг mb_discogs_map, артист с названием ей не нужны.
+    """
+    row = meta or {"artist": None, "title": None, "year": None, "barcode_norm": None}
+    return await _live_resolve_guarded(db, discogs_id, row, allow_discogs=False)
+
+
 async def _resolve_cover_live(
     discogs_id: str, artist: str | None, title: str | None,
     year: int | None, barcode: str | None,
+    allow_discogs: bool = True,
 ) -> str | None:
     """Синхронный резолв обложки для release без URL в индексе — показать
     реальную обложку вместо заглушки (первый заход). Порядок по цене:
@@ -165,7 +188,11 @@ async def _resolve_cover_live(
                 url = yc.url
         except Exception:
             pass
-    if not url:
+    if not url and allow_discogs:
+        # allow_discogs=False — мы попали сюда ИЗ-ЗА выеденного бюджета
+        # Discogs. Последняя ступень лестницы тогда бессмысленна: она либо
+        # отказала бы сама, либо выдала подписанный URL, который через минуту
+        # отдаст 403. Бесплатные ступени выше от бюджета не зависят вовсе.
         try:
             from app.services.discogs import DiscogsService
             url = await DiscogsService().get_release_cover(discogs_id)
@@ -188,7 +215,9 @@ async def _resolve_cover_live(
     return url
 
 
-async def _live_resolve_guarded(db: AsyncSession, discogs_id: str, row) -> str | None:
+async def _live_resolve_guarded(
+    db: AsyncSession, discogs_id: str, row, allow_discogs: bool = True
+) -> str | None:
     """Обёртка живого резолва: negative-cache → семафор → дедуп → лестница.
 
     Все «нет» здесь мгновенные — клиент получает 404 и ретраит позже
@@ -226,6 +255,7 @@ async def _live_resolve_guarded(db: AsyncSession, discogs_id: str, row) -> str |
                 _resolve_cover_live(
                     discogs_id, row["artist"], row["title"],
                     row["year"], row["barcode_norm"],
+                    allow_discogs=allow_discogs,
                 ),
                 timeout=_RESOLVE_TIMEOUT,
             ))
@@ -353,7 +383,12 @@ async def get_cover(
         return RedirectResponse(url=url, status_code=302)
 
     result = await db.execute(
-        select(Record.discogs_id, Record.cover_image_url, Record.cover_local_path)
+        # artist/title/year/barcode — не для ответа, а для бесплатной лестницы
+        # при отказе по бюджету: та же строка, лишнего запроса нет.
+        select(
+            Record.discogs_id, Record.cover_image_url, Record.cover_local_path,
+            Record.artist, Record.title, Record.year, Record.barcode,
+        )
         .where(Record.discogs_id == discogs_id)
     )
     record = result.first()
@@ -361,6 +396,13 @@ async def get_cover(
     record_url = _safe(record.cover_image_url) if record is not None else None
     if record_url:
         if await _deny_discogs_by_budget(record_url):
+            free = await _free_sources_on_budget_denial(db, discogs_id, {
+                "artist": record.artist, "title": record.title,
+                "year": record.year, "barcode_norm": record.barcode,
+            })
+            if free:
+                _spawn_mirror(discogs_id, free)
+                return RedirectResponse(url=free, status_code=302)
             await record_cold_outcome(OUTCOME_BUDGET)
             raise HTTPException(status_code=404, detail="Cover image not available")
         # Запускаем фоновое скачивание если обложки нет локально
@@ -386,6 +428,10 @@ async def get_cover(
             url = _safe(row["cover_image_url"])
             if url:
                 if await _deny_discogs_by_budget(url):
+                    free = await _free_sources_on_budget_denial(db, discogs_id, dict(row))
+                    if free:
+                        _spawn_mirror(discogs_id, free)
+                        return RedirectResponse(url=free, status_code=302)
                     await record_cold_outcome(OUTCOME_BUDGET)
                     raise HTTPException(status_code=404, detail="Cover image not available")
                 _spawn_mirror(discogs_id, url)

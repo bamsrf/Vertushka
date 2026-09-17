@@ -255,6 +255,43 @@ export function sizedCoverUrl(
 }
 
 /**
+ * Ступень, на которой берём «быстрый первый кадр» для полноэкранного героя.
+ *
+ * Это не размер под слот героя (он занимает всю ширину) — это ставка на то,
+ * что файл УЖЕ лежит в disk-кэше. Плитка списка на любом реальном устройстве
+ * округляется именно сюда: ячейка Маркета 0.48 ширины экрана даёт
+ * 393·0.48·2 = 378 px на 2x и 566 px на 3x, сетка коллекции — 393 и 590;
+ * всё это ступень 640. То есть URL плейсхолдера совпадёт строка в строку с
+ * тем, что человек уже видел в списке, и первый кадр придёт из кэша без сети.
+ */
+export const PLACEHOLDER_COVER_PX = 640;
+
+/**
+ * Плейсхолдер для героя карточки: наша нарезка вместо 150px-thumb'а Discogs.
+ *
+ * Зачем менять. `getPlaceholderCoverUrl` отдаёт `thumb_image_url` — 150 px с
+ * i.discogs.com. Два изъяна разом: апскейл 150 → 1170 это и есть та каша,
+ * которую видно при открытии релиза, и приходит она с хоста, который из РФ
+ * отвечает медленно, то есть каша ещё и висит. Наша ступень 640 в тех же
+ * условиях приходит мгновенно из disk-кэша (её скачала плитка списка) и
+ * апскейлится всего в 1.8 раза.
+ *
+ * Внешний мастер (i.discogs.com master-грейд) `sizedCoverUrl` возвращает как
+ * есть — нарезать нечего, и мы честно откатываемся на прежний thumb.
+ */
+export function getFastPlaceholderUrl(
+  record:
+    | { cover_url?: string; cover_image_url?: string; thumb_image_url?: string }
+    | null
+    | undefined
+): string | undefined {
+  const master = getMasterCoverUrl(record);
+  const sized = sizedCoverUrl(master, PLACEHOLDER_COVER_PX);
+  if (sized && sized !== master) return sized;
+  return getPlaceholderCoverUrl(record);
+}
+
+/**
  * Preview-параметры для мгновенной отрисовки /record/[id] из уже известных
  * полей списка (заголовок/артист/обложка/год). Экран карточки рисует их сразу
  * (ветка hasPreview), пока грузится полный payload — тап больше не упирается в
@@ -285,7 +322,7 @@ export function recordPreviewParams(
   if (record.artist) params.previewArtist = String(record.artist);
   const cover = getMasterCoverUrl(record);
   if (cover) params.previewCover = cover;
-  const thumb = getPlaceholderCoverUrl(record);
+  const thumb = getFastPlaceholderUrl(record);
   if (thumb) params.previewThumb = thumb;
   if (record.year !== null && record.year !== undefined && record.year !== '') {
     params.previewYear = String(record.year);

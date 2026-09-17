@@ -3291,8 +3291,13 @@ async def _cover_stamps(db: AsyncSession, discogs_ids: list[str | None]) -> dict
         await db.execute(
             text(
                 "SELECT discogs_id, cover_cached_at FROM records "
+                # Без `cover_local_path IS NOT NULL`: с S3 эвикция гасит
+                # указатель на диск, оставляя cover_cached_at, и файл жив в
+                # бакете. Со старым условием выселенные обложки теряли метку
+                # версии — неделя кэша вместо года и другой ключ, чем у
+                # витрины, которая метку ставит по одному cover_cached_at.
                 "WHERE discogs_id = ANY(:ids) AND cover_cached_at IS NOT NULL "
-                "AND cover_local_path IS NOT NULL AND merged_into_id IS NULL"
+                "AND merged_into_id IS NULL"
             ),
             {"ids": [str(d) for d in ids]},
         )

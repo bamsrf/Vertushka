@@ -258,7 +258,16 @@ def cover_url(record, width: int | None = None) -> str:
 
     local = getattr(record, "cover_local_path", None)
     if not local:
-        return getattr(record, "cover_image_url", None) or ""
+        # Зеркало выселено в бакет: с S3 эвикция гасит только указатель на
+        # диск, файл жив и отдаётся по плоскому `/covers/{discogs_id}.jpg`
+        # (подробно — bridge_cover_url в schemas/record.py). Без этой ветки
+        # страница уходила на i.discogs.com — мимо нарезки и мимо кэша.
+        did = getattr(record, "discogs_id", None)
+        cached = getattr(record, "cover_cached_at", None)
+        if cached and did and str(did).isdigit():
+            local = f"covers/{did}.jpg"
+        else:
+            return getattr(record, "cover_image_url", None) or ""
 
     base = settings.public_api_base
     name = local[len("covers/"):] if local.startswith("covers/") else ""
