@@ -66,35 +66,53 @@ def build_cover_url(
 
 
 def bridge_cover_url(
-    discogs_id: str | None, cover_image_url: str | None
+    discogs_id: str | None,
+    cover_image_url: str | None,
+    cached_at: datetime | None = None,
 ) -> str | None:
-    """Self-healing путь `/covers/{discogs_id}.jpg` для НЕзазеркаленной обложки.
+    """Путь `/covers/{discogs_id}.jpg` — и для зеркала в бакете, и self-healing.
 
-    Зачем. Пока зеркала нет, схема отдавала `cover_url=None`, и клиент падал
-    на `cover_image_url` — прямую ссылку на i.discogs.com. Из РФ этот CDN
-    недоступен/медленный: на реальном Android (10.09.2026) коллекция из 71
-    записи, где зеркало было только у 5, минутами висела серыми blurhash'ами —
-    в nginx за всю сессию не пришло ни одного запроса за этими 66 обложками,
-    они и не должны были прийти. Поиск, скан и маркет давно ходят через мост
-    (`_mirror_url` в api/records.py, `_COVER_BRIDGE` в api/market.py) — сюда
-    тот же путь: nginx-статика при попадании, иначе @covers_fallback →
-    get_cover → 302 на оригинал + фоновое зеркалирование, и второй заход уже
-    отдаёт файл с нашего диска.
+    Две разные ситуации приводят сюда, и различает их `cached_at`.
 
-    Мостим только то, что зеркало примет: числовой discogs_id и
-    мастер-грейд URL. Мелкое (< MASTER_MIN_SIDE) tier-гейт зеркала не пустит,
-    и `/covers/{id}.jpg` вечно был бы холодным 302 — клиент для такого
-    оставляет прежний прямой URL.
+    1. Зеркало ЕСТЬ, но `cover_local_path` пуст (`cached_at` не пуст). Так
+       выглядит запись, у которой LRU выселила локальную копию: с S3 эвикция
+       гасит только указатель на диск, файл жив в бакете и отдаётся через
+       `@covers_s3`. Тир-гейт здесь не применяется: зеркало уже прошло его при
+       записи, а `cover_image_url` может быть и пустым (CAA/Deezer), и мелким —
+       к содержимому файла это отношения не имеет. Ровно та же логика, что в
+       `_COVER_BRIDGE` витрины (api/market.py): третий источник наравне с
+       local/url. Без неё карточка релиза для выселенной обложки отдавала
+       `cover_url=None` и клиент падал на i.discogs.com.
+
+    2. Зеркала ЕЩЁ нет (`cached_at` пуст). Тогда мост self-healing: nginx не
+       найдёт файл, уйдёт в `@covers_fallback` → get_cover → 302 на оригинал +
+       фоновое зеркалирование, и второй заход отдаёт уже наш файл. Из РФ
+       i.discogs.com недоступен/медленный: на реальном Android (10.09.2026)
+       коллекция из 71 записи, где зеркало было только у 5, минутами висела
+       серыми blurhash'ами. Мостим только то, что зеркало примет: числовой id и
+       мастер-грейд URL — мелкое тир-гейт не пустит, и `/covers/{id}.jpg` вечно
+       был бы холодным 302.
+
+    Метка версии обязательна везде, где она известна: именно она делает
+    `immutable` в nginx безопасным (зеркало перезаписывает мелкий мастер лучшим
+    источником) и — не менее важно — даёт тот же URL, что уже отдала витрина.
+    Без неё карточка просила `/covers/{id}.jpg`, а плитка Маркета
+    `/covers/w/640/{id}.jpg?v=…`: разные ключи кэша, одна и та же картинка
+    качается дважды и живёт неделю вместо года.
     """
     if not discogs_id or not str(discogs_id).isdigit():
         return None
-    if not cover_image_url or not cover_image_url.startswith("http"):
-        return None
-    from app.services.cover_quality import is_thumb_grade
 
-    if is_thumb_grade(cover_image_url):
-        return None
-    return f"/covers/{discogs_id}.jpg"
+    if cached_at is None:
+        if not cover_image_url or not cover_image_url.startswith("http"):
+            return None
+        from app.services.cover_quality import is_thumb_grade
+
+        if is_thumb_grade(cover_image_url):
+            return None
+        return f"/covers/{discogs_id}.jpg"
+
+    return f"/covers/{discogs_id}.jpg?v={int(cached_at.timestamp())}"
 
 
 class RecordResponse(BaseModel):
@@ -160,7 +178,9 @@ class RecordResponse(BaseModel):
         if not self.cover_url:
             self.cover_url = build_cover_url(
                 self.cover_local_path, self.cover_cached_at
-            ) or bridge_cover_url(self.discogs_id, self.cover_image_url)
+            ) or bridge_cover_url(
+                self.discogs_id, self.cover_image_url, self.cover_cached_at
+            )
         return self
 
 
@@ -197,7 +217,9 @@ class RecordBrief(BaseModel):
         if not self.cover_url:
             self.cover_url = build_cover_url(
                 self.cover_local_path, self.cover_cached_at
-            ) or bridge_cover_url(self.discogs_id, self.cover_image_url)
+            ) or bridge_cover_url(
+                self.discogs_id, self.cover_image_url, self.cover_cached_at
+            )
         return self
 
 

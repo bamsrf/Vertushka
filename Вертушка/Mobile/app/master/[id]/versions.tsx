@@ -17,7 +17,7 @@ import { Icon } from '@/components/ui';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Header } from '../../../components/Header';
 import { VersionCard } from '../../../components/VersionCard';
-import { api, getHeroCoverUrl, getMasterCoverUrl, getPlaceholderCoverUrl, isThumbGrade } from '../../../lib/api';
+import { api, getFastPlaceholderUrl, getHeroCoverUrl, getMasterCoverUrl, isThumbGrade } from '../../../lib/api';
 import { toast } from '../../../lib/toast';
 import { MasterVersion } from '../../../lib/types';
 import { takeVersionsPrefetch } from '../../../lib/versionsPrefetch';
@@ -170,7 +170,7 @@ export default function VersionsScreen() {
         // `cover_image_url || thumb_image_url`, и 150px-thumb из Discogs уезжал
         // в full-size слот детали, где растягивался на 1170px и залипал.
         previewCover: getMasterCoverUrl(version) || (cover && !isThumbGrade(cover) ? cover : '') || '',
-        previewThumb: getPlaceholderCoverUrl(version) || (cover && isThumbGrade(cover) ? cover : '') || '',
+        previewThumb: getFastPlaceholderUrl(version) || (cover && isThumbGrade(cover) ? cover : '') || '',
         previewYear: version.year?.toString() || year || '',
       },
     });
