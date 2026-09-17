@@ -27,6 +27,25 @@ import type { ImageErrorEventData, ImageSource } from 'expo-image';
 export const RETRY_DELAYS_MS = [1500, 4000] as const;
 export const COVER_WATCHDOG_MS = 12000;
 
+/**
+ * Поздняя волна: ещё одна попытка через LATE_RETRY_MS после того, как все
+ * ближние исчерпаны.
+ *
+ * Без неё заглушка была вечной, и это главная жалоба по обложкам. Первый
+ * заход за незазеркаленной обложкой самозалечивается: nginx не находит файл →
+ * get_cover отдаёт 302 и запускает зеркалирование. Скачивание и энкод занимают
+ * секунды — то есть картинка появляется ВСКОРЕ ПОСЛЕ того, как ближние попытки
+ * (1.5 с и 4 с) уже провалились. Хук уходил в failed навсегда, и плитка висела
+ * серой до размонтирования, хотя файл лежал на диске. Ровно то же и при 429 от
+ * limit_req, и при отказе по бюджету Discogs — там бесплатная лестница тоже
+ * доезжает фоном.
+ *
+ * Волн две, не бесконечность: мёртвая обложка не должна долбить сервер. Две
+ * волны по 20 с покрывают и зеркалирование, и лестницу, и разгрузку очереди.
+ */
+export const LATE_RETRY_MS = 20000;
+export const MAX_LATE_WAVES = 2;
+
 const FALLBACK_STEP = RETRY_DELAYS_MS.length + 1;
 const FAILED_STEP = FALLBACK_STEP + 1;
 
@@ -51,12 +70,16 @@ export function logCoverError(uri: string, message: string | undefined, step: nu
 function buildSource(
   uri: string | undefined,
   fallbackUri: string | undefined,
-  step: number
+  step: number,
+  wave: number
 ): ImageSource | undefined {
   if (!uri || step >= FAILED_STEP) return undefined;
   if (step === FALLBACK_STEP) return fallbackUri ? { uri: fallbackUri } : undefined;
-  if (step === 0) return { uri };
-  return { uri: withRetryParam(uri, step), cacheKey: uri };
+  if (step === 0 && wave === 0) return { uri };
+  // `r=` обязателен, иначе expo-image не перезапустит одинаковый source, и
+  // поздняя волна была бы пустышкой. Номер волны входит в параметр — у каждой
+  // свой URL. cacheKey остаётся исходным: disk-кэш не должен дробиться.
+  return { uri: withRetryParam(uri, wave * 10 + step), cacheKey: uri };
 }
 
 function nextStep(step: number, uri: string, fallbackUri: string | undefined): number {
@@ -69,6 +92,7 @@ function nextStep(step: number, uri: string, fallbackUri: string | undefined): n
 
 export function useCoverSource(uri: string | undefined, fallbackUri?: string): CoverSourceState {
   const [step, setStep] = useState(0);
+  const [wave, setWave] = useState(0);
   const settledRef = useRef(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -93,8 +117,22 @@ export function useCoverSource(uri: string | undefined, fallbackUri?: string): C
   useEffect(() => {
     settledRef.current = false;
     setStep(0);
+    setWave(0);
     return clearTimer;
   }, [uri, clearTimer]);
+
+  // Поздняя волна: зеркалирование/лестница доезжают уже после того, как
+  // ближние попытки исчерпаны. Свой таймер, а не общий timerRef: сторожевой
+  // эффект на этом шаге не работает, пересекаться нечему.
+  useEffect(() => {
+    if (!uri || settledRef.current) return;
+    if (step < FAILED_STEP || wave >= MAX_LATE_WAVES) return;
+    const timer = setTimeout(() => {
+      setWave((w) => w + 1);
+      setStep(0);
+    }, LATE_RETRY_MS);
+    return () => clearTimeout(timer);
+  }, [uri, step, wave]);
 
   // Сторожевой таймер на каждую живую попытку.
   useEffect(() => {
@@ -118,6 +156,16 @@ export function useCoverSource(uri: string | undefined, fallbackUri?: string): C
     [uri, step, advance]
   );
 
-  const source = useMemo(() => buildSource(uri, fallbackUri, step), [uri, fallbackUri, step]);
-  return { source, failed: step >= FAILED_STEP, onLoad, onError };
+  const source = useMemo(
+    () => buildSource(uri, fallbackUri, step, wave),
+    [uri, fallbackUri, step, wave]
+  );
+  // failed — «сдались совсем»: показываем заглушку только когда поздние волны
+  // тоже вышли. Иначе плитка мигала бы заглушкой между волнами.
+  return {
+    source,
+    failed: step >= FAILED_STEP && wave >= MAX_LATE_WAVES,
+    onLoad,
+    onError,
+  };
 }
