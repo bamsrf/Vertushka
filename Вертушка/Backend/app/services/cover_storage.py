@@ -585,9 +585,37 @@ class CoverStorageService:
         freed_mb = 0.0
         ids_to_clear: list = list(stale_ids)
 
-        for _mtime, size_mb, file_path, record_id in entries:
-            if freed_mb >= to_free_mb:
+        # Сначала отбираем, потом сверяем с бакетом, и только потом удаляем.
+        chosen: list[tuple[float, float, Path, object | None]] = []
+        planned_mb = 0.0
+        for entry in entries:
+            if planned_mb >= to_free_mb:
                 break
+            chosen.append(entry)
+            planned_mb += entry[1]
+
+        # Страховка: с S3 удаление локальной копии объявляет файл живущим в
+        # бакете (cover_cached_at остаётся). Заливка асинхронная и теряется при
+        # перезапуске процесса, поэтому «в бакете» проверяем фактом, а
+        # недостающее заливаем здесь же. Не подтвердилось — файл остаётся на
+        # диске до следующего прогона; места освободится меньше, зато ничего
+        # не пропадёт. Без S3 бакета нет и сверять не с чем.
+        if s3_on and chosen:
+            import asyncio
+            from app.services import s3_covers
+
+            safe = await asyncio.to_thread(
+                s3_covers.ensure_many_in_bucket_sync, [e[2] for e in chosen]
+            )
+            held = len(chosen) - len(safe)
+            if held:
+                logger.warning(
+                    "cover_storage: LRU оставил на диске %d файлов — не подтверждены в бакете",
+                    held,
+                )
+            chosen = [e for e in chosen if e[2] in safe]
+
+        for _mtime, size_mb, file_path, record_id in chosen:
             try:
                 file_path.unlink()
                 freed_mb += size_mb

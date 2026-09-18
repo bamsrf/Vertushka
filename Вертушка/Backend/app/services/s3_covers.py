@@ -237,6 +237,68 @@ def exists_sync(name: str) -> bool:
         return True
 
 
+def ensure_in_bucket_sync(path: Path, client=None) -> bool:
+    """Гарантировать, что локальный файл лежит в бакете, ПЕРЕД его удалением.
+
+    True — удалять можно: объект уже был или только что залит. False — нельзя.
+
+    Зачем. Файл попадает в бакет асинхронно: запись на диск → очередь в памяти →
+    тред-заливщик. Очередь живёт в памяти процесса и пропадает при перезапуске
+    (scheduler за сутки 17.09 перезапускался autoheal'ом 6 раз), а при
+    переполнении выбрасывает путь с warning. Обещанного в schedule_upload
+    «реконсилера» в коде не было. LRU же удалял файл, не спрашивая бакет, и
+    оставлял cover_cached_at — то есть объявлял файл живущим в S3. Если заливка
+    потерялась, обложка исчезала насовсем. Замер 18.09: 0 из 300 случайных
+    выселенных пропало — спасало время (LRU берёт старейшие), а не код.
+
+    Обратное правило, чем у exists_sync: там любая ошибка = «считаем, что
+    есть» (дешевле пропустить строку зеркалирования). Здесь ошибка = «не
+    удаляем»: лишний файл на диске до следующего прогона стоит килобайты,
+    потерянная обложка — перекачку из источника, а для Discogs и вовсе 403.
+    """
+    try:
+        key = s3_key_for(path)
+    except ValueError:
+        return False  # вне covers_dir — это не наше зеркало, не трогаем
+    try:
+        if client is None:
+            client = _get_restore_client()
+        bucket = get_settings().s3_bucket_covers
+        try:
+            client.head_object(Bucket=bucket, Key=key)
+            return True
+        except Exception as exc:
+            text = str(exc)
+            if not ("404" in text or "Not Found" in text or "NoSuchKey" in text):
+                raise
+        # В бакете нет — заливаем сейчас, синхронно. Только после успеха файл
+        # можно отдать LRU.
+        upload_file_sync(path, key, client)
+        logger.warning("s3_covers: %s не было в бакете — залит перед выселением", key)
+        return True
+    except Exception:
+        logger.warning("s3_covers: не удалось подтвердить %s в бакете — оставляю на диске",
+                       path, exc_info=True)
+        return False
+
+
+def ensure_many_in_bucket_sync(paths: "list[Path]", workers: int = 16) -> "set[Path]":
+    """Пакетный ensure_in_bucket_sync: вернуть те пути, что можно удалять.
+
+    Параллельно, потому что LRU за прогон выселяет тысячи файлов, а HEAD — это
+    сетевой запрос: последовательно 20 тысяч заняли бы минуты. Запросы у Beget
+    бесплатные, клиент boto потокобезопасен.
+    """
+    if not paths:
+        return set()
+    from concurrent.futures import ThreadPoolExecutor
+
+    client = _get_restore_client()
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        verdicts = list(pool.map(lambda p: ensure_in_bucket_sync(p, client), paths))
+    return {p for p, ok in zip(paths, verdicts) if ok}
+
+
 async def cover_exists(name: str) -> bool:
     """Async-обёртка exists_sync: сетевой I/O уводим из event loop."""
     import asyncio
@@ -254,7 +316,9 @@ def schedule_upload(path: Path) -> None:
 
     Зовётся из горячего пути записи зеркала (_encode_and_place), поэтому
     НИКОГДА не бросает и не блокирует: no-op при выключенном S3, warning при
-    полной очереди — дыру закроет реконсилер.
+    полной очереди. Потерянный здесь путь (переполнение или перезапуск
+    процесса — очередь живёт в памяти) догоняет LRU: перед удалением он
+    сверяется с бакетом и заливает недостающее, см. ensure_in_bucket_sync.
     """
     global _worker_started
     try:
