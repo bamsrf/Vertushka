@@ -53,6 +53,11 @@ _CATALOG_PATH = "/catalog/vinilovyie-plastinki-617"
 # URL товара: /product/784099-led-zeppelin-i-lp → external_id «784099»
 _URL_ID_RE = re.compile(r"/product/(\d+)-")
 
+# Картинка товара: /thumbs/{aa}/{bb}/{размер}_1_normal_{hash}.webp, где размер —
+# 270x270, 348x, 600x600, 1200x1200 или «x» (оригинал без ограничения, его же
+# магазин кладёт в og:image). JSON-LD каталога отдаёт МИНИАТЮРУ 270x270.
+_THUMB_RE = re.compile(r"(/thumbs/[0-9a-f]{2}/[0-9a-f]{2}/)[0-9x]+(_\d+_normal_[0-9a-f]+\.\w+)$")
+
 # JSON-LD блоки обёрнуты в CDATA-комментарии.
 _LD_RE = re.compile(r'application/ld\+json[^>]*>(.*?)</script>', re.S)
 _CDATA_RE = re.compile(r'/\*\s*<!\[CDATA\[\s*\*/|/\*\s*\]\]>\s*\*/')
@@ -307,7 +312,7 @@ class SkifmusicParser(BaseStoreParser):
             barcode=None,
             catalog_number=None,
             discogs_release_url=None,
-            image_url=product.get("image") or None,
+            image_url=full_size_image(product.get("image")),
             raw_payload={
                 "skifmusic_external_id": external_id,
                 "skifmusic_name_raw": name,
@@ -316,6 +321,26 @@ class SkifmusicParser(BaseStoreParser):
 
 
 # ---- helpers ------------------------------------------------------------- #
+
+
+def full_size_image(image) -> str | None:
+    """Адрес оригинала вместо миниатюры, которую отдаёт JSON-LD каталога.
+
+    18.09.2026: skifmusic оказался главным источником мелких обложек — 7 224
+    записи из 11 099 мельче 500px пришли от него, у 6 777 другого источника нет.
+    Каталог отдаёт `270x270_1_normal_{hash}.webp`, а у магазина по тому же пути
+    лежит весь ряд размеров; префикс «x» — оригинал без ограничения. Замер:
+    270x180 → 1600x1065, 270x269 → 599x597 (у товара просто нет крупнее).
+    `1200x1200` отдаёт тот же файл, что «x», поэтому берём «x».
+
+    Ссылка не той формы (другой хост, смена схемы у магазина) проходит как
+    есть — хуже, чем было, не станет. Список картинок — берём первую.
+    """
+    if isinstance(image, list):
+        image = next((i for i in image if isinstance(i, str) and i), None)
+    if not isinstance(image, str) or not image:
+        return None
+    return _THUMB_RE.sub(r"\1x\2", image)
 
 
 def _log_coverage(slug: str, page: int, emitted: int, expected: int | None) -> None:

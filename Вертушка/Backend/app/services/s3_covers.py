@@ -299,6 +299,18 @@ def ensure_many_in_bucket_sync(paths: "list[Path]", workers: int = 16) -> "set[P
     return {p for p, ok in zip(paths, verdicts) if ok}
 
 
+def wait_uploads_drained() -> None:
+    """Дождаться, пока очередь заливки опустеет. Для разовых скриптов.
+
+    Очередь живёт в памяти процесса, а тред-заливщик — демон: скрипт, который
+    просто завершился, теряет всё, что не успело уехать. LRU подберёт такие
+    файлы перед выселением (ensure_in_bucket_sync), но скрипту правильнее
+    дождаться своего. Блокирует — звать через asyncio.to_thread.
+    """
+    if _worker_started:
+        _queue.join()
+
+
 async def cover_exists(name: str) -> bool:
     """Async-обёртка exists_sync: сетевой I/O уводим из event loop."""
     import asyncio
