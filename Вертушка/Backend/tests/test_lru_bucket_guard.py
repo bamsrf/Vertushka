@@ -188,3 +188,15 @@ def test_lru_keeps_file_the_bucket_did_not_confirm(tmp_path, monkeypatch):
     ids = [v for v in params.values() if isinstance(v, (list, tuple))]
     flat = {x for group in ids for x in group}
     assert r10 in flat and r11 not in flat
+
+
+def test_lru_runs_on_the_clock_not_on_an_interval():
+    """Интервал отсчитывается от старта процесса и сбрасывается каждым
+    перезапуском scheduler'а — 17→18.09 из-за этого 6.5 часов не было ни одной
+    чистки. Расписание по часам перезапуском не сбивается."""
+    import inspect
+    import app.main as main_mod
+    src = inspect.getsource(main_mod)
+    line = next(l for l in src.splitlines() if "scheduler.add_job(cleanup_covers" in l)
+    assert "'cron'" in line, "LRU снова на интервале — перезапуски опять сорвут чистку"
+    assert "misfire_grace_time" in src.split("scheduler.add_job(cleanup_covers", 1)[1][:300]
