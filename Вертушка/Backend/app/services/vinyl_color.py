@@ -122,11 +122,31 @@ def non_black_color_family(raw: str | None) -> str | None:
 #
 # Возьми мы их — чёрная пластинка в золотом конверте приехала бы золотой.
 # Поэтому куски со словами упаковки отбрасываются целиком, до поиска цвета.
+#
+# Поле заполняют люди, и опечатки в нём — не редкость. После ре-фетча на проде
+# выжили «Red Laels», «Red Lables», «Red Lavel» и «Laminated Сover» (С —
+# кириллическая): точное `label`/`cover` их не видит, и цвет ЭТИКЕТКИ уезжал в
+# чип «Цветной винил». Поэтому этикетка ловится шаблоном опечаток, а латинские
+# слова ищутся ещё и в тексте, где кириллические двойники букв заменены.
 _PACKAGING_RE = re.compile(
     r"sleeve|cover|case|jacket|box|insert|obi|booklet|poster|sticker|label|"
-    r"card|slipcase|digipak|gatefold|envelope|конверт|чехол",
+    r"\bla[bv]?[ea]?l(?:es|e|s)?\b|"
+    r"card|slipcase|digipak|gatefold|envelope|"
+    r"конверт|чехол|этикет|лейбл|ярлык",
     re.IGNORECASE,
 )
+
+#: Кириллица, неотличимая на глаз от латиницы. Только для поиска упаковки: к
+#: цвету не применять — RU-стемы («синий») там сломались бы.
+_CONFUSABLES = str.maketrans("АВСЕНКМОРТХасеорхук", "ABCEHKMOPTXaceopxyk")
+
+
+def _is_packaging(text: str) -> bool:
+    """Кусок `format@text` описывает упаковку/этикетку, а не пластинку."""
+    return bool(
+        _PACKAGING_RE.search(text)
+        or _PACKAGING_RE.search(text.translate(_CONFUSABLES))
+    )
 
 
 def vinyl_color_from_format_texts(texts: list[str] | None) -> str | None:
@@ -149,7 +169,7 @@ def vinyl_color_from_format_texts(texts: list[str] | None) -> str | None:
     fallback: str | None = None
     for text in texts or []:
         cleaned = (text or "").strip()
-        if not cleaned or _PACKAGING_RE.search(cleaned):
+        if not cleaned or _is_packaging(cleaned):
             continue
         if color_family(cleaned):
             return cleaned

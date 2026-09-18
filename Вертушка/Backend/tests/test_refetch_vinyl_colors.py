@@ -207,3 +207,13 @@ async def test_broken_cache_does_not_block_the_fetch(monkeypatch):
     monkeypatch.setattr(discogs_mod, "DiscogsService", _Svc)
 
     assert await _fresh_color("42") == ("Yellow", True)
+
+
+@pytest.mark.parametrize("packaging", [
+    "АЗГ, Red Laels, Laminated Сover",
+    "Red Lables",
+    "Red Lavel",
+])
+def test_misspelled_packaging_is_junk(packaging):
+    """Опечатки этикетки ре-фетч обязан отобрать: иначе они живут вечно."""
+    assert _is_junk(packaging) is True

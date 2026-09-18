@@ -89,3 +89,26 @@ def test_plain_black_is_still_not_colored(black):
 @pytest.mark.parametrize("texts", [None, [], [""], ["   "], [None]])
 def test_empty_input(texts):
     assert vinyl_color_from_format_texts(texts) is None
+
+
+#: Опечатки и кириллические двойники, пережившие первый ре-фетч (прод, 18.09):
+#: точное `label`/`cover` их не видело, и цвет этикетки шёл в «Цветной винил».
+@pytest.mark.parametrize("text", [
+    "АЗГ, Red Laels, Laminated Сover",   # «Сover» — кириллическая С
+    "Red Lables",
+    "Red Lavel",
+    "Red Lable",
+    "Сover Red",
+    "Red Этикетка",
+    "Лейбл красный",
+])
+def test_misspelled_packaging_is_not_vinyl_colour(text):
+    assert vinyl_color_from_format_texts([text]) is None
+
+
+#: Похожие на «label» цвета не должны отбрасываться как упаковка.
+@pytest.mark.parametrize("text", [
+    "Lavender", "Lilac", "Lava Red", "Lagoon Blue", "Laser Etched, Blue",
+])
+def test_label_lookalike_colours_survive(text):
+    assert vinyl_color_from_format_texts([text]) == text
