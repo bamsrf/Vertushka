@@ -43,7 +43,11 @@ from app.services.cover_storage import (
     _download_cover_background,
     schedule_store_native_cover_cache,
 )
-from app.services.vinyl_color import sql_color_family, sql_is_colored_vinyl
+from app.services.vinyl_color import (
+    sql_color_family,
+    sql_is_colored_vinyl,
+    sql_exact_by_match,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -182,10 +186,25 @@ _VINYL_RECORD_PRED = "(r.format_type IS NULL OR r.format_type ILIKE '%vinyl%')"
 # discogs_data (см. scripts/load_release_colors). Второй источник даёт +3 578
 # карточек к ~985, и это осознанный размен: он описывает релиз, к которому
 # примотан листинг, а не само объявление, так что на нечётких матчах может
-# относиться к другому прессу того же альбома. Год, страну, лейбл и формат
-# карточка уже показывает из этой же записи — цвет тут не спекулятивнее.
+# относиться к другому прессу того же альбома.
+#
+# Поэтому цвет записи берём ТОЛЬКО при точном матче пресса (pressing_tier =
+# 'exact'). Замер 18.09: 947 из 6 520 карточек чипа держались на цвете Discogs
+# при матче «тот же альбом» — 834 из них skifmusic, который пишет цвет в слаг
+# и молчит, когда пластинка чёрная; выборка слагов — ни одного цветного.
+# Так в чип попадали MGMT «Loss Of Life» (Культура → лимитка «Prismatic
+# Splatter») и советские пресса с цветом этикетки. «Точный» — по той же
+# sql_exact_by_match, на которой стоит pressing_tier офферов: определение
+# «тот ли это пресс» одно. Цвета листинга тут нет, конфликт невозможен.
+_RECORD_COLOR_IF_EXACT = (
+    "CASE WHEN "
+    + sql_exact_by_match(
+        method_col="sl.match_method", confidence_col="sl.match_confidence"
+    )
+    + " THEN r.discogs_data->>'vinyl_color_raw' END"
+)
 _LISTING_OR_RECORD_COLOR = (
-    "COALESCE(NULLIF(sl.vinyl_color_raw, ''), r.discogs_data->>'vinyl_color_raw')"
+    f"COALESCE(NULLIF(sl.vinyl_color_raw, ''), {_RECORD_COLOR_IF_EXACT})"
 )
 _COLORED_PRED = (
     f"({sql_is_colored_vinyl(_LISTING_OR_RECORD_COLOR)}"

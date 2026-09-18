@@ -122,11 +122,31 @@ def non_black_color_family(raw: str | None) -> str | None:
 #
 # Возьми мы их — чёрная пластинка в золотом конверте приехала бы золотой.
 # Поэтому куски со словами упаковки отбрасываются целиком, до поиска цвета.
+#
+# Поле заполняют люди, и опечатки в нём — не редкость. После ре-фетча на проде
+# выжили «Red Laels», «Red Lables», «Red Lavel» и «Laminated Сover» (С —
+# кириллическая): точное `label`/`cover` их не видит, и цвет ЭТИКЕТКИ уезжал в
+# чип «Цветной винил». Поэтому этикетка ловится шаблоном опечаток, а латинские
+# слова ищутся ещё и в тексте, где кириллические двойники букв заменены.
 _PACKAGING_RE = re.compile(
     r"sleeve|cover|case|jacket|box|insert|obi|booklet|poster|sticker|label|"
-    r"card|slipcase|digipak|gatefold|envelope|конверт|чехол",
+    r"\bla[bv]?[ea]?l(?:es|e|s)?\b|"
+    r"card|slipcase|digipak|gatefold|envelope|"
+    r"конверт|чехол|этикет|лейбл|ярлык",
     re.IGNORECASE,
 )
+
+#: Кириллица, неотличимая на глаз от латиницы. Только для поиска упаковки: к
+#: цвету не применять — RU-стемы («синий») там сломались бы.
+_CONFUSABLES = str.maketrans("АВСЕНКМОРТХасеорхук", "ABCEHKMOPTXaceopxyk")
+
+
+def _is_packaging(text: str) -> bool:
+    """Кусок `format@text` описывает упаковку/этикетку, а не пластинку."""
+    return bool(
+        _PACKAGING_RE.search(text)
+        or _PACKAGING_RE.search(text.translate(_CONFUSABLES))
+    )
 
 
 def vinyl_color_from_format_texts(texts: list[str] | None) -> str | None:
@@ -149,7 +169,7 @@ def vinyl_color_from_format_texts(texts: list[str] | None) -> str | None:
     fallback: str | None = None
     for text in texts or []:
         cleaned = (text or "").strip()
-        if not cleaned or _PACKAGING_RE.search(cleaned):
+        if not cleaned or _is_packaging(cleaned):
             continue
         if color_family(cleaned):
             return cleaned
@@ -297,13 +317,26 @@ def sql_pressing_tier(
     """
     lf = sql_color_family(listing_color_col)
     rf = sql_color_family(record_color_expr)
-    methods = ", ".join(f"'{m}'" for m in _PRESSING_EXACT_METHODS)
+    by_match = sql_exact_by_match(method_col=method_col, confidence_col=confidence_col)
     return f"""CASE
       WHEN ({lf}) IS NOT NULL AND ({rf}) IS NOT NULL AND ({lf}) <> ({rf}) THEN 'album'
-      WHEN {method_col} IN ({methods}) THEN 'exact'
-      WHEN {method_col} = 'fuzzy' THEN 'album'
-      WHEN {confidence_col} >= 0.95 THEN 'exact'
+      WHEN {by_match} THEN 'exact'
       ELSE 'album' END"""
+
+
+def sql_exact_by_match(*, method_col: str, confidence_col: str) -> str:
+    """SQL-предикат «матч идентифицирует пресс» — часть sql_pressing_tier без
+    проверки конфликта цвета.
+
+    Нужна там, где цвета листинга нет и конфликт невозможен по построению
+    (фильтр «Цветной винил» решает, можно ли верить цвету записи). Полный
+    tier там был бы тем же ответом плюс 34 regex на строку впустую.
+    """
+    methods = ", ".join(f"'{m}'" for m in _PRESSING_EXACT_METHODS)
+    return (
+        f"({method_col} IN ({methods})"
+        f" OR ({method_col} IS DISTINCT FROM 'fuzzy' AND {confidence_col} >= 0.95))"
+    )
 
 
 # Python-зеркало списка методов — для pressing_tier() в offers.py.
