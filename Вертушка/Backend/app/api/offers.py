@@ -48,6 +48,7 @@ from app.utils.request_ip import get_client_ip
 from app.services.vinyl_color import (
     PRESSING_EXACT_METHODS,
     color_family,
+    is_colored_vinyl,
     sql_pressing_tier,
 )
 
@@ -164,8 +165,15 @@ def _display_color(raw: str | None) -> str | None:
     """Цвет для показа в карточке оффера. Чёрный — дефолт, бейдж не рисуем
     (как исторически делали парсеры). В БД чёрный при этом хранится честно —
     он нужен матчингу (pressing_tier), поэтому прячем только на отдаче.
+
+    Прячем только ЧИСТО чёрный. Раньше смотрели на семью, а у неё black первый
+    по приоритету: «Red/Black Splatter» и «Black & Orange Marbled» теряли бейдж,
+    хотя чип «Цветной винил» (is_colored_vinyl) их честно пускал — карточка в
+    фильтре, а оффер выглядит чёрным.
     """
-    return None if color_family(raw) == "black" else raw
+    if color_family(raw) == "black" and not is_colored_vinyl(raw):
+        return None
+    return raw
 
 
 def pressing_tier(listing: StoreListing, record_color_fam: str | None) -> str:

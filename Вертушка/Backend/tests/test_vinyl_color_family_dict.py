@@ -148,3 +148,32 @@ def test_sql_nonblack_regex_covers_every_nonblack_family():
     # \b Питон-диалекта должен быть переведён в \y (граница слова в Postgres)
     assert chr(92) + "b" not in rx
     assert chr(92) + "y" in rx
+
+
+def test_exact_by_match_is_shared_with_pressing_tier():
+    """Фильтр «Цветной винил» и pressing_tier офферов обязаны понимать «тот
+    ли это пресс» одинаково: предикат один и встроен в tier целиком."""
+    from app.services.vinyl_color import sql_exact_by_match, sql_pressing_tier
+
+    pred = sql_exact_by_match(method_col="m", confidence_col="c")
+    tier = sql_pressing_tier(
+        method_col="m", confidence_col="c",
+        listing_color_col="l", record_color_expr="r",
+    )
+    assert pred in tier
+    assert "'fuzzy'" in pred and ">= 0.95" in pred
+    assert ":" not in pred.replace("::", "")  # text() не должен увидеть бинд
+
+
+def test_colored_chip_trusts_record_colour_only_on_exact_match():
+    """Цвет Discogs-записи в чипе — только при точном матче пресса (MGMT
+    «Loss Of Life» у Культуры: матч по альбому → лимитка Prismatic Splatter)."""
+    from app.api.market import _COLORED_PRED, _RECORD_COLOR_IF_EXACT
+    from app.services.vinyl_color import sql_exact_by_match
+
+    assert sql_exact_by_match(
+        method_col="sl.match_method", confidence_col="sl.match_confidence"
+    ) in _RECORD_COLOR_IF_EXACT
+    assert _RECORD_COLOR_IF_EXACT in _COLORED_PRED
+    bare = "COALESCE(NULLIF(sl.vinyl_color_raw, ''), r.discogs_data->>'vinyl_color_raw')"
+    assert bare not in _COLORED_PRED
