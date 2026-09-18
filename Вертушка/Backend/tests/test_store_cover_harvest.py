@@ -77,9 +77,10 @@ def test_no_harvest_without_discogs_id(harvested):
 
 
 class _FakeRow:
-    def __init__(self, cover_image_url=None, cover_local_path=None):
+    def __init__(self, cover_image_url=None, cover_local_path=None, cover_cached_at=None):
         self.cover_image_url = cover_image_url
         self.cover_local_path = cover_local_path
+        self.cover_cached_at = cover_cached_at
 
 
 def _patch_records_lookup(monkeypatch, row):
@@ -197,3 +198,26 @@ def test_no_unreachable_code_after_return_in_apply_match():
             assert i == len(fn.body) - 1, (
                 f"после return на строке {node.lineno} есть недостижимый код"
             )
+
+
+@pytest.mark.asyncio
+async def test_harvest_skipped_when_cover_evicted_to_bucket(monkeypatch):
+    """18.09.2026: выселенная в бакет обложка (cover_local_path пуст, метка
+    cover_cached_at жива) считалась отсутствующей, и харвест клал поверх
+    магазинную миниатюру — skifmusic отдаёт 270px."""
+    from datetime import datetime
+    from app.services import cover_storage
+
+    _patch_records_lookup(
+        monkeypatch, _FakeRow(cover_cached_at=datetime(2026, 9, 17, 12, 0)),
+    )
+    downloaded = []
+    monkeypatch.setattr(
+        cover_storage, "_download_cover_background",
+        lambda *a: downloaded.append(a) or _noop(),
+    )
+    await cover_storage._harvest_store_cover(
+        "555", None, "https://skifmusic.ru/thumbs/a5/5e/270x270_1_normal_x.webp",
+        await_downloads=True,
+    )
+    assert [a[0] for a in downloaded if a[0] == "555"] == [], "обложку записи не трогаем"

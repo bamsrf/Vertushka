@@ -280,6 +280,43 @@ class CoverStorageService:
         stored_min_side = None
         needs_upgrade = False
 
+        # Зеркало в бакете при пустом диске. С S3 (28.08.2026) LRU выселяет
+        # локальную копию, оставляя cover_cached_at: обложка ЕСТЬ, просто не
+        # здесь. Раньше эта функция смотрела только на dest.exists() и считала
+        # такую запись пустой — пол апгрейда не ставился, и любая картинка,
+        # хоть 270px-миниатюра магазина, ложилась поверх и уезжала в бакет по
+        # тому же ключу. Хорошая обложка затиралась насовсем. Замер 18.09:
+        # добор магазинных обложек гонял по кругу 11 788 уже зеркалированных
+        # записей (~1 000 в час), и доля мелких мастеров выросла на 2.4 п.п.
+        if not dest.exists():
+            from app.services.s3_covers import enabled as _s3_enabled
+            if _s3_enabled():
+                row = (
+                    await db.execute(
+                        select(Record.cover_cached_at, Record.cover_min_side)
+                        .where(Record.discogs_id == discogs_id)
+                    )
+                ).first()
+                # Метке верим, только если файл действительно в бакете: иначе
+                # ранний выход лишил бы битую запись самолечения. Сбой HEAD
+                # cover_exists трактует как «есть» — здесь это безопасная
+                # сторона: хуже не пере-скачать, чем затереть хорошее мелким.
+                from app.services.s3_covers import cover_exists as _in_bucket
+                if (
+                    row is not None and row.cover_cached_at is not None
+                    and await _in_bucket(str(discogs_id))
+                ):
+                    stored_min_side = row.cover_min_side
+                    # Как и для файла на диске: не промерен или уже нормальный —
+                    # не трогаем. Мелкий — пускаем апгрейд, но только крупнее.
+                    if stored_min_side is None or stored_min_side >= MASTER_MIN_SIDE:
+                        return rel_path
+                    needs_upgrade = True
+                    logger.info(
+                        "cover_storage: upgrading evicted %s from min_side=%s via %s",
+                        discogs_id, stored_min_side, image_url,
+                    )
+
         if dest.exists():
             # Апгрейд, а не пропуск: если лежащий мастер заведомо мелкий, а
             # источник крупный — перекачиваем и перезаписываем. Так «плохая»
@@ -913,7 +950,7 @@ async def _release_cover_is_empty(discogs_id: str) -> bool:
         async with async_session_maker() as db:
             row = (await db.execute(
                 _text(
-                    "SELECT cover_image_url, cover_local_path FROM records "
+                    "SELECT cover_image_url, cover_local_path, cover_cached_at FROM records "
                     "WHERE discogs_id = :did"
                 ),
                 {"did": discogs_id},
@@ -924,7 +961,11 @@ async def _release_cover_is_empty(discogs_id: str) -> bool:
 
     if row is None:
         return True
-    return not row.cover_image_url and not row.cover_local_path
+    # cover_cached_at: с S3 LRU обнуляет cover_local_path при выселении, и без
+    # этой проверки выселенная обложка считалась отсутствующей — харвест клал
+    # поверх магазинную миниатюру (skifmusic отдаёт 270px), см. 18.09.2026.
+    return (not row.cover_image_url and not row.cover_local_path
+            and row.cover_cached_at is None)
 
 
 async def _harvest_store_cover(

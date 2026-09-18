@@ -89,6 +89,10 @@ _COVERS_SQL = text(
     WHERE r.discogs_id IS NOT NULL
       AND r.cover_image_url IS NULL
       AND r.cover_local_path IS NULL
+      -- Без этого условия метрика считала «незакрытыми» и выселенные в бакет
+      -- обложки: 18.09.2026 — 11 813 вместо реальных 25, и рост цифры значил
+      -- работу LRU, а не поломку харвеста.
+      AND r.cover_cached_at IS NULL
       AND l.raw_payload->>'image_url' IS NOT NULL
     """
 )

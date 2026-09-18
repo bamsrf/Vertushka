@@ -281,6 +281,12 @@ async def backfill_store_covers(limit: int = _STORE_BACKFILL_LIMIT) -> dict:
                 "WHERE r.discogs_id IS NOT NULL "
                 "  AND r.cover_image_url IS NULL "
                 "  AND r.cover_local_path IS NULL "
+                # cover_cached_at, а не только cover_local_path: с S3 LRU
+                # обнуляет указатель на диск при выселении, и без этого условия
+                # выселенная обложка снова попадала в очередь. 18.09.2026 в ней
+                # было 11 813 записей, из них 11 788 (99.8%) уже лежали в бакете —
+                # добор тратил ~1 000 скачиваний в час на перекачку того, что есть.
+                "  AND r.cover_cached_at IS NULL "
                 "  AND l.raw_payload->>'image_url' IS NOT NULL "
                 "ORDER BY r.id, l.last_seen_at DESC "
                 "LIMIT :lim"

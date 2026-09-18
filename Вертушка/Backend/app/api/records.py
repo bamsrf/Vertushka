@@ -780,6 +780,25 @@ async def get_or_create_record_by_discogs_id(
     return record
 
 
+# Адрес обложки записи для SQL-выборок, которые отдают его клиенту как есть
+# (версии мастера, подсказки поиска). Зеркало ищем по cover_cached_at, а НЕ по
+# cover_local_path: с S3 LRU обнуляет указатель на диск при выселении, и прежний
+# `CASE WHEN r.cover_local_path IS NOT NULL` для выселенной обложки проваливался
+# в COALESCE дальше — на прямой i.discogs.com, недоступный из РФ. LRU выселяет
+# за ~15 минут, то есть почти любую обложку. Путь и метка — те же, что строят
+# витрина (_COVER_BRIDGE) и схемы (bridge_cover_url): общий ключ кэша на клиенте.
+# floor(): Postgres округляет numeric→bigint, python int() отбрасывает дробь.
+_MIRROR_URL_SQL = (
+    "CASE WHEN r.cover_cached_at IS NOT NULL AND r.discogs_id ~ '^[0-9]+$' "
+    "      AND (r.cover_local_path IS NULL "
+    "           OR r.cover_local_path = 'covers/' || r.discogs_id || '.jpg') "
+    "     THEN '/covers/' || r.discogs_id || '.jpg?v=' "
+    "          || CAST(floor(extract(epoch from r.cover_cached_at)) AS bigint) "
+    "     WHEN r.cover_local_path IS NOT NULL "
+    "     THEN '/uploads/' || r.cover_local_path END"
+)
+
+
 async def _search_local_index(
     db: AsyncSession,
     q: str,
@@ -1519,13 +1538,12 @@ async def _suggest_local(db: AsyncSession, q: str) -> dict | None:
     # ниже срежет переиздания одного альбома.
     master_rows = (await db.execute(
         text(
-            """
+            f"""
             SELECT
                 dri.master_id::text AS master_id,
                 dri.artist, dri.title, dri.year,
                 COALESCE(
-                    CASE WHEN r.cover_local_path IS NOT NULL
-                         THEN '/uploads/' || r.cover_local_path END,
+                    {_MIRROR_URL_SQL},
                     r.cover_image_url,
                     dri.cover_image_url
                 ) AS thumb,
@@ -2971,15 +2989,14 @@ async def _fetch_versions_from_local_index(
     rows = (
         await db.execute(
             text(
-                """
+                f"""
                 SELECT
                     dri.discogs_id::text AS release_id,
                     dri.artist, dri.title, dri.year, dri.country,
                     dri.format_type, dri.label, dri.catalog_norm,
                     dri.is_collectible,
                     COALESCE(
-                        CASE WHEN r.cover_local_path IS NOT NULL
-                             THEN '/uploads/' || r.cover_local_path END,
+                        {_MIRROR_URL_SQL},
                         r.cover_image_url,
                         dri.cover_image_url
                     ) AS cover_image_url,
