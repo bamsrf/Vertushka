@@ -115,6 +115,22 @@ function MarbleOverlay({ color, scale }: { color: string; scale: number }) {
   );
 }
 
+function SwirlOverlay({ color, scale }: { color: string; scale: number }) {
+  const s = scale;
+  // Три закрученных рукава от центра к краю, повёрнутые на 120°.
+  const arm = `M0,0 C${30 * s},${-8 * s} ${60 * s},${10 * s} ${75 * s},${40 * s} C${88 * s},${66 * s} ${100 * s},${80 * s} ${120 * s},${80 * s}`;
+  return (
+    <G>
+      {[0, 120, 240].map(angle => (
+        <G key={angle} rotation={angle} origin="0,0">
+          <Path d={arm} stroke={color} strokeWidth={22 * s} strokeOpacity={0.55} fill="none" strokeLinecap="round" />
+          <Path d={arm} stroke={color} strokeWidth={8 * s} strokeOpacity={0.35} fill="none" strokeLinecap="round" />
+        </G>
+      ))}
+    </G>
+  );
+}
+
 function SplatterOverlay({ color, scale }: { color: string; scale: number }) {
   const s = scale;
   const blobs = [
@@ -312,16 +328,32 @@ export function VinylSpinner({ colorConfig, size = 220, labelName, onTap }: Viny
           )}
 
           {/* Marble overlay */}
+          {/* Оверлеи рисуются в координатах вокруг (0,0) — переносим их в
+              центр диска. Без сдвига разводы и брызги уезжали в левый верхний
+              угол и от них на диске оставалась пара клякс. */}
           {type === 'marble' && secondaryColor && (
             <G clipPath={`url(#cl-${uid})`}>
-              <MarbleOverlay color={secondaryColor} scale={scale} />
+              <G transform={`translate(${cx}, ${cy})`}>
+                <MarbleOverlay color={secondaryColor} scale={scale} />
+              </G>
             </G>
           )}
 
           {/* Splatter overlay */}
           {type === 'splatter' && secondaryColor && (
             <G clipPath={`url(#cl-${uid})`}>
-              <SplatterOverlay color={secondaryColor} scale={scale} />
+              <G transform={`translate(${cx}, ${cy})`}>
+                <SplatterOverlay color={secondaryColor} scale={scale} />
+              </G>
+            </G>
+          )}
+
+          {/* Swirl overlay — рукава вторым цветом */}
+          {type === 'swirl' && secondaryColor && (
+            <G clipPath={`url(#cl-${uid})`}>
+              <G transform={`translate(${cx}, ${cy})`}>
+                <SwirlOverlay color={secondaryColor} scale={scale} />
+              </G>
             </G>
           )}
 

@@ -42,7 +42,7 @@ from app.services.scrapers.extractors import (
     sql_format_family,
     barcode_variants,
 )
-from app.services.vinyl_color import color_family
+from app.services.vinyl_color import pressing_family
 
 logger = logging.getLogger(__name__)
 
@@ -486,7 +486,7 @@ def _record_color_family(rec: Record) -> str | None:
     сюда попадает только реальный цвет.
     """
     data = rec.discogs_data or {}
-    return color_family(data.get("vinyl_color_raw"))
+    return pressing_family(data.get("vinyl_color_raw"))
 
 
 def _fuzzy_score(rec: Record, listing: StoreListing) -> float:
@@ -507,7 +507,7 @@ def _fuzzy_score(rec: Record, listing: StoreListing) -> float:
     # порога. Без этого fuzzy привязывает чёрный листинг к зелёной записи и
     # выдаёт чужой пресс за «этот». Неизвестный цвет (одна из сторон) — не
     # штрафуем, чтобы не отсекать легитимные матчи без данных о цвете.
-    lcf, rcf = color_family(listing.vinyl_color_raw), _record_color_family(rec)
+    lcf, rcf = pressing_family(listing.vinyl_color_raw), _record_color_family(rec)
     if lcf and rcf and lcf != rcf:
         score *= COLOR_MISMATCH_PENALTY
     return score

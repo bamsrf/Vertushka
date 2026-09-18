@@ -354,6 +354,48 @@ _COLOR_NEAR_CUE: list[tuple[str, re.Pattern[str]]] = [
 ]
 
 
+#: Фраза из нескольких цветов/выделок, которая стоит вплотную к носителю:
+#: «Red/Black Splatter Vinyl», «Red & Blue Vinyl», «Yellow / Black marble LP».
+#: Одиночный cue-проход видит в ней только слово у самого носителя («Splatter»,
+#: «Blue») — второй цвет терялся, и двухцветный пресс в Mobile рисовался
+#: однотонным. Разбираем фразу целиком, но ТОЛЬКО примыкающую к носителю:
+#: свободный текст (название альбома) второй цвет не подкинет.
+_ANY_COLOR = "|".join(f"(?:{pat})" for _c, pat in _VINYL_COLORS)
+_COLOR_CONN = r"(?:\s*(?:&|/|\+|,|-|\band\b|\bwith\b|\bи\b|\bс\b)\s*|\s+)"
+_COLOR_PHRASE_RE = re.compile(
+    rf"(?:{_ANY_COLOR})(?:{_COLOR_CONN}(?:{_ANY_COLOR}))*"
+    rf"\s+(?:(?:colou?red|цветн\w*)\s+)?{_VINYL_CUE}",
+    re.I,
+)
+_FINISHES = ("clear", "splatter", "marble")
+
+
+def _multi_color_phrase(text: str) -> str | None:
+    """«red & black splatter» для фразы с ≥2 разными цветами у носителя.
+
+    Порядок канона: не-чёрные цвета (как в тексте) → black → выделка. Первым
+    идёт настоящий цвет — его возьмут семья и Mobile как основной, чёрный
+    станет вторым. Один цвет → None: там хватает прежнего одиночного канона.
+    """
+    m = _COLOR_PHRASE_RE.search(text)
+    if not m:
+        return None
+    phrase = m.group(0)
+    hits = sorted(
+        (hit.start(), canon)
+        for canon, rx in _COMPILED_COLORS
+        for hit in rx.finditer(phrase)
+    )
+    ordered = list(dict.fromkeys(canon for _pos, canon in hits))
+    colors = [c for c in ordered if c not in _FINISHES and c != "black"]
+    if "black" in ordered:
+        colors.append("black")
+    if len(colors) < 2:
+        return None
+    finish = [c for c in ordered if c in _FINISHES]
+    return " & ".join(colors) + (f" {finish[0]}" if finish else "")
+
+
 #: Канон для «цветной, а какой — не сказано». Это не семья цвета: конфликт им
 #: не доказывается (см. vinyl_color.color_family), зато фильтр Маркета отвечает
 #: по нему «да, цветной».
@@ -400,6 +442,8 @@ def infer_vinyl_color(
     # 1) Приоритет — цвет, примыкающий к «vinyl/винил/LP» (цвет пресса).
     cue_hits = [canon for canon, rx in _COLOR_NEAR_CUE if rx.search(text)]
     if cue_hits:
+        if multi := _multi_color_phrase(text):
+            return multi
         non_black_cue = [c for c in cue_hits if c != "black"]
         if non_black_cue:
             return non_black_cue[0]

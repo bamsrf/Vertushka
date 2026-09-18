@@ -109,6 +109,18 @@ def non_black_color_family(raw: str | None) -> str | None:
     return None
 
 
+def pressing_family(raw: str | None) -> str | None:
+    """Семья для сравнения ПРЕССОВ: не-чёрный цвет, если он есть, иначе black.
+
+    `color_family` на двухцветном отдаёт black (он первый по приоритету), и
+    «Red/Black Splatter» у записи конфликтовал с «red» у листинга — тот же
+    пресс уходил в «другой пресс того же альбома». Здесь двухцветный пресс
+    сравнивается по своему настоящему цвету, а чисто чёрный по-прежнему
+    конфликтует с цветным.
+    """
+    return non_black_color_family(raw) or color_family(raw)
+
+
 # ---- Цвет пресса из дампа Discogs --------------------------------------- #
 #
 # Discogs держит цвет винила в атрибуте `text` у формата: `<format name="Vinyl"
@@ -270,6 +282,22 @@ def sql_color_family(col_expr: str) -> str:
       ELSE NULL END"""
 
 
+def sql_pressing_family(col_expr: str) -> str:
+    """SQL-зеркало pressing_family: те же ветки, что у sql_color_family, но
+    black проверяется ПОСЛЕДНИМ — двухцветный пресс получает свой цвет."""
+    ordered = [fp for fp in _FAMILY_PATTERNS if fp[0] != "black"] + [
+        fp for fp in _FAMILY_PATTERNS if fp[0] == "black"
+    ]
+    branches = "\n".join(
+        f"      WHEN lower({col_expr}) ~ '({_pg_regex(pat)})' THEN '{fam}'"
+        for fam, pat in ordered
+    )
+    return f"""CASE
+      WHEN {col_expr} IS NULL THEN NULL
+{branches}
+      ELSE NULL END"""
+
+
 # match_method'ы, идентифицирующие КОНКРЕТНЫЙ пресс (а не просто альбом):
 # barcode/discogs_url — точные; catalog — каталожный № пресса; store_native /
 # merged — цвет записи выведен из самого листинга, по построению верный.
@@ -295,8 +323,8 @@ def sql_pressing_tier(
     всё). Иначе exact-методы → 'exact'; fuzzy → 'album'; остальные
     (dump_index/discogs_fetch) — по confidence ≥0.95.
     """
-    lf = sql_color_family(listing_color_col)
-    rf = sql_color_family(record_color_expr)
+    lf = sql_pressing_family(listing_color_col)
+    rf = sql_pressing_family(record_color_expr)
     methods = ", ".join(f"'{m}'" for m in _PRESSING_EXACT_METHODS)
     return f"""CASE
       WHEN ({lf}) IS NOT NULL AND ({rf}) IS NOT NULL AND ({lf}) <> ({rf}) THEN 'album'

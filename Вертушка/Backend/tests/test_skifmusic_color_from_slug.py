@@ -50,7 +50,8 @@ def test_black_yellow_prefers_non_black():
     c = _color_from(
         "https://skifmusic.ru/product/770525-vory-vory-black-yellow-vinyl-new-sealed-vinyl-lp-album",
         "Vory – Vory", "Vory", "Vory")
-    assert c == "yellow"
+    # Двухцветный: оба цвета, не-чёрный первым (основной для семьи и Mobile).
+    assert c == "yellow & black"
 
 
 def test_gold_vinyl_from_slug():

@@ -161,14 +161,29 @@ const BLACK_KEYWORDS = [
 
 function extractColors(raw: string): string[] {
   const lower = raw.toLowerCase();
-  const found: string[] = [];
-
-  // Длинные ключи первыми — compound ("seafoam green") победит над отдельными
+  // Длинные ключи первыми — compound ("sky blue") забирает свой кусок текста,
+  // и "blue" внутри него второй раз не считается. Итоговый порядок — по месту
+  // в тексте: в "Red & Blue" основной красный, а не тот, чьё слово длиннее.
+  const taken = new Array(lower.length).fill(false);
+  const hits: Array<{ at: number; hex: string }> = [];
   const sortedKeys = Object.keys(COLOR_MAP).sort((a, b) => b.length - a.length);
   for (const key of sortedKeys) {
-    if (lower.includes(key) && !found.includes(COLOR_MAP[key])) {
-      found.push(COLOR_MAP[key]);
-    }
+    const at = lower.indexOf(key);
+    if (at < 0 || taken.slice(at, at + key.length).some(Boolean)) continue;
+    taken.fill(true, at, at + key.length);
+    hits.push({ at, hex: COLOR_MAP[key] });
+  }
+  const found = hits
+    .sort((a, b) => a.at - b.at)
+    .map(h => h.hex)
+    .filter((hex, i, all) => all.indexOf(hex) === i);
+
+  // Чёрный намеренно не в COLOR_MAP: одиночный «Black» — обычная пластинка.
+  // Но рядом с настоящим цветом это второй цвет пресса («Red/Black Splatter»,
+  // «Orange With Black Splatter»), и без него брызгам/разводам нечем
+  // рисоваться — диск выходил однотонным.
+  if (found.length > 0 && /\bblack\b/.test(lower) && !found.includes(BLACK.primaryColor)) {
+    found.push(BLACK.primaryColor);
   }
 
   return found;
