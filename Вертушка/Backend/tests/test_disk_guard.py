@@ -90,3 +90,38 @@ def test_thresholds_leave_room_to_react():
     """
     assert disk_tasks._WARN_FREE_GB > disk_tasks._CRIT_FREE_GB
     assert disk_tasks._CRIT_FREE_GB >= 2.0
+
+
+@pytest.mark.asyncio
+async def test_alert_no_longer_sends_you_to_migrate_covers(monkeypatch, fired):
+    """18.09.2026: алерт советовал «лечится переездом в объектное хранилище»,
+    хотя переезд случился 28.08 — все обложки уже в бакете Beget. Совет вёл в
+    никуда и прятал настоящую причину."""
+    _fake_disk(monkeypatch, free_gb=4.0)
+    await disk_tasks.check_disk_space()
+    body = fired[0]["body"]
+    assert "переездом" not in body
+    assert "бакете" in body
+
+
+@pytest.mark.asyncio
+async def test_covers_over_cap_point_at_lru(monkeypatch, fired):
+    """Обложки сильно выше лимита — значит LRU не успевает или не запускался
+    (перезапуски scheduler'а сбивают интервал). Это и надо сказать."""
+    _fake_disk(monkeypatch, free_gb=4.0)
+    monkeypatch.setattr(disk_tasks, "_dir_size_gb", lambda _p: 7.81)
+    from app.config import get_settings
+    monkeypatch.setattr(get_settings(), "covers_max_cache_mb", 6000, raising=False)
+    await disk_tasks.check_disk_space()
+    body = fired[0]["body"]
+    assert "7.81 из лимита 5.86" in body
+    assert "LRU" in body
+
+
+@pytest.mark.asyncio
+async def test_covers_within_cap_say_look_elsewhere(monkeypatch, fired):
+    _fake_disk(monkeypatch, free_gb=4.0)  # _dir_size_gb = 3.0
+    from app.config import get_settings
+    monkeypatch.setattr(get_settings(), "covers_max_cache_mb", 6000, raising=False)
+    await disk_tasks.check_disk_space()
+    assert "место ест не они" in fired[0]["body"]
