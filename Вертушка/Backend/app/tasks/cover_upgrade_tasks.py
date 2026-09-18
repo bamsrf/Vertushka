@@ -88,7 +88,12 @@ async def upgrade_low_res_covers(
                     """
                     SELECT discogs_id, title, artist, cover_min_side
                     FROM records
-                    WHERE cover_local_path IS NOT NULL
+                    -- cover_cached_at, а не cover_local_path: с S3 LRU выселяет
+                    -- локальную копию, и мелкая обложка из бакета выпадала из
+                    -- апгрейда навсегда — LRU теперь выселяет за ~15 минут, то
+                    -- есть почти любую. Апгрейд выселенной download_and_store
+                    -- делает с полом по cover_min_side (18.09.2026).
+                    WHERE cover_cached_at IS NOT NULL
                       AND cover_min_side IS NOT NULL
                       AND cover_min_side < :thr
                       AND discogs_id ~ '^[0-9]+$'
