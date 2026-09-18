@@ -346,10 +346,17 @@ _COMPILED_COLORS: list[tuple[str, re.Pattern[str]]] = [
 # (опц. через «coloured»). «RSD26 Orange Vinyl» → orange, даже если в описании
 # обложки есть другие цвета. Это самый надёжный признак цвета пресса.
 _VINYL_CUE = r"(?:vinyl|винил|lp|пластинк\w*)"
+# Выделка между цветом и носителем не отнимает цвет: «Red Translucent Vinyl»,
+# «голубой прозрачный винил» — это красный и голубой, а не просто «clear».
+_FINISH_WORD = (
+    r"(?:translucent|transparent|clear|opaque|marbled?|splatter|swirl|neon|"
+    r"прозрачн\w*|мраморн\w*|полупрозрачн\w*)"
+)
 # «цветн\w*» в необязательной середине — чтобы «оранжевый цветной винил» остался
 # оранжевым, а не схлопнулся в общий маркер.
 _COLOR_NEAR_CUE: list[tuple[str, re.Pattern[str]]] = [
-    (canon, re.compile(rf"(?:{pat})\s+(?:(?:colou?red|цветн\w*)\s+)?{_VINYL_CUE}", re.I))
+    (canon, re.compile(
+        rf"(?:{pat})\s+(?:{_FINISH_WORD}\s+)*(?:(?:colou?red|цветн\w*)\s+)?{_VINYL_CUE}", re.I))
     for canon, pat in _VINYL_COLORS
 ]
 
@@ -365,6 +372,80 @@ _COLORED_MARKER_RE = re.compile(
     rf"(?:цветн\w*|colou?red)\s+{_VINYL_CUE}|{_VINYL_CUE}[,\s]+(?:цветн\w*|colou?red)",
     re.I,
 )
+
+
+_BRACKET_RE = re.compile(r"[\(\[]([^\)\]]*)[\)\]]")
+_ANY_COLOR_WORD = "|".join(f"(?:{pat})" for _c, pat in _VINYL_COLORS)
+_ANY_COLOR_FULL_RE = re.compile(_ANY_COLOR_WORD + r"|colou?red|цветн", re.I)
+_NOTE_CUE_RE = re.compile(r"\b(?:vinyl|lp|\d+lp)\b|винил", re.I)
+#: Слова, из которых целиком состоит пометка о прессе без слова «винил».
+_NOTE_WORD_RE = re.compile(
+    rf"(?:{_ANY_COLOR_WORD}|colou?red|цветн\w*|limited|edition|version|"
+    r"translucent|transparent|crystal|natural|opaque|neon|milky|swirl|"
+    r"marbled?|splatter|light|dark|deep|\d+(?:th|st|nd|rd)?)",
+    re.I,
+)
+#: Хвост названия, который описывает пресс: после « - » или начиная с
+#: «Coloured» — только цвета/выделки/служебные слова до конца строки.
+_COLOR_TAIL_RE = re.compile(
+    r"(?:\s+[-–]\s+|\s+(?=colou?red\b))"
+    rf"(?:(?:{_ANY_COLOR_WORD}|colou?red|limited|translucent|transparent|crystal|"
+    r"natural|opaque|neon|swirl|\(?rsd\d*\)?|&|and)[\s,&/-]*)+$",
+    re.I,
+)
+
+
+def _exclude_segments(exclude: str | list[str] | None) -> list[str]:
+    """Что вырезать из текста перед поиском цвета: имена без пометок, длинные первыми.
+
+    Две ловушки, и обе с прода:
+      • Порядок. Артист бывает частью названия альбома («Голубые Гитары» —
+        «Красная Шапочка, Серый Волк И Голубые Гитары»). Вырежи артиста
+        первым — и альбом в тексте больше не совпадает, не вырезается, а
+        «Красная» из названия уезжает цветом пресса. Поэтому длинные первыми.
+      • Пометки. Магазины кладут в название альбома свои пометки:
+        «Weezer (цветной винил)» (plastinka), «Fragments (Limited Red Marbled
+        Vinyl)» (korobkavinyla), «Cerrone 3 - Supernature - Green» и «Deep
+        Purple In Rock Coloured Purple» (doctorhead). Вырежи альбом целиком —
+        вырежется и цвет. Поэтому от названия берём часть ДО первой скобки и
+        без цветового хвоста после « - » или «Coloured».
+
+    Слово перед носителем не защищаем: «Kind Of Blue LP», «Back In Black LP»
+    — это название, и такая защита на проде дала ~50 ложных цветов.
+    """
+    tokens = [exclude] if isinstance(exclude, str) else list(exclude or [])
+    segments: set[str] = set()
+    for tok in tokens:
+        # Скобка-пометка рвёт название на куски, остальные скобки — часть
+        # названия («(Live At Red Rocks 2022)», «(сказка)», «(Paul White's
+        # Clean Dub)») и вырезаются вместе с ним.
+        for piece in _split_on_notes(tok or ""):
+            seg = _COLOR_TAIL_RE.sub("", piece).strip(" ,-–")
+            if len(seg) >= 2:
+                segments.add(seg)
+    return sorted(segments, key=len, reverse=True)
+
+
+def _split_on_notes(tok: str) -> list[str]:
+    pieces, last = [], 0
+    for m in _BRACKET_RE.finditer(tok):
+        if _is_pressing_note(m.group(1)):
+            pieces.append(tok[last:m.start()])
+            last = m.end()
+    pieces.append(tok[last:])
+    return pieces
+
+
+def _is_pressing_note(inner: str) -> bool:
+    """«(Limited Red Vinyl)», «(цветной винил, + буклет)», «(silver)», «(Red &
+    Black)» — пометка о прессе. «(Live At Red Rocks 2022)» — нет: в ней есть
+    слова, которые цветом/выделкой не являются."""
+    if _NOTE_CUE_RE.search(inner):
+        return True
+    words = [w for w in re.split(r"[\s,&/+\-]+", inner) if w]
+    return bool(words) and bool(_ANY_COLOR_FULL_RE.search(inner)) and all(
+        _NOTE_WORD_RE.fullmatch(w) for w in words
+    )
 
 
 def infer_vinyl_color(
@@ -385,11 +466,8 @@ def infer_vinyl_color(
     """
     if not text:
         return None
-    if exclude:
-        tokens = [exclude] if isinstance(exclude, str) else exclude
-        for tok in tokens:
-            if tok and tok.strip():
-                text = re.sub(re.escape(tok.strip()), " ", text, flags=re.I)
+    for tok in _exclude_segments(exclude):
+        text = re.sub(re.escape(tok), " ", text, flags=re.I)
     # «Финишные» дескрипторы — сами по себе означают цветной/нестандартный
     # пресс, даже рядом с чёрным: «Translucent Black», «Yellow Splatter & Black»,
     # «Black Marble» — это НЕ обычный чёрный винил.
