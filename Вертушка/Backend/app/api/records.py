@@ -2094,45 +2094,28 @@ async def get_record_price_history(
 ):
     """Динамика цены пластинки: дневной минимум in_stock + историческая нижняя.
 
-    Источник — listing_price_history (снапшоты при смене цены). Точки дают
-    только дни, где были изменения; клиент интерполирует между ними.
+    Цена — ступенька: точка журнала держит цену до следующей точки листинга,
+    последняя — до его последнего наблюдения. Раньше точки давали только дни
+    изменений, и у пластинки со стабильной ценой график был пуст («менялась
+    слишком редко»), хотя она всё это время продавалась. Расчёт общий с базой
+    радара (radar_threshold.daily_min_prices): «дешевле обычного» обязано
+    совпадать с картинкой.
 
     Привязку берём ДЖОЙНОМ через store_listings.matched_record_id, а не из
     денормализованного listing_price_history.record_id. Денорм заполняется в
     _upsert_listing значением на момент снятия снапшота, а матчинг идёт
     отдельной часовой задачей и историю не досыпает — поэтому всё, что снято до
     матча, лежало с record_id=NULL и в выборку не попадало. На «Song Machine»
-    это давало «минимум за 3 мес — 4 990 ₽» при реальной цене 3 352 ₽ и
-    «менялась слишком редко» там, где точек хватало.
-
-    Побочно чинится и перематч: после смены привязки история едет за листингом,
-    а не остаётся у прежней записи.
+    это давало «минимум за 3 мес — 4 990 ₽» при реальной цене 3 352 ₽.
     """
-    from datetime import timedelta
-    from app.models.listing_price_history import ListingPriceHistory
-    from app.models.store_listing import ListingStatus, StoreListing
+    from app.services.radar_threshold import daily_min_prices
 
-    since = datetime.utcnow() - timedelta(days=days)
-    day = func.date_trunc("day", ListingPriceHistory.captured_at)
-
-    rows = (
-        await db.execute(
-            select(
-                day.label("day"),
-                func.min(ListingPriceHistory.price_rub).label("min_price"),
-                func.count(func.distinct(ListingPriceHistory.listing_id)).label("listings"),
-            )
-            .join(StoreListing, StoreListing.id == ListingPriceHistory.listing_id)
-            .where(
-                StoreListing.matched_record_id == record_id,
-                ListingPriceHistory.status == ListingStatus.IN_STOCK,
-                ListingPriceHistory.price_rub.is_not(None),
-                ListingPriceHistory.captured_at >= since,
-            )
-            .group_by(day)
-            .order_by(day)
+    rows = [
+        (day, min_price, listings)
+        for _rec, day, min_price, listings in await daily_min_prices(
+            db, [record_id], days
         )
-    ).all()
+    ]
 
     points = [
         {

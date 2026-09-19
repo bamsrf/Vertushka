@@ -90,13 +90,14 @@ async def test_price_history_keeps_in_stock_and_window_filters():
 @pytest.mark.asyncio
 async def test_price_history_shapes_points_and_low():
     """Форма ответа: точки по дням + минимум по ним же."""
+    rec = uuid4()
     rows = [
-        (datetime(2026, 8, 24), 7590, 2),
-        (datetime(2026, 8, 25), 3352, 3),
-        (datetime(2026, 8, 26), 3352, 3),
+        (rec, datetime(2026, 8, 24), 7590, 2),
+        (rec, datetime(2026, 8, 25), 3352, 3),
+        (rec, datetime(2026, 8, 26), 3352, 3),
     ]
     db = CapturingSession(rows)
-    out = await get_record_price_history(record_id=uuid4(), days=90, db=db)
+    out = await get_record_price_history(record_id=rec, days=90, db=db)
 
     assert [p["date"] for p in out["points"]] == ["2026-08-24", "2026-08-25", "2026-08-26"]
     assert out["points"][0]["min_price_rub"] == 7590.0
